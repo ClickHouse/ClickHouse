@@ -19,23 +19,26 @@ instance = cluster.add_instance('instance',
         with_postgres=True, stay_alive=True)
 
 postgres_table_template = """
-    CREATE TABLE IF NOT EXISTS {} (
+    CREATE TABLE IF NOT EXISTS "{}" (
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
 postgres_table_template_2 = """
-    CREATE TABLE IF NOT EXISTS {} (
+    CREATE TABLE IF NOT EXISTS "{}" (
     key Integer NOT NULL, value1 Integer, value2 Integer, value3 Integer, PRIMARY KEY(key))
     """
 postgres_table_template_3 = """
-    CREATE TABLE IF NOT EXISTS {} (
+    CREATE TABLE IF NOT EXISTS "{}" (
     key1 Integer NOT NULL, value1 Integer, key2 Integer NOT NULL, value2 Integer NOT NULL)
     """
 
-def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database'):
+def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database', replication=False):
     if database == True:
         conn_string = "host={} port={} dbname='{}' user='postgres' password='mysecretpassword'".format(ip, port, database_name)
     else:
         conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(ip, port)
+
+    if replication:
+        conn_string += " replication='database'"
 
     conn = psycopg2.connect(conn_string)
     if auto_commit:
@@ -43,6 +46,18 @@ def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name=
         conn.autocommit = True
     return conn
 
+def create_replication_slot(conn, slot_name='user_slot'):
+    cursor = conn.cursor()
+    cursor.execute('CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT'.format(slot_name))
+    result = cursor.fetchall()
+    print(result[0][0]) # slot name
+    print(result[0][1]) # start lsn
+    print(result[0][2]) # snapshot
+    return result[0][2]
+
+def drop_replication_slot(conn, slot_name='user_slot'):
+    cursor = conn.cursor()
+    cursor.execute("select pg_drop_replication_slot('{}')".format(slot_name))
 
 def create_postgres_db(cursor, name='postgres_database'):
     cursor.execute("CREATE DATABASE {}".format(name))
@@ -76,8 +91,11 @@ def drop_materialized_db(materialized_database='test_database'):
     instance.query('DROP DATABASE IF EXISTS {}'.format(materialized_database))
     assert materialized_database not in instance.query('SHOW DATABASES')
 
+def drop_postgres_table(cursor, table_name):
+    cursor.execute("""DROP TABLE IF EXISTS "{}" """.format(table_name))
+
 def create_postgres_table(cursor, table_name, replica_identity_full=False, template=postgres_table_template):
-    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
+    drop_postgres_table(cursor, table_name)
     cursor.execute(template.format(table_name))
     if replica_identity_full:
         cursor.execute('ALTER TABLE {} REPLICA IDENTITY FULL;'.format(table_name))
@@ -921,6 +939,49 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     drop_materialized_db()
     for i in range(NUM_TABLES):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
+
+
+def test_quoting(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    table_name = 'user'
+    create_postgres_table(cursor, table_name);
+    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(50)".format(table_name))
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)
+    check_tables_are_synchronized(table_name);
+    drop_postgres_table(cursor, table_name)
+    drop_materialized_db()
+
+
+def test_user_managed_slots(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    table_name = 'test_table'
+    create_postgres_table(cursor, table_name);
+    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(10000)".format(table_name))
+
+    slot_name = 'user_slot'
+    replication_connection = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                                               database=True, replication=True, auto_commit=True)
+    snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
+    create_materialized_db(ip=started_cluster.postgres_ip,
+                           port=started_cluster.postgres_port,
+                           settings=["materialized_postgresql_replication_slot = '{}'".format(slot_name),
+                                     "materialized_postgresql_snapshot = '{}'".format(snapshot)])
+    check_tables_are_synchronized(table_name);
+    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(10000, 10000)".format(table_name))
+    check_tables_are_synchronized(table_name);
+    instance.restart_clickhouse()
+    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(20000, 10000)".format(table_name))
+    check_tables_are_synchronized(table_name);
+    drop_postgres_table(cursor, table_name)
+    drop_materialized_db()
+    drop_replication_slot(replication_connection, slot_name)
 
 
 if __name__ == '__main__':

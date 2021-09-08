@@ -85,7 +85,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end; ++pos)
+    for (; pos < end; ++pos, ++pos2)
         count += (*pos & ~*pos2) != 0;
 
     return count;

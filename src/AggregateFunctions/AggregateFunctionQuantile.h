@@ -237,5 +237,7 @@ struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDi
 
 struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
 struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
+struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
+struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
 }

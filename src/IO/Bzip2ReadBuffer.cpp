@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BZIP2_STREAM_DECODER_FAILED;
+    extern const int UNEXPECTED_END_OF_FILE;
 }
 
 
@@ -89,6 +90,12 @@ bool Bzip2ReadBuffer::nextImpl()
             ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
             "bzip2 stream decoder failed: error code: {}",
             ret);
+
+    if (in->eof())
+    {
+        eof = true;
+        throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of bzip2 archive");
+    }
 
     return true;
 }

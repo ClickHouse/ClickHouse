@@ -256,8 +256,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         if (configuration.is_local)
         {
             /// Start local session in case when the dictionary is loaded in-process (without TCP communication).
-            local_session = std::make_shared<Session>(global_context, ClientInfo::Interface::TCP);
-            local_session->authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress{"127.0.0.1", 0});
+            local_session = std::make_shared<Session>(global_context, ClientInfo::Interface::LOCAL);
+            local_session->authenticate(configuration.user, configuration.password, {});
             context = local_session->makeQueryContext();
             context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
         }
