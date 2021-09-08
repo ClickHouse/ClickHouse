@@ -71,15 +71,15 @@ public:
     {
         name = toString(type);
 
+        pending.set_capacity(max_tasks_count);
+        active.set_capacity(max_tasks_count);
+
         pool.setMaxThreads(std::max(1UL, threads_count));
         pool.setMaxFreeThreads(std::max(1UL, threads_count));
         pool.setQueueSize(std::max(1UL, threads_count));
 
         for (size_t number = 0; number < threads_count; ++number)
             pool.scheduleOrThrowOnError([this] { threadFunction(); });
-
-        pending.set_capacity(max_tasks_count);
-        active.set_capacity(max_tasks_count);
     }
 
     ~MergeTreeBackgroundExecutor()
