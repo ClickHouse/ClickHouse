@@ -342,8 +342,9 @@ try
         return;
 
     const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
-
+    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto insert_context = Context::createCopy(global_context);
+
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
     insert_context->makeQueryContext();
@@ -372,8 +373,17 @@ try
         return 0;
     };
 
-    StreamingFormatExecutor executor(header, format, std::move(on_error));
+    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+    {
+        StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        const auto & columns = metadata_snapshot->getColumns();
+        if (columns.hasDefaults())
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+    }
 
+    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     std::unique_ptr<ReadBuffer> buffer;
     for (const auto & entry : data->entries)
     {
