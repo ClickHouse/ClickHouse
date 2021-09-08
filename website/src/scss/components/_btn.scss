@@ -1,0 +1,11 @@
+.btn-tertiary-light {
+	border-color: map-get($theme-colors, "tertiary-dark");
+	color: map-get($theme-colors, "tertiary-dark");
+
+	&:active,
+	&:hover {
+		background: map-get($theme-colors, "tertiary-dark");
+		border-color: map-get($theme-colors, "tertiary-dark");
+		color: $white;
+	}
+}

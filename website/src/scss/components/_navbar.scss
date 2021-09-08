@@ -1,0 +1,67 @@
+.navbar {
+    border-bottom: 4px solid $gray-100;
+	height: 142px;
+
+	&-super {
+		flex-shrink: 0;
+		width: 100%;
+
+		ul {
+			list-style: none;
+		}
+
+		li + li {
+			margin-left: 24px;
+		}
+
+		a {
+			align-items: center;
+			color: $black;
+			display: flex;
+			font-size: $font-size-sm;
+
+			&:active,
+			&:hover {
+				color: map-get($colors, "primary-accent-blue");
+				text-decoration: none;
+			}
+		}
+
+		img {
+			flex-shrink: 0;
+			margin-right: $spacer * 0.5;
+		}
+	}
+
+	&-brand {
+		background: no-repeat url(#{"../images/logo.svg"});
+		background-size: contain;
+		flex-shrink: 0;
+		height: 28px;
+		margin-right: 48px;
+		padding: 0;
+		width: 180px;
+	}
+
+	&-nav {
+		align-items: center;
+		height: 46px;
+	}
+}
+
+.navbar-expand-lg > .container {
+	flex-wrap: wrap;
+}
+
+.nav-item + .nav-item {
+	margin-left: 24px;
+}
+
+.nav-link {
+	color: $black;
+
+	&:active,
+	&:hover {
+		color: map-get($colors, "primary-accent-blue");
+	}
+}
