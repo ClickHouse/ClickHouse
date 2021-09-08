@@ -17,24 +17,19 @@
 #include <openssl/err.h>
 #include <boost/algorithm/hex.hpp>
 #include <openssl/aead.h> // Y_IGNORE
+#endif
 
+// Common part for both parts (with SSL and without)
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int OPENSSL_ERROR;
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
-constexpr size_t tag_size        = 16;   /// AES-GCM-SIV always uses a tag of 16 bytes length
-constexpr size_t key_id_max_size = 8;    /// Max size of varint.
-constexpr size_t nonce_max_size  = 13;   /// Nonce size and one byte to show if nonce in in text
 
 /// Get string name for method. Return empty string for undefined Method
 String getMethodName(EncryptionMethod Method)
@@ -52,6 +47,45 @@ String getMethodName(EncryptionMethod Method)
         return "";
     }
 }
+
+/// Get method code (used for codec, to understand which one we are using)
+uint8_t getMethodCode(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
+    }
+    else
+    {
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+} // namespace
+
+} // namespace DB
+
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+constexpr size_t tag_size        = 16;   /// AES-GCM-SIV always uses a tag of 16 bytes length
+constexpr size_t key_id_max_size = 8;    /// Max size of varint.
+constexpr size_t nonce_max_size  = 13;   /// Nonce size and one byte to show if nonce in in text
 
 /// Get encryption/decryption algorithms.
 auto getMethod(EncryptionMethod Method)
@@ -151,23 +185,6 @@ size_t decrypt(const std::string_view & ciphertext, char * plaintext, Encryption
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     return out_len;
-}
-
-/// Get method code (used for codec, to understand which one we are using)
-uint8_t getMethodCode(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
 }
 
 /// Register codec in factory
@@ -489,48 +506,6 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
-}
-
-namespace
-{
-
-/// Get string name for method. Return empty string for undefined Method
-String getMethodName(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return "AES_128_GCM_SIV";
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return "AES_256_GCM_SIV";
-    }
-    else
-    {
-        return "";
-    }
-}
-
-/// Get method code (used for codec, to understand which one we are using)
-uint8_t getMethodCode(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
-}
 
 /// Register codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
