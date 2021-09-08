@@ -2729,19 +2729,21 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 void Context::initializeBackgroundExecutors()
 {
+    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
+
     shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        [this] () { return getSettingsRef().background_pool_size; },
-        [this] () { return getSettingsRef().background_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_pool_size; },
         CurrentMetrics::BackgroundPoolTask
     );
 
     shared->moves_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::MOVE,
-        [this] () { return getSettingsRef().background_move_pool_size; },
-        [this] () { return getSettingsRef().background_move_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_move_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_move_pool_size; },
         CurrentMetrics::BackgroundMovePoolTask
     );
 
@@ -2749,8 +2751,8 @@ void Context::initializeBackgroundExecutors()
     shared->fetch_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::FETCH,
-        [this] () { return getSettingsRef().background_fetches_pool_size; },
-        [this] () { return getSettingsRef().background_fetches_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_fetches_pool_size; },
+        [this] () { auto lock = getLock(); return getSettingsRef().background_fetches_pool_size; },
         CurrentMetrics::BackgroundFetchesPoolTask
     );
 }

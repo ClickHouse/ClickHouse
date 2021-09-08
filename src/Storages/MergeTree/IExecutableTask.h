@@ -9,10 +9,21 @@
 namespace DB
 {
 
+/**
+ * Generic interface for background operations. Simply this is self-made coroutine.
+ * The main method is executeStep, which will return true
+ * if the task wants to execute another 'step' in near future and false otherwise.
+ *
+ * Each storage assigns some operations such as merges, mutations, fetches, etc.
+ * We need to ask a storage or some another entity to try to assign another operation when current operation is completed.
+ *
+ * Each task corresponds to a storage, that's why there is a method getStorageID.
+ * This is needed to correctly shutdown a storage, e.g. we need to wait for all background operations to complete.
+ */
 class IExecutableTask
 {
 public:
-    virtual bool execute() = 0;
+    virtual bool executeStep() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
     virtual ~IExecutableTask() = default;
@@ -21,29 +32,37 @@ public:
 using ExecutableTaskPtr = std::shared_ptr<IExecutableTask>;
 
 
-class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public IExecutableTask
+/**
+ * Some background operations won't represent a coroutines (don't want to be executed step-by-step). For this we have this wrapper.
+ */
+class ExecutableLambdaAdapter : public shared_ptr_helper<ExecutableLambdaAdapter>, public IExecutableTask
 {
 public:
 
-    template <typename InnerJob, typename Callback>
-    explicit LambdaAdapter(InnerJob && inner_, Callback && callback_, StorageID id_)
-        : inner(inner_), callback(callback_), id(id_) {}
+    template <typename Job, typename Callback>
+    explicit ExecutableLambdaAdapter(
+        Job && job_to_execute_,
+        Callback && job_result_callback_,
+        StorageID id_)
+        : job_to_execute(job_to_execute_)
+        , job_result_callback(job_result_callback_)
+        , id(id_) {}
 
-    bool execute() override
+    bool executeStep() override
     {
-        res = inner();
-        inner = {};
+        res = job_to_execute();
+        job_to_execute = {};
         return false;
     }
 
-    void onCompleted() override { callback(!res); }
+    void onCompleted() override { job_result_callback(!res); }
 
     StorageID getStorageID() override { return id; }
 
 private:
     bool res = false;
-    std::function<bool()> inner;
-    std::function<void(bool)> callback;
+    std::function<bool()> job_to_execute;
+    std::function<void(bool)> job_result_callback;
     StorageID id;
 };
 

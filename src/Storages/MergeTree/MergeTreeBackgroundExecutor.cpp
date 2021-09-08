@@ -39,6 +39,9 @@ void MergeTreeBackgroundExecutor::updateConfiguration()
         pool.setMaxThreads(new_threads_count);
         pool.setQueueSize(new_max_tasks_count);
 
+        std::cout << "threads_count " << threads_count << std::endl;
+
+        /// We don't enter this loop if size is decreased.
         for (size_t number = threads_count; number < new_threads_count; ++number)
             pool.scheduleOrThrowOnError([this, number] { threadFunction(number); });
     }
@@ -74,6 +77,8 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
     try
     {
         /// This is needed to increase / decrease the number of threads at runtime
+        /// Using stopwatch here not to do it so often.
+        /// No need to move the time to a config.
         if (update_timer.compareAndRestartDeferred(10.))
             updateConfiguration();
     }
@@ -86,7 +91,7 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push_back(std::make_shared<Item>(std::move(task), metric));
+    pending.push_back(std::make_shared<TaskRuntimeData>(std::move(task), metric));
 
     has_tasks.notify_one();
     return true;
@@ -95,7 +100,7 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
 
 void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
 {
-    std::vector<ItemPtr> tasks_to_wait;
+    std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
@@ -118,7 +123,7 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 }
 
 
-void MergeTreeBackgroundExecutor::routine(ItemPtr item)
+void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 {
     auto erase_from_active = [this, item]
     {
@@ -127,7 +132,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 
     try
     {
-        if (item->task->execute())
+        if (item->task->executeStep())
         {
             std::lock_guard guard(mutex);
 
@@ -143,9 +148,12 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
             return;
         }
 
-        std::lock_guard guard(mutex);
-        erase_from_active();
-        has_tasks.notify_one();
+        {
+            std::lock_guard guard(mutex);
+            erase_from_active();
+            has_tasks.notify_one();
+        }
+
         /// In a situation of a lack of memory this method can throw an exception,
         /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
         /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
@@ -170,11 +178,12 @@ void MergeTreeBackgroundExecutor::threadFunction(size_t number)
 
     while (true)
     {
-        ItemPtr item;
+        TaskRuntimeDataPtr item;
         {
             std::unique_lock lock(mutex);
             has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
 
+            /// Decrease the number of threads (setting could be dynamically reloaded)
             if (number >= threads_count)
                 break;
 

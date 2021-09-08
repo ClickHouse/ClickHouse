@@ -85,7 +85,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ main(); });
+        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
@@ -106,7 +106,7 @@ void BackgroundJobsAssignee::finish()
 }
 
 
-void BackgroundJobsAssignee::main()
+void BackgroundJobsAssignee::threadFunc()
 try
 {
     bool succeed = false;

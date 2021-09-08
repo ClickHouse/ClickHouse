@@ -218,7 +218,7 @@ public:
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
