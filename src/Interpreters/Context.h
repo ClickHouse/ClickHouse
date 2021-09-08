@@ -74,6 +74,7 @@ class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class SessionLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -102,7 +103,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class KeeperStorageDispatcher;
+class KeeperDispatcher;
 class Session;
 
 class IOutputFormat;
@@ -325,6 +326,7 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+    String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     std::vector<String> getWarnings() const;
@@ -335,10 +337,14 @@ public:
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+    void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+
+    void setBackupsVolume(const String & path, const String & policy_name = "");
+    VolumePtr getBackupsVolume() const;
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -595,6 +601,7 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -644,10 +651,10 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
-    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
-    void initializeKeeperStorageDispatcher() const;
-    void shutdownKeeperStorageDispatcher() const;
+    void initializeKeeperDispatcher() const;
+    void shutdownKeeperDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -730,6 +737,7 @@ public:
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
+    std::shared_ptr<SessionLog> getSessionLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -821,6 +829,9 @@ public:
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    /** Get settings for reading from filesystem. */
+    ReadSettings getReadSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

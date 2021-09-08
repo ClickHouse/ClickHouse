@@ -43,6 +43,7 @@ static void executeCreateQuery(
     interpreter.setInternal(true);
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
+    interpreter.setSkipStartupTables(true);
     interpreter.execute();
 }
 

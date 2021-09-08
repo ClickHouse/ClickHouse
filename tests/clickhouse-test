@@ -634,6 +634,7 @@ def run_tests_array(all_tests_with_params):
                                 open(stdout_file).read().split('\n')[:100])
                             status += '\n'
 
+                        status += "\nstdout:\n{}\n".format(stdout)
                         status += 'Database: ' + testcase_args.testcase_database
 
                     elif stderr:
@@ -643,6 +644,7 @@ def run_tests_array(all_tests_with_params):
                         status += print_test_time(total_time)
                         status += " - having stderror:\n{}\n".format(
                             '\n'.join(stderr.split('\n')[:100]))
+                        status += "\nstdout:\n{}\n".format(stdout)
                         status += 'Database: ' + testcase_args.testcase_database
                     elif 'Exception' in stdout:
                         failures += 1
