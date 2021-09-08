@@ -262,34 +262,34 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 
 ## input_format_parquet_import_nested {#input_format_parquet_import_nested}
 
-Enables or disables the ability to insert `Array(Struct)` values into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
 
 Possible values:
 
--   0 — `Array(Struct)` values can not be inserted into `Nested` columns.
--   1 — `Array(Struct)` values can be inserted into `Nested` columns.
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
 ## input_format_arrow_import_nested {#input_format_arrow_import_nested}
 
-Enables or disables the ability to insert `Array(Struct)` values into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
 
 Possible values:
 
--   0 — `Array(Struct)` values can not be inserted into `Nested` columns.
--   1 — `Array(Struct)` values can be inserted into `Nested` columns.
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
 ## input_format_orc_import_nested {#input_format_orc_import_nested}
 
-Enables or disables the ability to insert `Array(Struct)` values into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [ORC](../../interfaces/formats.md#data-format-orc) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md#data-format-orc) input format.
 
 Possible values:
 
--   0 — `Array(Struct)` values can not be inserted into `Nested` columns.
--   1 — `Array(Struct)` values can be inserted into `Nested` columns.
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
 
 Default value: `0`.
 
