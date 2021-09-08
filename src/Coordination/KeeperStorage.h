@@ -106,14 +106,14 @@ public:
     {
         auto result = session_id_counter++;
         session_and_timeout.emplace(result, session_timeout_ms);
-        session_expiry_queue.update(result, session_timeout_ms);
+        session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
         return result;
     }
 
     void addSessionID(int64_t session_id, int64_t session_timeout_ms)
     {
         session_and_timeout.emplace(session_id, session_timeout_ms);
-        session_expiry_queue.update(session_id, session_timeout_ms);
+        session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
@@ -145,7 +145,8 @@ public:
         return session_and_timeout;
     }
 
-    std::unordered_set<int64_t> getDeadSessions()
+    /// Get all dead sessions
+    std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
     }
