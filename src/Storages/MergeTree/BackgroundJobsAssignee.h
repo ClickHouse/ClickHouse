@@ -9,10 +9,10 @@
 namespace DB
 {
 
-/// Settings for background tasks scheduling. Each background executor has one
+/// Settings for background tasks scheduling. Each background assignee has one
 /// BackgroundSchedulingPoolTask and depending on execution result may put this
 /// task to sleep according to settings. Look at scheduleTask function for details.
-struct ExecutableTaskSchedulingSettings
+struct BackgroundTaskSchedulingSettings
 {
     double thread_sleep_seconds_random_part = 1.0;
     double thread_sleep_seconds_if_nothing_to_do = 0.1;
@@ -35,7 +35,7 @@ private:
     MergeTreeData & data;
 
     /// Settings for execution control of background scheduling task
-    ExecutableTaskSchedulingSettings sleep_settings;
+    BackgroundTaskSchedulingSettings sleep_settings;
     /// Useful for random backoff timeouts generation
     pcg64 rng;
 
@@ -49,7 +49,11 @@ private:
     std::mutex holder_mutex;
 
 public:
-    ///
+    /// In case of ReplicatedMergeTree the first assignee will be responsible for
+    /// polling the replication queue and schedule operations according to the LogEntry type
+    /// e.g. merges, mutations and fetches. The same will be for Plain MergeTree except there is no
+    /// replication queue, so we will just scan parts and decide what to do.
+    /// Moving operations are the same for all types of MergeTree and also have their own timetable.
     enum class Type
     {
         DataProcessing,

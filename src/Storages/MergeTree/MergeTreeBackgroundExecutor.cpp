@@ -25,34 +25,6 @@ String MergeTreeBackgroundExecutor::toString(Type type)
 }
 
 
-void MergeTreeBackgroundExecutor::updateConfiguration()
-{
-    auto new_threads_count = std::max<size_t>(1u, threads_count_getter());
-    auto new_max_tasks_count = std::max<size_t>(1, max_task_count_getter());
-
-    try
-    {
-        pending.set_capacity(new_max_tasks_count);
-        active.set_capacity(new_max_tasks_count);
-
-        pool.setMaxFreeThreads(0);
-        pool.setMaxThreads(new_threads_count);
-        pool.setQueueSize(new_max_tasks_count);
-
-        /// We don't enter this loop if size is decreased.
-        for (size_t number = threads_count; number < new_threads_count; ++number)
-            pool.scheduleOrThrowOnError([this, number] { threadFunction(number); });
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    threads_count = new_threads_count;
-    max_tasks_count = new_max_tasks_count;
-}
-
-
 void MergeTreeBackgroundExecutor::wait()
 {
     {
@@ -71,19 +43,6 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
 
     if (shutdown)
         return false;
-
-    try
-    {
-        /// This is needed to increase / decrease the number of threads at runtime
-        /// Using stopwatch here not to do it so often.
-        /// No need to move the time to a config.
-        if (update_timer.compareAndRestartDeferred(10.))
-            updateConfiguration();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 
     auto & value = CurrentMetrics::values[metric];
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
@@ -123,35 +82,59 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
 void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
+    /// All operations with queues are considered no to do any allocations
+
     auto erase_from_active = [this, item]
     {
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
 
+    bool need_execute_again = false;
+
     try
     {
-        if (item->task->executeStep())
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        need_execute_again = item->task->executeStep();
+    }
+    catch (...)
+    {
+        std::lock_guard guard(mutex);
+        erase_from_active();
+        has_tasks.notify_one();
+        /// Do not want any exceptions
+        try { item->task->onCompleted(); } catch (...) {}
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+
+    if (need_execute_again)
+    {
+        std::lock_guard guard(mutex);
+
+        if (item->is_currently_deleting)
         {
-            std::lock_guard guard(mutex);
-
-            if (item->is_currently_deleting)
-            {
-                erase_from_active();
-                return;
-            }
-
-            pending.push_back(item);
             erase_from_active();
-            has_tasks.notify_one();
             return;
         }
 
-        {
-            std::lock_guard guard(mutex);
-            erase_from_active();
-            has_tasks.notify_one();
-        }
+        pending.push_back(item);
+        erase_from_active();
+        has_tasks.notify_one();
+        return;
+    }
 
+
+    {
+        std::lock_guard guard(mutex);
+        erase_from_active();
+        has_tasks.notify_one();
+    }
+
+    try
+    {
+        ALLOW_ALLOCATIONS_IN_SCOPE;
         /// In a situation of a lack of memory this method can throw an exception,
         /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
         /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
@@ -160,46 +143,46 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        std::lock_guard guard(mutex);
-        erase_from_active();
-        has_tasks.notify_one();
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// Do not want any exceptions
-        try { item->task->onCompleted(); } catch (...) {}
     }
 }
 
 
-void MergeTreeBackgroundExecutor::threadFunction(size_t number)
+void MergeTreeBackgroundExecutor::threadFunction()
 {
     setThreadName(name.c_str());
 
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     while (true)
     {
-        TaskRuntimeDataPtr item;
+        try
         {
-            std::unique_lock lock(mutex);
-            has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
+            TaskRuntimeDataPtr item;
+            {
+                std::unique_lock lock(mutex);
+                has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
 
-            /// Decrease the number of threads (setting could be dynamically reloaded)
-            if (number >= threads_count)
-                break;
+                if (shutdown)
+                    break;
 
-            if (shutdown)
-                break;
+                item = std::move(pending.front());
+                pending.pop_front();
+                active.push_back(item);
+            }
 
-            item = std::move(pending.front());
-            pending.pop_front();
-            active.push_back(item);
+            routine(item);
+
+            /// When storage shutdowns it will wait until all related background tasks
+            /// are finished, because they may want to interact with its fields
+            /// and this will cause segfault.
+            if (item->is_currently_deleting)
+                item->is_done.set();
         }
-
-        routine(item);
-
-        /// When storage shutdowns it will wait until all related background tasks
-        /// are finished, because they may want to interact with its fields
-        /// and this will cause segfault.
-        if (item->is_currently_deleting)
-            item->is_done.set();
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 
