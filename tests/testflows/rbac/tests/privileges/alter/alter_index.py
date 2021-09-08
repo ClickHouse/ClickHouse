@@ -128,10 +128,10 @@ def check_order_by_when_privilege_is_granted(table, user, node):
     column = "order"
 
     with Given("I run sanity check"):
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b", settings = [("user", user)])
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d", settings = [("user", user)])
 
     with And("I add new column and modify order using that column"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (b, {column})")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (d, {column})")
 
     with When(f"I insert random data into the ordered-by column {column}"):
         data = random.sample(range(1,1000),100)
@@ -151,7 +151,7 @@ def check_order_by_when_privilege_is_granted(table, user, node):
 
     with And("I verify that the sorting key is present in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"ORDER BY (b, {column})" in output['statement'], error()
+        assert f"ORDER BY (d, {column})" in output['statement'], error()
 
     with But(f"I cannot drop the required column {column}"):
         exitcode, message = errors.missing_columns(column)
@@ -163,13 +163,21 @@ def check_sample_by_when_privilege_is_granted(table, user, node):
     """
     column = 'sample'
 
+    with Given(f"I add new column {column}"):
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32")
+
     with When(f"I add sample by clause"):
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY (d, {column})",
             settings = [("user", user)])
 
     with Then("I verify that the sample is in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"SAMPLE BY b" in output['statement'], error()
+        assert f"SAMPLE BY (d, {column})" in output['statement'], error()
+
+    with But(f"I cannot drop the required column {column}"):
+        exitcode, message = errors.missing_columns(column)
+        node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
+            exitcode=exitcode, message=message)
 
 def check_add_index_when_privilege_is_granted(table, user, node):
     """Ensures ADD INDEX runs as expected when the privilege is granted to the specified user
@@ -250,7 +258,7 @@ def check_order_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b",
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_sample_by_when_privilege_is_not_granted(table, user, node):
@@ -258,7 +266,7 @@ def check_sample_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY d",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_add_index_when_privilege_is_not_granted(table, user, node):

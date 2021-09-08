@@ -127,21 +127,21 @@ class _NetworkManager:
         return cls._instance
 
     def add_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '--wait', '-I', 'DOCKER-USER', '1']
+        cmd = ['iptables', '-I', 'DOCKER-USER', '1']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        self._exec_run_with_retry(cmd, retry_count=3, privileged=True)
 
     def delete_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '--wait', '-D', 'DOCKER-USER']
+        cmd = ['iptables', '-D', 'DOCKER-USER']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        self._exec_run_with_retry(cmd, retry_count=3, privileged=True)
 
     @staticmethod
     def clean_all_user_iptables_rules():
         for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will return error
-            res = subprocess.run("iptables --wait -D DOCKER-USER 1", shell=True)
+            res = subprocess.run("iptables -D DOCKER-USER 1", shell=True)
 
             if res.returncode != 0:
                 logging.info("All iptables rules cleared, " + str(iptables_iter) + " iterations, last error: " + str(res.stderr))
@@ -240,27 +240,15 @@ class _NetworkManager:
 
 # Approximately mesure network I/O speed for interface
 class NetThroughput(object):
-    def __init__(self, node):
+    def __init__(self, node, interface="eth0"):
+        self.interface = interface
         self.node = node
-        # trying to get default interface and check it in /proc/net/dev
-        self.interface = self.node.exec_in_container(["bash", "-c", "awk '{print $1 \" \" $2}' /proc/net/route | grep 00000000 | awk '{print $1}'"]).strip()
-        check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
-        if not check: # if check is not successful just try eth{1-10}
-            for i in range(10):
-                try:
-                    self.interface = self.node.exec_in_container(["bash", "-c", f"awk '{{print $1}}' /proc/net/route | grep 'eth{i}'"]).strip()
-                    break
-                except Exception as ex:
-                    print(f"No interface eth{i}")
-            else:
-                raise Exception("No interface eth{1-10} and default interface not specified in /proc/net/route, maybe some special network configuration")
-
         try:
-            check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
+            check = subprocess.check_output(f'grep "^ *{self.interface}:" /proc/net/dev', shell=True)
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
-            logging.error("All available interfaces %s", self.node.exec_in_container(["bash", "-c", "cat /proc/net/dev"]))
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

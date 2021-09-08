@@ -9,7 +9,7 @@ class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
     CompressionCodecMultiple() = default;   /// Need for CompressionFactory to register codec by method byte.
-    explicit CompressionCodecMultiple(Codecs codecs_);
+    CompressionCodecMultiple(Codecs codecs_);
 
     uint8_t getMethodByte() const override;
 

@@ -113,8 +113,7 @@ public:
 
     virtual ~IFunctionBase() = default;
 
-    virtual ColumnPtr execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
@@ -162,8 +161,7 @@ public:
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
       * useDefaultImplementationForLowCardinality are not applied.
       */
-    virtual ColumnPtr getConstantResultForNonConstArguments(
-        const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -210,42 +208,6 @@ public:
       * All this is considered only for functions of one argument.
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
-
-    struct ShortCircuitSettings
-    {
-        /// Should we enable lazy execution for the first argument of short-circuit function?
-        /// Example: if(cond, then, else), we don't need to execute cond lazily.
-        bool enable_lazy_execution_for_first_argument;
-        /// Should we enable lazy execution for functions, that are common descendants of
-        /// different short-circuit function arguments?
-        /// Example 1: if (cond, expr1(..., expr, ...), expr2(..., expr, ...)), we don't need
-        /// to execute expr lazily, because it's used in both branches.
-        /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
-        /// should enable lazy execution for expr, because it must be filtered by expr1.
-        bool enable_lazy_execution_for_common_descendants_of_arguments;
-        /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
-        /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
-        /// lazy execution (because of their simplicity), we shouldn't execute them at all.
-        bool force_enable_lazy_execution;
-    };
-
-    /** Function is called "short-circuit" if it's arguments can be evaluated lazily
-      * (examples: and, or, if, multiIf). If function is short circuit, it should be
-      *  able to work with lazy executed arguments,
-      *  this method will be called before function execution.
-      *  If function is short circuit, it must define all fields in settings for
-      *  appropriate preparations. Number of arguments is provided because some settings might depend on it.
-      *  Example: multiIf(cond, else, then) and multiIf(cond1, else1, cond2, else2, ...), the first
-      *  version can enable enable_lazy_execution_for_common_descendants_of_arguments setting, the second - not.
-      */
-    virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
-
-    /** Should we evaluate this function lazily in short-circuit function arguments?
-      * If function can throw an exception or it's computationally heavy, then
-      * it's suitable, otherwise it's not (due to the overhead of lazy execution).
-      * Suitability may depend on function arguments.
-      */
-    virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /// The property of monotonicity for a certain range.
     struct Monotonicity
@@ -396,10 +358,6 @@ public:
       */
     virtual bool useDefaultImplementationForConstants() const { return false; }
 
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
     /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all low cardinality columns to ordinary columns.
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
@@ -408,6 +366,10 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)
@@ -421,11 +383,6 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
-
-    using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
-    virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
-
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;

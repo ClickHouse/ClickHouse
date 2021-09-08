@@ -43,11 +43,11 @@ void changeIfArguments(ASTPtr & first, ASTPtr & second)
     String enum_string = makeStringsEnum(values);
     auto enum_literal = std::make_shared<ASTLiteral>(enum_string);
 
-    auto first_cast = makeASTFunction("_CAST");
+    auto first_cast = makeASTFunction("CAST");
     first_cast->arguments->children.push_back(first);
     first_cast->arguments->children.push_back(enum_literal);
 
-    auto second_cast = makeASTFunction("_CAST");
+    auto second_cast = makeASTFunction("CAST");
     second_cast->arguments->children.push_back(second);
     second_cast->arguments->children.push_back(enum_literal);
 
@@ -65,12 +65,12 @@ void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
 
     String enum_string = makeStringsEnum(values);
 
-    auto array_cast = makeASTFunction("_CAST");
+    auto array_cast = makeASTFunction("CAST");
     array_cast->arguments->children.push_back(array_to);
     array_cast->arguments->children.push_back(std::make_shared<ASTLiteral>("Array(" + enum_string + ")"));
     array_to = array_cast;
 
-    auto other_cast = makeASTFunction("_CAST");
+    auto other_cast = makeASTFunction("CAST");
     other_cast->arguments->children.push_back(other);
     other_cast->arguments->children.push_back(std::make_shared<ASTLiteral>(enum_string));
     other = other_cast;
@@ -183,3 +183,4 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 }
 
 }
+

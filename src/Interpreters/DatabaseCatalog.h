@@ -130,7 +130,6 @@ public:
 
     void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
-    void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -241,6 +240,7 @@ private:
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
+    void loadMarkedAsDroppedTables();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 

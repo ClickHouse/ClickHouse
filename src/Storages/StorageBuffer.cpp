@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -25,13 +26,11 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-
 
 namespace ProfileEvents
 {
@@ -370,14 +369,13 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->alias_actions, actions_settings));
+                        query_info.prewhere_info->alias_actions);
                 });
             }
 
@@ -387,7 +385,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
+                            query_info.prewhere_info->row_level_filter,
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -397,7 +395,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
+                        query_info.prewhere_info->prewhere_actions,
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
@@ -514,29 +512,29 @@ static void appendBlock(const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage
+class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferSink(
+    explicit BufferBlockOutputStream(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {
-        // Check table structure.
-        metadata_snapshot->check(getPort().getHeader(), true);
-    }
+    {}
 
-    String getName() const override { return "BufferSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        size_t rows = chunk.getNumRows();
-        if (!rows)
+        if (!block)
             return;
 
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        // Check table structure.
+        metadata_snapshot->check(block, true);
+
+        size_t rows = block.rows();
+        if (!rows)
+            return;
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -643,9 +641,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
