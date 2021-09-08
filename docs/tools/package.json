@@ -25,6 +25,7 @@
 	},
 	"dependencies": {
 		"amphtml-validator": "^1.0.35",
+		"bootstrap": "^4.4.1",
 		"purify-css": "^1.2.5"
 	}
 }
