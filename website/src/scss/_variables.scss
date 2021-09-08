@@ -29,13 +29,11 @@ $colors: (
 );
 
 $theme-colors: (
-	"primary-dark": #ffcc00,
+	"primary": #ffcc00,
 	"primary-light": #fffaf0,
-
-	"secondary-dark": #212529,
+	"secondary": #212529,
 	"secondary-light": #fff,
-
-	"tertiary-dark": #257af4,
+	"tertiary": #257af4,
 	"tertiary-light": #e3f1fe,
 );
 
@@ -61,7 +59,8 @@ $spacers: (
 	7: ($spacer * 7),
 	8: ($spacer * 8),
 	9: ($spacer * 9),
-	10: ($spacer * 10)
+	10: ($spacer * 10),
+	15: ($spacer * 15)
 );
 
 
@@ -133,29 +132,18 @@ $font-weight-bolder:          bolder;
 $font-weight-base:            $font-weight-normal;
 $line-height-base:            1.5;
 
-$h1-font-size:                $font-size-base * 2.5;
-$h2-font-size:                $font-size-base * 2;
-$h3-font-size:                $font-size-base * 1.75;
-$h4-font-size:                $font-size-base * 1.5;
-$h5-font-size:                $font-size-base * 1.25;
-$h6-font-size:                $font-size-base;
+$h1-font-size:                80px;
+$h2-font-size:                48px;
+$h3-font-size:                36px;
+$h4-font-size:                30px;
+$h5-font-size:                18px;
+$h6-font-size:                14px;
 
 $headings-margin-bottom:      $spacer / 2;
 $headings-font-family:        "Hind Siliguri", sans-serif;
 $headings-font-weight:        500;
-$headings-line-height:        1.2;
+$headings-line-height:        1.125;
 $headings-color:              null;
-
-$display1-size:               6rem;
-$display2-size:               5.5rem;
-$display3-size:               4.5rem;
-$display4-size:               3.5rem;
-
-$display1-weight:             300;
-$display2-weight:             300;
-$display3-weight:             300;
-$display4-weight:             300;
-$display-line-height:         $headings-line-height;
 
 $lead-font-size:              $font-size-base * 1.25;
 $lead-font-weight:            300;
