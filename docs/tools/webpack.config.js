@@ -1,4 +1,7 @@
 const path = require('path');
+const scssPath = path.resolve(__dirname, '../../website/src/scss');
+
+console.log(path.resolve(__dirname, 'node_modules/bootstrap', require('bootstrap/package.json').sass));
 
 module.exports = {
 
@@ -9,13 +12,20 @@ module.exports = {
 	}),
 
     entry: [
-		'../../website/src/scss/main.scss',
+		path.resolve(scssPath, 'bootstrap.scss'),
+		path.resolve(scssPath, 'main.scss'),
 	],
 
     output: {
         path: path.resolve(__dirname, '../../website'),
     	filename: 'js/main.js',
     },
+
+	resolve: {
+		alias: {
+			bootstrap: path.resolve(__dirname, 'node_modules/bootstrap', require('bootstrap/package.json').sass),
+		},
+	},
 
 	module: {
 		rules: [{
@@ -32,9 +42,15 @@ module.exports = {
 			use: [{
 				loader: 'file-loader',
 				options: {
-					name: 'main.css',
-					outputPath: './css',
 					sourceMap: true,
+					outputPath: (url, entryPath, context) => {
+						if (0 === entryPath.indexOf(scssPath)) {
+							const outputFile = entryPath.slice(entryPath.lastIndexOf('/') + 1, -5)
+							const outputPath = entryPath.slice(0, entryPath.lastIndexOf('/')).slice(scssPath.length + 1)
+							return `./css/${outputPath}/${outputFile}.css`
+						}
+						return `./css/${url}`
+					},
 				},
 			}, {
 				loader: 'postcss-loader',
