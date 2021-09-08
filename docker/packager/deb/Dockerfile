@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -37,17 +37,17 @@ RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-11 \
-        clang-tidy-11 \
+        clang-12 \
+        clang-tidy-12 \
         cmake \
         debhelper \
         devscripts \
         gdb  \
         git \
         gperf \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
+        lld-12 \
+        llvm-12 \
+        llvm-12-dev \
         moreutils \
         ninja-build \
         perl \
