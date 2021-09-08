@@ -1,17 +1,11 @@
 #pragma once
 
-// This depends on BoringSSL-specific API, notably <openssl/aead.h>.
+#if !defined(ARCADIA_BUILD)
 #include <string_view>
 #include <unordered_map>
-#include "common/types.h"
-#include <Common/config.h>
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY && !defined(ARCADIA_BUILD)
-
+#include <common/types.h>
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <boost/noncopyable.hpp>
-#include <openssl/aead.h> // Y_IGNORE
-#include <optional>
 #include <Common/MultiVersion.h>
 
 namespace DB
@@ -141,4 +135,4 @@ private:
 
 }
 
-#endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
+#endif /* NOT Arcadia_build */

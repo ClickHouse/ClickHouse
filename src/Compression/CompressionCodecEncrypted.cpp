@@ -1,27 +1,19 @@
-#include <algorithm>
-#include <memory>
-#include <string>
-#include <Common/config.h>
-#include "Common/Exception.h"
-#include "common/defines.h"
-#include "common/types.h"
-#include "IO/VarInt.h"
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
+#include "Common/Exception.h"
+#include "common/types.h"
+#include "IO/VarInt.h"
 #include <Compression/CompressionFactory.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-
 #include <Compression/CompressionCodecEncrypted.h>
+
+// This depends on BoringSSL-specific API, notably <openssl/aead.h>.
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 #include <Parsers/ASTLiteral.h>
-#include <cassert>
 #include <openssl/digest.h> // Y_IGNORE
 #include <openssl/err.h>
-#include <openssl/hkdf.h> // Y_IGNORE
-#include <string_view>
 #include <boost/algorithm/hex.hpp>
-
+#include <openssl/aead.h> // Y_IGNORE
 
 namespace DB
 {
@@ -501,6 +493,25 @@ void registerCodecEncrypted(CompressionCodecFactory & factory)
 
 namespace DB
 {
+
+CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configuration::instance()
+{
+    static CompressionCodecEncrypted::Configuration ret;
+    return ret;
+}
+
+/// if encryption is disabled.
+bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    return false;
+}
+
+/// if encryption is disabled, print warning about this.
+void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    LOG_WARNING(log, "Server was built without SSL support. Encryption is disabled.");
+}
+
 void registerCodecEncrypted(CompressionCodecFactory &)
 {
 }
