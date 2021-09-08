@@ -66,44 +66,7 @@ public:
                   ContextPtr context,
                   SettingsPtr settings_);
 
-    struct File
-    {
-        String name;
-        size_t size;
-        File(const String & name_ = "", const size_t size_ = 0) : name(name_), size(size_) {}
-    };
-
-    using Directory = std::unordered_map<String, size_t>;
-
-    /* Each root directory contains either directories like
-     * all_x_x_x/{file}, detached/, etc, or root files like format_version.txt.
-     */
-    using RootDirectory = std::unordered_map<String, Directory>;
-
-    /* Each table is attached via ATTACH TABLE table UUID <uuid> <def>.
-     * Then there is a mapping: {table uuid} -> {root directory}
-     */
-    using TableDirectories = std::unordered_map<String, RootDirectory>;
-
-    struct Metadata
-    {
-        /// Fetch meta only when required.
-        mutable TableDirectories tables_data;
-
-        Metadata() = default;
-
-        void initialize(const String & uri_with_path, const String & uuid, ContextPtr context) const;
-    };
-
-    using UUIDDirectoryListing = std::unordered_map<String, RootDirectory>;
-    using RootDirectoryListing = std::unordered_map<String, Directory>;
-    using DirectoryListing = std::unordered_map<String, size_t>;
-
-    bool findFileInMetadata(const String & path, File & file_info) const;
-
     bool supportZeroCopyReplication() const override { return false; }
-
-    static String getFileName(const String & path);
 
     DiskType getType() const override { return DiskType::WebServer; }
 
@@ -223,13 +186,28 @@ public:
     void createHardLink(const String &, const String &) override {}
 
 private:
+    void initialize(const String & uri_path) const;
+
+    enum class FileType
+    {
+        File = 1,
+        Directory = 2
+    };
+
+    struct FileData
+    {
+        FileType type;
+        size_t size;
+    };
+
+    using Files = std::unordered_map<String, FileData>; /// file path -> file data
+    mutable Files files;
 
     Poco::Logger * log;
-    String uri, name;
+    String url;
+    String name;
     const String metadata_path;
     SettingsPtr settings;
-
-    Metadata metadata;
 };
 
 }
