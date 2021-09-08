@@ -39,7 +39,8 @@ You can also download and install packages manually from [here](https://repo.cli
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 !!! attention "Attention"
-    If you need to install specific version of ClickHouse you have to install all packages with the same version: `apt-get install clickhouse-server=21.6.5.37 clickhouse-client=21.6.5.37 clickhouse-common-static=21.6.5.37`
+    If you need to install specific version of ClickHouse you have to install all packages with the same version:
+    `apt-get install clickhouse-server=21.6.5.37 clickhouse-client=21.6.5.37 clickhouse-common-static=21.6.5.37`
 
 ### From RPM Packages {#from-rpm-packages}
 
