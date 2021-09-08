@@ -97,7 +97,3 @@ LIMIT 10
 При запросе DESCRIBE, столбцы вложенной структуры данных перечисляются так же по отдельности.
 
 Работоспособность запроса ALTER для элементов вложенных структур данных, является сильно ограниченной.
-
-## Inserting {#inserting}
-
-Чтобы вставить данные типа `Array(Struct)` в колонки `Nested`, нужно включить настройку [input_format_parquet_import_nested](../../../operations/settings/settings.md#input_format_parquet_import_nested), [input_format_arrow_import_nested](../../../operations/settings/settings.md#input_format_arrow_import_nested) или [input_format_orc_import_nested](../../../operations/settings/settings.md#input_format_orc_import_nested) для форматов ввода [Parquet](../../../interfaces/formats.md#data-format-parquet), [Arrow](../../../interfaces/formats.md#data_types-matching-arrow) и [ORC](../../../interfaces/formats.md#data-format-orc) соответственно.
