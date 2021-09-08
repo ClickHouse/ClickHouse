@@ -466,7 +466,7 @@
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
-        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
         "01615_random_one_shard_insertion",
@@ -513,6 +513,6 @@
         "01530_drop_database_atomic_sync", /// creates database
         "02001_add_default_database_to_system_users", ///create user
         "02002_row_level_filter_bug", ///create user
-        "02015_system_views"
+        "01747_system_session_log_long" // Reads from system.session_log and can't be run in parallel with any other test (since almost any other test writes to session_log)
     ]
 }

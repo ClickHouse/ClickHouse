@@ -307,7 +307,8 @@ void registerStorageMySQL(StorageFactory & factory)
             configuration.username, configuration.password,
             MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries);
+            mysql_settings.connection_max_tries,
+            mysql_settings.connection_wait_timeout);
 
         return StorageMySQL::create(
             args.table_id,
