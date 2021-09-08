@@ -45,6 +45,8 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
+        if (process_list_element)
+            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -57,6 +59,12 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 
         throw;
     }
+}
+
+PipelineExecutor::~PipelineExecutor()
+{
+    if (process_list_element)
+        process_list_element->removePipelineExecutor(this);
 }
 
 void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)

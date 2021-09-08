@@ -67,8 +67,9 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 *    - null_value, used as a default value for non-existent entries in the dictionary,
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
-*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
-*    - is_object_id, used in mongo dictionary, converts string key to objectid
+*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?);
+*    - is_object_id, used in mongo dictionary, converts string key to objectid;
+*    - is_nullable, is attribute nullable;
 */
 struct DictionaryAttribute final
 {
@@ -153,6 +154,10 @@ private:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         bool complex_key_attributes);
+
+    /// parse range_min and range_max
+    void parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix);
+
 };
 
 }

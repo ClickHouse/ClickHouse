@@ -22,6 +22,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+#include <vector>
 
 
 namespace CurrentMetrics
@@ -34,6 +35,7 @@ namespace DB
 
 struct Settings;
 class IAST;
+class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -109,6 +111,9 @@ protected:
     BlockInputStreamPtr query_stream_in;
     BlockOutputStreamPtr query_stream_out;
 
+    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::vector<PipelineExecutor *> executors;
+
     enum QueryStreamsStatus
     {
         NotInitialized,
@@ -183,6 +188,12 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
+
+    /// Adds a pipeline to the QueryStatus
+    void addPipelineExecutor(PipelineExecutor * e);
+
+    /// Removes a pipeline to the QueryStatus
+    void removePipelineExecutor(PipelineExecutor * e);
 };
 
 

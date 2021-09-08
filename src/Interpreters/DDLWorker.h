@@ -44,7 +44,7 @@ class DDLWorker
 {
 public:
     DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
+              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr, const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -148,6 +148,7 @@ protected:
 
     std::atomic<UInt64> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
+    const CurrentMetrics::Metric * max_pushed_entry_metric;
 };
 
 

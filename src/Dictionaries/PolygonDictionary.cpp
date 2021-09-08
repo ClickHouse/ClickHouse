@@ -3,14 +3,14 @@
 #include <numeric>
 #include <cmath>
 
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySource.h>
+
 
 namespace DB
 {
@@ -119,7 +119,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     return result;
 }
 
-BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const
+Pipe IPolygonDictionary::read(const Names &, size_t) const
 {
     // TODO: In order for this to work one would first have to support retrieving arrays from dictionaries.
     //  I believe this is a separate task done by some other people.
@@ -165,12 +165,13 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
-    while (const auto block = stream->read())
-        blockToAttributes(block);
-    stream->readSuffix();
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
+        blockToAttributes(block);
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
@@ -516,4 +517,3 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
 }
 
 }
-

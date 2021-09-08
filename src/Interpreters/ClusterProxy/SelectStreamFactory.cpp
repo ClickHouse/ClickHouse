@@ -47,61 +47,6 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-/// Special support for the case when `_shard_num` column is used in GROUP BY key expression.
-/// This column is a constant for shard.
-/// Constant expression with this column may be removed from intermediate header.
-/// However, this column is not constant for initiator, and it expect intermediate header has it.
-///
-/// To fix it, the following trick is applied.
-/// We check all GROUP BY keys which depend only on `_shard_num`.
-/// Calculate such expression for current shard if it is used in header.
-/// Those columns will be added to modified header as already known constants.
-///
-/// For local shard, missed constants will be added by converting actions.
-/// For remote shard, RemoteQueryExecutor will automatically add missing constant.
-Block evaluateConstantGroupByKeysWithShardNumber(
-    const ContextPtr & context, const ASTPtr & query_ast, const Block & header, UInt32 shard_num)
-{
-    Block res;
-
-    ColumnWithTypeAndName shard_num_col;
-    shard_num_col.type = std::make_shared<DataTypeUInt32>();
-    shard_num_col.column = shard_num_col.type->createColumnConst(0, shard_num);
-    shard_num_col.name = "_shard_num";
-
-    if (auto group_by = query_ast->as<ASTSelectQuery &>().groupBy())
-    {
-        for (const auto & elem : group_by->children)
-        {
-            String key_name = elem->getColumnName();
-            if (header.has(key_name))
-            {
-                auto ast = elem->clone();
-
-                RequiredSourceColumnsVisitor::Data columns_context;
-                RequiredSourceColumnsVisitor(columns_context).visit(ast);
-
-                auto required_columns = columns_context.requiredColumns();
-                if (required_columns.size() != 1 || required_columns.count("_shard_num") == 0)
-                    continue;
-
-                Block block({shard_num_col});
-                auto syntax_result = TreeRewriter(context).analyze(ast, {NameAndTypePair{shard_num_col.name, shard_num_col.type}});
-                ExpressionAnalyzer(ast, syntax_result, context).getActions(true, false)->execute(block);
-
-                res.insert(block.getByName(key_name));
-            }
-        }
-    }
-
-    /// We always add _shard_num constant just in case.
-    /// For initial query it is considered as a column from table, and may be required by intermediate block.
-    if (!res.has(shard_num_col.name))
-        res.insert(std::move(shard_num_col));
-
-    return res;
-}
-
 ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
 {
     /// Convert header structure to expected.
@@ -128,13 +73,16 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
-    QueryProcessingStage::Enum processed_stage)
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
     interpreter.buildQueryPlan(*query_plan);
 
     addConvertingActions(*query_plan, header);
@@ -151,38 +99,27 @@ void SelectStreamFactory::createForShard(
     const ASTPtr & table_func_ptr,
     ContextPtr context,
     std::vector<QueryPlanPtr> & local_plans,
-    Shards & remote_shards)
+    Shards & remote_shards,
+    UInt32 shard_count)
 {
     auto modified_query_ast = query_ast->clone();
-    auto modified_header = header;
     if (has_virtual_shard_num_column)
-    {
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
-        auto shard_num_constants = evaluateConstantGroupByKeysWithShardNumber(context, query_ast, modified_header, shard_info.shard_num);
-
-        for (auto & col : shard_num_constants)
-        {
-            if (modified_header.has(col.name))
-                modified_header.getByName(col.name).column = std::move(col.column);
-            else
-                modified_header.insert(std::move(col));
-        }
-    }
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(modified_query_ast, modified_header, context, processed_stage));
-        addConvertingActions(*local_plans.back(), header);
+        local_plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
-    auto emplace_remote_stream = [&]()
+    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = modified_query_ast,
-            .header = modified_header,
+            .header = header,
             .shard_num = shard_info.shard_num,
             .pool = shard_info.pool,
-            .lazy = false
+            .lazy = lazy,
+            .local_delay = local_delay,
         });
     };
 
@@ -273,15 +210,7 @@ void SelectStreamFactory::createForShard(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-
-        remote_shards.emplace_back(Shard{
-            .query = modified_query_ast,
-            .header = modified_header,
-            .shard_num = shard_info.shard_num,
-            .pool = shard_info.pool,
-            .lazy = true,
-            .local_delay = local_delay
-        });
+        emplace_remote_stream(true /* lazy */, local_delay);
     }
     else
         emplace_remote_stream();

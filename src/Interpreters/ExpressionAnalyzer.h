@@ -90,6 +90,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const UInt64 distributed_group_by_no_merge;
 
         ExtractedSettings(const Settings & settings_);
     };

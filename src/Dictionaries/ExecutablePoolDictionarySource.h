@@ -1,20 +1,18 @@
 #pragma once
 
-#include <common/BorrowedObjectPool.h>
+#include <common/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
-#include "IDictionarySource.h"
-#include "DictionaryStructure.h"
-
-namespace Poco { class Logger; }
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <DataStreams/ShellCommandSource.h>
 
 
 namespace DB
 {
 
-using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
 
 /** ExecutablePoolDictionarySource allows loading data from pool of processes.
   * When client requests ids or keys source get process from ProcessPool
@@ -48,17 +46,17 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -70,17 +68,16 @@ public:
 
     std::string toString() const override;
 
-    BlockInputStreamPtr getStreamForBlock(const Block & block);
+    Pipe getStreamForBlock(const Block & block);
 
 private:
-    Poco::Logger * log;
-    time_t update_time = 0;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
 
     Block sample_block;
     ContextPtr context;
     std::shared_ptr<ProcessPool> process_pool;
+    Poco::Logger * log;
 };
 
 }
