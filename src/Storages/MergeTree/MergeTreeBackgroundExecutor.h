@@ -23,7 +23,7 @@ namespace DB
 /**
  *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
  *  It can execute only successors of ExecutableTask interface.
- *  Which is a self-written coroutine. It suspends, when returns true from execute() method.
+ *  Which is a self-written coroutine. It suspends, when returns true from executeStep() method.
  *
  *  There are two queues of a tasks: pending (main queue for all the tasks) and active (currently executing).
  *  Pending queue is needed since the number of tasks will be more than thread to execute.
@@ -52,8 +52,6 @@ class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackground
 {
 public:
 
-    using CountGetter = std::function<size_t()>;
-
     enum class Type
     {
         MERGE_MUTATE,
@@ -63,17 +61,25 @@ public:
 
     MergeTreeBackgroundExecutor(
         Type type_,
-        CountGetter && threads_count_getter_,
-        CountGetter && max_task_count_getter_,
+        size_t threads_count_,
+        size_t max_tasks_count_,
         CurrentMetrics::Metric metric_)
         : type(type_)
-        , threads_count_getter(threads_count_getter_)
-        , max_task_count_getter(max_task_count_getter_)
+        , threads_count(threads_count_)
+        , max_tasks_count(max_tasks_count_)
         , metric(metric_)
     {
         name = toString(type);
 
-        updateConfiguration();
+        pool.setMaxThreads(std::max(1UL, threads_count));
+        pool.setMaxFreeThreads(std::max(1UL, threads_count));
+        pool.setQueueSize(std::max(1UL, threads_count));
+
+        for (size_t number = 0; number < threads_count; ++number)
+            pool.scheduleOrThrowOnError([this] { threadFunction(); });
+
+        pending.set_capacity(max_tasks_count);
+        active.set_capacity(max_tasks_count);
     }
 
     ~MergeTreeBackgroundExecutor()
@@ -101,20 +107,13 @@ public:
 
 private:
 
-    void updateConfiguration();
-
     static String toString(Type type);
 
     Type type;
     String name;
-    CountGetter threads_count_getter;
-    CountGetter max_task_count_getter;
-    CurrentMetrics::Metric metric;
-
     size_t threads_count{0};
     size_t max_tasks_count{0};
-
-    AtomicStopwatch update_timer;
+    CurrentMetrics::Metric metric;
 
     /**
      * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
@@ -140,8 +139,7 @@ private:
 
     void routine(TaskRuntimeDataPtr item);
 
-    /// Number all the threads in ThreadPool. To be able to lower the number of threads in runtime.
-    void threadFunction(size_t number);
+    void threadFunction();
 
     /// Initially it will be empty
     boost::circular_buffer<TaskRuntimeDataPtr> pending{0};

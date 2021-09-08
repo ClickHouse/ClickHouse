@@ -1538,9 +1538,9 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     return *shared->buffer_flush_schedule_pool;
 }
 
-ExecutableTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
+BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
 {
-    ExecutableTaskSchedulingSettings task_settings;
+    BackgroundTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
@@ -1553,9 +1553,9 @@ ExecutableTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingS
     return task_settings;
 }
 
-ExecutableTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
+BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
 {
-    ExecutableTaskSchedulingSettings task_settings;
+    BackgroundTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
@@ -2734,16 +2734,16 @@ void Context::initializeBackgroundExecutors()
     shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        [this] () { auto lock = getLock(); return getSettingsRef().background_pool_size; },
-        [this] () { auto lock = getLock(); return getSettingsRef().background_pool_size; },
+        getSettingsRef().background_pool_size,
+        getSettingsRef().background_pool_size,
         CurrentMetrics::BackgroundPoolTask
     );
 
     shared->moves_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::MOVE,
-        [this] () { auto lock = getLock(); return getSettingsRef().background_move_pool_size; },
-        [this] () { auto lock = getLock(); return getSettingsRef().background_move_pool_size; },
+        getSettingsRef().background_move_pool_size,
+        getSettingsRef().background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask
     );
 
@@ -2751,8 +2751,8 @@ void Context::initializeBackgroundExecutors()
     shared->fetch_executor = MergeTreeBackgroundExecutor::create
     (
         MergeTreeBackgroundExecutor::Type::FETCH,
-        [this] () { auto lock = getLock(); return getSettingsRef().background_fetches_pool_size; },
-        [this] () { auto lock = getLock(); return getSettingsRef().background_fetches_pool_size; },
+        getSettingsRef().background_fetches_pool_size,
+        getSettingsRef().background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask
     );
 }

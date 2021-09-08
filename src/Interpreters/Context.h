@@ -112,7 +112,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
-struct ExecutableTaskSchedulingSettings;
+struct BackgroundTaskSchedulingSettings;
 
 #if USE_NLP
     class SynonymsExtensions;
@@ -693,8 +693,8 @@ public:
     void dropCaches() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
-    ExecutableTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
-    ExecutableTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
