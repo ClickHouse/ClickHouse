@@ -490,6 +490,11 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+}
+
 namespace
 {
 
@@ -535,11 +540,6 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
     factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl);
 }
 
-}
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
 }
 
 CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configuration::instance()
