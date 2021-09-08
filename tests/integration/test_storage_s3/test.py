@@ -379,6 +379,10 @@ def test_put_get_with_globs(started_cluster):
     assert run_query(instance, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
 
+    minio = started_cluster.minio_client
+    for obj in list(minio.list_objects(started_cluster.minio_bucket, prefix='{}/'.format(unique_prefix), recursive=True)):
+        minio.remove_object(started_cluster.minio_bucket, obj.object_name)
+
 
 # Test multipart put.
 @pytest.mark.parametrize("maybe_auth,positive", [
