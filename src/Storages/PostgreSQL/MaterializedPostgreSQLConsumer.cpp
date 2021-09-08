@@ -29,7 +29,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     bool allow_automatic_update_,
     Storages storages_,
     const String & name_for_logger)
-    : log(&Poco::Logger::get("PostgreSQLReplicaConsumer("+ name_for_logger +")"))
+    : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)

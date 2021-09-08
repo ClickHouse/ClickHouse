@@ -185,8 +185,23 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 
     if (!alter_commands.empty())
     {
-        database->checkAlterIsPossible(alter_commands, getContext());
-        alter_commands.apply(database, getContext());
+        /// Only ALTER SETTING is supported.
+        for (const auto & command : alter_commands)
+        {
+            if (command.type != AlterCommand::MODIFY_DATABASE_SETTING)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by databases", alterTypeToString(command.type));
+        }
+
+        for (const auto & command : alter_commands)
+        {
+            if (!command.ignore)
+            {
+                if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
+                    database->applyNewSettings(command.settings_changes, getContext());
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported alter command");
+            }
+        }
     }
 
     return res;

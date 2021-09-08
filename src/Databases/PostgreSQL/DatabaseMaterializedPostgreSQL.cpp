@@ -41,13 +41,12 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
-        ASTPtr storage_def_,
         bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_, storage_def_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
@@ -129,18 +128,9 @@ void DatabaseMaterializedPostgreSQL::loadStoredObjects(
 }
 
 
-void DatabaseMaterializedPostgreSQL::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+void DatabaseMaterializedPostgreSQL::applyNewSettings(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
-    for (const auto & command : commands)
-    {
-        if (command.type != AlterCommand::MODIFY_DATABASE_SETTING)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by database engine {}", alterTypeToString(command.type), getEngineName());
-    }
-}
-
-
-void DatabaseMaterializedPostgreSQL::tryApplySettings(const SettingsChanges & settings_changes, ContextPtr local_context)
-{
+    std::lock_guard lock(handler_mutex);
     for (const auto & change : settings_changes)
     {
         if (!settings->has(change.name))
@@ -148,11 +138,14 @@ void DatabaseMaterializedPostgreSQL::tryApplySettings(const SettingsChanges & se
 
         if ((change.name == "materialized_postgresql_tables_list"))
         {
-            if (!local_context->isInternalQuery())
+            if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
+
+            DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
+            DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
             replication_handler->setSetting(change);
         }
         else
@@ -192,7 +185,8 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 }
 
 
-String DatabaseMaterializedPostgreSQL::getTablesList(const String & except) const
+/// `except` is not empty in case it is detach and it will contain only one table name - name of detached table.
+String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & except) const
 {
     String tables_list;
     for (const auto & table : materialized_tables)
@@ -213,6 +207,8 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 {
     if (!local_context->hasQueryContext())
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
+
+    std::lock_guard lock(handler_mutex);
 
     auto storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
     auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
@@ -272,6 +268,8 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 
 void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
+    /// If there is query context then we need to attach materialized storage.
+    /// If there is no query context then we need to attach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
@@ -285,7 +283,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
         {
             auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
             if (tables_to_replicate.empty())
-                tables_to_replicate = getTablesList();
+                tables_to_replicate = getFormattedTablesList();
 
             /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
             SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
@@ -295,6 +293,8 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
 
             auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
             materialized_tables[table_name] = storage;
+
+            std::lock_guard lock(handler_mutex);
             replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
@@ -313,13 +313,15 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
 
 StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name)
 {
+    /// If there is query context then we need to dettach materialized storage.
+    /// If there is no query context then we need to dettach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto & table_to_delete = materialized_tables[table_name];
         if (!table_to_delete)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
-        auto tables_to_replicate = getTablesList(table_name);
+        auto tables_to_replicate = getFormattedTablesList(table_name);
 
         /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
         SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
@@ -335,6 +337,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name
         if (!nested)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Inner table `{}` does not exist", table_name);
 
+        std::lock_guard lock(handler_mutex);
         replication_handler->removeTableFromReplication(table_name);
 
         try
@@ -348,7 +351,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name
             /// We already removed this table from replication and adding it back will be an overkill..
             /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
             /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
-            /// This can also happen if we crash after removing table from replication andd before dropping nested.
+            /// This can also happen if we crash after removing table from replication and before dropping nested.
             /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
             /// TODO: sounds good.
             materialized_tables.erase(table_name);
@@ -376,6 +379,7 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
+    std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
 
@@ -393,6 +397,7 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
 
 void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
+    std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdownFinal();
 

@@ -128,9 +128,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                         "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
 
     if (engine_name == "Ordinary")
-        return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context, engine_define->clone());
+        return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     else if (engine_name == "Atomic")
-        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context, engine_define->clone());
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")
@@ -183,12 +183,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             if (create.uuid == UUIDHelpers::Nil)
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseOrdinary>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings), engine_define->clone());
+                    context, database_name, metadata_path, uuid, mysql_database_name,
+                    std::move(mysql_pool), std::move(client), std::move(materialize_mode_settings));
             else
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseAtomic>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings), engine_define->clone());
+                    context, database_name, metadata_path, uuid, mysql_database_name,
+                    std::move(mysql_pool), std::move(client), std::move(materialize_mode_settings));
         }
         catch (...)
         {
@@ -208,7 +208,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & arguments = engine->arguments->children;
 
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
-        return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context, engine_define->clone());
+        return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
 
     else if (engine_name == "Replicated")
@@ -234,7 +234,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid,
                                                     zookeeper_path, shard_name, replica_name,
-                                                    std::move(database_replicated_settings), context, engine_define->clone());
+                                                    std::move(database_replicated_settings), context);
     }
 
 #if USE_LIBPQXX
@@ -311,7 +311,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-                context, metadata_path, uuid, engine_define->clone(), create.attach,
+                context, metadata_path, uuid, create.attach,
                 database_name, postgres_database_name, connection_info,
                 std::move(postgresql_replica_settings));
     }

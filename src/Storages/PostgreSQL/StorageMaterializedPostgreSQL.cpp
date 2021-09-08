@@ -75,8 +75,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             getContext(),
             is_attach,
             *replication_settings,
-            /* is_materialized_postgresql_database */false,
-            remote_table_name);
+            /* is_materialized_postgresql_database */false);
 
     if (!is_attach)
     {

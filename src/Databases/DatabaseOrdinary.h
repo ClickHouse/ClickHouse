@@ -14,10 +14,10 @@ namespace DB
 class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context, ASTPtr storage_def_);
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
     DatabaseOrdinary(
         const String & name_, const String & metadata_path_, const String & data_path_,
-        const String & logger, ContextPtr context_, ASTPtr storage_def_);
+        const String & logger, ContextPtr context_);
 
     String getEngineName() const override { return "Ordinary"; }
 

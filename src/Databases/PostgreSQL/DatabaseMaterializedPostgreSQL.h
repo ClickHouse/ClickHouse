@@ -32,7 +32,6 @@ public:
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
-        ASTPtr storage_def_,
         bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
@@ -62,9 +61,7 @@ public:
 
     void stopReplication();
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-
-    void tryApplySettings(const SettingsChanges & settings_changes, ContextPtr context) override;
+    void applyNewSettings(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     void shutdown() override;
 
@@ -78,7 +75,7 @@ private:
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
-    String getTablesList(const String & except = {}) const;
+    String getFormattedTablesList(const String & except = {}) const;
 
     bool is_attach;
     String remote_database_name;
@@ -88,6 +85,7 @@ private:
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> materialized_tables;
     mutable std::mutex tables_mutex;
+    mutable std::mutex handler_mutex;
 };
 
 }

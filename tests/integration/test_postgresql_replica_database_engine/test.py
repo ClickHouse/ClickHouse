@@ -985,6 +985,10 @@ def test_user_managed_slots(started_cluster):
 
 def test_add_new_table_to_replication(started_cluster):
     drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
