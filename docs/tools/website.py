@@ -144,6 +144,7 @@ def build_website(args):
             'docs',
             'public',
             'node_modules',
+            'src',
             'templates',
             'locale',
             '.gitkeep'
@@ -181,7 +182,8 @@ def get_css_in(args):
         f"'{args.website_dir}/css/base.css'",
         f"'{args.website_dir}/css/blog.css'",
         f"'{args.website_dir}/css/docs.css'",
-        f"'{args.website_dir}/css/highlight.css'"
+        f"'{args.website_dir}/css/highlight.css'",
+        f"'{args.website_dir}/css/main.css'"
     ]
 
 
