@@ -100,11 +100,6 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        std::lock_guard guard(mutex);
-        erase_from_active();
-        has_tasks.notify_one();
-        /// Do not want any exceptions
-        try { item->task->onCompleted(); } catch (...) {}
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
