@@ -507,6 +507,9 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 namespace DB
 {
 
+namespace
+{
+
 /// Register codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
 {
