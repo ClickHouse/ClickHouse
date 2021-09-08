@@ -12,7 +12,7 @@ node = cluster.add_instance('node', main_configs=[
     'configs/no_system_log.xml',
     'configs/asynchronous_metrics_update_period_s.xml',
 ], user_configs=[
-    'conifgs/users.d/overrides.xml',
+    'configs/users.d/overrides.xml',
 ])
 
 @pytest.fixture(scope='module', autouse=True)
