@@ -94,6 +94,8 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+
     bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }

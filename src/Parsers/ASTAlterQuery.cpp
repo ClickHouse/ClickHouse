@@ -120,6 +120,17 @@ void ASTAlterCommand::formatImpl(
             }
         }
     }
+    else if (type == ASTAlterCommand::MATERIALIZE_COLUMN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << "MATERIALIZE COLUMN " << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");

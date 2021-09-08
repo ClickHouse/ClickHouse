@@ -1,3 +1,6 @@
+{\n        "id" : 1,\n        "date" : "01.01.2020",\n        "string" : "123{{{\\"\\\\",\n        "array" : [1, 2, 3],\n        "map": {\n            "a" : 1,\n            "b" : 2,\n            "c" : 3\n        }\n    }
+{\n        "id" : 2,\n        "date" : "01.02.2020",\n        "string" : "{another\\"\n        string}}",\n        "array" : [3, 2, 1],\n        "map" : {\n            "z" : 1,\n            "y" : 2,\n            "x" : 3\n        }\n    }
+{\n        "id" : 3,\n        "date" : "01.03.2020",\n        "string" : "one more string",\n        "array" : [3,1,2],\n        "map" : {\n            "{" : 1,\n            "}}" : 2\n        }\n    }
 {\n    "id" : 1,\n    "date" : "01.01.2020",\n    "string" : "123{{{\\"\\\\",\n    "array" : [1, 2, 3],\n    "map": {\n        "a" : 1,\n        "b" : 2,\n        "c" : 3\n    }\n}
-{\n    "id" : 2,\n    "date" : "01.02.2020",\n    "string" : "{another\\"\n    string}}",\n    "array" : [3, 2, 1],\n    "map" : {\n        "z" : 1,\n        "y" : 2, \n        "x" : 3\n    }\n}
-{\n    "id" : 3, \n    "date" : "01.03.2020", \n    "string" : "one more string", \n    "array" : [3,1,2], \n    "map" : {\n        "{" : 1, \n        "}}" : 2\n    }\n}
+{\n    "id" : 2,\n    "date" : "01.02.2020",\n    "string" : "{another\\"\n    string}}",\n    "array" : [3, 2, 1],\n    "map" : {\n        "z" : 1,\n        "y" : 2,\n        "x" : 3\n    }\n}
+{\n    "id" : 3,\n    "date" : "01.03.2020",\n    "string" : "one more string",\n    "array" : [3,1,2],\n    "map" : {\n        "{" : 1,\n        "}}" : 2\n    }\n}

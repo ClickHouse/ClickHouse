@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-11}
+export LLVM_VERSION=${LLVM_VERSION:-12}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -315,6 +315,7 @@ function run_tests
         01799_long_uniq_theta_sketch
         01890_stem                               # depends on libstemmer_c
         02003_compress_bz2                       # depends on bzip2
+        01059_storage_file_compression           # depends on brotli and bzip2
         collate
         collation
         _orc_
@@ -377,6 +378,7 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
+        02012_settings_clause_for_s3
 
         # needs psql
         01889_postgresql_protocol_null_fields
@@ -393,6 +395,15 @@ function run_tests
         01853_s2_cells_intersect
         01854_s2_cap_contains
         01854_s2_cap_union
+
+        # needs s3
+        01944_insert_partition_by
+
+        # depends on Go
+        02013_zlib_read_after_eof
+
+        # Accesses CH via mysql table function (which is unavailable)
+        01747_system_session_log_long
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
