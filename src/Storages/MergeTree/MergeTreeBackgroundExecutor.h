@@ -25,15 +25,25 @@ namespace DB
  *  It can execute only successors of ExecutableTask interface.
  *  Which is a self-written coroutine. It suspends, when returns true from execute() method.
  *
- *  Executor consists of ThreadPool to execute pieces of a task (basically calls 'execute' on a task)
- *  and a scheduler thread, which manages the tasks. Due to bad experience of working with high memory under
- *  high memory pressure scheduler thread mustn't do any allocations,
- *  because it will be a fatal error if this thread will die from a random exception.
- *
  *  There are two queues of a tasks: pending (main queue for all the tasks) and active (currently executing).
+ *  Pending queue is needed since the number of tasks will be more than thread to execute.
+ *  Pending tasks are tasks that successfully scheduled to an executor or tasks that have some extra steps to execute.
  *  There is an invariant, that task may occur only in one of these queue. It can occur in both queues only in critical sections.
  *
- *  Due to all caveats I described above we use boost::circular_buffer as a container for queues.
+ *  Pending:                                              Active:
+ *
+ *  |s| |s| |s| |s| |s| |s| |s| |s| |s| |s|               |s|
+ *  |s| |s| |s| |s| |s| |s| |s| |s| |s|                   |s|
+ *  |s| |s|     |s|     |s| |s|     |s|                   |s|
+ *      |s|             |s| |s|                           |s|
+ *      |s|                 |s|
+ *                          |s|
+ *
+ *  Each task is simply a sequence of steps. Heavier tasks have longer sequences.
+ *  When a step of a task is executed, we move tasks to pending queue. And take another from the queue's head.
+ *  With these architecture all small merges / mutations will be executed faster, than bigger ones.
+ *
+ *  We use boost::circular_buffer as a container for queues not to do any allocations.
  *
  *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
@@ -43,7 +53,6 @@ class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackground
 public:
 
     using CountGetter = std::function<size_t()>;
-    using Callback = std::function<void()>;
 
     enum class Type
     {
@@ -107,13 +116,16 @@ private:
 
     AtomicStopwatch update_timer;
 
-    struct Item
+    /**
+     * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
+     * Also has some flags and primitives to wait for current task to be executed.
+     */
+    struct TaskRuntimeData
     {
-        explicit Item(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
+        TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
             : task(std::move(task_))
             , increment(std::move(metric_))
-        {
-        }
+        {}
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
@@ -124,14 +136,16 @@ private:
         Poco::Event is_done{/*autoreset=*/false};
     };
 
-    using ItemPtr = std::shared_ptr<Item>;
+    using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
 
-    void routine(ItemPtr item);
+    void routine(TaskRuntimeDataPtr item);
+
+    /// Number all the threads in ThreadPool. To be able to lower the number of threads in runtime.
     void threadFunction(size_t number);
 
     /// Initially it will be empty
-    boost::circular_buffer<ItemPtr> pending{0};
-    boost::circular_buffer<ItemPtr> active{0};
+    boost::circular_buffer<TaskRuntimeDataPtr> pending{0};
+    boost::circular_buffer<TaskRuntimeDataPtr> active{0};
 
     std::mutex mutex;
     std::condition_variable has_tasks;

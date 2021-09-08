@@ -827,9 +827,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) = 0;
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & executor);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes
@@ -925,10 +925,18 @@ protected:
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.
-    BackgroundJobsAssignee background_executor;
-    BackgroundJobsAssignee background_moves_executor;
+    ///
+    /// Why there are two executors, not one? Or an executor for each kind of operation?
+    /// It is historically formed.
+    /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
+    /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
+    /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
+    BackgroundJobsAssignee background_operations_assignee;
+    BackgroundJobsAssignee background_moves_assignee;
 
+    /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
+    /// These callbacks will be passed to the constructor of each task.
     std::function<void(bool)> common_assignee_trigger;
     std::function<void(bool)> moves_assignee_trigger;
 

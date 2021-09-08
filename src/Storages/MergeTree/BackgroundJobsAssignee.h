@@ -29,7 +29,7 @@ struct ExecutableTaskSchedulingSettings
 
 class MergeTreeData;
 
-class BackgroundJobsAssignee : protected WithContext
+class BackgroundJobsAssignee : public WithContext
 {
 private:
     MergeTreeData & data;
@@ -49,6 +49,7 @@ private:
     std::mutex holder_mutex;
 
 public:
+    ///
     enum class Type
     {
         DataProcessing,
@@ -77,7 +78,7 @@ private:
     static String toString(Type type);
 
     /// Function that executes in background scheduling pool
-    void main();
+    void threadFunc();
 };
 
 

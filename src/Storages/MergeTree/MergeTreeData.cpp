@@ -200,8 +200,8 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
-    , background_executor(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
-    , background_moves_executor(*this, BackgroundJobsAssignee::Type::Moving, getContext())
+    , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
+    , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
     const auto settings = getSettings();
     allow_nullable_key = attach || settings->allow_nullable_key;
@@ -311,17 +311,17 @@ MergeTreeData::MergeTreeData(
     common_assignee_trigger = [this] (bool delay) noexcept
     {
         if (delay)
-            background_executor.postpone();
+            background_operations_assignee.postpone();
         else
-            background_executor.trigger();
+            background_operations_assignee.trigger();
     };
 
     moves_assignee_trigger = [this] (bool delay) noexcept
     {
         if (delay)
-            background_moves_executor.postpone();
+            background_moves_assignee.postpone();
         else
-            background_moves_executor.trigger();
+            background_moves_assignee.trigger();
     };
 }
 
@@ -5029,7 +5029,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & executor)
+bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
     if (parts_mover.moves_blocker.isCancelled())
         return false;
@@ -5038,7 +5038,7 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & executor)
     if (moving_tagger->parts_to_move.empty())
         return false;
 
-    executor.scheduleMoveTask(LambdaAdapter::create(
+    assignee.scheduleMoveTask(ExecutableLambdaAdapter::create(
         [this, moving_tagger] () mutable
         {
             return moveParts(moving_tagger);

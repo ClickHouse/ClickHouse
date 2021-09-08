@@ -24,7 +24,7 @@ public:
     {
     }
 
-    bool execute() override
+    bool executeStep() override
     {
         auto sleep_time = distribution(generator);
         std::this_thread::sleep_for(std::chrono::milliseconds(5 * sleep_time));
