@@ -67,9 +67,8 @@ DatabaseReplicated::DatabaseReplicated(
     const String & shard_name_,
     const String & replica_name_,
     DatabaseReplicatedSettings db_settings_,
-    ContextPtr context_,
-    ASTPtr storage_def_)
-    : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_, storage_def_)
+    ContextPtr context_)
+    : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
     , replica_name(replica_name_)

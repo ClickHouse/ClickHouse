@@ -19,8 +19,8 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_, ASTPtr storage_def_);
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_, ASTPtr storage_def_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_);
 
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }

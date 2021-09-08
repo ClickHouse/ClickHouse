@@ -282,19 +282,11 @@ public:
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & /* commands */, ContextPtr /* context */) const
+    virtual void applyNewSettings(const SettingsChanges &, ContextPtr)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter is not supported by database engine {}", getEngineName());
-    }
-
-    virtual void modifySettingsMetadata(const SettingsChanges &, ContextPtr)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
-    }
-
-    virtual void tryApplySettings(const SettingsChanges &, ContextPtr)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Database engine {} either does not support settings, or does not support altering settings",
+                        getEngineName());
     }
 
     virtual ~IDatabase() = default;
