@@ -74,6 +74,7 @@ class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class SessionLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -600,6 +601,7 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -735,6 +737,7 @@ public:
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
+    std::shared_ptr<SessionLog> getSessionLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
