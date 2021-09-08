@@ -151,7 +151,7 @@ def test_postgresql_database_engine_table_cache(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1)")
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', '', 1)")
 
     create_postgres_table(cursor, 'test_table')
     assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)'
@@ -181,6 +181,31 @@ def test_postgresql_database_engine_table_cache(started_cluster):
 
     node1.query("DROP DATABASE test_database")
     assert 'test_database' not in node1.query('SHOW DATABASES')
+
+
+def test_postgresql_database_with_schema(started_cluster):
+    conn = get_postgres_conn(started_cluster, True)
+    cursor = conn.cursor()
+
+    cursor.execute('DROP SCHEMA IF EXISTS test_schema CASCADE')
+    cursor.execute('DROP SCHEMA IF EXISTS "test.nice.schema" CASCADE')
+
+    cursor.execute('CREATE SCHEMA test_schema')
+    cursor.execute('CREATE TABLE test_schema.table1 (a integer)')
+    cursor.execute('CREATE TABLE test_schema.table2 (a integer)')
+    cursor.execute('CREATE TABLE table3 (a integer)')
+
+    node1.query(
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'test_schema')")
+
+    assert(node1.query('SHOW TABLES FROM test_database') == 'table1\ntable2\n')
+
+    node1.query("INSERT INTO test_database.table1 SELECT number from numbers(10000)")
+    assert node1.query("SELECT count() FROM test_database.table1").rstrip() == '10000'
+    node1.query("DETACH TABLE test_database.table1")
+    node1.query("ATTACH TABLE test_database.table1")
+    assert node1.query("SELECT count() FROM test_database.table1").rstrip() == '10000'
+    node1.query("DROP DATABASE test_database")
 
 
 if __name__ == '__main__':

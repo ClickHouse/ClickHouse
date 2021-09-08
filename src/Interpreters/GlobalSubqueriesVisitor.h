@@ -63,7 +63,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -76,7 +76,14 @@ public:
                 }
             }
             else if (ast->as<ASTTableIdentifier>())
+            {
+                subquery_or_table_name = ast;
                 is_table = true;
+            }
+            else if (ast->as<ASTSubquery>())
+            {
+                subquery_or_table_name = ast;
+            }
 
             if (!subquery_or_table_name)
                 throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);

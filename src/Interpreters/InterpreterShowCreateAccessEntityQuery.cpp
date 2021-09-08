@@ -82,6 +82,13 @@ namespace
             query->grantees->use_keyword_any = true;
         }
 
+        if (!user.default_database.empty())
+        {
+            auto ast = std::make_shared<ASTDatabaseOrNone>();
+            ast->database_name = user.default_database;
+            query->default_database = ast;
+        }
+
         return query;
     }
 

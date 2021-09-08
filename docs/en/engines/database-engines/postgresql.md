@@ -15,7 +15,7 @@ Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
 ```
 
 **Engine Parameters**
@@ -24,6 +24,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 -   `database` — Remote database name.
 -   `user` — PostgreSQL user.
 -   `password` — User password.
+-   `schema` — PostgreSQL schema.
 -   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data Types Support {#data_types-support}

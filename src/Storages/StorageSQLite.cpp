@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 #include <common/range.h>
-#include <DataStreams/SQLiteBlockInputStream.h>
+#include <DataStreams/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -78,8 +78,7 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
-                std::make_shared<SQLiteBlockInputStream>(sqlite_db, query, sample_block, max_block_size)));
+    return Pipe(std::make_shared<SQLiteSource>(sqlite_db, query, sample_block, max_block_size));
 }
 
 

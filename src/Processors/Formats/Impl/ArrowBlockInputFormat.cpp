@@ -22,8 +22,8 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
-    : IInputFormat(header_, in_), stream{stream_}
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
 {
 }
 
@@ -102,7 +102,7 @@ void ArrowBlockInputFormat::prepareReader()
         schema = file_reader->schema();
     }
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), std::move(schema), "Arrow");
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Arrow", format_settings.arrow.import_nested);
 
     if (stream)
         record_batch_total = -1;
@@ -119,9 +119,9 @@ void registerInputFormatProcessorArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & /* format_settings */)
+           const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
     factory.markFormatAsColumnOriented("Arrow");
     factory.registerInputFormatProcessor(
@@ -129,9 +129,9 @@ void registerInputFormatProcessorArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & /* format_settings */)
+           const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
         });
 }
 
