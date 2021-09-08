@@ -8,6 +8,7 @@ import math
 
 try:
     from boto.s3.connection import S3Connection
+    from boto.s3.key import Key
 except ImportError:
     raise ImportError("You have to install boto package 'pip install boto'")
 
@@ -63,28 +64,24 @@ class S3API(object):
         key.set_contents_from_filename(local_file_path, cb=call_back)
 
     def upload_data_for_static_files_disk(self, bucket_name, directory_path, s3_path):
-        logging.info("Will upload files to bucket '%s' from directory '%s' to s3 path '%s'", bucket_name, directory_path, s3_path)
         bucket = self.connection.get_bucket(bucket_name)
-        for file_name in os.listdir(directory_path):
-            if file_name.startswith('.index'):
-                local_file_path = os.path.join(directory_path, file_name)
-                s3_file_path = os.path.join(s3_path, file_name)
+        if s3_path.endswith("/"):
+            s3_path += "store/"
+        else:
+            s3_path += "/store/"
+        print(s3_path)
+        for root, dirs, files in os.walk(directory_path):
+            path = root.split(os.sep)
+            for file in files:
+                local_file_path = os.path.join(root, file)
+                s3_file = local_file_path[len(directory_path) + 1:]
+                s3_file_path = os.path.join(s3_path, s3_file)
                 self.set_file_contents(bucket, local_file_path, s3_file_path)
-
-                file_path = os.path.join(directory_path, file_name)
-                with open(file_path) as file:
-                    lines = file.readlines()
-                    files = [line.rstrip() for line in lines]
-                    for file_line in files:
-                        file_path = file_line.split('\t')[0]
-                        s3_file_path = os.path.join(s3_path, file_path)
-                        local_file_path = os.path.join(directory_path, file_path)
-                        self.set_file_contents(bucket, local_file_path, s3_file_path)
 
         logging.info("Uploading finished")
         return "https://{bucket}.{mds_url}/{path}".format(bucket=bucket_name, mds_url=self.mds_url, path=s3_path)
 
-    def list_bucket_keys(self, bucket_name, s3_path):
+    def list_bucket_keys(self, bucket_name):
         bucket = self.connection.get_bucket(bucket_name)
         for obj in bucket.get_all_keys():
             print(obj.key)
@@ -156,20 +153,17 @@ if __name__ == "__main__":
         args.s3_api_url, args.s3_common_url)
 
     file_path = ''
-    directory_path = ''
+    directory_path = args.directory_path
     s3_path = args.s3_path
 
-    if args.s3_path and args.list_directory:
-        s3_conn.list_bucket_keys(args.bucket_name, s3_path)
+    if args.list_directory:
+        s3_conn.list_bucket_keys(args.bucket_name)
+    elif args.remove_directory:
+        print('Removing s3 path: ' + args.remove_directory)
+        s3_conn.remove_folder_from_bucket(args.bucket_name, args.remove_directory)
     elif args.directory_path is not None:
-        directory_path = args.directory_path
-
-        if args.remove_directory:
-            print('Removing s3 path: ' + args.remove_directory)
-            s3_conn.remove_folder_from_bucket(args.bucket_name, args.remove_directory)
-        else:
-            url = s3_conn.upload_data_for_static_files_disk(args.bucket_name, directory_path, s3_path)
-            logging.info("Data uploaded: %s", url)
+        url = s3_conn.upload_data_for_static_files_disk(args.bucket_name, directory_path, s3_path)
+        logging.info("Data uploaded: %s", url)
     else:
 
         if args.table_name is not None:
