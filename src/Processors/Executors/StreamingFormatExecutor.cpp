@@ -1,4 +1,5 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <iostream>
 
 namespace DB
@@ -10,10 +11,14 @@ namespace ErrorCodes
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
-    const Block & header_, InputFormatPtr format_, ErrorCallback on_error_)
+    const Block & header_,
+    InputFormatPtr format_,
+    ErrorCallback on_error_,
+    SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
     , on_error(std::move(on_error_))
+    , adding_defaults_transform(std::move(adding_defaults_transform_))
     , port(format->getPort().getHeader(), format.get())
 {
     connect(format->getPort(), port);
@@ -51,6 +56,8 @@ size_t StreamingFormatExecutor::execute()
                 case IProcessor::Status::PortFull:
                 {
                     auto chunk = port.pull();
+                    if (adding_defaults_transform)
+                        adding_defaults_transform->transform(chunk);
 
                     auto chunk_rows = chunk.getNumRows();
                     new_rows += chunk_rows;
