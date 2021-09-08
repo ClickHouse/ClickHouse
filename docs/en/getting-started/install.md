@@ -40,7 +40,7 @@ You can also download and install packages manually from [here](https://repo.cli
 
 !!! attention "Attention"
     If you need to install specific version of ClickHouse you have to install all packages with the same version:
-    `apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 
 ### From RPM Packages {#from-rpm-packages}
 
