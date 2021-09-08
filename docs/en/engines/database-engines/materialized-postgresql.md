@@ -23,6 +23,10 @@ SELECT * FROM test_database.postgres_table;
 
 3. `materialized_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
 
+-   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
+
+-   [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot)
+
 ``` sql
 CREATE DATABASE test_database
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
