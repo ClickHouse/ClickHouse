@@ -105,6 +105,6 @@ The ALTER query for elements in a nested data structure has limitations.
 
 ## Inserting {#inserting}
 
-It is possible to insert `Array(Struct)` columns into nested columns with the settings [input_format_parquet_import_nested](../../../operations/settings/settings.md#input_format_parquet_import_nested), [input_format_arrow_import_nested](../../../operations/settings/settings.md#input_format_arrow_import_nested) and [input_format_orc_import_nested](../../../operations/settings/settings.md#input_format_orc_import_nested) in [Parquet](../../../interfaces/formats.md#data-format-parquet), [Arrow](../../../interfaces/formats.md#data_types-matching-arrow) and [ORC](../../../interfaces/formats.md#data-format-orc) input formats correspondingly.
+To insert `Array(Struct)` values into `Nested` columns, you must switch on the [input_format_parquet_import_nested](../../../operations/settings/settings.md#input_format_parquet_import_nested), [input_format_arrow_import_nested](../../../operations/settings/settings.md#input_format_arrow_import_nested) or [input_format_orc_import_nested](../../../operations/settings/settings.md#input_format_orc_import_nested) settings for [Parquet](../../../interfaces/formats.md#data-format-parquet), [Arrow](../../../interfaces/formats.md#data_types-matching-arrow) and [ORC](../../../interfaces/formats.md#data-format-orc) input formats respectively.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->
