@@ -31,14 +31,11 @@ postgres_table_template_3 = """
     key1 Integer NOT NULL, value1 Integer, key2 Integer NOT NULL, value2 Integer NOT NULL)
     """
 
-def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database', replication=False):
+def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database'):
     if database == True:
         conn_string = "host={} port={} dbname='{}' user='postgres' password='mysecretpassword'".format(ip, port, database_name)
     else:
         conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(ip, port)
-
-    if replication:
-        conn_string += " replication='database'"
 
     conn = psycopg2.connect(conn_string)
     if auto_commit:
@@ -46,18 +43,6 @@ def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name=
         conn.autocommit = True
     return conn
 
-def create_replication_slot(conn, slot_name='user_slot'):
-    cursor = conn.cursor()
-    cursor.execute('CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT'.format(slot_name))
-    result = cursor.fetchall()
-    print(result[0][0]) # slot name
-    print(result[0][1]) # start lsn
-    print(result[0][2]) # snapshot
-    return result[0][2]
-
-def drop_replication_slot(conn, slot_name='user_slot'):
-    cursor = conn.cursor()
-    cursor.execute("select pg_drop_replication_slot('{}')".format(slot_name))
 
 def create_postgres_db(cursor, name='postgres_database'):
     cursor.execute("CREATE DATABASE {}".format(name))
@@ -131,7 +116,6 @@ def assert_nested_table_is_created(table_name, materialized_database='test_datab
     assert(table_name in database_tables)
 
 
-@pytest.mark.timeout(320)
 def check_tables_are_synchronized(table_name, order_by='key', postgres_database='postgres_database', materialized_database='test_database'):
     assert_nested_table_is_created(table_name, materialized_database)
 
@@ -255,7 +239,7 @@ def test_different_data_types(started_cluster):
            (
                 key Integer NOT NULL PRIMARY KEY,
                 a Date[] NOT NULL,                          -- Date
-                b Timestamp[] NOT NULL,                     -- DateTime64(6)
+                b Timestamp[] NOT NULL,                     -- DateTime
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
                 e decimal(5, 5)[][][] NOT NULL,             -- Decimal32
@@ -272,11 +256,11 @@ def test_different_data_types(started_cluster):
     for i in range(10):
         instance.query('''
             INSERT INTO postgres_database.test_data_types VALUES
-            ({}, -32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 0.2, 0.2)'''.format(i))
+            ({}, -32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12', '2000-05-12', 0.2, 0.2)'''.format(i))
 
     check_tables_are_synchronized('test_data_types', 'id');
     result = instance.query('SELECT * FROM test_database.test_data_types ORDER BY id LIMIT 1;')
-    assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t0.2\t0.2\n')
+    assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\t2000-05-12\t0.20000\t0.20000\n')
 
     for i in range(10):
         col = random.choice(['a', 'b', 'c'])
@@ -289,7 +273,7 @@ def test_different_data_types(started_cluster):
         "VALUES ("
         "0, "
         "['2000-05-12', '2000-05-12'], "
-        "['2000-05-12 12:12:12.012345', '2000-05-12 12:12:12.012345'], "
+        "['2000-05-12 12:12:12', '2000-05-12 12:12:12'], "
         "[[1.12345], [1.12345], [1.12345]], "
         "[[1.1234567891], [1.1234567891], [1.1234567891]], "
         "[[[0.11111, 0.11111]], [[0.22222, 0.22222]], [[0.33333, 0.33333]]], "
@@ -303,7 +287,7 @@ def test_different_data_types(started_cluster):
     expected = (
         "0\t" +
         "['2000-05-12','2000-05-12']\t" +
-        "['2000-05-12 12:12:12.012345','2000-05-12 12:12:12.012345']\t" +
+        "['2000-05-12 12:12:12','2000-05-12 12:12:12']\t" +
         "[[1.12345],[1.12345],[1.12345]]\t" +
         "[[1.1234567891],[1.1234567891],[1.1234567891]]\t" +
         "[[[0.11111,0.11111]],[[0.22222,0.22222]],[[0.33333,0.33333]]]\t"
@@ -641,7 +625,7 @@ def test_virtual_columns(started_cluster):
     instance.query("INSERT INTO postgres_database.postgresql_replica_0 SELECT number, number from numbers(10)")
     check_tables_are_synchronized('postgresql_replica_0');
 
-    # just check that it works, no check with `expected` because _version is taken as LSN, which will be different each time.
+    # just check that it works, no check with `expected` becuase _version is taken as LSN, which will be different each time.
     result = instance.query('SELECT key, value, _sign, _version FROM test_database.postgresql_replica_0;')
     print(result)
 
@@ -954,34 +938,6 @@ def test_quoting(started_cluster):
     check_tables_are_synchronized(table_name);
     drop_postgres_table(cursor, table_name)
     drop_materialized_db()
-
-
-def test_user_managed_slots(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
-    cursor = conn.cursor()
-    table_name = 'test_table'
-    create_postgres_table(cursor, table_name);
-    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(10000)".format(table_name))
-
-    slot_name = 'user_slot'
-    replication_connection = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
-                                               database=True, replication=True, auto_commit=True)
-    snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
-    create_materialized_db(ip=started_cluster.postgres_ip,
-                           port=started_cluster.postgres_port,
-                           settings=["materialized_postgresql_replication_slot = '{}'".format(slot_name),
-                                     "materialized_postgresql_snapshot = '{}'".format(snapshot)])
-    check_tables_are_synchronized(table_name);
-    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(10000, 10000)".format(table_name))
-    check_tables_are_synchronized(table_name);
-    instance.restart_clickhouse()
-    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(20000, 10000)".format(table_name))
-    check_tables_are_synchronized(table_name);
-    drop_postgres_table(cursor, table_name)
-    drop_materialized_db()
-    drop_replication_slot(replication_connection, slot_name)
 
 
 if __name__ == '__main__':

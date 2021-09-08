@@ -16,10 +16,9 @@ void executeQuery(
     ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
-    ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
+    ContextMutablePtr context,                 /// DB, tables, data types, storage engines, functions, aggregate functions...
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
-    const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    std::function<void()> before_finalize_callback = {} /// Will be set in output format to be called before finalize.
+    const std::optional<FormatSettings> & output_format_settings = std::nullopt /// Format settings for output format, will be calculated from the context if not set.
 );
 
 
@@ -54,9 +53,5 @@ BlockIO executeQuery(
     bool may_have_embedded_data,
     bool allow_processors /// If can use processors pipeline
 );
-
-/// Executes BlockIO returned from executeQuery(...)
-/// if built pipeline does not require any input and does not produce any output.
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
 
 }

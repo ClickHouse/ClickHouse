@@ -11,7 +11,7 @@ def _fill_nodes(nodes, shard, connections_count):
         node.query(
             '''
                 CREATE DATABASE test;
-
+    
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}')
                 PARTITION BY date
@@ -114,5 +114,5 @@ def test_multiple_endpoint_connections_count(start_big_cluster):
     assert_eq_with_retry(node4, "select count() from test_table", "100")
     assert_eq_with_retry(node5, "select count() from test_table", "100")
 
-    # Two per each host or sometimes less, if fetches are not performed in parallel. But not more.
-    assert node5.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") <= '4\n'
+    # two per each host
+    assert node5.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '4\n'

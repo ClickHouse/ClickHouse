@@ -227,9 +227,6 @@ public:
 
     void cloneChildren();
 
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
-
 public:
     /// For syntax highlighting.
     static const char * hilite_keyword;

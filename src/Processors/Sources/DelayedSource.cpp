@@ -1,6 +1,6 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sinks/NullSink.h>
+#include <Processors/NullSink.h>
 #include <Processors/ResizeProcessor.h>
 
 namespace DB

@@ -279,7 +279,6 @@ function run_tests
         00926_multimatch
         00929_multi_match_edit_distance
         01681_hyperscan_debug_assertion
-        02004_max_hyperscan_regex_length
 
         01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
@@ -300,10 +299,8 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
-        01683_codec_encrypted                   # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
         01811_filter_by_null                    # Depends on OpenSSL
-        02012_sha512_fixedstring                # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -313,9 +310,6 @@ function run_tests
         01411_bayesian_ab_testing
         01798_uniq_theta_sketch
         01799_long_uniq_theta_sketch
-        01890_stem                               # depends on libstemmer_c
-        02003_compress_bz2                       # depends on bzip2
-        01059_storage_file_compression           # depends on brotli and bzip2
         collate
         collation
         _orc_
@@ -378,7 +372,6 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
-        02012_settings_clause_for_s3
 
         # needs psql
         01889_postgresql_protocol_null_fields
