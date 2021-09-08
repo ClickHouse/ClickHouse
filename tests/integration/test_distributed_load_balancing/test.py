@@ -14,7 +14,7 @@ n2 = cluster.add_instance('n2', main_configs=['configs/remote_servers.xml'])
 n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers.xml'])
 
 nodes = len(cluster.instances)
-queries = nodes * 5
+queries = nodes * 10
 
 
 def bootstrap():
