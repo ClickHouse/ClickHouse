@@ -51,7 +51,6 @@ Chain buildPushingToViewsDrain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    std::vector<TableLockHolder> & locks,
     ExceptionKeepingTransformRuntimeDataPtr runtime_data);
 
 

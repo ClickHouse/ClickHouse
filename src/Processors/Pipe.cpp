@@ -9,6 +9,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Columns/ColumnConst.h>
 
 namespace DB
@@ -98,18 +99,9 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
-Pipe::Holder & Pipe::Holder::operator=(Holder && rhs)
+void Pipe::addQueryPlan(std::unique_ptr<QueryPlan> plan)
 {
-    table_locks.insert(table_locks.end(), rhs.table_locks.begin(), rhs.table_locks.end());
-    storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());
-    interpreter_context.insert(interpreter_context.end(),
-                               rhs.interpreter_context.begin(), rhs.interpreter_context.end());
-    for (auto & plan : rhs.query_plans)
-        query_plans.emplace_back(std::move(plan));
-
-    query_id_holder = std::move(rhs.query_id_holder);
-
-    return *this;
+    holder.query_plans.emplace_back(std::move(plan));
 }
 
 Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
@@ -689,6 +681,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
+        holder = chains[i].detachResources();
         auto added_processors = Chain::getProcessors(std::move(chains[i]));
         for (auto & transform : added_processors)
         {

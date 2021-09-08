@@ -1,11 +1,11 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <DataStreams/SquashingTransform.h>
 
 namespace DB
 {
 
-class SquashingChunksTransform : public IAccumulatingTransform
+class SquashingChunksTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingChunksTransform(
@@ -13,12 +13,16 @@ public:
 
     String getName() const override { return "SquashingTransform"; }
 
+    void work() override;
+
 protected:
-    void consume(Chunk chunk) override;
-    Chunk generate() override;
+    void transform(Chunk & chunk) override;
+    void onFinish() override;
+
 
 private:
     SquashingTransform squashing;
+    Chunk finish_chunk;
 };
 
 }
