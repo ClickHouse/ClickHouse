@@ -24,9 +24,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NETWORK_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -62,7 +62,7 @@ void DiskWebServer::initialize(const String & uri_path) const
 
             file_data.type = is_directory ? FileType::Directory : FileType::File;
             String file_path = fs::path(uri_path) / file_name;
-            if(file_data.type == FileType::Directory)
+            if (file_data.type == FileType::Directory)
                 directories_to_load.push_back(file_path);
             file_path = file_path.substr(url.size());
 
@@ -152,9 +152,7 @@ DiskWebServer::DiskWebServer(
 
 bool DiskWebServer::exists(const String & path) const
 {
-    LOG_TRACE(log, "Checkig existance of path: {}", path);
-    // if (files.find(path) == files.end())
-    //     initialize(fs::path(url) / path);
+    /// TODO: Actually on server startup we always return false for format_version.txt.
     return files.find(path) != files.end();
 }
 
@@ -180,20 +178,33 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
 DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 {
+    std::vector<fs::path> dir_file_paths;
     if (files.find(path) == files.end())
-        initialize(fs::path(url) / path);
+    {
+        try
+        {
+            initialize(fs::path(url) / path);
+        }
+        catch (...)
+        {
+            const auto message = getCurrentExceptionMessage(false);
+            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
+            if (can_throw)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
+
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
+            return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
+        }
+    }
 
     if (files.find(path) == files.end())
         throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-    std::vector<fs::path> dir_file_paths;
     for (const auto & file : files)
         if (parentPath(file.first) == path)
             dir_file_paths.emplace_back(file.first);
 
     LOG_TRACE(log, "Iterate directory {} with {} files", path, dir_file_paths.size());
-    if (dir_file_paths.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "EMpty dir: {}", path);
     return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
 }
 
