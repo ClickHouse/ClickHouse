@@ -98,6 +98,7 @@ static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTr
     }
     catch (Exception & exception)
     {
+        // std::cerr << "===== got exception " << getExceptionMessage(exception, false);
         if (runtime_data && !runtime_data->additional_exception_message.empty())
             exception.addMessage(runtime_data->additional_exception_message);
 
@@ -105,6 +106,7 @@ static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTr
     }
     catch (...)
     {
+        // std::cerr << "===== got exception " << getExceptionMessage(std::current_exception(), false);
         res = std::current_exception();
     }
 
@@ -118,9 +120,10 @@ static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTr
 
     return res;
 }
-
+\
 void ExceptionKeepingTransform::work()
 {
+    // std::cerr << "============ Executing " << getName() << std::endl;
     if (!was_on_start_called)
     {
         was_on_start_called = true;
@@ -138,6 +141,8 @@ void ExceptionKeepingTransform::work()
 
         if (auto exception = runStep([this] { transform(data.chunk); }, runtime_data.get()))
         {
+            // std::cerr << "===== got exception in " << getName() << std::endl;
+            // std::cerr << getExceptionMessage(exception, true) << std::endl;
             has_exception = true;
             data.chunk.clear();
             data.exception = std::move(exception);

@@ -53,6 +53,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>

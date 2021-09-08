@@ -42,6 +42,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 

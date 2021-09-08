@@ -26,6 +26,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>

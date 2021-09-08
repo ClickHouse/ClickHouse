@@ -51,7 +51,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
-    , runtime_data(runtime_data_)
+    , runtime_data(std::move(runtime_data_))
 {
     checkStackSize();
 }
@@ -281,10 +281,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             else
             {
-                std::vector<TableLockHolder> locks;
-                out = buildPushingToViewsDrain(table, metadata_snapshot, getContext(), query_ptr, no_destination, locks, runtime_data);
-                for (auto & lock : locks)
-                    res.pipeline.addTableLock(std::move(lock));
+                out = buildPushingToViewsDrain(table, metadata_snapshot, getContext(), query_ptr, no_destination, runtime_data);
             }
 
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.

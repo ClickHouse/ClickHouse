@@ -173,6 +173,7 @@ public:
             if (input.hasData())
             {
                 auto data = input.pullData();
+                //std::cerr << "********** FinalizingViewsTransform got input " << i << " has exc " << bool(data.exception) << std::endl;
                 if (data.exception)
                 {
                     if (views_data->has_exception && views_data->first_exception == data.exception)
@@ -197,6 +198,9 @@ public:
             if (!statuses.empty())
                 return Status::Ready;
 
+            if (any_exception)
+                output.pushException(std::move(any_exception));
+
             output.finish();
             return Status::Finished;
         }
@@ -217,6 +221,7 @@ public:
                 if (!any_exception)
                     any_exception = status.exception;
 
+                //std::cerr << "=== Setting exception for " << view.table_id.getFullNameNotQuoted() << std::endl;
                 view.setException(std::move(status.exception));
             }
             else
@@ -265,10 +270,10 @@ Chain buildPushingToViewsDrain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    std::vector<TableLockHolder> & locks,
     ExceptionKeepingTransformRuntimeDataPtr runtime_data)
 {
     checkStackSize();
+    Chain result_chain;
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
@@ -279,7 +284,7 @@ Chain buildPushingToViewsDrain(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    locks.emplace_back(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
+    result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
     /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -355,7 +360,7 @@ Chain buildPushingToViewsDrain(
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
-            locks.emplace_back(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
+            result_chain.addTableLock(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
@@ -383,7 +388,7 @@ Chain buildPushingToViewsDrain(
             insert->columns = std::move(list);
 
             ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, false, false, false, runtime_data);
+            InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, false, false, false, view_runtime_data);
             BlockIO io = interpreter.execute();
             out = std::move(io.out);
         }
@@ -392,11 +397,11 @@ Chain buildPushingToViewsDrain(
             type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsDrain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, locks, view_runtime_data);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_runtime_data);
         }
         else
             out = buildPushingToViewsDrain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, locks, view_runtime_data);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_runtime_data);
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
             target_name,
@@ -435,8 +440,6 @@ Chain buildPushingToViewsDrain(
         }
     }
 
-    Chain result_chain;
-
     size_t num_views = views_data->views.size();
     if (num_views != 0)
     {
@@ -454,6 +457,7 @@ Chain buildPushingToViewsDrain(
 
         for (auto & chain : chains)
         {
+            result_chain.attachResourcesFrom(chain);
             connect(*out, chain.getInputPort());
             connect(chain.getOutputPort(), *in);
             ++in;
@@ -581,6 +585,8 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
 
         try
         {
+            //std::cerr << "============ Logging for " << static_cast<const void *>(view.runtime_stats.thread_status.get()) << ' ' << view.table_id.getNameForLogs() << "\n";
+
             if (view.runtime_stats.thread_status)
                 view.runtime_stats.thread_status->logToQueryViewsLog(view);
         }

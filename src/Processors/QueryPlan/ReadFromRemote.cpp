@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <DataStreams/RemoteQueryExecutor.h>

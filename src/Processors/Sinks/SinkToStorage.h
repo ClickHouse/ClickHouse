@@ -37,7 +37,7 @@ using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeeping
 /// In case of exception, it is additionally pushed into pipeline.
 class ExceptionKeepingTransform : public IProcessor
 {
-private:
+protected:
     InputPort & input;
     OutputPort & output;
     Port::Data data;
@@ -48,7 +48,7 @@ private:
     bool was_on_start_called = false;
     bool was_on_finish_called = false;
 
-protected:
+//protected:
     virtual void transform(Chunk & chunk) = 0;
     virtual void onStart() {}
     virtual void onFinish() {}

@@ -21,12 +21,18 @@
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+void QueryPipeline::addQueryPlan(std::unique_ptr<QueryPlan> plan)
+{
+    pipe.addQueryPlan(std::move(plan));
 }
 
 void QueryPipeline::checkInitialized()

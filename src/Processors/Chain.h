@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Processors/PipelineResourcesHolder.h>
 
 namespace DB
 {
@@ -35,11 +36,16 @@ public:
     const std::list<ProcessorPtr> & getProcessors() const { return processors; }
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
 
+    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
+    void attachResourcesFrom(Chain & other) { holder = std::move(other.holder); }
+    PipelineResourcesHolder detachResources() { return std::move(holder); }
+
 private:
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^
     ///  input port                               output port
     std::list<ProcessorPtr> processors;
+    PipelineResourcesHolder holder;
 };
 
 }
