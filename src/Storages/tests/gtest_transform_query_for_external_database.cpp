@@ -104,7 +104,7 @@ static void check(
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, state.getColumns(), select_options, state.getTables(table_num));
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns()), select_options, state.getTables(table_num));
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, state.getColumns(), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
