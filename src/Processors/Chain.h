@@ -40,6 +40,8 @@ public:
     void attachResourcesFrom(Chain & other) { holder = std::move(other.holder); }
     PipelineResourcesHolder detachResources() { return std::move(holder); }
 
+    void reset();
+
 private:
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^

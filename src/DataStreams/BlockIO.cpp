@@ -38,7 +38,7 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    out = {};
+    out.reset();
     in.reset();
     if (process_list_entry)
         process_list_entry->get().releaseQueryStreams();

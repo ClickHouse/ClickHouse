@@ -117,4 +117,10 @@ OutputPort & Chain::getOutputPort() const
     return processors.back()->getOutputs().front();
 }
 
+void Chain::reset()
+{
+    Chain to_remove = std::move(*this);
+    *this = Chain();
+}
+
 }
