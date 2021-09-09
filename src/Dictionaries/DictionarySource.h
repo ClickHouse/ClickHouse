@@ -51,13 +51,6 @@ private:
         const DataTypes & types,
         ColumnsWithTypeAndName && view) const;
 
-    static void fillKeyColumns(
-        const PaddedPODArray<StringRef> & keys,
-        size_t start,
-        size_t size,
-        const DictionaryStructure & dictionary_structure,
-        ColumnsWithTypeAndName & result);
-
     const size_t num_rows;
     std::shared_ptr<const IDictionary> dictionary;
     std::unordered_set<std::string> column_names;

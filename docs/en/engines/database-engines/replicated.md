@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: Replicated
+---
+
 # [experimental] Replicated {#replicated}
 
 The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.

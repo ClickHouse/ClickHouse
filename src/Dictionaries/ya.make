@@ -27,6 +27,7 @@ SRCS(
     CassandraSource.cpp
     ClickHouseDictionarySource.cpp
     DictionaryFactory.cpp
+    DictionaryHelpers.cpp
     DictionarySource.cpp
     DictionarySourceBase.cpp
     DictionarySourceFactory.cpp

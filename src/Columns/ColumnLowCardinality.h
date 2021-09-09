@@ -110,6 +110,11 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
+    void expand(const Filter & mask, bool inverted) override
+    {
+        idx.getPositionsPtr()->expand(mask, inverted);
+    }
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
@@ -261,7 +266,6 @@ public:
         static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
         size_t getSizeOfIndexType() const { return size_of_type; }
 
-        void check(size_t max_dictionary_size);
         void checkSizeOfType();
 
         ColumnPtr detachPositions() { return std::move(positions); }

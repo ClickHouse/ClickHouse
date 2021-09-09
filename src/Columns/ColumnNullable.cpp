@@ -221,6 +221,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
+void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
+{
+    nested_column->expand(mask, inverted);
+    null_map->expand(mask, inverted);
+}
+
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
     ColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
@@ -571,15 +577,15 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
     }
     else if (number_of_nulls == n)
     {
-        min = PositiveInfinity();
-        max = PositiveInfinity();
+        min = POSITIVE_INFINITY;
+        max = POSITIVE_INFINITY;
     }
     else
     {
         auto filtered_column = nested_column.filter(not_null_array, -1);
         filtered_column->getExtremes(min, max);
         if (null_last)
-            max = PositiveInfinity();
+            max = POSITIVE_INFINITY;
     }
 }
 }

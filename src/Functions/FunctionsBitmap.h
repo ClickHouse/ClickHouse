@@ -99,6 +99,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -227,6 +229,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -316,6 +320,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -490,6 +496,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 3; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -655,6 +663,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -828,6 +838,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -931,6 +943,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1074,6 +1088,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

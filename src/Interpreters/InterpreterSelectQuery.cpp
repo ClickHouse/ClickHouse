@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -853,7 +854,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -878,15 +879,38 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
-            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
-            /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
             {
+                /// After normalization for union child node the height of the AST tree is at most 2.
                 if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
                 {
                     for (const auto & child_elem : child_union->list_of_selects->children)
                         if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
                             return true;
+                }
+                /// After normalization in case there are intersect or except nodes, the height of
+                /// the AST tree can have any depth (each intersect/except adds a level), but the
+                /// number of children in those nodes is always 2.
+                else if (elem->as<ASTSelectIntersectExceptQuery>())
+                {
+                    std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
+                    {
+                        if (const auto * child = child_ast->as <ASTSelectQuery>())
+                            return hasWithTotalsInAnySubqueryInFromClause(child->as<ASTSelectQuery &>());
+
+                        if (const auto * child = child_ast->as<ASTSelectWithUnionQuery>())
+                            for (const auto & subchild : child->list_of_selects->children)
+                                if (traverse_recursively(subchild))
+                                    return true;
+
+                        if (const auto * child = child_ast->as<ASTSelectIntersectExceptQuery>())
+                            for (const auto & subchild : child->children)
+                                if (traverse_recursively(subchild))
+                                    return true;
+                        return false;
+                    };
+                    if (traverse_recursively(elem))
+                        return true;
                 }
                 else
                 {
@@ -1108,8 +1132,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Optional step to convert key columns to common supertype.
-            /// Columns with changed types will be returned to user,
-            ///  so its only suitable for `USING` join.
             if (expressions.converting_join_columns)
             {
                 QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
@@ -1330,17 +1352,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                                  !query.arrayJoinExpressionList() &&
+                                  !query.arrayJoinExpressionList().first &&
                                   !query.distinct &&
                                   !expressions.hasLimitBy() &&
                                   !settings.extremes &&
                                   !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            bool limit_applied = false;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
-                limit_applied = true;
             }
 
             /** If there was more than one stream,
@@ -1362,7 +1382,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (query.limit_with_ties && apply_offset)
             {
                 executeLimit(query_plan);
-                limit_applied = true;
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
@@ -1376,6 +1395,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
+            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -2056,7 +2076,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes,
         settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set || (keys.empty() && query_analyzer->hasConstAggregationKeys()),
+        settings.empty_result_for_aggregation_by_empty_set
+            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                && query_analyzer->hasConstAggregationKeys()),
         context->getTemporaryVolume(),
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,

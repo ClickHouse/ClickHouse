@@ -4,6 +4,7 @@
 
 namespace DB
 {
+
 void formatBlock(BlockOutputStreamPtr & out, const Block & block)
 {
     out->writePrefix();

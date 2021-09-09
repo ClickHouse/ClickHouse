@@ -64,10 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
