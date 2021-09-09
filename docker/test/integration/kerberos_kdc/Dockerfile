@@ -1,5 +1,7 @@
 # docker build -t clickhouse/kerberos-kdc .
-FROM centos:7
+FROM centos:6
+
+RUN sed -i '/^mirrorlist/s/^/#/;/^#baseurl/{s/#//;s/mirror.centos.org\/centos\/$releasever/vault.centos.org\/6.10/}' /etc/yum.repos.d/*B*
 
 RUN yum install -y ca-certificates krb5-server krb5-libs krb5-auth-dialog krb5-workstation
 
