@@ -84,6 +84,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
 void registerFormats()
 {
@@ -163,6 +164,7 @@ void registerFormats()
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
+    registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 }
 
 }

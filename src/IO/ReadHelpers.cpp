@@ -771,28 +771,38 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
     s.push_back(*buf.position());
     ++buf.position();
+
     Int64 balance = 1;
+    bool quotes = false;
+
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', '{', '}'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;
 
+        s.push_back(*buf.position());
+
         if (*buf.position() == '\\')
         {
-            parseJSONEscapeSequence<Vector, ReturnType>(s, buf);
+            ++buf.position();
+            if (!buf.eof())
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+            }
+
             continue;
         }
 
-        if (*buf.position() == '}')
-            --balance;
-        else if (*buf.position() == '{')
-            ++balance;
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
 
-        s.push_back(*buf.position());
         ++buf.position();
 
         if (balance == 0)
