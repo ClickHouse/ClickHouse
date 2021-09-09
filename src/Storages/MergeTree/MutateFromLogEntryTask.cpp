@@ -17,12 +17,6 @@ namespace DB
 {
 
 
-MutateFromLogEntryTask::MutateFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_)
-    : ReplicatedMergeMutateTaskBase(storage_.log, storage_, selected_entry_)
-{}
-
-
-
 bool MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
@@ -122,10 +116,10 @@ bool MutateFromLogEntryTask::finalize()
 
             write_part_log(ExecutionStatus::fromCurrentException());
 
-            if (storage.storage_settings_ptr->detach_not_byte_identical_parts)
-                forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
+            if (storage.getSettings()->detach_not_byte_identical_parts)
+                storage.forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
             else
-                tryRemovePartImmediately(std::move(new_part));
+                storage.tryRemovePartImmediately(std::move(new_part));
 
             /// No need to delete the part from ZK because we can be sure that the commit transaction
             /// didn't go through.

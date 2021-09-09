@@ -572,7 +572,10 @@ public:
             level_parts[current_level] = std::move(parts);
         }
 
-    bool execute() override
+    void onCompleted() override {}
+    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+
+    bool executeStep() override
     {
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
@@ -766,7 +769,7 @@ private:
     std::vector<SquashingTransform> projection_squashes;
     const ProjectionsDescription & projections;
 
-    ExecutableTaskUniquePtr merge_projection_parts_task_ptr;
+    ExecutableTaskPtr merge_projection_parts_task_ptr;
 };
 
 
@@ -800,7 +803,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = *ctx->projections_to_build[i];
-            auto projection_block = ctx->projection_squashes[i].add(projection.calculate(block, ctx->context));
+            auto projection_block = projection_squashes[i].add(projection.calculate(block, ctx->context));
             if (projection_block)
                 projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
@@ -859,7 +862,7 @@ bool PartMergerWriter::iterateThroughAllProjections()
     if (!merge_projection_parts_task_ptr)
         return false;
 
-    if (merge_projection_parts_task_ptr->execute())
+    if (merge_projection_parts_task_ptr->executeStep())
         return true;
 
     ++projection_parts_iterator;
@@ -881,7 +884,10 @@ public:
 
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
-    bool execute() override
+    void onCompleted() override {}
+    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+
+    bool executeStep() override
     {
         switch (state)
         {
@@ -994,7 +1000,11 @@ public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
 
-    bool execute() override
+    void onCompleted() override {}
+    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+
+
+    bool executeStep() override
     {
         switch (state)
         {
@@ -1213,7 +1223,7 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
-            if (task->execute())
+            if (task->executeStep())
                 return true;
 
             promise.set_value(ctx->new_data_part);

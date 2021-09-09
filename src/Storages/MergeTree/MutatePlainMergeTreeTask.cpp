@@ -15,7 +15,7 @@ StorageID MutatePlainMergeTreeTask::getStorageID()
 void MutatePlainMergeTreeTask::onCompleted()
 {
     bool delay = state == State::SUCCESS;
-    storage.triggerBackgroundOperationTask(delay);
+    task_result_callback(delay);
 }
 
 
@@ -43,7 +43,7 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), storage.getContext(), merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
-bool MutatePlainMergeTreeTask::execute()
+bool MutatePlainMergeTreeTask::executeStep()
 {
 
     /// Make out memory tracker a parent of current thread memory tracker

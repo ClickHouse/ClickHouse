@@ -26,13 +26,6 @@ namespace ErrorCodes
 }
 
 
-MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_)
-    : ReplicatedMergeMutateTaskBase(storage_.log, storage_, selected_entry_)
-{
-}
-
-
-
 bool MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
@@ -173,7 +166,7 @@ bool MergeFromLogEntryTask::prepare()
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
         {
             if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry))
             {
@@ -260,10 +253,10 @@ bool MergeFromLogEntryTask::finalize()
 
             write_part_log(ExecutionStatus::fromCurrentException());
 
-            if (storage.storage_settings_ptr->detach_not_byte_identical_parts)
-                forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
+            if (storage.getSettings()->detach_not_byte_identical_parts)
+                storage.forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
             else
-                tryRemovePartImmediately(std::move(part));
+                storage.tryRemovePartImmediately(std::move(part));
 
             /// No need to delete the part from ZK because we can be sure that the commit transaction
             /// didn't go through.

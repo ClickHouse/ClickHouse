@@ -2,7 +2,7 @@
 
 #include <common/logger_useful.h>
 
-#include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 
 namespace DB
@@ -13,15 +13,20 @@ class StorageReplicatedMergeTree;
 /**
  * This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
  */
-class ReplicatedMergeMutateTaskBase : public BackgroundTask
+class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
-    ReplicatedMergeMutateTaskBase(Poco::Logger * log_, StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_)
-        : BackgroundTask()
-        , selected_entry(selected_entry_)
+    template <class Callback>
+    ReplicatedMergeMutateTaskBase(
+        Poco::Logger * log_,
+        StorageReplicatedMergeTree & storage_,
+        ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
+        Callback && task_result_callback_)
+        : selected_entry(selected_entry_)
         , entry(*selected_entry->log_entry)
         , log(log_)
-        , storage(storage_) {}
+        , storage(storage_)
+        , task_result_callback(task_result_callback_) {}
 
     ~ReplicatedMergeMutateTaskBase() override = default;
 
@@ -29,7 +34,7 @@ public:
 
     StorageID getStorageID() override;
 
-    bool execute() override;
+    bool executeStep() override;
 
 protected:
     void prepareCommon();
@@ -63,6 +68,8 @@ protected:
 
     State state{State::NEED_PREPARE};
     StorageReplicatedMergeTree & storage;
+
+    IExecutableTask::TaskResultCallback task_result_callback;
 private:
 
 };

@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -12,11 +12,12 @@
 namespace DB
 {
 
-class StorageReplicatedMergeTree;
-class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
 {
 public:
-    MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_);
+    template <class Callback>
+    MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
+        : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
 protected:
     /// Both return false if we can't execute merge.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
@@ -10,25 +10,27 @@ namespace DB
 
 class StorageMergeTree;
 
-class MergePlainMergeTreeTask : public BackgroundTask
+class MergePlainMergeTreeTask : public IExecutableTask
 {
 public:
+    template <class Callback>
     MergePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
-        TableLockHolder table_lock_holder_)
-        : BackgroundTask()
-        , storage(storage_)
+        TableLockHolder table_lock_holder_,
+        Callback && task_result_callback_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , deduplicate(deduplicate_)
         , deduplicate_by_columns(deduplicate_by_columns_)
         , merge_mutate_entry(merge_mutate_entry_)
-        , table_lock_holder(table_lock_holder_) {}
+        , table_lock_holder(table_lock_holder_)
+        , task_result_callback(task_result_callback_) {}
 
-    bool execute() override;
+    bool executeStep() override;
 
     void onCompleted() override;
 
@@ -68,6 +70,8 @@ private:
 
     std::function<void(const ExecutionStatus &)> write_part_log;
 
+    IExecutableTask::TaskResultCallback task_result_callback;
+
     MergeTaskPtr merge_task{nullptr};
 };
 
@@ -77,7 +81,7 @@ using MergePlainMergeTreeTaskPtr = std::shared_ptr<MergePlainMergeTreeTask>;
 
 [[ maybe_unused ]] static void executeHere(MergePlainMergeTreeTaskPtr task)
 {
-    while (task->execute()) {}
+    while (task->executeStep()) {}
 }
 
 

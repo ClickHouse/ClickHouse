@@ -264,20 +264,6 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
-
-    void triggerBackgroundOperationTask(bool delay) override
-    {
-        if (delay)
-            background_executor.triggerTaskWithDelay();
-        else
-            background_executor.triggerTask();
-
-        if (delay)
-            background_moves_executor.triggerTaskWithDelay();
-        else
-            background_moves_executor.triggerTask();
-    }
-
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -618,11 +604,6 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
-
-    /// Must be the last
-    /// Move to MergeTreeData ?
-    BackgroundJobExecutor background_executor;
-    BackgroundJobExecutor background_moves_executor;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);

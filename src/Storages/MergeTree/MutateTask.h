@@ -20,16 +20,6 @@ class MergeTreeDataMergerMutator;
 
 struct MutationContext;
 
-
-class IExecutableTask
-{
-public:
-    virtual bool execute() = 0;
-    virtual ~IExecutableTask() = default;
-};
-
-using ExecutableTaskUniquePtr = std::unique_ptr<IExecutableTask>;
-
 class MutateTask
 {
 public:
@@ -69,7 +59,7 @@ private:
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     std::shared_ptr<MutationContext> ctx;
-    ExecutableTaskUniquePtr task;
+    ExecutableTaskPtr task;
 
 };
 

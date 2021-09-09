@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>

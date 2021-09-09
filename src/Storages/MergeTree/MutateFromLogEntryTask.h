@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Storages/MergeTree/BackgroundTask.h>
+#include <common/shared_ptr_helper.h>
+
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -9,13 +11,16 @@
 namespace DB
 {
 
-class StorageReplicatedMergeTree;
-
-class MutateFromLogEntryTask : public ReplicatedMergeMutateTaskBase
+class MutateFromLogEntryTask : public shared_ptr_helper<MutateFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
 {
-
 public:
-    MutateFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_);
+
+    template <typename Callback>
+    MutateFromLogEntryTask(
+        ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+        StorageReplicatedMergeTree & storage_,
+        Callback && task_result_callback_)
+        : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
 
 private:

@@ -24,11 +24,11 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID()
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
     bool delay = state == State::SUCCESS;
-    storage.triggerBackgroundOperationTask(delay);
+    task_result_callback(delay);
 }
 
 
-bool ReplicatedMergeMutateTaskBase::execute()
+bool ReplicatedMergeMutateTaskBase::executeStep()
 {
     std::exception_ptr saved_exception;
 

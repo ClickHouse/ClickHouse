@@ -16,11 +16,11 @@ StorageID MergePlainMergeTreeTask::getStorageID()
 void MergePlainMergeTreeTask::onCompleted()
 {
     bool delay = state == State::SUCCESS;
-    storage.triggerBackgroundOperationTask(delay);
+    task_result_callback(delay);
 }
 
 
-bool MergePlainMergeTreeTask::execute()
+bool MergePlainMergeTreeTask::executeStep()
 {
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;

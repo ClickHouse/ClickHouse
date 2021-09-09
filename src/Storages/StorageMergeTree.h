@@ -137,11 +137,6 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-    /// Must be last fields to be destroyed first.
-    BackgroundJobExecutor background_executor;
-    BackgroundJobExecutor background_moves_executor;
-
-
 private:
     void loadMutations();
 

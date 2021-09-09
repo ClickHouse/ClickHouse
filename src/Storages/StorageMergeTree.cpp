@@ -837,7 +837,7 @@ bool StorageMergeTree::merge(
 
     /// Copying a vector of columns `deduplicate bu columns.
     auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder);
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, [](bool){});
 
     executeHere(task);
 
@@ -1035,20 +1035,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
-            [this, metadata_snapshot, merge_entry, share_lock] () mutable
-            {
-                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-            }, common_assignee_trigger, getStorageID()));
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        assignee.scheduleMergeMutateTask(task);
         return true;
     }
     if (mutate_entry)
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
-            [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
-            {
-            return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-            }, common_assignee_trigger, getStorageID()));
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, share_lock, common_assignee_trigger);
+        assignee.scheduleMergeMutateTask(task);
         return true;
     }
     bool scheduled = false;
