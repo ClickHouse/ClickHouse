@@ -261,7 +261,7 @@ dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickH
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
-    dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
+    dbms_target_link_libraries (PUBLIC ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
