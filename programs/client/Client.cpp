@@ -1046,10 +1046,14 @@ private:
 
         if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
+            fmt::print(stderr, "Error on processing query: {}\n", client_exception->message());
             if (is_interactive)
             {
                 fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
             }
         }
 
