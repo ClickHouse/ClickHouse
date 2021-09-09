@@ -37,7 +37,6 @@ size_t StreamingFormatExecutor::execute()
     try
     {
         size_t new_rows = 0;
-
         port.setNeeded();
         while (true)
         {
