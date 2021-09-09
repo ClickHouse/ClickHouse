@@ -183,7 +183,7 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), std::move(tasks), configuration, process_pool));
     return pipe;
 }
 
