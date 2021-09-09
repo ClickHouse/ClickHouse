@@ -30,7 +30,7 @@ public:
     virtual const String & getName() const = 0;
     virtual const Volumes & getVolumes() const = 0;
     /// Returns number [0., 1.] -- fraction of free space on disk
-    /// which should be kept with help of background mov
+    /// which should be kept with help of background moves
     virtual double getMoveFactor() const = 0;
     virtual bool isDefaultPolicy() const = 0;
     /// Returns disks ordered by volumes priority
