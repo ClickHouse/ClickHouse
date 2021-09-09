@@ -1031,10 +1031,17 @@ private:
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
+            fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
+                server_version,
+                getExceptionMessage(*server_exception, print_stack_trace, true));
             if (is_interactive)
-                std::cerr << std::endl;
+            {
+                fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
+            }
         }
 
         if (client_exception)
