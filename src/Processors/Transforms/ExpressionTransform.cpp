@@ -10,7 +10,7 @@ Block ExpressionTransform::transformHeader(Block header, const ActionsDAG & expr
 
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_->getActionsDAG()), false)
+    : ExceptionKeepingTransform(header_, transformHeader(header_, expression_->getActionsDAG()))
     , expression(std::move(expression_))
 {
 }

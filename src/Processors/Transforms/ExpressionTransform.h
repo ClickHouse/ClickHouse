@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ class ActionsDAG;
   * For example: hits * 2 + 3, url LIKE '%yandex%'
   * The expression processes each row independently of the others.
   */
-class ExpressionTransform : public ISimpleTransform
+class ExpressionTransform final : public ExceptionKeepingTransform
 {
 public:
     ExpressionTransform(

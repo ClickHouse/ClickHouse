@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -9,11 +9,11 @@ namespace DB
 
 
 /// Proxy class which counts number of written block, rows, bytes
-class CountingTransform final : public ISimpleTransform
+class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
     explicit CountingTransform(const Block & header, ThreadStatus * thread_status_ = nullptr)
-        : ISimpleTransform(header, header, false), thread_status(thread_status_) {}
+        : ExceptionKeepingTransform(header, header), thread_status(thread_status_) {}
 
     String getName() const override { return "CountingTransform"; }
 
