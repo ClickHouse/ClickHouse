@@ -1696,22 +1696,16 @@ struct WindowFunctionNthValue final : public WindowFunction
 
         int64_t offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>() - 1;
+            transform->current_row.row].get<Int64>();
 
-        if (offset < 0)
+        if (offset > INT_MAX || offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be non-negative, {} given",
-                getName(), offset);
-        }
-
-        if (offset > INT_MAX)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be less than {}, {} given",
+                "The offset for function {} must be in (0, {}], {} given",
                 getName(), INT_MAX, offset);
         }
 
+        --offset;
         const auto [target_row, offset_left] = transform->moveRowNumber(transform->frame_start, offset);
         if (offset_left != 0
             || target_row < transform->frame_start
