@@ -263,6 +263,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto many_data = std::make_shared<ManyAggregatedData>(projection_pipe.numOutputPorts() + ordinary_pipe.numOutputPorts());
         size_t counter = 0;
 
+        AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
+
         // TODO apply in_order_optimization here
         auto build_aggregate_pipe = [&](Pipe & pipe, bool projection)
         {
@@ -303,7 +305,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_free_disk_space_for_temporary_data,
                     header_before_aggregation); // The source header is also an intermediate header
 
-                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
+                transform_params = std::make_shared<AggregatingTransformParams>(
+                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
 
                 /// This part is hacky.
                 /// We want AggregatingTransform to work with aggregate states instead of normal columns.
@@ -331,7 +334,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.max_threads,
                     settings.min_free_disk_space_for_temporary_data);
 
-                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
+                transform_params = std::make_shared<AggregatingTransformParams>(
+                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
             }
 
             pipe.resize(pipe.numOutputPorts(), true, true);
