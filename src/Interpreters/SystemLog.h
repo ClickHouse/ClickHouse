@@ -77,6 +77,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class QueryViewsLog;
 class ZooKeeperLog;
+class SessionLog;
 
 
 class ISystemLog
@@ -117,6 +118,8 @@ struct SystemLogs
     std::shared_ptr<QueryViewsLog> query_views_log;
     /// Used to log all actions of ZooKeeper client
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
+    /// Login, LogOut and Login failure events
+    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
