@@ -119,9 +119,6 @@ void Client::processError(const String & query) const
 
 void Client::executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    client_exception.reset();
-    server_exception.reset();
-
     {
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
