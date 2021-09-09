@@ -304,7 +304,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
-            out.addSource(std::make_shared<ExpressionTransform>(query_sample_block, adding_missing_defaults_actions));
+            out.addSource(std::make_shared<ConvertingTransform>(query_sample_block, adding_missing_defaults_actions));
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
