@@ -86,6 +86,29 @@
 /************************************************************************/
 /******/ ({
 
+/***/ "../../website/src/js/components/case-study-card.js":
+/*!**************************************************************************************!*\
+  !*** /Users/cody/Sites/tech.clickhouse/website/src/js/components/case-study-card.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+eval("function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError(\"Cannot call a class as a function\"); } }\n\nfunction _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if (\"value\" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }\n\nfunction _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }\n\nvar CaseStudyCard = /*#__PURE__*/function () {\n  function CaseStudyCard($el) {\n    _classCallCheck(this, CaseStudyCard);\n\n    this.onOpen = this.onOpen.bind(this);\n    this.onToggle = this.onToggle.bind(this);\n    this.$el = $el;\n    this.$el.addEventListener('click', this.onOpen);\n    this.$el.querySelector('.case-study-card-toggle').addEventListener('click', this.onToggle);\n    this.open = false;\n  }\n\n  _createClass(CaseStudyCard, [{\n    key: \"onOpen\",\n    value: function onOpen() {\n      this.open = true;\n      this.$el.classList.toggle('is-open', this.open);\n      this.$el.classList.toggle('is-closing', !this.open);\n      this.closeOthers();\n    }\n  }, {\n    key: \"onToggle\",\n    value: function onToggle(event) {\n      event.stopPropagation();\n      this.open = !this.$el.classList.contains('is-open');\n      this.$el.classList.toggle('is-open', this.open);\n      this.$el.classList.toggle('is-closing', !this.open);\n      this.closeOthers();\n    }\n  }, {\n    key: \"closeOthers\",\n    value: function closeOthers() {\n      var _this = this;\n\n      if (this.open) {\n        document.querySelectorAll('.case-study-card').forEach(function ($el) {\n          if (!$el.isSameNode(_this.$el)) {\n            $el.classList.toggle('is-closing', $el.classList.contains('is-open'));\n            $el.classList.toggle('is-open', false);\n          }\n        });\n      }\n    }\n  }]);\n\n  return CaseStudyCard;\n}();\n\ndocument.querySelectorAll('.case-study-card').forEach(function ($el) {\n  return new CaseStudyCard($el);\n});\n\n//# sourceURL=webpack:////Users/cody/Sites/tech.clickhouse/website/src/js/components/case-study-card.js?");
+
+/***/ }),
+
+/***/ "../../website/src/js/main.js":
+/*!****************************************************************!*\
+  !*** /Users/cody/Sites/tech.clickhouse/website/src/js/main.js ***!
+  \****************************************************************/
+/*! no exports provided */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+eval("__webpack_require__.r(__webpack_exports__);\n/* harmony import */ var _components_case_study_card__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./components/case-study-card */ \"../../website/src/js/components/case-study-card.js\");\n/* harmony import */ var _components_case_study_card__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_components_case_study_card__WEBPACK_IMPORTED_MODULE_0__);\n\n\n//# sourceURL=webpack:////Users/cody/Sites/tech.clickhouse/website/src/js/main.js?");
+
+/***/ }),
+
 /***/ "../../website/src/scss/bootstrap.scss":
 /*!*************************************************************************!*\
   !*** /Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss ***!
@@ -111,13 +134,13 @@ eval("__webpack_require__.r(__webpack_exports__);\n/* harmony default export */ 
 /***/ }),
 
 /***/ 0:
-/*!********************************************************************************************************************************************!*\
-  !*** multi /Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss /Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss ***!
-  \********************************************************************************************************************************************/
+/*!*****************************************************************************************************************************************************************************************************!*\
+  !*** multi /Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss /Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss /Users/cody/Sites/tech.clickhouse/website/src/js/main.js ***!
+  \*****************************************************************************************************************************************************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-eval("__webpack_require__(/*! /Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss */\"../../website/src/scss/bootstrap.scss\");\nmodule.exports = __webpack_require__(/*! /Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss */\"../../website/src/scss/main.scss\");\n\n\n//# sourceURL=webpack:///multi_/Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss_/Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss?");
+eval("__webpack_require__(/*! /Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss */\"../../website/src/scss/bootstrap.scss\");\n__webpack_require__(/*! /Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss */\"../../website/src/scss/main.scss\");\nmodule.exports = __webpack_require__(/*! /Users/cody/Sites/tech.clickhouse/website/src/js/main.js */\"../../website/src/js/main.js\");\n\n\n//# sourceURL=webpack:///multi_/Users/cody/Sites/tech.clickhouse/website/src/scss/bootstrap.scss_/Users/cody/Sites/tech.clickhouse/website/src/scss/main.scss_/Users/cody/Sites/tech.clickhouse/website/src/js/main.js?");
 
 /***/ })
 

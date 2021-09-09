@@ -1,4 +1,5 @@
 const path = require('path');
+const jsPath = path.resolve(__dirname, '../../website/src/js');
 const scssPath = path.resolve(__dirname, '../../website/src/scss');
 
 console.log(path.resolve(__dirname, 'node_modules/bootstrap', require('bootstrap/package.json').sass));
@@ -14,6 +15,7 @@ module.exports = {
     entry: [
 		path.resolve(scssPath, 'bootstrap.scss'),
 		path.resolve(scssPath, 'main.scss'),
+		path.resolve(jsPath, 'main.js'),
 	],
 
     output: {

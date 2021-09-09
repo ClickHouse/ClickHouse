@@ -5,7 +5,8 @@ $black: #212529;
 
 $gray-100: #f1f6f9;
 $gray-500: #d6dbdf;
-$gray-900: #6c757d;
+$gray-700: #6c757d;
+$gray-900: #495057;
 
 $color-brand-primary: #ffcc00;
 $color-brand-secondary: #ff3939;
@@ -23,6 +24,7 @@ $color-secondary-accent-light-red: #ffe4e1;
 $grays: (
     "100": $gray-100,
     "500": $gray-500,
+	"700": $gray-700,
     "900": $gray-900
 );
 
@@ -49,12 +51,33 @@ $theme-colors: (
 	"tertiary": $color-primary-accent-blue,
 	"tertiary-light": $color-primary-accent-light-blue,
 
+	"white": $white,
+	"black": $black,
+
+	"blue": $color-primary-accent-blue,
+	"yellow": $color-primary-accent-yellow,
+	"orange": $color-secondary-accent-orange,
+	"red": $color-secondary-accent-red,
+
 	"light": $gray-100,
 	"dark": $gray-900
 );
 
-$link-color: $color-brand-secondary;
-$link-hover-color: $color-brand-secondary;
+$link-color: $color-secondary-accent-orange;
+$link-hover-color: $color-secondary-accent-orange;
+
+
+// Options
+//
+// Quickly modify global styling by enabling or disabling optional features.
+
+$enable-caret:                                true;
+$enable-rounded:                              true;
+$enable-shadows:                              false;
+$enable-gradients:                            false;
+$enable-transitions:                          true;
+$enable-grid-classes:                         true;
+$enable-responsive-font-sizes:                false;
 
 
 // Spacing
@@ -76,8 +99,17 @@ $spacers: (
 	8: ($spacer * 8),
 	9: ($spacer * 9),
 	10: ($spacer * 10),
+	12: ($spacer * 12),
 	15: ($spacer * 15)
 );
+
+
+// Body
+//
+// Settings for the `<body>` element.
+
+$body-bg:                   $white;
+$body-color:                $black;
 
 
 // Grid breakpoints
@@ -102,7 +134,7 @@ $container-max-widths: (
   sm: 540px,
   md: 720px,
   lg: 960px,
-  xl: 1128px
+  xl: 1118px
 );
 
 // Grid columns
@@ -110,7 +142,7 @@ $container-max-widths: (
 // Set the number of columns and specify the width of the gutters.
 
 $grid-columns:                12;
-$grid-gutter-width:           48px;
+$grid-gutter-width:           40px;
 $grid-row-columns:            6;
 
 
@@ -128,6 +160,10 @@ $border-radius:               8px;
 $border-radius-lg:            8px;
 $border-radius-sm:            8px;
 
+$box-shadow-sm:               0 2px 14px rgba($gray-700, .2);
+$box-shadow:                  0 8px 20px rgba($gray-700, .2);
+$box-shadow-lg:               0 12px 32px rgba($gray-700, .2);
+
 
 // Typography
 //
@@ -136,34 +172,52 @@ $border-radius-sm:            8px;
 $font-family-sans-serif:      "Noto Sans", sans-serif;
 
 $font-size-base:              1rem; // Assumes the browser default, typically `16px`
-$font-size-lg:                $font-size-base * 1.25; // 20px
+$font-size-xl:                $font-size-base * 1.25; // 20px
+$font-size-lg:                $font-size-base * 1.125; // 18px
 $font-size-sm:                $font-size-base * .875; // 14px
 $font-size-xs:                $font-size-base * .625; // 10px
 
+$font-weight-light:           300;
 $font-weight-normal:          400;
-$font-weight-medium:          600;
+$font-weight-medium:          500;
+$font-weight-semibold:        600;
 $font-weight-bold:            700;
 
 $font-weight-base:            $font-weight-normal;
 $line-height-base:            1.5;
 
-$h1-font-size:                80px;
-$h2-font-size:                48px;
-$h3-font-size:                36px;
-$h4-font-size:                30px;
+$h1-font-size:                40px;
+$h2-font-size:                32px;
+$h3-font-size:                28px;
+$h4-font-size:                24px;
 $h5-font-size:                18px;
 $h6-font-size:                14px;
 
-$headings-margin-bottom:      $spacer / 2;
+$headings-margin-bottom:      $spacer * 2;
 $headings-font-family:        "Hind Siliguri", sans-serif;
 $headings-font-weight:        500;
 $headings-line-height:        1.125;
 $headings-color:              null;
 
-$lead-font-size:              $font-size-base * 1.25;
-$lead-font-weight:            300;
+$display1-size:               80px;
+$display2-size:               48px;
+$display3-size:               36px;
+$display4-size:               30px;
+$display5-size:               20px;
+$display6-size:               14px;
 
-$text-muted:                  $gray-900;
+$display1-weight:             600;
+$display2-weight:             600;
+$display3-weight:             500;
+$display4-weight:             500;
+$display5-weight:             500;
+$display6-weight:             700;
+$display-line-height:         $headings-line-height;
+
+$lead-font-size:              $font-size-base * 1.5;
+$lead-font-weight:            400;
+
+$text-muted:                  $gray-700;
 
 
 // Buttons
@@ -210,11 +264,44 @@ $btn-transition:              color .15s ease-in-out, background-color .15s ease
 
 // Navs
 
-$nav-link-padding-y:          0;
-$nav-link-padding-x:          0;
+$nav-link-padding-y:                0;
+$nav-link-padding-x:                0;
+$nav-link-disabled-color:           $gray-500;
+
+$nav-tabs-border-color:             $gray-700;
+$nav-tabs-border-width:             $border-width;
+$nav-tabs-border-radius:            $border-radius;
+$nav-tabs-link-hover-border-color:  transparent;
+$nav-tabs-link-active-color:        $color-primary-accent-blue;
+$nav-tabs-link-active-bg:           $white;
+$nav-tabs-link-active-border-color: $gray-700;
 
 
 // Navbar
 
 $navbar-padding-y:            24px;
 $navbar-padding-x:            0;
+
+
+// Cards
+
+$card-spacer-y:                     24px;
+$card-spacer-x:                     24px;
+$card-border-width:                 $border-width;
+$card-border-radius:                $border-radius;
+$card-border-color:                 $border-color;
+$card-inner-border-radius:          subtract($card-border-radius, $card-border-width);
+$card-cap-bg:                       $gray-100;
+$card-cap-color:                    null;
+$card-height:                       null;
+$card-color:                        null;
+$card-bg:                           $white;
+
+$card-img-overlay-padding:          24px;
+
+$card-group-margin:                 $grid-gutter-width / 2;
+$card-deck-margin:                  $card-group-margin;
+
+$card-columns-count:                3;
+$card-columns-gap:                  $grid-gutter-width;
+$card-columns-margin:               $grid-gutter-width;

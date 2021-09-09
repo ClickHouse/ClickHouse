@@ -196,7 +196,8 @@ def get_js_in(args):
         f"'{args.website_dir}/js/base.js'",
         f"'{args.website_dir}/js/index.js'",
         f"'{args.website_dir}/js/docsearch.js'",
-        f"'{args.website_dir}/js/docs.js'"
+        f"'{args.website_dir}/js/docs.js'",
+        f"'{args.website_dir}/js/main.js'"
     ]
 
 

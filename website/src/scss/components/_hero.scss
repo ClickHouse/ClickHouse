@@ -1,0 +1,11 @@
+.hero {
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: cover;
+	position: relative;
+}
+
+.hero.has-offset {
+	margin-bottom: -160px;
+	padding-bottom: 160px;
+}
