@@ -134,42 +134,11 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'id' cannot be empty");
 
-        const char * range_default_type = "Date";
-        if (config.has(structure_prefix + ".range_min"))
-            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
-
-        if (config.has(structure_prefix + ".range_max"))
-            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
-
-        if (range_min.has_value() != range_max.has_value())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
-        }
-
-        if (range_min && range_max && !range_min->type->equals(*range_max->type))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary structure 'range_min' and 'range_max' should have same type, "
-                "'range_min' type: {},"
-                "'range_max' type: {}",
-                range_min->type->getName(),
-                range_max->type->getName());
-        }
-
-        if (range_min)
-        {
-            if (!range_min->type->isValueRepresentedByInteger())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
-                    " Actual 'range_min' and 'range_max' type is {}",
-                    range_min->type->getName());
-        }
-
-        if (!id->expression.empty() || (range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
+        if (!id->expression.empty())
             has_expressions = true;
     }
 
+    parseRangeConfiguration(config, structure_prefix);
     attributes = getAttributes(config, structure_prefix, /*complex_key_attributes =*/ false);
 
     for (size_t i = 0; i < attributes.size(); ++i)
@@ -191,9 +160,6 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             hierarchical_attribute_index = i;
         }
     }
-
-    if (attributes.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary has no attributes defined");
 
     if (config.getBool(config_prefix + ".layout.ip_trie.access_to_key_from_attributes", false))
         access_to_key_from_attributes = true;
@@ -437,6 +403,44 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     }
 
     return res_attributes;
+}
+
+void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix)
+{
+    const char * range_default_type = "Date";
+    if (config.has(structure_prefix + ".range_min"))
+        range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
+
+    if (config.has(structure_prefix + ".range_max"))
+        range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
+
+    if (range_min.has_value() != range_max.has_value())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
+    }
+
+    if (range_min && range_max && !range_min->type->equals(*range_max->type))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Dictionary structure 'range_min' and 'range_max' should have same type, "
+            "'range_min' type: {},"
+            "'range_max' type: {}",
+            range_min->type->getName(),
+            range_max->type->getName());
+    }
+
+    if (range_min)
+    {
+        if (!range_min->type->isValueRepresentedByInteger())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
+                " Actual 'range_min' and 'range_max' type is {}",
+                range_min->type->getName());
+    }
+
+    if ((range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
+        has_expressions = true;
 }
 
 }

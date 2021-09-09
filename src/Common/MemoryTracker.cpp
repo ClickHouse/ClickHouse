@@ -360,7 +360,7 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
     Int64 old_value = hard_limit.load(std::memory_order_relaxed);
-    while (old_value < value && !hard_limit.compare_exchange_weak(old_value, value))
+    while ((value == 0 || old_value < value) && !hard_limit.compare_exchange_weak(old_value, value))
         ;
 }
 
@@ -368,6 +368,6 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 {
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
-    while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
+    while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
 }

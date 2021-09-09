@@ -10,17 +10,83 @@ toc_title: Strings
 
 ## empty {#empty}
 
-Returns 1 for an empty string or 0 for a non-empty string.
-The result type is UInt8.
+Checks whether the input string is empty.
+
+**Syntax**
+
+``` sql
+empty(x)
+```
+
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-The function also works for arrays or UUID.
-UUID is empty if it is all zeros (nil UUID).
+
+The function also works for [arrays](array-functions.md#function-empty) or [UUID](uuid-functions.md#empty).
+
+**Arguments**
+
+-   `x` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+-   Returns `1` for an empty string or `0` for a non-empty string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT empty('');
+```
+
+Result:
+
+```text
+┌─empty('')─┐
+│         1 │
+└───────────┘
+```
 
 ## notEmpty {#notempty}
 
-Returns 0 for an empty string or 1 for a non-empty string.
-The result type is UInt8.
-The function also works for arrays or UUID.
+Checks whether the input string is non-empty.
+
+**Syntax**
+
+``` sql
+notEmpty(x)
+```
+
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
+
+The function also works for [arrays](array-functions.md#function-notempty) or [UUID](uuid-functions.md#notempty).
+
+**Arguments**
+
+-   `x` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty string or `0` for an empty string string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT notEmpty('text');
+```
+
+Result:
+
+```text
+┌─notEmpty('text')─┐
+│                1 │
+└──────────────────┘
+```
 
 ## length {#length}
 

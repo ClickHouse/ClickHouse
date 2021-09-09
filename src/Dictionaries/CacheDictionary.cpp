@@ -151,7 +151,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     * use default value.
     */
 
-    if (dictionary_key_type == DictionaryKeyType::complex)
+    if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -268,7 +268,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     * Check that key was fetched during update for that key set true in result array.
     */
 
-    if (dictionary_key_type == DictionaryKeyType::complex)
+    if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
 
@@ -364,7 +364,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr & key_type [[maybe_unused]]) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
@@ -382,7 +382,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
     ColumnPtr in_key_column [[maybe_unused]],
     const DataTypePtr & key_type [[maybe_unused]]) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found;
         auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
@@ -492,7 +492,7 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
@@ -534,7 +534,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     std::vector<UInt64> requested_keys_vector;
     std::vector<size_t> requested_complex_key_rows;
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         requested_keys_vector.reserve(requested_keys.size());
     else
         requested_complex_key_rows.reserve(requested_keys.size());
@@ -546,7 +546,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         if (key_index_to_state_from_storage[i].isExpired()
             || key_index_to_state_from_storage[i].isNotFound())
         {
-            if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
                 requested_keys_vector.emplace_back(requested_keys[i]);
             else
                 requested_complex_key_rows.emplace_back(i);
@@ -572,7 +572,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             Stopwatch watch;
             QueryPipeline pipeline;
 
-            if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
                 pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
             else
                 pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
@@ -684,7 +684,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     }
 }
 
-template class CacheDictionary<DictionaryKeyType::simple>;
-template class CacheDictionary<DictionaryKeyType::complex>;
+template class CacheDictionary<DictionaryKeyType::Simple>;
+template class CacheDictionary<DictionaryKeyType::Complex>;
 
 }

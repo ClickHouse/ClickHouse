@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Sink which is returned from Storage::read.
+/// Sink which is returned from Storage::write.
 class SinkToStorage : public ExceptionKeepingTransform
 {
 public:

@@ -3,10 +3,10 @@
 
 #include <Poco/String.h>
 
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <Common/typeid_cast.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -268,7 +268,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
-
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
@@ -276,6 +275,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword all("ALL");
     ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
+    ParserKeyword filter("FILTER");
     ParserKeyword over("OVER");
 
     bool has_all = false;
@@ -440,14 +440,25 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
-    if (over.ignore(pos, expected))
+    if (filter.ignore(pos, expected))
     {
-        function_node->is_window_function = true;
-
         // We are slightly breaking the parser interface by parsing the window
         // definition into an existing ASTFunction. Normally it would take a
         // reference to ASTPtr and assign it the new node. We only have a pointer
         // of a different type, hence this workaround with a temporary pointer.
+        ASTPtr function_node_as_iast = function_node;
+
+        ParserFilterClause filter_parser;
+        if (!filter_parser.parse(pos, function_node_as_iast, expected))
+        {
+            return false;
+        }
+    }
+
+    if (over.ignore(pos, expected))
+    {
+        function_node->is_window_function = true;
+
         ASTPtr function_node_as_iast = function_node;
 
         ParserWindowReference window_reference;
@@ -501,6 +512,40 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     function_node->arguments = expr_list_with_single_query;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
+    return true;
+}
+
+bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    assert(node);
+    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
+
+    ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_opening_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    ParserKeyword parser_where("WHERE");
+    if (!parser_where.ignore(pos, expected))
+    {
+        return false;
+    }
+    ParserExpressionList parser_condition(false);
+    ASTPtr condition;
+    if (!parser_condition.parse(pos, condition, expected) || condition->children.size() != 1)
+    {
+        return false;
+    }
+
+    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+    if (!parser_closing_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    function.name += "If";
+    function.arguments->children.push_back(condition->children[0]);
     return true;
 }
 
@@ -850,15 +895,24 @@ static bool isOneOf(TokenType token)
     return ((token == tokens) || ...);
 }
 
-
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Parse numbers (including decimals), strings and arrays of them.
+    /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
     bool is_string_literal = pos->type == TokenType::StringLiteral;
-    if (pos->type == TokenType::Number || is_string_literal)
+
+    if (pos->type == TokenType::Minus)
+    {
+        ++pos;
+        if (pos->type != TokenType::Number)
+            return false;
+
+        data_end = pos->end;
+        ++pos;
+    }
+    else if (pos->type == TokenType::Number || is_string_literal)
     {
         ++pos;
     }
@@ -876,7 +930,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::ClosingSquareBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket>(last_token))
+                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket, TokenType::Minus>(last_token))
                     return false;
                 if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
                     return false;
@@ -884,7 +938,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::ClosingRoundBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket>(last_token))
+                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket, TokenType::Minus>(last_token))
                     return false;
                 if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
                     return false;
@@ -892,10 +946,15 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (pos->type == TokenType::Comma)
             {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
                     return false;
             }
-            else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
+            else if (pos->type == TokenType::Number)
+            {
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
+                    return false;
+            }
+            else if (isOneOf<TokenType::StringLiteral, TokenType::Minus>(pos->type))
             {
                 if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
                     return false;
@@ -915,6 +974,8 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!stack.empty())
             return false;
     }
+    else
+        return false;
 
     ASTPtr type_ast;
     if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
@@ -1713,6 +1774,8 @@ const char * ParserAlias::restricted_keywords[] =
     "WHERE",
     "WINDOW",
     "WITH",
+    "INTERSECT",
+    "EXCEPT",
     nullptr
 };
 
@@ -1809,20 +1872,47 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             with_open_round_bracket = true;
         }
 
+        ASTPtr lambda;
+        String lambda_arg;
         ASTPtr func_name;
-        if (!ParserIdentifier().parse(pos, func_name, expected))
-            return false;
-
         ASTPtr expr_list_args;
-        if (pos->type == TokenType::OpeningRoundBracket)
+        auto opos = pos;
+        if (ParserLambdaExpression().parse(pos, lambda, expected))
         {
-            ++pos;
-            if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
+            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            {
+                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                if (lambda_arg_asts.size() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "APPLY column transformer can only accept lambda with one argument");
+
+                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                    lambda_arg = *opt_arg_name;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "lambda argument declarations must be identifiers");
+            }
+            else
+            {
+                lambda = nullptr;
+                pos = opos;
+            }
+        }
+
+        if (!lambda)
+        {
+            if (!ParserIdentifier().parse(pos, func_name, expected))
                 return false;
 
-            if (pos->type != TokenType::ClosingRoundBracket)
-                return false;
-            ++pos;
+            if (pos->type == TokenType::OpeningRoundBracket)
+            {
+                ++pos;
+                if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
+                    return false;
+
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
+            }
         }
 
         String column_name_prefix;
@@ -1846,8 +1936,16 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         }
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
-        res->func_name = getIdentifierName(func_name);
-        res->parameters = expr_list_args;
+        if (lambda)
+        {
+            res->lambda = lambda;
+            res->lambda_arg = lambda_arg;
+        }
+        else
+        {
+            res->func_name = getIdentifierName(func_name);
+            res->parameters = expr_list_args;
+        }
         res->column_name_prefix = column_name_prefix;
         node = std::move(res);
         return true;

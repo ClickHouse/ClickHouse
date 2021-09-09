@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/DenseHashMap.h>
+#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
@@ -95,7 +95,8 @@ private:
 
     /// Actual data type of columns in part
 
-    DenseHashMap<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
+    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
+    ColumnsFromPart columns_from_part;
 };
 
 }
