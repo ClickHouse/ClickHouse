@@ -62,8 +62,9 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
         {
+            auto result_type = Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
 
@@ -294,18 +295,18 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
+            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, input_rows_count);
 #endif
 
 #if USE_RAPIDJSON
-        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
+        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, input_rows_count);
 #else
-        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
+        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, input_rows_count);
 #endif
     }
 };
@@ -984,13 +985,19 @@ public:
             throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto & col = arguments.back();
-        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
-        if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the return data type, illegal value: " + col.name,
-                            ErrorCodes::ILLEGAL_COLUMN};
+        if (isString(col.type))
+        {
+            auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+            if (col_type_const)
+                return DataTypeFactory::instance().get(col_type_const->getValue<String>());
 
-        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
+            if (col.column && (col.column->size() == 1))
+                return DataTypeFactory::instance().get((*col.column)[0].safeGet<String>());
+        }
+
+        throw Exception{"The last argument of function " + String(function_name)
+                            + " should be a constant string specifying the return data type, illegal value: " + col.name,
+                        ErrorCodes::ILLEGAL_COLUMN};
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
