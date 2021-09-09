@@ -32,6 +32,13 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
     loop_state.store(Loop::RUN);
 }
 
+bool RabbitMQHandler::connectionRunning(const AMQP::TcpConnection * connection)
+{
+    if (connection_running.load() && !connection->usable())
+        LOG_ERROR(log, "Logical error: mismatch in connection flags");
+    return connection_running.load() && connection->usable();
+}
+
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);

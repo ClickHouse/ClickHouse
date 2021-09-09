@@ -160,7 +160,7 @@ bool WriteBufferToRabbitMQProducer::setupConnection(bool reconnecting)
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    return event_handler->connectionRunning();
+    return event_handler->connectionRunning(connection.get());
 }
 
 
@@ -322,7 +322,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
-        else if ((!producer_channel->usable() && event_handler->connectionRunning()) || (!event_handler->connectionRunning() && setupConnection(true)))
+        else if ((!producer_channel->usable() && event_handler->connectionRunning(connection.get())) || (!event_handler->connectionRunning(connection.get()) && setupConnection(true)))
             setupChannel();
     }
 
