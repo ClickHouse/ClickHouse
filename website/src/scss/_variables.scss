@@ -7,6 +7,19 @@ $gray-100: #f1f6f9;
 $gray-500: #d6dbdf;
 $gray-900: #6c757d;
 
+$color-brand-primary: #ffcc00;
+$color-brand-secondary: #ff3939;
+
+$color-primary-accent-yellow: #ffcc00;
+$color-primary-accent-light-yellow: #fffaf0;
+$color-primary-accent-blue: #257af4;
+$color-primary-accent-light-blue: #e3f1fe;
+
+$color-secondary-accent-orange: #ff8c00;
+$color-secondary-accent-light-orange: #ffe4b5;
+$color-secondary-accent-red: #ff3939;
+$color-secondary-accent-light-red: #ffe4e1;
+
 $grays: (
     "100": $gray-100,
     "500": $gray-500,
@@ -14,31 +27,34 @@ $grays: (
 );
 
 $colors: (
-	"brand-primary": #ffcc00,
-	"brand-secondary": #ff3939,
+	"brand-primary": $color-brand-primary,
+	"brand-secondary": $color-brand-secondary,
 
-	"primary-accent-yellow": #ffcc00,
-	"primary-accent-light-yellow": #fffaf0,
-	"primary-accent-blue": #257af4,
-	"primary-accent-light-blue": #e3f1fe,
+	"primary-accent-yellow": $color-brand-primary,
+	"primary-accent-light-yellow": $color-primary-accent-light-yellow,
+	"primary-accent-blue": $color-primary-accent-blue,
+	"primary-accent-light-blue": $color-primary-accent-light-blue,
 
-	"secondary-accent-orange": #ff8c00,
-	"secondary-accent-light-orange": #ffe4b5,
-	"secondary-accent-red": #ff3939,
-	"secondary-accent-light-red": #ffe4e1,
+	"secondary-accent-orange": $color-secondary-accent-orange,
+	"secondary-accent-light-orange": $color-secondary-accent-light-orange,
+	"secondary-accent-red": $color-brand-secondary,
+	"secondary-accent-light-red": $color-secondary-accent-light-red,
 );
 
 $theme-colors: (
-	"primary": #ffcc00,
-	"primary-light": #fffaf0,
-	"secondary": #212529,
-	"secondary-light": #fff,
-	"tertiary": #257af4,
-	"tertiary-light": #e3f1fe,
+	"primary": $color-brand-primary,
+	"primary-light": $color-primary-accent-light-yellow,
+	"secondary": $black,
+	"secondary-light": $white,
+	"tertiary": $color-primary-accent-blue,
+	"tertiary-light": $color-primary-accent-light-blue,
+
+	"light": $gray-100,
+	"dark": $gray-900
 );
 
-$link-color: #ff3939;
-$link-hover-color: #ff3939;
+$link-color: $color-brand-secondary;
+$link-hover-color: $color-brand-secondary;
 
 
 // Spacing
@@ -86,7 +102,7 @@ $container-max-widths: (
   sm: 540px,
   md: 720px,
   lg: 960px,
-  xl: 1070px
+  xl: 1128px
 );
 
 // Grid columns
@@ -120,14 +136,13 @@ $border-radius-sm:            8px;
 $font-family-sans-serif:      "Noto Sans", sans-serif;
 
 $font-size-base:              1rem; // Assumes the browser default, typically `16px`
-$font-size-lg:                $font-size-base * 1.25;
-$font-size-sm:                $font-size-base * .875;
+$font-size-lg:                $font-size-base * 1.25; // 20px
+$font-size-sm:                $font-size-base * .875; // 14px
+$font-size-xs:                $font-size-base * .625; // 10px
 
-$font-weight-lighter:         lighter;
-$font-weight-light:           300;
 $font-weight-normal:          400;
+$font-weight-medium:          600;
 $font-weight-bold:            700;
-$font-weight-bolder:          bolder;
 
 $font-weight-base:            $font-weight-normal;
 $line-height-base:            1.5;
@@ -147,6 +162,8 @@ $headings-color:              null;
 
 $lead-font-size:              $font-size-base * 1.25;
 $lead-font-weight:            300;
+
+$text-muted:                  $gray-900;
 
 
 // Buttons
