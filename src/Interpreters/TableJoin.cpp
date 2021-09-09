@@ -55,15 +55,32 @@ std::string formatTypeMap(const TableJoin::NameToTypeMap & target, const TableJo
 namespace
 {
 
-template <typename OnExpr, typename Func>
+struct BothSidesTag {};
+struct LeftSideTag {};
+struct RightSideTag {};
+
+template <typename SideTag = BothSidesTag, typename OnExpr, typename Func>
 bool forAllKeys(OnExpr & expressions, Func callback)
 {
+    static_assert(std::is_same_v<SideTag, BothSidesTag> ||
+                  std::is_same_v<SideTag, LeftSideTag> ||
+                  std::is_same_v<SideTag, RightSideTag>);
+
     for (auto & expr : expressions)
     {
-        assert(expr.key_names_left.size() == expr.key_names_right.size());
+        if constexpr (std::is_same_v<SideTag, BothSidesTag>)
+            assert(expr.key_names_left.size() == expr.key_names_right.size());
+
         for (size_t i = 0; i < expr.key_names_left.size(); ++i)
         {
-            bool cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
+            bool cont;
+            if constexpr (std::is_same_v<SideTag, BothSidesTag>)
+                cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
+            if constexpr (std::is_same_v<SideTag, LeftSideTag>)
+                cont = callback(expr.key_names_left[i]);
+            if constexpr (std::is_same_v<SideTag, RightSideTag>)
+                cont = callback(expr.key_names_right[i]);
+
             if (!cont)
                 return false;
         }
@@ -118,12 +135,14 @@ void TableJoin::addDisjunct(const ASTPtr & ast)
     if (std::find_if(disjuncts.begin(), disjuncts.end(), [addr](const ASTPtr & ast_){return ast_.get() == addr;}) != disjuncts.end())
     {
         const auto & clause = clauses.back();
-        if (!clause.key_names_left.empty() || !clause.on_filter_condition_left ||
-            !clause.key_names_right.empty() || !clause.on_filter_condition_right)
+        if (!clause.key_names_left.empty() || !clause.key_names_right.empty() ||
+            clause.on_filter_condition_left || clause.on_filter_condition_right)
         {
             clauses.emplace_back();
         }
     }
+    if (joined_storage && clauses.size() > 1)
+        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 /// remember OR's children
@@ -232,7 +251,7 @@ Names TableJoin::requiredJoinedNames() const
 NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
-    forAllKeys(clauses, [this, &required](const auto &, const auto & name)
+    forAllKeys<RightSideTag>(clauses, [this, &required](const auto & name)
     {
         auto rename = renamedRightColumnName(name);
         for (const auto & column : columns_added_by_join)
@@ -261,6 +280,9 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 {
     NameSet required_keys = requiredRightKeys();
     Block required_right_keys;
+    if (required_keys.empty())
+        return required_right_keys;
+
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
         if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
@@ -354,7 +376,7 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 
 bool TableJoin::oneDisjunct() const
 {
-    assert(clauses.size() > 0);
+    assert(!clauses.empty());
     return clauses.size() == 1;
 }
 
@@ -406,7 +428,7 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
     if (clauses.size() != 1 || clauses[0].key_names_right.size() != 1)
         return false;
 
-    const auto & right_key = clauses.front().key_names_right[0];
+    const auto & right_key = getOnlyClause().key_names_right[0];
 
     /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
     auto it_key = original_names.find(right_key);
@@ -642,6 +664,19 @@ Names TableJoin::getAllNames(JoinTableSide side) const
         return true;
     });
     return res;
+}
+
+void TableJoin::assertHasOneOnExpr() const
+{
+    if (!oneDisjunct())
+    {
+        std::vector<String> text;
+        for (const auto & onexpr : clauses)
+            text.push_back(onexpr.formatDebug());
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}: [{}], query: '{}'",
+                            clauses.size(), fmt::join(text, " | "), queryToString(table_join));
+
+    }
 }
 
 }

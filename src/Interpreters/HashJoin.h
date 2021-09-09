@@ -191,7 +191,7 @@ public:
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
-    const Block & savedBlockSample() const { return data->sample_block; }
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -394,6 +394,8 @@ private:
     std::shared_lock<std::shared_mutex> storage_join_lock;
 
     void dataMapInit(MapsVariant &);
+
+    const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
