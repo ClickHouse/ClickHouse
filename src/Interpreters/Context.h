@@ -101,6 +101,8 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class MergeTreeBackgroundExecutor;
+using MergeTreeBackgroundExecutorPtr = std::shared_ptr<MergeTreeBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
@@ -829,6 +831,13 @@ public:
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    /// Background executors related methods
+    void initializeBackgroundExecutors();
+
+    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
+    MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
+    MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
