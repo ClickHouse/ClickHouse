@@ -3460,13 +3460,13 @@ Default value: `0`.
 
 ## replication_alter_partitions_sync {#replication-alter-partitions-sync}
 
-Determines how actions that manipulate partitions are executed.
+Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
--   0 — Do not wait. The next action can start any time, not waiting for the previous action to be completed.
--   1 — Wait for own execution. The next action on the partition starts only after the previous action is completed on this partition.
--   2 — Wait for everyone. The next action starts only after the previous action is completed on all partitions.
+-   0 — Do not wait.
+-   1 — Wait for own execution.
+-   2 — Wait for everyone.
 
 Default value: `1`.
 
