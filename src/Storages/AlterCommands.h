@@ -197,8 +197,6 @@ public:
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
-
-
     /// At least one command modify settings.
     bool hasSettingsAlterCommand() const;
 
