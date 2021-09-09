@@ -17,7 +17,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <common/scope_guard.h>
-#include "Processors/printPipeline.h"
+#include <common/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -32,6 +32,7 @@ struct ViewsData
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
+    size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
     /// Remember the first one, we should keep them after view processing.
@@ -225,7 +226,17 @@ public:
                 view.setException(std::move(status.exception));
             }
             else
+            {
                 view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
+
+                LOG_TRACE(
+                    &Poco::Logger::get("PushingToViews"),
+                    "Pushing ({}) from {} to {} took {} ms.",
+                    views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
+                    views_data->source_storage_id.getNameForLogs(),
+                    view.table_id.getNameForLogs(),
+                    view.runtime_stats.elapsed_ms);
+            }
         }
 
         logQueryViews(views_data->views, views_data->context);
@@ -443,6 +454,10 @@ Chain buildPushingToViewsDrain(
     size_t num_views = views_data->views.size();
     if (num_views != 0)
     {
+        const Settings & settings = context->getSettingsRef();
+        if (settings.parallel_view_processing)
+            views_data->max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), num_views) : num_views;
+
         std::vector<Block> headers;
         headers.reserve(num_views);
         for (const auto & chain : chains)
@@ -546,18 +561,12 @@ static void process(Block & block, ViewRuntimeData & view, const StorageID & sou
             callback(progress);
     });
 
-
     PullingPipelineExecutor executor(io.pipeline);
     if (!executor.pull(block))
     {
         block.clear();
         return;
     }
-
-    WriteBufferFromOwnString buf;
-    auto pipe = QueryPipeline::getPipe(std::move(io.pipeline));
-    const auto & processors = pipe.getProcessors();
-    printPipeline(processors, buf);
 
     if (executor.pull(block))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);

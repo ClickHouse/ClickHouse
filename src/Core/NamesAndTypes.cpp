@@ -1,4 +1,5 @@
 #include <Core/NamesAndTypes.h>
+#include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -6,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/DenseHashMap.h>
 
 
 namespace DB
@@ -163,8 +163,7 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    DenseHashMap<StringRef, const DataTypePtr *, StringRefHash> types;
-    types.set_empty_key(StringRef());
+    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
 
     for (const auto & column : *this)
         types[column.name] = &column.type;
@@ -172,10 +171,11 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = types.find(name);
+        const auto * it = types.find(name);
         if (it == types.end())
-            throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(name, *it->second);
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
+
+        res.emplace_back(name, *it->getMapped());
     }
 
     return res;

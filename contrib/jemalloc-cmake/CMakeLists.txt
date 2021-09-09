@@ -139,9 +139,5 @@ target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
 target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
 
 set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
-if (MAKE_STATIC_LIBRARIES)
-    # To detect whether we need to register jemalloc for osx as default zone.
-    set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS BUNDLED_STATIC_JEMALLOC=1)
-endif()
 
 message (STATUS "Using jemalloc")

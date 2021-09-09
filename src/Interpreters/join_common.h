@@ -30,7 +30,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
 void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
-void restoreLowCardinalityInplace(Block & block);
+void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
@@ -64,40 +64,58 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoined
+class NotJoinedBlocks final
 {
 public:
-    NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
-              const Block & result_sample_block_, const Names & key_names_left_ = {}, const Names & key_names_right_ = {});
+    using LeftToRightKeyRemap = std::unordered_map<String, String>;
 
+    /// Returns non joined columns from right part of join
+    class RightColumnsFiller
+    {
+    public:
+        /// Create empty block for right part
+        virtual Block getEmptyBlock() = 0;
+        /// Fill columns from right part of join with not joined rows
+        virtual size_t fillColumns(MutableColumns & columns_right) = 0;
+
+        virtual ~RightColumnsFiller() = default;
+    };
+
+    NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
+              const Block & result_sample_block_,
+              size_t left_columns_count,
+              const LeftToRightKeyRemap & left_to_right_key_remap);
+
+    Block read();
+
+private:
+    void extractColumnChanges(size_t right_pos, size_t result_pos);
     void correctLowcardAndNullability(Block & block);
     void addLeftColumns(Block & block, size_t rows_added) const;
     void addRightColumns(Block & block, MutableColumns & columns_right) const;
     void copySameKeys(Block & block) const;
 
-protected:
+    std::unique_ptr<RightColumnsFiller> filler;
+
+    /// Right block saved in Join
     Block saved_block_sample;
+
+    /// Output of join
     Block result_sample_block;
 
-    Names key_names_left;
-    Names key_names_right;
-
-    ~NotJoined() = default;
-
-private:
     /// Indices of columns in result_sample_block that should be generated
     std::vector<size_t> column_indices_left;
     /// Indices of columns that come from the right-side table: right_pos -> result_pos
     std::unordered_map<size_t, size_t> column_indices_right;
-    ///
+
     std::unordered_map<size_t, size_t> same_result_keys;
-    /// Which right columns (saved in parent) need nullability change before placing them in result block
+
+    /// Which right columns (saved in parent) need Nullability/LowCardinality change
+    ///  before placing them in result block
     std::vector<std::pair<size_t, bool>> right_nullability_changes;
-    /// Which right columns (saved in parent) need LowCardinality change before placing them in result block
     std::vector<std::pair<size_t, bool>> right_lowcard_changes;
 
     void setRightIndex(size_t right_pos, size_t result_position);
-    void extractColumnChanges(size_t right_pos, size_t result_pos);
 };
 
 }

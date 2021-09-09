@@ -1,7 +1,8 @@
 #include <limits>
 
 #include <Columns/ColumnNullable.h>
-#include <Core/NamesAndTypes.h>
+#include <Columns/ColumnLowCardinality.h>
+
 #include <Core/SortCursor.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/materializeBlock.h>
@@ -723,15 +724,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left));
 
-    for (const auto & column_name : lowcard_keys)
-    {
-        if (!block.has(column_name))
-            continue;
-        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
-            JoinCommon::changeLowCardinalityInplace(col);
-    }
-
-    JoinCommon::restoreLowCardinalityInplace(block);
+    JoinCommon::restoreLowCardinalityInplace(block, lowcard_keys);
 }
 
 template <bool in_memory, bool is_all>
@@ -1035,55 +1028,16 @@ void MergeJoin::initRightTableWriter()
 }
 
 /// Stream from not joined earlier rows of the right table.
-class NonMergeJoinedBlockInputStream : private NotJoined, public IBlockInputStream
+class NotJoinedMerge final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NonMergeJoinedBlockInputStream(const MergeJoin & parent_,
-                                   const Block & result_sample_block_,
-                                   const Names & key_names_right_,
-                                   UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
-                    parent_.modifyRightBlock(parent_.right_sample_block),
-                    parent_.right_sample_block,
-                    result_sample_block_,
-                    {}, key_names_right_)
-        , parent(parent_)
-        , max_block_size(max_block_size_)
+    NotJoinedMerge(const MergeJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_)
     {}
 
-    String getName() const override { return "NonMergeJoined"; }
-    Block getHeader() const override { return result_sample_block; }
+    Block getEmptyBlock() override { return parent.modifyRightBlock(parent.right_sample_block).cloneEmpty(); }
 
-protected:
-    Block readImpl() override
-    {
-        if (parent.getRightBlocksCount())
-            return createBlock();
-        return {};
-    }
-
-private:
-    const MergeJoin & parent;
-    size_t max_block_size;
-    size_t block_number = 0;
-
-    Block createBlock()
-    {
-        MutableColumns columns_right = saved_block_sample.cloneEmptyColumns();
-
-        size_t rows_added = fillColumns(columns_right);
-        if (!rows_added)
-            return {};
-
-        Block res = result_sample_block.cloneEmpty();
-        addLeftColumns(res, rows_added);
-        addRightColumns(res, columns_right);
-        copySameKeys(res);
-        correctLowcardAndNullability(res);
-        return res;
-    }
-
-    size_t fillColumns(MutableColumns & columns_right)
+    size_t fillColumns(MutableColumns & columns_right) override
     {
         const RowBitmaps & bitmaps = *parent.used_rows_bitmap;
         size_t rows_added = 0;
@@ -1127,14 +1081,23 @@ private:
 
         return rows_added;
     }
+
+private:
+    const MergeJoin & parent;
+    size_t max_block_size;
+    size_t block_number = 0;
 };
 
 
-BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
+std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
-        return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, key_names_right, max_block_size);
-    return {};
+    {
+        size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
+        auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
+        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+    }
+    return nullptr;
 }
 
 bool MergeJoin::needConditionJoinColumn() const

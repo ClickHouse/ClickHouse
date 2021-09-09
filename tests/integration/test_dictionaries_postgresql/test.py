@@ -13,11 +13,11 @@ node1 = cluster.add_instance('node1',
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
-    id Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
+    id Integer NOT NULL, key Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
     """
 click_dict_table_template = """
     CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (
-        `id` UInt64, `value` UInt32
+        `key` UInt32, `value` UInt32
     ) ENGINE = Dictionary({})
     """
 
@@ -43,7 +43,7 @@ def create_and_fill_postgres_table(cursor, table_name, port, host):
     create_postgres_table(cursor, table_name)
     # Fill postgres table using clickhouse postgres table function and check
     table_func = '''postgresql('{}:{}', 'clickhouse', '{}', 'postgres', 'mysecretpassword')'''.format(host, port, table_name)
-    node1.query('''INSERT INTO TABLE FUNCTION {} SELECT number, number from numbers(10000)
+    node1.query('''INSERT INTO TABLE FUNCTION {} SELECT number, number, number from numbers(10000)
             '''.format(table_func, table_name))
     result = node1.query("SELECT count() FROM {}".format(table_func))
     assert result.rstrip() == '10000'
@@ -82,7 +82,7 @@ def test_load_dictionaries(started_cluster):
 
     node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT count() FROM `test`.`dict_table_{}`".format(table_name)).rstrip() == '10000'
-    assert node1.query("SELECT dictGetUInt32('{}', 'id', toUInt64(0))".format(dict_name)) == '0\n'
+    assert node1.query("SELECT dictGetUInt32('{}', 'key', toUInt64(0))".format(dict_name)) == '0\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)) == '9999\n'
 
     cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
@@ -252,11 +252,11 @@ def test_dictionary_with_replicas(started_cluster):
     create_postgres_table(cursor1, 'test1')
     create_postgres_table(cursor2, 'test1')
 
-    cursor1.execute('INSERT INTO test1 select i, i from generate_series(0, 99) as t(i);');
-    cursor2.execute('INSERT INTO test1 select i, i from generate_series(100, 199) as t(i);');
+    cursor1.execute('INSERT INTO test1 select i, i, i from generate_series(0, 99) as t(i);')
+    cursor2.execute('INSERT INTO test1 select i, i, i from generate_series(100, 199) as t(i);')
 
     create_dict('test1', 1)
-    result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY id")
+    result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY key")
 
     # priority 0 - non running port
     assert node1.contains_in_log('PostgreSQLConnectionPool: Connection error*')

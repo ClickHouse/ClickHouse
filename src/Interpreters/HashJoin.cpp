@@ -21,7 +21,6 @@
 
 #include <Storages/StorageDictionary.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
@@ -194,6 +193,13 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
 
+    LOG_DEBUG(log, "Right keys: [{}] (required: [{}]), left keys: [{}]",
+              fmt::join(key_names_right, ", "),
+              fmt::join(required_right_keys.getNames(), ", "),
+              fmt::join(table_join->keyNamesLeft(), ", "));
+
+    LOG_DEBUG(log, "Columns to add: [{}]", sample_block_with_columns_to_add.dumpStructure());
+
     std::tie(condition_mask_column_name_left, condition_mask_column_name_right) = table_join->joinConditionColumnNames();
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
@@ -205,7 +211,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
 
-    if (table_join->dictionary_reader)
+    if (table_join->getDictionaryReader())
     {
         LOG_DEBUG(log, "Performing join over dict");
         data->type = Type::DICT;
@@ -325,7 +331,8 @@ public:
 
     KeyGetterForDict(const TableJoin & table_join, const ColumnRawPtrs & key_columns)
     {
-        table_join.dictionary_reader->readKeys(*key_columns[0], read_result, found, positions);
+        assert(table_join.getDictionaryReader());
+        table_join.getDictionaryReader()->readKeys(*key_columns[0], read_result, found, positions);
 
         for (ColumnWithTypeAndName & column : read_result)
             if (table_join.rightBecomeNullable(column.type))
@@ -629,7 +636,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
+    /// If RIGHT or FULL save blocks with nulls for NotJoinedBlocks
     UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
     {
@@ -1468,40 +1475,17 @@ struct AdderNonJoined
 
 
 /// Stream from not joined earlier rows of the right table.
-class NonJoinedBlockInputStream : private NotJoined, public IBlockInputStream
+class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NonJoinedBlockInputStream(const HashJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
-                    parent_.savedBlockSample(),
-                    parent_.right_sample_block,
-                    result_sample_block_)
-        , parent(parent_)
-        , max_block_size(max_block_size_)
+    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_)
     {}
 
-    String getName() const override { return "NonJoined"; }
-    Block getHeader() const override { return result_sample_block; }
+    Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
 
-protected:
-    Block readImpl() override
+    size_t fillColumns(MutableColumns & columns_right) override
     {
-        if (parent.data->blocks.empty())
-            return Block();
-        return createBlock();
-    }
-
-private:
-    const HashJoin & parent;
-    UInt64 max_block_size;
-
-    std::any position;
-    std::optional<HashJoin::BlockNullmapList::const_iterator> nulls_position;
-
-    Block createBlock()
-    {
-        MutableColumns columns_right = saved_block_sample.cloneEmptyColumns();
-
         size_t rows_added = 0;
 
         auto fill_callback = [&](auto, auto strictness, auto & map)
@@ -1513,21 +1497,15 @@ private:
             throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
 
         fillNullsFromBlocks(columns_right, rows_added);
-        if (!rows_added)
-            return {};
-
-        Block res = result_sample_block.cloneEmpty();
-        addLeftColumns(res, rows_added);
-        addRightColumns(res, columns_right);
-        copySameKeys(res);
-        correctLowcardAndNullability(res);
-
-#ifndef NDEBUG
-        assertBlocksHaveEqualStructure(res, result_sample_block, getName());
-#endif
-
-        return res;
+        return rows_added;
     }
+
+private:
+    const HashJoin & parent;
+    UInt64 max_block_size;
+
+    std::any position;
+    std::optional<HashJoin::BlockNullmapList::const_iterator> nulls_position;
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
@@ -1607,15 +1585,18 @@ private:
 };
 
 
-BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
+std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
-        table_join->strictness() == ASTTableJoin::Strictness::Semi)
+        table_join->strictness() == ASTTableJoin::Strictness::Semi ||
+        !isRightOrFull(table_join->kind()))
+    {
         return {};
+    }
 
-    if (isRightOrFull(table_join->kind()))
-        return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
-    return {};
+    size_t left_columns_count = result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns();
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size);
+    return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)

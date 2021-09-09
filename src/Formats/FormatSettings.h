@@ -28,6 +28,7 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
+    bool decimal_trailing_zeros = false;
 
     enum class DateTimeInputFormat
     {
