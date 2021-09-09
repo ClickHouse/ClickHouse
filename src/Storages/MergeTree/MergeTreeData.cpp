@@ -200,6 +200,8 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
+    , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
+    , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
     const auto settings = getSettings();
     allow_nullable_key = attach || settings->allow_nullable_key;
@@ -308,6 +310,22 @@ MergeTreeData::MergeTreeData(
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
+
+    common_assignee_trigger = [this] (bool delay) noexcept
+    {
+        if (delay)
+            background_operations_assignee.postpone();
+        else
+            background_operations_assignee.trigger();
+    };
+
+    moves_assignee_trigger = [this] (bool delay) noexcept
+    {
+        if (delay)
+            background_moves_assignee.postpone();
+        else
+            background_moves_assignee.trigger();
+    };
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -5014,7 +5032,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
+bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
     if (parts_mover.moves_blocker.isCancelled())
         return false;
@@ -5023,10 +5041,11 @@ bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
     if (moving_tagger->parts_to_move.empty())
         return false;
 
-    executor.execute({[this, moving_tagger] () mutable
-    {
-        return moveParts(moving_tagger);
-    }, PoolType::MOVE});
+    assignee.scheduleMoveTask(ExecutableLambdaAdapter::create(
+        [this, moving_tagger] () mutable
+        {
+            return moveParts(moving_tagger);
+        }, moves_assignee_trigger, getStorageID()));
     return true;
 }
 
