@@ -120,6 +120,13 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
     ShellCommandSource::SendDataTask task = {[process_in, block, this]()
     {
         auto & out = *process_in;
+
+        if (configuration.send_chunk_header)
+        {
+            writeText(block.rows(), out);
+            writeChar('\n', out);
+        }
+
         auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
         formatBlock(output_stream, block);
         out.close();
@@ -188,7 +195,8 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .format = config.getString(settings_config_prefix + ".format"),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
+            .send_chunk_header = config.getBool(settings_config_prefix + ".implicit_key", false)
         };
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context);
