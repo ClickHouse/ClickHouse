@@ -55,13 +55,15 @@ void ReplicatedMergeTreeQueue::clear()
     mutation_pointer.clear();
 }
 
-void ReplicatedMergeTreeQueue::initialize(const MergeTreeData::DataParts & parts)
+void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(state_mutex);
-    for (const auto & part : parts)
+
+    Strings parts = zookeeper->getChildren(replica_path + "/parts");
+    for (const auto & part_name : parts)
     {
-        current_parts.add(part->name, nullptr);
-        virtual_parts.add(part->name, nullptr);
+        current_parts.add(part_name, nullptr);
+        virtual_parts.add(part_name, nullptr);
     }
 }
 
