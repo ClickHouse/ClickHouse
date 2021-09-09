@@ -100,7 +100,7 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
         config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, configuration.command_termination_timeout };
         auto shell_command = ShellCommand::execute(config);
         return shell_command;
-    }, configuration.max_command_execution_time * 10000);
+    }, configuration.max_command_execution_time * 1000);
 
     if (!result)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
@@ -112,6 +112,13 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     ShellCommandSource::SendDataTask task = [process_in, block, this]() mutable
     {
         auto & out = *process_in;
+
+        if (configuration.send_chunk_header)
+        {
+            writeText(block.rows(), out);
+            writeChar('\n', out);
+        }
+
         auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
         formatBlock(output_stream, block);
     };
@@ -190,6 +197,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .max_command_execution_time = max_command_execution_time,
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
+            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false)
         };
 
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context);
