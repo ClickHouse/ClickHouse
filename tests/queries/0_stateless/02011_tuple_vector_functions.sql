@@ -56,3 +56,14 @@ SELECT cosineDistance((1, 1), (2, 2));
 SELECT cosineDistance((1, 1), (-3, 3.0));
 SELECT cosineDistance((1, 1), (-1, -1));
 SELECT cosineDistance((1, 0), (0.5, sqrt(3) / 2));
+
+SELECT (NULL, 1) + (1, NULL);
+SELECT (NULL, 1) * (1, NULL);
+SELECT L2Norm((NULL, 3, 4));
+SELECT 2 * (1, 2, NULL);
+SELECT (1, 1.0, NULL) / NULL;
+SELECT -(NULL, NULL, 1);
+SELECT (NULL, NULL) * NULL;
+SELECT L1Normalize((NULL, 1));
+SELECT cosineDistance((NULL, 1), (NULL, NULL));
+SELECT max2(NULL, 1) - min2(NULL, 1);
