@@ -25,8 +25,6 @@ public:
 
     UserDefinedExecutableFunctionPtr tryGetUserDefinedFunction(const std::string & user_defined_function_name) const;
 
-    static void resetAll();
-
 protected:
     LoadablePtr create(const std::string & name,
         const Poco::Util::AbstractConfiguration & config,

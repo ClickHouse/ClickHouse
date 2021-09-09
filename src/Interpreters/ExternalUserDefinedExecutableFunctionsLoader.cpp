@@ -1,15 +1,17 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
-#include <Interpreters/UserDefinedExecutableFunction.h>
+#include <DataStreams/ShellCommandSource.h>
+#include <DataStreams/formatBlock.h>
+
+#include <DataTypes/DataTypeFactory.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Interpreters/UserDefinedExecutableFunction.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
-#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -30,8 +32,6 @@ public:
         , config(config_)
         , process(std::move(process_))
     {
-        std::cerr << "UserDefinedFunction::UserDefinedFunction " << config.argument_types.size() << " ";
-        std::cerr << " config format " << config.format << std::endl;
     }
 
     String getName() const override { return config.name; }
@@ -63,14 +63,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        std::cerr << "UserDefinedFunction::executeImpl " << input_rows_count << " result type " << result_type->getName();
-        std::cerr << " arguments " << arguments.size() << std::endl;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & argument = arguments[i];
-            std::cerr << "Index " << i << " structure " << argument.dumpStructure() << std::endl;
-        }
-
         Block arguments_block(arguments);
 
         ColumnWithTypeAndName result(result_type, "result");
@@ -87,13 +79,6 @@ public:
         }};
 
         std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
-
-        // auto & buffer = process->out;
-        // char buffer_data[4096] {};
-        // size_t read_size = buffer.read(buffer_data, sizeof(buffer_data));
-        // buffer_data[read_size] = '\0';
-        // std::cerr << "Buffer data read size " << read_size << " data " << buffer_data << std::endl;
-
         Pipe pipe(std::make_unique<ShellCommandSource>(context, config.format, result_block.cloneEmpty(), std::move(process), nullptr, std::move(tasks)));
 
         QueryPipeline pipeline;
@@ -101,21 +86,12 @@ public:
 
         PullingPipelineExecutor executor(pipeline);
 
-        // std::cerr << "Executor pull blocks" << std::endl;
         auto result_column = result_type->createColumn();
         Block block;
         while (executor.pull(block))
         {
-            std::cerr << "Executor pull block " << block.rows() << std::endl;
-            result_column->insertFrom(*block.safeGetByPosition(0).column, block.rows());
-        }
-
-        std::cerr << "Result column size " << result_column->size() << std::endl;
-        Field value;
-        for (size_t i = 0; i < result_column->size(); ++i)
-        {
-            result_column->get(i, value);
-            std::cerr << "Index " << i << " value " << value.dump() << std::endl;
+            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
         }
 
         size_t result_column_size = result_column->size();
@@ -159,8 +135,6 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     const std::string & key_in_config,
     const std::string &) const
 {
-    std::cerr << "ExternalUserDefinedExecutableFunctionsLoader::create name " << name << " key in config " << key_in_config << std::endl;
-
     String command = config.getString(key_in_config + ".command");
     String format = config.getString(key_in_config + ".format");
     DataTypePtr result_type = DataTypeFactory::instance().get(config.getString(key_in_config + ".return_type"));
@@ -190,9 +164,14 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .result_type = std::move(result_type),
     };
 
-    auto function = std::make_shared<UserDefinedExecutableFunction>(function_config, lifetime);
+    std::shared_ptr<scope_guard> function_deregister_ptr = std::make_shared<scope_guard>([function_name = function_config.name]()
+    {
+        UserDefinedExecutableFunctionFactory::instance().unregisterFunction(function_name);
+    });
 
-    FunctionFactory::instance().registerFunction(function_config.name, [function](ContextPtr function_context)
+    auto function = std::make_shared<UserDefinedExecutableFunction>(function_config, std::move(function_deregister_ptr), lifetime);
+
+    UserDefinedExecutableFunctionFactory::instance().registerFunction(function_config.name, [function](ContextPtr function_context)
     {
         auto shell_command = ShellCommand::execute(function->getConfig().script_path);
         std::shared_ptr<UserDefinedFunction> user_defined_function = std::make_shared<UserDefinedFunction>(function_context, function->getConfig(), std::move(shell_command));
