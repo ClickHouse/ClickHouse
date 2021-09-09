@@ -17,6 +17,7 @@ RUN apt-get update \
         devscripts \
         libc++-dev \
         libc++abi-dev \
+        libboost-all-dev \
         libboost-program-options-dev \
         libboost-system-dev \
         libboost-filesystem-dev \
