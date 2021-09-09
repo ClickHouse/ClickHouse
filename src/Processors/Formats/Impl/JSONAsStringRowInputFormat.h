@@ -13,26 +13,46 @@ class ReadBuffer;
 /// Each JSON object is parsed as a whole to string.
 /// This format can only parse a table with single field of type String.
 
-class JSONAsStringRowInputFormat : public IRowInputFormat
+class JSONAsRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    String getName() const override { return "JSONAsStringRowInputFormat"; }
     void resetParser() override;
 
     void readPrefix() override;
     void readSuffix() override;
 
-private:
-    void readJSONObject(IColumn & column);
-
+protected:
+    virtual void readJSONObject(IColumn & column) = 0;
     PeekableReadBuffer buf;
 
+private:
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
     bool allow_new_rows = true;
+};
+
+class JSONAsStringRowInputFormat final : public JSONAsRowInputFormat
+{
+public:
+    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    String getName() const override { return "JSONAsStringRowInputFormat"; }
+
+private:
+    void readJSONObject(IColumn & column) override;
+};
+
+class JSONAsObjectRowInputFormat final : public JSONAsRowInputFormat
+{
+public:
+    JSONAsObjectRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    String getName() const override { return "JSONAsObjectRowInputFormat"; }
+
+private:
+    void readJSONObject(IColumn & column) override;
+    const FormatSettings format_settings;
 };
 
 }

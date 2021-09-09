@@ -12,11 +12,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 template <typename Element>
-Field getValueAsField(const Element & element)
+static Field getValueAsField(const Element & element)
 {
     if (element.isBool())   return element.getBool();
     if (element.isInt64())  return element.getInt64();
@@ -28,7 +25,7 @@ Field getValueAsField(const Element & element)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
 
-String getNextPath(const String & current_path, const std::string_view & key)
+static String getNextPath(const String & current_path, const std::string_view & key)
 {
     String next_path = current_path;
     if (!key.empty())
@@ -39,8 +36,6 @@ String getNextPath(const String & current_path, const std::string_view & key)
     }
 
     return next_path;
-}
-
 }
 
 struct ParseResult
