@@ -165,7 +165,6 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     auto read_buf = getReadBufferFromASTInsertQuery(query);
 
-    /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
     auto entry = std::make_shared<InsertData::Entry>();
     entry->query_id = query_context->getCurrentQueryId();
 
@@ -177,6 +176,7 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     bool found = false;
 
     {
+        /// Firstly try to get entry from queue without exclusive lock.
         std::shared_lock read_lock(rwlock);
         it = queue.find(key);
         if (it != queue.end())

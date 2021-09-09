@@ -15,6 +15,8 @@ namespace DB
 class ASTInsertQuery;
 struct BlockIO;
 
+/// A queue, that stores data for insert queries and periodically flushes it to tables.
+/// The data is grouped by table, format and settings of insert query.
 class AsynchronousInsertQueue : public WithContext
 {
 public:
@@ -85,6 +87,9 @@ private:
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
 
+    /// A separate container, that holds a data and a mutex for it.
+    /// When it's needed to process current chunk of data, it can be moved for processing
+    /// and new data can be recreated without holding a lock during processing.
     struct Container
     {
         std::mutex mutex;
@@ -119,7 +124,7 @@ private:
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
     ThreadFromGlobalPool dump_by_last_update_thread;   /// uses stale_timeout and staleCheck()
-    ThreadFromGlobalPool cleanup_thread;
+    ThreadFromGlobalPool cleanup_thread;               /// uses busy_timeout and cleanup()
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
