@@ -4515,7 +4515,37 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     }
 
     // Let's select the best projection to execute the query.
-    if (!candidates.empty() && !selected_candidate)src/Storages/StorageS3.cpp
+    if (!candidates.empty() && !selected_candidate)
+    {
+        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
+        if (settings.select_sequential_consistency)
+        {
+            if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
+                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+        }
+
+        auto parts = getDataPartsVector();
+        MergeTreeDataSelectExecutor reader(*this);
+        query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info,
+            query_context,
+            settings.max_threads,
+            max_added_blocks);
+
+        if (!query_info.merge_tree_select_result_ptr->error())
+        {
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+        }
+
+        /// Favor aggregate projections
+        for (auto & candidate : candidates)
+        {
             if (candidate.desc->type == ProjectionDescription::Type::Aggregate)
             {
                 selectBestProjection(

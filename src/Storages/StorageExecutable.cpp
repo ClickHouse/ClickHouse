@@ -77,7 +77,7 @@ StorageExecutable::StorageExecutable(
 
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -172,7 +172,7 @@ Pipe StorageExecutable::read(
         tasks.emplace_back(std::move(task));
     }
 
-    auto sample_block = metadata_snapshot->getSampleBlock();
+    auto sample_block = storage_snapshot->metadata->getSampleBlock();
 
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;

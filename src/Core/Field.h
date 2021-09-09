@@ -297,10 +297,6 @@ public:
             Map = 26,
             UUID = 27,
             Object = 28,
-
-            // Special types for index analysis
-            NegativeInfinity = 254,
-            PositiveInfinity = 255,
         };
 
         static const char * toString(Which which)
