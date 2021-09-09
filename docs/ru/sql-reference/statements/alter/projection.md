@@ -5,7 +5,7 @@ toc_title: PROJECTION
 
 # Манипуляции с проекциями {#manipulations-with-projections}
 
-Доступны следующие операции:
+Доступны следующие операции с [проекциями](../../../engines/table-engines/mergetree-family/mergetree.md#projections):
 
 -   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` — добавляет описание проекции в метаданные.
 
@@ -15,7 +15,7 @@ toc_title: PROJECTION
 
 -   `ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` — удаляет файлы проекции с диска без удаления описания.
 
-Комманды ADD, DROP и CLEAR — легковесны, поскольку они только меняют метаданные или удаляют файлы.
+Команды `ADD`, `DROP` и `CLEAR` — легковесны, поскольку они только меняют метаданные или удаляют файлы.
 
 Также команды реплицируются, синхронизируя описания проекций в метаданных с помощью ZooKeeper.
 
