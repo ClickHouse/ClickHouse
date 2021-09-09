@@ -22,7 +22,7 @@
 
 			&:active,
 			&:hover {
-				color: map-get($colors, "primary-accent-blue");
+				color: $color-primary-accent-blue;
 				text-decoration: none;
 			}
 		}
@@ -62,6 +62,6 @@
 
 	&:active,
 	&:hover {
-		color: map-get($colors, "primary-accent-blue");
+		color: $color-primary-accent-blue;
 	}
 }

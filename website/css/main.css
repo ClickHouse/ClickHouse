@@ -56,6 +56,10 @@
   color: #fff;
 }
 
+.footer-copy {
+  white-space: nowrap;
+}
+
 .navbar {
   border-bottom: 4px solid #f1f6f9;
   height: 142px;
@@ -111,4 +115,16 @@
 }
 .nav-link:active, .nav-link:hover {
   color: #257af4;
+}
+
+.font-lg {
+  font-size: 1.25rem;
+}
+
+.font-sm {
+  font-size: 0.875rem;
+}
+
+.font-xs {
+  font-size: 0.625rem;
 }
