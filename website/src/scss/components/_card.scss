@@ -1,0 +1,41 @@
+.card {
+	box-shadow: $box-shadow;
+	overflow: hidden;
+	transition: box-shadow 0.2s, transform 0.2s;
+	width: 100%;
+}
+
+.card.is-large .card-body {
+	padding: 40px;
+}
+
+.card.bg-primary-light {
+	border-color: $color-brand-primary;
+}
+
+a.card:active,
+a.card:hover,
+.card.has-hover:active,
+.card.has-hover:hover {
+	box-shadow: $box-shadow-lg;
+	transform: translateY(-8px);
+}
+
+a.card:after,
+.card.has-hover:after,
+.card.has-highlight:after {
+	content: '';
+	display: block;
+	height: 8px;
+	margin-top: auto;
+	transition: background 0.2s;
+	width: 100%;
+}
+
+a.card:active:after,
+a.card:hover:after,
+.card.has-hover:active:after,
+.card.has-hover:hover:after,
+.card.has-highlight:after {
+	background: $color-primary-accent-light-blue;
+}

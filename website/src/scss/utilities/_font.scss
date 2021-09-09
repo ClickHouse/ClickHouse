@@ -1,3 +1,7 @@
+.font-xl {
+	font-size: $font-size-xl;
+}
+
 .font-lg {
 	font-size: $font-size-lg;
 }
@@ -8,4 +12,20 @@
 
 .font-xs {
 	font-size: $font-size-xs;
+}
+
+.font-weight-semibold {
+	font-weight: $font-weight-semibold;
+}
+
+.display-5 {
+	color: $black;
+	font-size: $display5-size;
+	font-weight: $display5-weight;
+}
+
+.display-6 {
+	color: $black;
+	font-size: $display6-size;
+	font-weight: $display6-weight;
 }
