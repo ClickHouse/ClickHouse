@@ -193,11 +193,8 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
-    if (remove_repository_callback_executed)
-        return;
-
-    remove_repository_callback_executed = true;
-    remove_repository_callback.reset();
+    if (remove_repository_callback)
+        remove_repository_callback.reset();
 }
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
