@@ -18,7 +18,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 The `OPTMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, the [MaterializedView](../../engines/table-engines/special/materializedview.md) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
 
-When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is enabled).
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is set to `2`) or on current replica (if the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is set to `1`).
 
 -   If `OPTIMIZE` does not perform a merge for any reason, it does not notify the client. To enable notifications, use the [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
 -   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](../../sql-reference/statements/alter/index.md#alter-how-to-specify-part-expr).

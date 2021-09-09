@@ -18,7 +18,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 Может применяться к таблицам семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md), [MaterializedView](../../engines/table-engines/special/materializedview.md) и [Buffer](../../engines/table-engines/special/buffer.md). Другие движки таблиц не поддерживаются.
 
-Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех узлах (если активирована настройка [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync)).
+Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех репликах (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `2`) или на текущей реплике (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `1`).
 
 -   По умолчанию, если запросу `OPTIMIZE` не удалось выполнить слияние, то
 ClickHouse не оповещает клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
