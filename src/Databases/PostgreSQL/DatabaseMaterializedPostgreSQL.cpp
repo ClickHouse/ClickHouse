@@ -30,7 +30,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
     extern const int UNKNOWN_TABLE;
@@ -313,8 +312,8 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
 
 StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name)
 {
-    /// If there is query context then we need to dettach materialized storage.
-    /// If there is no query context then we need to dettach internal storage from atomic database.
+    /// If there is query context then we need to detach materialized storage.
+    /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto & table_to_delete = materialized_tables[table_name];

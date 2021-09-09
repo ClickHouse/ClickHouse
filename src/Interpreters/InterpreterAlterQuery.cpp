@@ -199,7 +199,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
                 if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
                     database->applyNewSettings(command.settings_changes, getContext());
                 else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported alter command");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
             }
         }
     }
