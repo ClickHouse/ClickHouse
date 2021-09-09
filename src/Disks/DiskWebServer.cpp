@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
@@ -137,14 +136,12 @@ private:
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & url_,
-            const String &,
             ContextPtr context_,
             SettingsPtr settings_)
         : WithContext(context_->getGlobalContext())
         , log(&Poco::Logger::get("DiskWeb"))
         , url(url_)
         , name(disk_name_)
-        , metadata_path(url)
         , settings(std::move(settings_))
 {
 }
@@ -255,9 +252,7 @@ void registerDiskWebServer(DiskFactory & factory)
             context->getGlobalContext()->getSettingsRef().http_max_single_read_retries,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
-        String metadata_path = fs::path(context->getPath()) / "disks" / disk_name / "";
-
-        return std::make_shared<DiskWebServer>(disk_name, uri, metadata_path, context, std::move(settings));
+        return std::make_shared<DiskWebServer>(disk_name, uri, context, std::move(settings));
     };
 
     factory.registerDiskType("web", creator);
