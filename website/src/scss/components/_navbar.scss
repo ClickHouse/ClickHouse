@@ -47,21 +47,21 @@
 		align-items: center;
 		height: 46px;
 	}
+
+	.nav-item + .nav-item {
+		margin-left: 24px;
+	}
+	
+	.nav-link {
+		color: $black;
+	
+		&:active,
+		&:hover {
+			color: $color-primary-accent-blue;
+		}
+	}
 }
 
 .navbar-expand-lg > .container {
 	flex-wrap: wrap;
-}
-
-.nav-item + .nav-item {
-	margin-left: 24px;
-}
-
-.nav-link {
-	color: $black;
-
-	&:active,
-	&:hover {
-		color: $color-primary-accent-blue;
-	}
 }
