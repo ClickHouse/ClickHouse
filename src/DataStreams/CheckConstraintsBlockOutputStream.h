@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Interpreters/StorageID.h>
 
@@ -12,7 +12,7 @@ namespace DB
   * Otherwise just pass block to output unchanged.
   */
 
-class CheckConstraintsTransform final : public ISimpleTransform
+class CheckConstraintsTransform final : public ExceptionKeepingTransform
 {
 public:
     CheckConstraintsTransform(

@@ -27,7 +27,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     const Block & header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : ISimpleTransform(header, header, false)
+    : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints(constraints_)
     , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
