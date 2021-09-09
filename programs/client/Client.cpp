@@ -1244,13 +1244,17 @@ private:
                     if (!server_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                        fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
+                            test_hint.serverError(),
+                            full_query);
                     }
                     else if (server_exception->code() != test_hint.serverError())
                     {
                         error_matches_hint = false;
-                        std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                                  << "." << std::endl;
+                        fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
+                            test_hint.serverError(),
+                            server_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1259,13 +1263,17 @@ private:
                     if (!client_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                        fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
+                            test_hint.clientError(),
+                            full_query);
                     }
                     else if (client_exception->code() != test_hint.clientError())
                     {
                         error_matches_hint = false;
-                        fmt::print(
-                            stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                        fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
+                            test_hint.clientError(),
+                            client_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1281,13 +1289,17 @@ private:
             {
                 if (test_hint.clientError())
                 {
-                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
+                        test_hint.clientError(),
+                        full_query);
                     error_matches_hint = false;
                 }
 
                 if (test_hint.serverError())
                 {
-                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
+                        test_hint.serverError(),
+                        full_query);
                     error_matches_hint = false;
                 }
             }
