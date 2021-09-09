@@ -85,9 +85,6 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
-    , background_executor(*this, BackgroundJobExecutor::Type::DataProcessing, getContext())
-    , background_moves_executor(*this, BackgroundJobExecutor::Type::Moving, getContext())
-
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -118,7 +115,7 @@ void StorageMergeTree::startup()
 
     try
     {
-        background_executor.start();
+        background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -156,8 +153,8 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
-    background_executor.finish();
-    background_moves_executor.finish();
+    background_operations_assignee.finish();
+    background_moves_assignee.finish();
 
     try
     {
@@ -245,6 +242,9 @@ void StorageMergeTree::checkTableCanBeDropped() const
 void StorageMergeTree::drop()
 {
     shutdown();
+    /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
+    if (isReadOnly())
+        return;
     dropAllData();
 }
 
@@ -414,7 +414,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
-    background_executor.triggerTask();
+    background_operations_assignee.trigger();
     return version;
 }
 
@@ -640,7 +640,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    background_executor.triggerTask();
+    background_operations_assignee.trigger();
 
     return CancellationCode::CancelSent;
 }
@@ -1003,7 +1003,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executor) //-V657
+bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
 {
     if (shutdown_called)
         return false;
@@ -1035,44 +1035,50 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executo
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock);
-        executor.executeMergeMutateTask(task);
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, metadata_snapshot, merge_entry, share_lock] () mutable
+            {
+                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
     if (mutate_entry)
     {
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, share_lock);
-        executor.executeMergeMutateTask(task);
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
+            {
+            return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
-    bool executed = false;
-    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    bool scheduled = false;
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
-        /// FIXME: Use common pool instead of fetch?
-        executor.executeMergeMutateTask(LambdaAdapter::create([this, share_lock] ()
-        {
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
-            return true;
-        }, *this));
-        executed = true;
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+                return true;
+            }, common_assignee_trigger, getStorageID()));
+        scheduled = true;
     }
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
-        /// FIXME: Same here
-        executor.executeMergeMutateTask(LambdaAdapter::create([this, share_lock] ()
-        {
-            /// All use relative_data_path which changes during rename
-            /// so execute under share lock.
-            clearOldPartsFromFilesystem();
-            clearOldWriteAheadLogs();
-            clearOldMutations();
-            clearEmptyParts();
-            return true;
-        }, *this));
-        executed = true;
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                /// All use relative_data_path which changes during rename
+                /// so execute under share lock.
+                clearOldPartsFromFilesystem();
+                clearOldWriteAheadLogs();
+                clearOldMutations();
+                clearEmptyParts();
+                return true;
+            }, common_assignee_trigger, getStorageID()));
+        scheduled = true;
      }
 
-    return executed;
+    return scheduled;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
@@ -1523,9 +1529,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
-        background_executor.triggerTask();
+        background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
+        background_moves_assignee.trigger();
 }
 
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
@@ -1603,7 +1609,7 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
-        background_moves_executor.start();
+        background_moves_assignee.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

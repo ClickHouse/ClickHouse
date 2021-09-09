@@ -38,6 +38,10 @@ You can also download and install packages manually from [here](https://repo.cli
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
+!!! attention "Attention"
+    If you need to install specific version of ClickHouse you have to install all packages with the same version:
+    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+
 ### From RPM Packages {#from-rpm-packages}
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.

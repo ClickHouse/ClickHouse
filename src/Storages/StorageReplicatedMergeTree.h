@@ -31,7 +31,7 @@
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
 namespace DB
@@ -220,7 +220,7 @@ public:
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(BackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
@@ -241,7 +241,7 @@ public:
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType::Type disk_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -366,15 +366,8 @@ private:
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
-    /// Limiting parallel fetches per node
-    static inline std::atomic_uint total_fetches {0};
-
-    /// Limiting parallel fetches per one table
-    std::atomic_uint current_table_fetches {0};
-
     int metadata_version = 0;
     /// Threads.
-
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;

@@ -26,17 +26,17 @@ The supported formats are:
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -74,7 +74,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when ‘extremes’ is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -464,7 +464,7 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 -   [JSONEachRow](#jsoneachrow) format
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
-## JSONString {#jsonstring}
+## JSONStrings {#jsonstrings}
 
 Differs from JSON only in that data fields are output in strings, not in typed JSON values.
 
@@ -541,7 +541,7 @@ Result:
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactString {#jsoncompactstring}
+## JSONCompactStrings {#jsoncompactstrings}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
@@ -580,7 +580,7 @@ Example:
 ```
 
 ```
-// JSONCompactString
+// JSONCompactStrings
 {
         "meta":
         [
@@ -614,7 +614,7 @@ Example:
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
 When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
 
@@ -639,9 +639,9 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow`/`JSONCompactStringEachRow` in that the column names and types are written as the first two rows.
+Differs from `JSONCompactEachRow`/`JSONCompactStringsEachRow` in that the column names and types are written as the first two rows.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -1270,6 +1270,8 @@ You can insert Parquet data from a file into ClickHouse table by the following c
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
+
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
 ``` bash
@@ -1328,6 +1330,8 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) setting.
+
 ### Selecting Data {#selecting-data-arrow}
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
@@ -1383,6 +1387,8 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested) setting.
 
 ### Selecting Data {#selecting-data-2}
 

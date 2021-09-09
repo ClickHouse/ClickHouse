@@ -163,7 +163,7 @@ static MergeTreeIndices getIndicesForNewDataPart(
     return new_indices;
 }
 
-static MergeTreeProjections getProjectionsForNewDataPart(
+static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
     const ProjectionsDescription & all_projections,
     const MutationCommands & commands_for_removes)
 {
@@ -172,10 +172,10 @@ static MergeTreeProjections getProjectionsForNewDataPart(
         if (command.type == MutationCommand::DROP_PROJECTION)
             removed_projections.insert(command.column_name);
 
-    MergeTreeProjections new_projections;
+    std::vector<ProjectionDescriptionRawPtr> new_projections;
     for (const auto & projection : all_projections)
         if (!removed_projections.count(projection.name))
-            new_projections.push_back(MergeTreeProjectionFactory::instance().get(projection));
+            new_projections.push_back(&projection);
 
     return new_projections;
 }
@@ -254,21 +254,20 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     return indices_to_recalc;
 }
 
-std::set<MergeTreeProjectionPtr> getProjectionsToRecalculate(
+std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_projections,
     const MergeTreeData::DataPartPtr & source_part)
 {
     /// Checks if columns used in projections modified.
-    const auto & projection_factory = MergeTreeProjectionFactory::instance();
-    std::set<MergeTreeProjectionPtr> projections_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         // If we ask to materialize and it doesn't exist
         if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.count(projection.name))
         {
-            projections_to_recalc.insert(projection_factory.get(projection));
+            projections_to_recalc.insert(&projection);
         }
         else
         {
@@ -284,7 +283,7 @@ std::set<MergeTreeProjectionPtr> getProjectionsToRecalculate(
                 }
             }
             if (mutate)
-                projections_to_recalc.insert(projection_factory.get(projection));
+                projections_to_recalc.insert(&projection);
         }
     }
     return projections_to_recalc;
@@ -298,7 +297,7 @@ NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<MergeTreeProjectionPtr> & projections_to_recalc)
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -321,9 +320,7 @@ NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
     for (const auto & projection : projections_to_recalc)
-    {
         files_to_skip.insert(projection->getDirectoryName());
-    }
 
     return files_to_skip;
 }
@@ -536,13 +533,13 @@ struct MutationContext
 
     String mrk_extension;
 
-    MergeTreeProjections projections_to_build;
+    std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
 
 
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
-    std::set<MergeTreeProjectionPtr> projections_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
@@ -802,8 +799,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
-            const auto & projection = ctx->projections_to_build[i]->projection;
-            auto projection_block = projection_squashes[i].add(projection.calculate(block, ctx->context));
+            const auto & projection = *ctx->projections_to_build[i];
+            auto projection_block = ctx->projection_squashes[i].add(projection.calculate(block, ctx->context));
             if (projection_block)
                 projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
@@ -819,7 +816,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        const auto & projection = ctx->projections_to_build[i]->projection;
+        const auto & projection = *ctx->projections_to_build[i];
         auto & projection_squash = projection_squashes[i];
         auto projection_block = projection_squash.add({});
         if (projection_block)
@@ -1048,7 +1045,11 @@ private:
 
             String destination = ctx->new_part_tmp_path;
             String file_name = it->name();
-            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
+
+            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
+            {
+                return rename_pair.first == file_name;
+            });
             if (rename_it != ctx->files_to_rename.end())
             {
                 if (rename_it->second.empty())
@@ -1108,7 +1109,7 @@ private:
             ctx->mutating_stream->readPrefix();
             ctx->out->writePrefix();
 
-            ctx->projections_to_build = std::vector<MergeTreeProjectionPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
+            ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
         }

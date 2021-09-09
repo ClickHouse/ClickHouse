@@ -122,7 +122,11 @@ bool MutateFromLogEntryTask::finalize()
 
             write_part_log(ExecutionStatus::fromCurrentException());
 
-            storage.tryRemovePartImmediately(std::move(new_part));
+            if (storage.storage_settings_ptr->detach_not_byte_identical_parts)
+                forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
+            else
+                tryRemovePartImmediately(std::move(new_part));
+
             /// No need to delete the part from ZK because we can be sure that the commit transaction
             /// didn't go through.
 

@@ -1078,7 +1078,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         zxid = *new_last_zxid;
     }
 
-    session_expiry_queue.update(session_id, session_and_timeout[session_id]);
+    /// ZooKeeper update sessions expirity for each request, not only for heartbeats
+    session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {

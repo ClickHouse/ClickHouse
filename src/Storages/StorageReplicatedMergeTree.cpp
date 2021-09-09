@@ -17,6 +17,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/PartitionPruner.h>
@@ -127,7 +128,6 @@ namespace ErrorCodes
     extern const int PARTITION_DOESNT_EXIST;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-    extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
@@ -1600,22 +1600,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    if (storage_settings_ptr->replicated_max_parallel_fetches &&
-        total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many total fetches from replicas, maximum: {} ",
-            storage_settings_ptr->replicated_max_parallel_fetches.toString());
-
-    ++total_fetches;
-    SCOPE_EXIT({--total_fetches;});
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
-        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many fetches from replicas for table, maximum: {}",
-            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString());
-
-    ++current_table_fetches;
-    SCOPE_EXIT({--current_table_fetches;});
-
     try
     {
         if (replica.empty())
@@ -1808,25 +1792,6 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-    {
-        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
-
-    ++total_fetches;
-    SCOPE_EXIT({--total_fetches;});
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
-        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-    {
-        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
-
-    ++current_table_fetches;
-    SCOPE_EXIT({--current_table_fetches;});
 
     try
     {
@@ -2840,7 +2805,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executor)
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
@@ -2857,31 +2822,20 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (job_type == LogEntry::GET_PART)
     {
-        executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
-        {
-            return processQueueEntry(selected_entry);
-        }, *this));
-        return true;
-    }
-    else if (job_type == LogEntry::MERGE_PARTS)
-    {
-        auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this);
-        executor.executeMergeMutateTask(task);
-        return true;
-    }
-    else if (job_type == LogEntry::MUTATE_PART)
-    {
-        auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this);
-        executor.executeMergeMutateTask(task);
+        assignee.scheduleFetchTask(ExecutableLambdaAdapter::create(
+            [this, selected_entry] () mutable
+            {
+                return processQueueEntry(selected_entry);
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
     else
     {
-        // Execute in big pool
-        executor.executeMergeMutateTask(LambdaAdapter::create([this, selected_entry] () mutable
-        {
-            return processQueueEntry(selected_entry);
-        }, *this));
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, selected_entry] () mutable
+            {
+                return processQueueEntry(selected_entry);
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
 }
@@ -4017,7 +3971,7 @@ void StorageReplicatedMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     restarting_thread.shutdown();
-    background_executor.finish();
+    background_operations_assignee.finish();
     part_moves_between_shards_orchestrator.shutdown();
 
     {
@@ -4027,7 +3981,7 @@ void StorageReplicatedMergeTree::shutdown()
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
-    background_moves_executor.finish();
+    background_moves_assignee.finish();
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)
@@ -6627,9 +6581,9 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
         || action_type == ActionLocks::ReplicationQueue)
-        background_executor.triggerTask();
+        background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
+        background_moves_assignee.trigger();
 }
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
@@ -6641,8 +6595,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
-    background_executor.triggerTask();
-    background_moves_executor.triggerTask();
+    background_operations_assignee.trigger();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
@@ -6876,7 +6829,7 @@ MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPar
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
-        background_moves_executor.start();
+        background_moves_assignee.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const
@@ -6892,7 +6845,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return;
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk->getType()));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -6932,7 +6885,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return true;
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk->getType()));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -6992,7 +6945,7 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
 
 
 String StorageReplicatedMergeTree::getSharedDataReplica(
-    const IMergeTreeDataPart & part, DiskType::Type disk_type) const
+    const IMergeTreeDataPart & part, DiskType disk_type) const
 {
     String best_replica;
 
@@ -7000,7 +6953,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk_type));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
     String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
 
     Strings ids;

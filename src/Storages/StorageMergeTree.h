@@ -19,7 +19,6 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -99,22 +98,9 @@ public:
 
     RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
-    bool scheduleDataProcessingJob(BackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
-
-    void triggerBackgroundOperationTask(bool delay) override
-    {
-        if (delay)
-            background_executor.triggerTaskWithDelay();
-        else
-            background_executor.triggerTask();
-
-        if (delay)
-            background_moves_executor.triggerTaskWithDelay();
-        else
-            background_moves_executor.triggerTask();
-    }
 
 private:
 

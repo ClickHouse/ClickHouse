@@ -57,6 +57,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
@@ -77,7 +78,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
@@ -168,6 +169,7 @@ struct ContextSharedPart
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
+    String user_scripts_path;                               /// Path to the directory with user provided scripts.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -227,6 +229,11 @@ struct ContextSharedPart
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
+
+    /// Background executors for *MergeTree tables
+    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
+    MergeTreeBackgroundExecutorPtr moves_executor;
+    MergeTreeBackgroundExecutorPtr fetch_executor;
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -296,6 +303,13 @@ struct ContextSharedPart
             system_logs->shutdown();
 
         DatabaseCatalog::shutdown();
+
+        if (merge_mutate_executor)
+            merge_mutate_executor->wait();
+        if (fetch_executor)
+            fetch_executor->wait();
+        if (moves_executor)
+            moves_executor->wait();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
@@ -471,6 +485,12 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
+String Context::getUserScriptsPath() const
+{
+    auto lock = getLock();
+    return shared->user_scripts_path;
+}
+
 std::vector<String> Context::getWarnings() const
 {
     auto lock = getLock();
@@ -500,6 +520,9 @@ void Context::setPath(const String & path)
 
     if (shared->dictionaries_lib_path.empty())
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
+
+    if (shared->user_scripts_path.empty())
+        shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -577,6 +600,12 @@ void Context::setDictionariesLibPath(const String & path)
     shared->dictionaries_lib_path = path;
 }
 
+void Context::setUserScriptsPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_scripts_path = path;
+}
+
 void Context::addWarningMessage(const String & msg)
 {
     auto lock = getLock();
@@ -631,7 +660,6 @@ ConfigurationPtr Context::getUsersConfig()
     auto lock = getLock();
     return shared->users_config;
 }
-
 
 void Context::setUser(const UUID & user_id_)
 {
@@ -2062,6 +2090,16 @@ std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
     return shared->system_logs->opentelemetry_span_log;
 }
 
+std::shared_ptr<SessionLog> Context::getSessionLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->session_log;
+}
+
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {
@@ -2701,38 +2739,68 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 void Context::initializeBackgroundExecutors()
 {
-    merge_mutate_executor = MergeTreeBackgroundExecutor::create();
-    moves_executor = MergeTreeBackgroundExecutor::create();
-    fetch_executor = MergeTreeBackgroundExecutor::create();
+    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
 
-    merge_mutate_executor->setThreadsCount([this] () { return getSettingsRef().background_pool_size; });
-    merge_mutate_executor->setTasksCount([this] () { return getSettingsRef().background_pool_size; });
-    merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        getSettingsRef().background_pool_size,
+        getSettingsRef().background_pool_size,
+        CurrentMetrics::BackgroundPoolTask
+    );
 
-    moves_executor->setThreadsCount([this] () { return getSettingsRef().background_move_pool_size; });
-    moves_executor->setTasksCount([this] () { return getSettingsRef().background_move_pool_size; });
-    moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
+    shared->moves_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MOVE,
+        getSettingsRef().background_move_pool_size,
+        getSettingsRef().background_move_pool_size,
+        CurrentMetrics::BackgroundMovePoolTask
+    );
 
-    fetch_executor->setThreadsCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    fetch_executor->setTasksCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
+
+    shared->fetch_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::FETCH,
+        getSettingsRef().background_fetches_pool_size,
+        getSettingsRef().background_fetches_pool_size,
+        CurrentMetrics::BackgroundFetchesPoolTask
+    );
 }
 
 
 MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
-    return merge_mutate_executor;
+    return shared->merge_mutate_executor;
 }
 
 MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
 {
-    return moves_executor;
+    return shared->moves_executor;
 }
 
 MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
-    return fetch_executor;
+    return shared->fetch_executor;
 }
 
+
+ReadSettings Context::getReadSettings() const
+{
+    ReadSettings res;
+
+    res.local_fs_method = parseReadMethod(settings.local_filesystem_read_method.value);
+
+    res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.local_fs_buffer_size = settings.max_read_buffer_size;
+    res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
+    res.priority = settings.read_priority;
+
+    res.mmap_cache = getMMappedFileCache().get();
+
+    return res;
+}
 
 }

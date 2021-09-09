@@ -260,7 +260,11 @@ bool MergeFromLogEntryTask::finalize()
 
             write_part_log(ExecutionStatus::fromCurrentException());
 
-            storage.tryRemovePartImmediately(std::move(part));
+            if (storage.storage_settings_ptr->detach_not_byte_identical_parts)
+                forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
+            else
+                tryRemovePartImmediately(std::move(part));
+
             /// No need to delete the part from ZK because we can be sure that the commit transaction
             /// didn't go through.
 
