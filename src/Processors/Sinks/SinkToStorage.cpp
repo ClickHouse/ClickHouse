@@ -71,7 +71,12 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
             return Status::PortFull;
         }
 
-        ready_input = true;
+        if (has_exception)
+            /// In case of exception, just drop all other data.
+            /// If transform is stateful, it's state may be broken after exception from transform()
+            data.chunk.clear();
+        else
+            ready_input = true;
     }
 
     return Status::Ready;
