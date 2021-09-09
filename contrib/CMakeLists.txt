@@ -212,6 +212,8 @@ function(add_llvm)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
 
+    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
+    set (CMAKE_INSTALL_RPATH "ON")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
