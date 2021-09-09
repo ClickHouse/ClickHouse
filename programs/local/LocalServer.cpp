@@ -86,41 +86,21 @@ void LocalServer::processError(const String & query) const
 
 void LocalServer::executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
-    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
-    /// first exception or whether we need to even rethrow it because there is --ignore-error.
-    if (!ignore_error)
+    const auto * insert = parsed_query->as<ASTInsertQuery>();
+    ASTPtr input_function;
+    if (insert && insert->select)
+        insert->tryFindInputFunction(input_function);
+
+    /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+    if (insert && (!insert->select || input_function) && !insert->watch)
     {
-        server_exception.reset();
-        client_exception.reset();
+        if (input_function && insert->format.empty())
+            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+        processInsertQuery(query_to_execute, parsed_query);
     }
-
-    try
-    {
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-            processInsertQuery(query_to_execute, parsed_query);
-        }
-        else
-            processOrdinaryQuery(query_to_execute, parsed_query);
-    }
-    catch (...)
-    {
-        if (!ignore_error)
-            throw;
-
-        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-        have_error = true;
-    }
+    else
+        processOrdinaryQuery(query_to_execute, parsed_query);
 }
 
 
@@ -327,19 +307,6 @@ void LocalServer::tryInitPath()
 }
 
 
-static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
-{
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (!system_database)
-    {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(database_name, context);
-        DatabaseCatalog::instance().attachDatabase(database_name, system_database);
-    }
-    return system_database;
-}
-
-
 void LocalServer::cleanup()
 {
     connection.reset();
@@ -497,10 +464,10 @@ try
     {
         runNonInteractive();
 
-        if (server_exception)
-            server_exception->rethrow();
-        if (client_exception)
-            client_exception->rethrow();
+        // if (server_exception)
+        //     server_exception->rethrow();
+        // if (client_exception)
+        //     client_exception->rethrow();
     }
 
     cleanup();

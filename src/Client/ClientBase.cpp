@@ -868,6 +868,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 {
     resetOutput();
     have_error = false;
+    client_exception.reset();
+    server_exception.reset();
 
     if (echo_query_ && *echo_query_)
     {
