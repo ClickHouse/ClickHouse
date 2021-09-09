@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <common/scope_guard.h>
+
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 
@@ -23,6 +25,7 @@ public:
 
     UserDefinedExecutableFunction(
         const Config & config_,
+        std::shared_ptr<scope_guard> function_deregister_,
         const ExternalLoadableLifetime & lifetime_);
 
     const ExternalLoadableLifetime & getLifetime() const override
@@ -47,7 +50,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedExecutableFunction>(config, lifetime);
+        return std::make_shared<UserDefinedExecutableFunction>(config, function_deregister, lifetime);
     }
 
     const Config & getConfig() const
@@ -67,6 +70,7 @@ public:
 
 private:
     Config config;
+    std::shared_ptr<scope_guard> function_deregister;
     ExternalLoadableLifetime lifetime;
 };
 
