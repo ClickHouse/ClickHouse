@@ -201,13 +201,7 @@ void convertColumnsToNullable(MutableColumns & mutable_columns, size_t starting_
         ColumnPtr column = std::move(mutable_columns[i]);
         column = makeNullable(column);
         mutable_columns[i] = IColumn::mutate(std::move(column));
-
-        // changeNullability(mutable_columns[i]);
-        // mutable_columns[i]->type = convertTypeToNullable(mutable_columns[i]->type);
-
-        // convertColumnToNullable(*mutable_columns[i]);
     }
-
 }
 
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)

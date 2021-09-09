@@ -35,6 +35,7 @@
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {

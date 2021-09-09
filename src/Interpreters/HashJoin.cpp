@@ -1,7 +1,5 @@
 #include <any>
-#include <cstddef>
 #include <limits>
-#include <numeric>
 #include <unordered_map>
 #include <vector>
 
@@ -33,7 +31,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "Columns/IColumn.h"
-#include "Interpreters/IJoin.h"
+
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -235,18 +234,18 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-static std::string formatKeysDebug(const std::vector<TableJoin::JoinOnClause> & caluses)
-{
-    std::vector<std::string> res;
-    for (const auto & clause : caluses)
-    {
-        std::vector<std::string> current;
-        for (size_t i = 0; i < clause.keysCount(); ++i)
-            current.emplace_back(fmt::format("{} == {}", clause.key_names_left[i], clause.key_names_right[i]));
-        res.emplace_back(fmt::format("{}", fmt::join(current, ", ")));
-    }
-    return fmt::format("{}", fmt::join(res, " | "));
-}
+//static std::string formatKeysDebug(const std::vector<TableJoin::JoinOnClause> & onexprs)
+//{
+//    std::vector<std::string> res;
+//    for (const auto & onexpr : onexprs)
+//    {
+//        std::vector<std::string> current;
+//        for (size_t i = 0; i < onexpr.keysCount(); ++i)
+//            current.emplace_back(fmt::format("{} == {}", onexpr.key_names_left[i], onexpr.key_names_right[i]));
+//        res.emplace_back(fmt::format("{}", fmt::join(current, ", ")));
+//    }
+//    return fmt::format("{}", fmt::join(res, " | "));
+//}
 
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
     : table_join(table_join_)
@@ -274,8 +273,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
     }
 
-    LOG_DEBUG(log, "Join keys: [{}], required right: [{}])", formatKeysDebug(table_join->getClauses()), fmt::join(required_right_keys.getNames(), ", "));
-
+//    LOG_DEBUG(log, "Join keys: [{}], required right: [{}]", formatKeysDebug(table_join->getClauses()), fmt::join(required_right_keys.getNames(), ", "));
     LOG_DEBUG(log, "Columns to add: [{}]", sample_block_with_columns_to_add.dumpStructure());
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
@@ -290,7 +288,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
 
     size_t disjuncts_num = table_join->getClauses().size();
-    data->maps.reserve(disjuncts_num);
+    data->maps.resize(disjuncts_num);
     key_sizes.reserve(disjuncts_num);
 
     for (const auto & clause : table_join->getClauses())
@@ -332,8 +330,9 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
             /// However, this does not depend on the size of the asof join key (as that goes into the BST)
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
-            key_sizes.resize(1);
-            key_sizes[0].push_back(asof_size);
+            auto & asof_key_sizes = key_sizes.emplace_back();
+            data->type = chooseMethod(key_columns, asof_key_sizes);
+            asof_key_sizes.push_back(asof_size);
         }
         else
         {
@@ -854,13 +853,13 @@ namespace
 
 struct JoinOnKeyColumns
 {
-    const Names & key_names;
+    Names key_names;
 
     Columns materialized_keys_holder;
     ColumnRawPtrs key_columns;
 
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map;
+    ColumnPtr null_map_holder;
 
     /// Only rows where mask == true can be joined
     ColumnPtr join_mask_column;
@@ -872,6 +871,7 @@ struct JoinOnKeyColumns
         : key_names(key_names_)
         , materialized_keys_holder(JoinCommon::materializeColumns(block, key_names)) /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
         , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
+        , null_map(nullptr)
         , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
         , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
         , key_sizes(key_sizes_)
@@ -938,9 +938,9 @@ public:
         if (is_asof_join)
         {
             assert(join_on_keys.size() == 1);
-            const auto & right_asof_column = join.savedBlockSample().getByName(join_on_keys[0].key_names.front());
+            const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column, right_asof_column.name);
-            left_asof_key = join_on_keys[0].key_columns.front();
+            left_asof_key = join_on_keys[0].key_columns.back();
         }
 
         for (auto & tn : type_name)
@@ -1733,10 +1733,10 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         joinBlockImplCross(block, not_processed);
         return;
     }
-    else if (kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full)
+
+    if (kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full)
     {
         materializeBlockInplace(block);
-
         if (nullable_left_side)
             JoinCommon::convertColumnsToNullable(block);
     }
@@ -1779,9 +1779,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
-        {
             maps_vector.push_back(&data->maps[i]);
-        }
 
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
@@ -2027,4 +2025,11 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
         });
     }
 }
+
+const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
+{
+    /// It should be nullable if nullable_right_side is true
+    return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
+}
+
 }
