@@ -88,7 +88,6 @@ Block KafkaBlockInputStream::readImpl()
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
-    size_t new_rows = 0;
     size_t failed_poll_attempts = 0;
 
     auto on_error = [&](const MutableColumns & result_columns, Exception & e)
@@ -122,6 +121,7 @@ Block KafkaBlockInputStream::readImpl()
 
     while (true)
     {
+        size_t new_rows = 0;
         exception_message.reset();
         if (buffer->poll())
             new_rows = executor.execute();
