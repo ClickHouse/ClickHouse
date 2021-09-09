@@ -80,6 +80,7 @@ void NativeBlockInputStream::readData(const ISerialization & serialization, Colu
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
+    settings.native_format = true;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 

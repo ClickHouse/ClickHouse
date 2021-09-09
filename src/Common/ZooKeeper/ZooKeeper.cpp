@@ -130,8 +130,27 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         throw DB::Exception("Unknown implementation of coordination service: " + implementation, DB::ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    if (!chroot.empty() && !exists("/"))
-        throw KeeperException("Zookeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
+    if (!chroot.empty())
+    {
+        /// Here we check that zk root exists.
+        /// This check is clumsy. The reason is we do this request under common mutex, and never want to hung here.
+        /// Otherwise, all threads which need zk will wait for this mutex eternally.
+        ///
+        /// Usually, this was possible in case of memory limit exception happened inside zk implementation.
+        /// This should not happen now, when memory tracker is disabled.
+        /// But let's keep it just in case (it is also easy to backport).
+        auto future = asyncExists("/");
+        auto res = future.wait_for(std::chrono::milliseconds(operation_timeout_ms));
+        if (res != std::future_status::ready)
+            throw KeeperException("Cannot check if zookeeper root exists.", Coordination::Error::ZOPERATIONTIMEOUT);
+
+        auto code = future.get().error;
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw KeeperException(code, "/");
+
+        if (code == Coordination::Error::ZNONODE)
+            throw KeeperException("ZooKeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
+    }
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,

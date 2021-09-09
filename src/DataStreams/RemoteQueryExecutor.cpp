@@ -13,15 +13,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+
 namespace CurrentMetrics
 {
-extern const Metric SyncDrainedConnections;
-extern const Metric ActiveSyncDrainedConnections;
+    extern const Metric SyncDrainedConnections;
+    extern const Metric ActiveSyncDrainedConnections;
 }
 
 namespace DB
@@ -526,7 +526,18 @@ void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadCon
     was_cancelled = true;
 
     if (read_context && *read_context)
+    {
+        /// The timer should be set for query cancellation to avoid query cancellation hung.
+        ///
+        /// Since in case the remote server will abnormally terminated, neither
+        /// FIN nor RST packet will be sent, and the initiator will not know that
+        /// the connection died (unless tcp_keep_alive_timeout > 0).
+        ///
+        /// Also note that it is possible to get this situation even when
+        /// enough data already had been read.
+        (*read_context)->setTimer();
         (*read_context)->cancel();
+    }
 
     connections->sendCancel();
 

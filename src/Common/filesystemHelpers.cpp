@@ -122,6 +122,24 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
     return path_starts_with_prefix_path;
 }
 
+bool symlinkStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+{
+    /// Differs from pathStartsWith in how `path` is normalized before comparison.
+    /// Make `path` absolute if it was relative and put it into normalized form: remove
+    /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
+    /// not be a path of a symlink itself.
+
+    auto absolute_path = std::filesystem::absolute(path);
+    absolute_path = absolute_path.lexically_normal(); /// Normalize path.
+    auto absolute_prefix_path = std::filesystem::absolute(prefix_path);
+    absolute_prefix_path = absolute_prefix_path.lexically_normal(); /// Normalize path.
+
+    auto [_, prefix_path_mismatch_it] = std::mismatch(absolute_path.begin(), absolute_path.end(), absolute_prefix_path.begin(), absolute_prefix_path.end());
+
+    bool path_starts_with_prefix_path = (prefix_path_mismatch_it == absolute_prefix_path.end());
+    return path_starts_with_prefix_path;
+}
+
 bool pathStartsWith(const String & path, const String & prefix_path)
 {
     auto filesystem_path = std::filesystem::path(path);
@@ -130,6 +148,13 @@ bool pathStartsWith(const String & path, const String & prefix_path)
     return pathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+bool symlinkStartsWith(const String & path, const String & prefix_path)
+{
+    auto filesystem_path = std::filesystem::path(path);
+    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
+
+    return symlinkStartsWith(filesystem_path, filesystem_prefix_path);
+}
 }
 
 
