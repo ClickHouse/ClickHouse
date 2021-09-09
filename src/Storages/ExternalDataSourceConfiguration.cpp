@@ -226,8 +226,10 @@ getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
         for (const auto & key : keys)
         {
             if (key == "url")
+            {
                 configuration.url = config.getString(config_prefix + ".url", "");
-            if (key == "headers")
+            }
+            else if (key == "headers")
             {
                 Poco::Util::AbstractConfiguration::Keys header_keys;
                 config.keys(config_prefix + '.' + "headers", header_keys);
@@ -272,7 +274,7 @@ getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
 
         if (configuration.url.empty() || configuration.format.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Storage requires {}", configuration.url.empty() ? "uri" : "format");
+                            "Storage requires {}", configuration.url.empty() ? "url" : "format");
 
         return std::make_tuple(configuration, non_common_args, true);
     }

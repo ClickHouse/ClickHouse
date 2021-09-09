@@ -137,15 +137,15 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         /// 27017 is the default MongoDB port.
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 27017);
 
+        configuration.host = parsed_host_port.first;
+        configuration.port = parsed_host_port.second;
         configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.collection = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String options;
-
         if (engine_args.size() >= 6)
-            options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
     }
 

@@ -747,9 +747,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
             else if (arg_name == "secret_access_key")
                 configuration.secret_access_key = arg_value.safeGet<String>();
             else
-                throw Exception(
-                    "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
+                    arg_name);
         }
     }
     else
@@ -762,7 +762,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         if (engine_args.size() >= 4)
         {
             configuration.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
