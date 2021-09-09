@@ -140,11 +140,10 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
     {
         case 3: if (!compareSSE2(p1 + 32, p2 + 32)) return false; [[fallthrough]];
         case 2: if (!compareSSE2(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compareSSE2(p1, p2)) return false; [[fallthrough]];
-        case 0: return compareSSE2(p1 + size - 16, p2 + size - 16);
+        case 1: if (!compareSSE2(p1, p2)) return false;
     }
 
-    __builtin_unreachable();
+    return compareSSE2(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
