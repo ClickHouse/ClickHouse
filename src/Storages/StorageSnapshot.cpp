@@ -96,11 +96,13 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        if (column && !isObject(column->type))
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+
+        if (column && !object_column)
         {
             res.insert({column->type->createColumn(), column->type, column->name});
         }
-        else if (auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        else if (object_column)
         {
             res.insert({object_column->type->createColumn(), object_column->type, object_column->name});
         }
