@@ -404,6 +404,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     /// And we able to read it
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(7, 0);
+
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.start_index(), 7);
     EXPECT_EQ(changelog_reader.next_slot(), 8);
@@ -1375,6 +1376,7 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin"));
 }
 
+
 TEST(CoordinationTest, TestSessionExpiryQueue)
 {
     using namespace Coordination;
@@ -1391,7 +1393,6 @@ TEST(CoordinationTest, TestSessionExpiryQueue)
     std::this_thread::sleep_for(std::chrono::milliseconds(700));
     EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
-
 
 int main(int argc, char ** argv)
 {
