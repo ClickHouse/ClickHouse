@@ -11,16 +11,28 @@
 namespace DB
 {
 
+enum class UserDefinedExecutableFunctionType
+{
+    executable,
+    executable_pool
+};
+
 class UserDefinedExecutableFunction final : public IExternalLoadable
 {
 public:
+
     struct Config
     {
+        UserDefinedExecutableFunctionType type;
         std::string name;
         std::string script_path;
         std::string format;
         std::vector<DataTypePtr> argument_types;
         DataTypePtr result_type;
+        /// Pool settings
+        size_t pool_size = 0;
+        size_t command_termination_timeout = 0;
+        size_t max_command_execution_time = 0;
     };
 
     UserDefinedExecutableFunction(
