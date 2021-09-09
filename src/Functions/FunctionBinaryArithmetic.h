@@ -626,7 +626,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first.",
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
@@ -687,7 +687,7 @@ class FunctionBinaryArithmetic : public IFunction
             return {};
 
         if (isNumber(type0) && is_division)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first.",
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
