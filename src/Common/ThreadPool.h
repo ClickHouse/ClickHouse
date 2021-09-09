@@ -9,6 +9,8 @@
 #include <list>
 #include <optional>
 
+#include <boost/heap/priority_queue.hpp>
+
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 #include <common/scope_guard.h>
@@ -103,10 +105,9 @@ private:
         }
     };
 
-    std::priority_queue<JobWithPriority> jobs;
+    boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
-
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
