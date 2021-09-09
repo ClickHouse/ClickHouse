@@ -6,6 +6,8 @@
 namespace DB
 {
 
+/// Source, that allow to wait until processing of
+/// asynchronous insert for specified query_id will be finished.
 class WaitForAsyncInsertSource : public ISource, WithContext
 {
 public:
