@@ -11,14 +11,15 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
-#include "Common/Exception.h"
-#include "Parsers/IAST_fwd.h"
+#include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <cstddef>
 #include <unordered_map>
 #include <utility>
 #include <memory>
-#include <deque>
+#include <common/types.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -77,6 +78,13 @@ public:
         {
             assert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
+        }
+
+        String formatDebug() const
+        {
+            return fmt::format("Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
+                               fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "),
+                               condColumnNames().first, condColumnNames().second);
         }
     };
 
@@ -167,11 +175,7 @@ private:
         key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
     }
 
-    void assertHasOneOnExpr() const
-    {
-        if (!oneDisjunct())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", clauses.size());
-    }
+    void assertHasOneOnExpr() const;
 
 public:
     TableJoin() : clauses(1)
@@ -288,13 +292,7 @@ public:
     }
 
     /// StorageJoin overrides key names (cause of different names qualification)
-    void setRightKeys(const Names & keys)
-    {
-        // assert(right_clauses.size() <= 1);
-        clauses.clear();
-        clauses.emplace_back();
-        clauses.back().key_names_right = keys;
-    }
+    void setRightKeys(const Names & keys) { getOnlyClause().key_names_right = keys; }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 

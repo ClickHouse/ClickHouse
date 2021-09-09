@@ -1107,8 +1107,8 @@ std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
     {
-        size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
-        assert(left_columns_count == left_sample_block.columns());
+        size_t left_columns_count = left_sample_block.columns();
+        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
     }
