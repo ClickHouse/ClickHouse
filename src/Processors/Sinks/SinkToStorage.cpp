@@ -120,7 +120,7 @@ static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTr
 
     return res;
 }
-\
+
 void ExceptionKeepingTransform::work()
 {
     // std::cerr << "============ Executing " << getName() << std::endl;

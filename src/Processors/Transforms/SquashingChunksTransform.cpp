@@ -27,6 +27,13 @@ void SquashingChunksTransform::onFinish()
 
 void SquashingChunksTransform::work()
 {
+    if (has_exception)
+    {
+        data.chunk.clear();
+        ready_input = false;
+        return;
+    }
+
     ExceptionKeepingTransform::work();
     if (finish_chunk)
     {
