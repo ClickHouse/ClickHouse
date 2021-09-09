@@ -4030,7 +4030,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const
 {
-    const String column_name = node->getColumnName();
+    const String column_name = node->getColumnNameWithoutAlias();
 
     for (const auto & name : metadata_snapshot->getPrimaryKeyColumns())
         if (column_name == name)
@@ -4040,6 +4040,18 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
         if (column_name == name)
             return true;
 
+    /// Partition expression
+    for (const auto & name : metadata_snapshot->getPartitionKey().column_names)
+    {
+        if (column_name == name)
+            return true;
+        /// Also check for moduloLegacy.
+        auto adjusted_ast = node->clone();
+        if (KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast) && adjusted_ast->getColumnNameWithoutAlias() == column_name)
+            return true;
+    }
+
+    /// TODO(ab): Some binary functions are also candidates.
     if (const auto * func = node->as<ASTFunction>())
         if (func->arguments->children.size() == 1)
             return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front(), metadata_snapshot);

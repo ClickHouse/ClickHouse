@@ -1116,6 +1116,24 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
+    /// Let's check another one case.
+    /// If our storage was created with moduloLegacy in partition key,
+    /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+    /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+    auto adjusted_ast = node->clone();
+    if (KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast))
+    {
+        name = adjusted_ast->getColumnNameWithoutAlias();
+
+        it = key_columns.find(name);
+        if (key_columns.end() != it)
+        {
+            out_key_column_num = it->second;
+            out_key_column_type = sample_block.getByName(it->first).type;
+            return true;
+        }
+    }
+
     if (const auto * func = node->as<ASTFunction>())
     {
         if (!func->arguments)
