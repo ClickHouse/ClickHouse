@@ -74,7 +74,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when ‘extremes’ is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -1270,6 +1270,8 @@ You can insert Parquet data from a file into ClickHouse table by the following c
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
+
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
 ``` bash
@@ -1328,6 +1330,8 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) setting.
+
 ### Selecting Data {#selecting-data-arrow}
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
@@ -1383,6 +1387,8 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested) setting.
 
 ### Selecting Data {#selecting-data-2}
 
