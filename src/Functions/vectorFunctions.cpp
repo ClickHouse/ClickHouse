@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/TupleIFunction.h>
+#include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
 
 namespace DB
@@ -13,32 +13,32 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-static const char PLUS_NAME[] = "plus";
-static const char MINUS_NAME[] = "minus";
-static const char MULTIPLY_NAME[] = "multiply";
-static const char DIVIDE_NAME[] = "divide";
+struct PlusName { static constexpr auto name = "plus"; };
+struct MinusName { static constexpr auto name = "minus"; };
+struct MultiplyName { static constexpr auto name = "multiply"; };
+struct DivideName { static constexpr auto name = "divide"; };
 
-static constexpr char L1_LABEL[] = "1";
-static constexpr char L2_LABEL[] = "2";
-static constexpr char Linf_LABEL[] = "inf";
-static constexpr char Lp_LABEL[] = "p";
+struct L1Label { static constexpr auto name = "1"; };
+struct L2Label { static constexpr auto name = "2"; };
+struct LinfLabel { static constexpr auto name = "inf"; };
+struct LpLabel { static constexpr auto name = "p"; };
 
 /// str starts from the lowercase letter; not constexpr due to the compiler version
-/*constexpr*/ std::string makeFirstLetterUppercase(std::string && str)
+/*constexpr*/ std::string makeFirstLetterUppercase(const std::string& str)
 {
     std::string res(str);
     res[0] += 'A' - 'a';
     return res;
 }
 
-template <const char * func_name>
-class FunctionTupleOperator : public TupleIFunction
+template <class FuncName>
+class FunctionTupleOperator : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "tuple" + makeFirstLetterUppercase(func_name);
+    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name);
 
-    explicit FunctionTupleOperator(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionTupleOperator(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperator>(context_); }
 
     String getName() const override { return name; }
@@ -51,11 +51,11 @@ public:
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
 
         if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
                             getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
@@ -77,7 +77,7 @@ public:
         if (tuple_size == 0)
             return std::make_shared<DataTypeUInt8>();
 
-        auto func = FunctionFactory::instance().get(func_name, context);
+        auto func = FunctionFactory::instance().get(FuncName::name, context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -111,7 +111,7 @@ public:
         if (tuple_size == 0)
             return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
-        auto func = FunctionFactory::instance().get(func_name, context);
+        auto func = FunctionFactory::instance().get(FuncName::name, context);
         Columns columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -126,20 +126,20 @@ public:
     }
 };
 
-using FunctionTuplePlus = FunctionTupleOperator<PLUS_NAME>;
+using FunctionTuplePlus = FunctionTupleOperator<PlusName>;
 
-using FunctionTupleMinus = FunctionTupleOperator<MINUS_NAME>;
+using FunctionTupleMinus = FunctionTupleOperator<MinusName>;
 
-using FunctionTupleMultiply = FunctionTupleOperator<MULTIPLY_NAME>;
+using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
-using FunctionTupleDivide = FunctionTupleOperator<DIVIDE_NAME>;
+using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
 
-class FunctionTupleNegate : public TupleIFunction
+class FunctionTupleNegate : public ITupleFunction
 {
 public:
     static constexpr auto name = "tupleNegate";
 
-    explicit FunctionTupleNegate(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionTupleNegate(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleNegate>(context_); }
 
     String getName() const override { return name; }
@@ -151,7 +151,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -207,14 +207,14 @@ public:
     }
 };
 
-template <const char * func_name>
-class FunctionTupleOperatorByNumber : public TupleIFunction
+template <class FuncName>
+class FunctionTupleOperatorByNumber : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "tuple" + makeFirstLetterUppercase(func_name) + "ByNumber";
+    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
 
-    explicit FunctionTupleOperatorByNumber(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
 
     String getName() const override { return name; }
@@ -226,7 +226,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -240,7 +240,7 @@ public:
             return std::make_shared<DataTypeUInt8>();
 
         const auto & p_column = arguments[1];
-        auto func = FunctionFactory::instance().get(func_name, context);
+        auto func = FunctionFactory::instance().get(FuncName::name, context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -271,7 +271,7 @@ public:
             return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
         const auto & p_column = arguments[1];
-        auto func = FunctionFactory::instance().get(func_name, context);
+        auto func = FunctionFactory::instance().get(FuncName::name, context);
         Columns columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -284,16 +284,16 @@ public:
     }
 };
 
-using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MULTIPLY_NAME>;
+using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 
-using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DIVIDE_NAME>;
+using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
 
-class FunctionDotProduct : public TupleIFunction
+class FunctionDotProduct : public ITupleFunction
 {
 public:
     static constexpr auto name = "dotProduct";
 
-    explicit FunctionDotProduct(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionDotProduct(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionDotProduct>(context_); }
 
     String getName() const override { return name; }
@@ -306,11 +306,11 @@ public:
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
 
         if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
                             getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
@@ -408,16 +408,16 @@ public:
 };
 
 /// this is for convenient usage in LNormalize
-template <const char * func_label>
-class FunctionLNorm : public TupleIFunction {};
+template <class FuncLabel>
+class FunctionLNorm : public ITupleFunction {};
 
 template <>
-class FunctionLNorm<L1_LABEL> : public TupleIFunction
+class FunctionLNorm<L1Label> : public ITupleFunction
 {
 public:
     static constexpr auto name = "L1Norm";
 
-    explicit FunctionLNorm(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
     String getName() const override { return name; }
@@ -429,7 +429,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -511,15 +511,15 @@ public:
         return res.column;
     }
 };
-using FunctionL1Norm = FunctionLNorm<L1_LABEL>;
+using FunctionL1Norm = FunctionLNorm<L1Label>;
 
 template <>
-class FunctionLNorm<L2_LABEL> : public TupleIFunction
+class FunctionLNorm<L2Label> : public ITupleFunction
 {
 public:
     static constexpr auto name = "L2Norm";
 
-    explicit FunctionLNorm(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
     String getName() const override { return name; }
@@ -531,7 +531,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -616,15 +616,15 @@ public:
         return sqrt_elem->execute({res}, sqrt_elem->getResultType(), input_rows_count);
     }
 };
-using FunctionL2Norm = FunctionLNorm<L2_LABEL>;
+using FunctionL2Norm = FunctionLNorm<L2Label>;
 
 template <>
-class FunctionLNorm<Linf_LABEL> : public TupleIFunction
+class FunctionLNorm<LinfLabel> : public ITupleFunction
 {
 public:
     static constexpr auto name = "LinfNorm";
 
-    explicit FunctionLNorm(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
     String getName() const override { return name; }
@@ -636,7 +636,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -718,15 +718,15 @@ public:
         return res.column;
     }
 };
-using FunctionLinfNorm = FunctionLNorm<Linf_LABEL>;
+using FunctionLinfNorm = FunctionLNorm<LinfLabel>;
 
 template <>
-class FunctionLNorm<Lp_LABEL> : public TupleIFunction
+class FunctionLNorm<LpLabel> : public ITupleFunction
 {
 public:
     static constexpr auto name = "LpNorm";
 
-    explicit FunctionLNorm(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
     String getName() const override { return name; }
@@ -738,7 +738,7 @@ public:
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!cur_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         const auto & cur_types = cur_tuple->getElements();
@@ -834,7 +834,7 @@ public:
         }
 
         auto divide = FunctionFactory::instance().get("divide", context);
-        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst(),
+        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1),
                                   std::make_shared<DataTypeUInt8>(), {}};
         auto div_elem = divide->build({one, p_column});
         ColumnWithTypeAndName inv_p_column;
@@ -844,23 +844,23 @@ public:
         return pow_elem->execute({res, inv_p_column}, pow_elem->getResultType(), input_rows_count);
     }
 };
-using FunctionLpNorm = FunctionLNorm<Lp_LABEL>;
+using FunctionLpNorm = FunctionLNorm<LpLabel>;
 
-template <const char * func_label>
-class FunctionLDistance : public TupleIFunction
+template <class FuncLabel>
+class FunctionLDistance : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "L" + std::string(func_label) + "Distance";
+    static inline auto name = std::string("L") + FuncLabel::name + "Distance";
 
-    explicit FunctionLDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override
     {
-        if constexpr (func_label[0] == 'p')
+        if constexpr (FuncLabel::name[0] == 'p')
             return 3;
         else
             return 2;
@@ -873,8 +873,8 @@ public:
 
         ColumnWithTypeAndName minus_res{type, {}};
 
-        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
-        if constexpr (func_label[0] == 'p')
+        auto func = FunctionFactory::instance().get(std::string("L") + FuncLabel::name + "Norm", context);
+        if constexpr (FuncLabel::name[0] == 'p')
             return func->build({minus_res, arguments[2]})->getResultType();
         else
             return func->build({minus_res})->getResultType();
@@ -888,8 +888,8 @@ public:
 
         ColumnWithTypeAndName minus_res{column, type, {}};
 
-        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
-        if constexpr (func_label[0] == 'p')
+        auto func = FunctionFactory::instance().get(std::string("L") + FuncLabel::name + "Norm", context);
+        if constexpr (FuncLabel::name[0] == 'p')
         {
             auto func_elem = func->build({minus_res, arguments[2]});
             return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count);
@@ -902,29 +902,29 @@ public:
     }
 };
 
-using FunctionL1Distance = FunctionLDistance<L1_LABEL>;
+using FunctionL1Distance = FunctionLDistance<L1Label>;
 
-using FunctionL2Distance = FunctionLDistance<L2_LABEL>;
+using FunctionL2Distance = FunctionLDistance<L2Label>;
 
-using FunctionLinfDistance = FunctionLDistance<Linf_LABEL>;
+using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 
-using FunctionLpDistance = FunctionLDistance<Lp_LABEL>;
+using FunctionLpDistance = FunctionLDistance<LpLabel>;
 
-template <const char * func_label>
-class FunctionLNormalize : public TupleIFunction
+template <class FuncLabel>
+class FunctionLNormalize : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "L" + std::string(func_label) + "Normalize";
+    static inline auto name = std::string("L") + FuncLabel::name + "Normalize";
 
-    explicit FunctionLNormalize(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionLNormalize(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNormalize>(context_); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override
     {
-        if constexpr (func_label[0] == 'p')
+        if constexpr (FuncLabel::name[0] == 'p')
             return 2;
         else
             return 1;
@@ -932,7 +932,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionLNorm<func_label> norm(context);
+        FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
 
         ColumnWithTypeAndName norm_res{type, {}};
@@ -943,7 +943,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        FunctionLNorm<func_label> norm(context);
+        FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
         auto column = norm.executeImpl(arguments, DataTypePtr(), input_rows_count);
 
@@ -954,21 +954,21 @@ public:
     }
 };
 
-using FunctionL1Normalize = FunctionLNormalize<L1_LABEL>;
+using FunctionL1Normalize = FunctionLNormalize<L1Label>;
 
-using FunctionL2Normalize = FunctionLNormalize<L2_LABEL>;
+using FunctionL2Normalize = FunctionLNormalize<L2Label>;
 
-using FunctionLinfNormalize = FunctionLNormalize<Linf_LABEL>;
+using FunctionLinfNormalize = FunctionLNormalize<LinfLabel>;
 
-using FunctionLpNormalize = FunctionLNormalize<Lp_LABEL>;
+using FunctionLpNormalize = FunctionLNormalize<LpLabel>;
 
-class FunctionCosineDistance : public TupleIFunction
+class FunctionCosineDistance : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
     static inline auto name = "cosineDistance";
 
-    explicit FunctionCosineDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionCosineDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCosineDistance>(context_); }
 
     String getName() const override { return name; }
@@ -1011,7 +1011,7 @@ public:
         auto multiply = FunctionFactory::instance().get("multiply", context);
         auto divide = FunctionFactory::instance().get("divide", context);
 
-        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst(),
+        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1),
                                   std::make_shared<DataTypeUInt8>(), {}};
 
         auto multiply_elem = multiply->build({first_norm, second_norm});
