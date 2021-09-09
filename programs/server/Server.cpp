@@ -896,7 +896,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
