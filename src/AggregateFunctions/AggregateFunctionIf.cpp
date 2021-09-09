@@ -37,10 +37,6 @@ public:
         const DataTypes & arguments,
         const Array & params) const override
     {
-        if (nested_function->getName().find(getName()) != String::npos)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "nested function for {0}-combinator must not have {0}-combinator", getName());
-        }
         return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
