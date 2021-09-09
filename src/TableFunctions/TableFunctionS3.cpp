@@ -50,9 +50,10 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
             else if (arg_name == "secret_access_key")
                 configuration.secret_access_key = arg_value.safeGet<String>();
             else
-                throw Exception(
-                    "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Unknown key-value argument `{}` for StorageS3, expected: "
+                                "url, [access_key_id, secret_access_key], name of used format, structure and [compression_method].",
+                                arg_name);
         }
     }
     else
