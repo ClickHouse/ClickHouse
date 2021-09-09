@@ -74,7 +74,7 @@ void DiskWebServer::initialize(const String & uri_path) const
     }
     catch (Exception & e)
     {
-        e.addMessage("while loadng disk metadata");
+        e.addMessage("while loading disk metadata");
         throw;
     }
 
@@ -210,7 +210,7 @@ size_t DiskWebServer::getFileSize(const String & path) const
 {
     auto iter = files.find(path);
     if (iter == files.end())
-        return false;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
 
     return iter->second.size;
 }
@@ -220,7 +220,7 @@ bool DiskWebServer::isFile(const String & path) const
 {
     auto iter = files.find(path);
     if (iter == files.end())
-        return false;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
 
     return iter->second.type == FileType::File;
 }
@@ -230,7 +230,7 @@ bool DiskWebServer::isDirectory(const String & path) const
 {
     auto iter = files.find(path);
     if (iter == files.end())
-        return false;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
 
     return iter->second.type == FileType::Directory;
 }

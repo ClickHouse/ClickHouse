@@ -190,8 +190,8 @@ private:
 
     enum class FileType
     {
-        File = 1,
-        Directory = 2
+        File,
+        Directory
     };
 
     struct FileData
