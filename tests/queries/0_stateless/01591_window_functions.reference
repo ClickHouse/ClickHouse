@@ -1150,6 +1150,14 @@ WINDOW w AS (ORDER BY number ASC)
 2	0	2
 3	0	2
 4	0	2
+-- UBsan
+SELECT nth_value(number, -9223372036854775808) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(number, 0) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(number, /* INT_MAX+1 */ 2147483648) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(number, /* INT_MAX */ 2147483647) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC);
+0
+SELECT nth_value(number, 1) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC);
+0
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
