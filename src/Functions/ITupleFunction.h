@@ -9,13 +9,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class TupleIFunction : public IFunction
+class ITupleFunction : public IFunction
 {
 protected:
     ContextPtr context;
 
 public:
-    explicit TupleIFunction(ContextPtr context_) : context(context_) {}
+    explicit ITupleFunction(ContextPtr context_) : context(context_) {}
 
     Columns getTupleElements(const IColumn & column) const
     {

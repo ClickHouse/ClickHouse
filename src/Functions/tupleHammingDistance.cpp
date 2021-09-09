@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/TupleIFunction.h>
+#include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
 
 namespace DB
@@ -16,12 +16,12 @@ namespace ErrorCodes
 
 /// tupleHammingDistance function: (Tuple(...), Tuple(...))-> N
 /// Return the number of non-equal tuple elements
-class FunctionTupleHammingDistance : public TupleIFunction
+class FunctionTupleHammingDistance : public ITupleFunction
 {
 public:
     static constexpr auto name = "tupleHammingDistance";
 
-    explicit FunctionTupleHammingDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    explicit FunctionTupleHammingDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
     String getName() const override { return name; }
@@ -38,11 +38,11 @@ public:
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
 
         if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
                             getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
