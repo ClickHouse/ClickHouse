@@ -120,7 +120,7 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     ShellCommandSourceConfiguration command_configuration;
     command_configuration.read_fixed_number_of_rows = true;
     command_configuration.number_of_rows_to_read = rows_to_read;
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks), command_configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), std::move(tasks), command_configuration, process_pool));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
