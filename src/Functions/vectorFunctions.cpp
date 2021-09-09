@@ -1054,15 +1054,30 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<FunctionLinfNorm>();
     factory.registerFunction<FunctionLpNorm>();
 
+    factory.registerAlias("normL1", FunctionL1Norm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL2", FunctionL2Norm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normLinf", FunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionL1Distance>();
     factory.registerFunction<FunctionL2Distance>();
     factory.registerFunction<FunctionLinfDistance>();
     factory.registerFunction<FunctionLpDistance>();
 
+    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionL1Normalize>();
     factory.registerFunction<FunctionL2Normalize>();
     factory.registerFunction<FunctionLinfNormalize>();
     factory.registerFunction<FunctionLpNormalize>();
+
+    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionCosineDistance>();
 }
