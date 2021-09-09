@@ -222,7 +222,7 @@ std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) 
 
 void StorageRabbitMQ::loopingFunc()
 {
-    if (event_handler->connectionRunning())
+    if (event_handler->connectionRunning(connection.get()))
         event_handler->startLoop();
 }
 
@@ -544,13 +544,13 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    return event_handler->connectionRunning();
+    return event_handler->connectionRunning(connection.get());
 }
 
 
 bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
-    if (event_handler->connectionRunning())
+    if (event_handler->connectionRunning(connection.get()))
     {
         channel = std::make_shared<AMQP::TcpChannel>(connection.get());
         return true;
@@ -599,6 +599,12 @@ void StorageRabbitMQ::unbindExchange()
 }
 
 
+String StorageRabbitMQ::formatConnectionInfoForLogs() const
+{
+    return parsed_address.first + ':' + toString(parsed_address.second);
+}
+
+
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -618,11 +624,12 @@ Pipe StorageRabbitMQ::read(
     auto modified_context = addSettings(local_context);
     auto block_size = getMaxBlockSize();
 
-    if (!event_handler->connectionRunning())
+    if (!event_handler->connectionRunning(connection.get()))
     {
         if (event_handler->loopRunning())
             deactivateTask(looping_task, false, true);
-        restoreConnection(true);
+        if (!restoreConnection(true))
+            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", formatConnectionInfoForLogs());
     }
 
     Pipes pipes;
@@ -638,7 +645,7 @@ Pipe StorageRabbitMQ::read(
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
     }
 
-    if (!event_handler->loopRunning() && event_handler->connectionRunning())
+    if (!event_handler->loopRunning() && event_handler->connectionRunning(connection.get()))
         looping_task->activateAndSchedule();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -656,7 +663,7 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
-    if (event_handler->connectionRunning())
+    if (event_handler->connectionRunning(connection.get()))
         initRabbitMQ();
     else
         connection_task->activateAndSchedule();
@@ -693,25 +700,34 @@ void StorageRabbitMQ::shutdown()
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
 
-    if (drop_table)
+    /// Just a paranoid try catch, it is not actually needed.
+    try
     {
-        for (auto & buffer : buffers)
-            buffer->closeChannel();
-        cleanupRabbitMQ();
+        if (drop_table)
+        {
+            for (auto & buffer : buffers)
+                buffer->closeChannel();
+
+            cleanupRabbitMQ();
+        }
+
+        /// It is important to close connection here - before removing consumer buffers, because
+        /// it will finish and clean callbacks, which might use those buffers data.
+        connection->close();
+
+        /// Connection is not closed immediately - it requires the loop to shutdown it properly and to
+        /// finish all callbacks.
+        size_t cnt_retries = 0;
+        while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
+            event_handler->iterateLoop();
+
+        for (size_t i = 0; i < num_created_consumers; ++i)
+            popReadBuffer();
     }
-
-    /// It is important to close connection here - before removing consumer buffers, because
-    /// it will finish and clean callbacks, which might use those buffers data.
-    connection->close();
-
-    /// Connection is not closed immediately - it requires the loop to shutdown it properly and to
-    /// finish all callbacks.
-    size_t cnt_retries = 0;
-    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
-        event_handler->iterateLoop();
-
-    for (size_t i = 0; i < num_created_consumers; ++i)
-        popReadBuffer();
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 
@@ -722,7 +738,8 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     if (use_user_setup)
         return;
 
-    if (!event_handler->connectionRunning())
+    connection->heartbeat();
+    if (!event_handler->connectionRunning(connection.get()))
     {
         String queue_names;
         for (const auto & queue : queues)
@@ -802,7 +819,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
     ChannelPtr consumer_channel;
-    if (event_handler->connectionRunning())
+    if (event_handler->connectionRunning(connection.get()))
         consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
@@ -850,7 +867,7 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    if (rabbit_is_ready && (event_handler->connectionRunning() || restoreConnection(true)))
+    if (rabbit_is_ready && (event_handler->connectionRunning(connection.get()) || restoreConnection(true)))
     {
         try
         {
@@ -972,7 +989,7 @@ bool StorageRabbitMQ::streamToViews()
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
 
-    if (!event_handler->connectionRunning())
+    if (!event_handler->connectionRunning(connection.get()))
     {
         if (stream_cancelled)
             return true;
@@ -1027,7 +1044,7 @@ bool StorageRabbitMQ::streamToViews()
             {
                 /// Iterate loop to activate error callbacks if they happened
                 event_handler->iterateLoop();
-                if (!event_handler->connectionRunning())
+                if (!event_handler->connectionRunning(connection.get()))
                     break;
             }
 

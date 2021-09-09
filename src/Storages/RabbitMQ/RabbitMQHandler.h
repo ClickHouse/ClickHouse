@@ -40,7 +40,7 @@ public:
 
     void stopLoop();
 
-    bool connectionRunning() { return connection_running.load(); }
+    bool connectionRunning(const AMQP::TcpConnection * connection);
     bool loopRunning() { return loop_running.load(); }
 
     void updateLoopState(UInt8 state) { loop_state.store(state); }
