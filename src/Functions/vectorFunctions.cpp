@@ -200,7 +200,8 @@ public:
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
             auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
-            columns[i] = elem_negate->execute({cur}, elem_negate->getResultType(), input_rows_count);
+            columns[i] = elem_negate->execute({cur}, elem_negate->getResultType(), input_rows_count)
+                                    ->convertToFullColumnIfConst();
         }
 
         return ColumnTuple::create(columns);
@@ -277,7 +278,8 @@ public:
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
             auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
-            columns[i] = elem_func->execute({cur, p_column}, elem_func->getResultType(), input_rows_count);
+            columns[i] = elem_func->execute({cur, p_column}, elem_func->getResultType(), input_rows_count)
+                                  ->convertToFullColumnIfConst();
         }
 
         return ColumnTuple::create(columns);
