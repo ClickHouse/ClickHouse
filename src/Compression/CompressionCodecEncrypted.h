@@ -51,7 +51,7 @@ namespace DB
           */
         static void setMasterKey(const std::string_view & master_key);
 
-        CompressionCodecEncrypted(const std::string_view & cipher);
+        explicit CompressionCodecEncrypted(const std::string_view & cipher);
 
         uint8_t getMethodByte() const override;
         void updateHash(SipHash & hash) const override;
@@ -88,7 +88,7 @@ namespace DB
           */
         struct KeyHolder : private boost::noncopyable
         {
-            KeyHolder(const std::string_view & master_key);
+            explicit KeyHolder(const std::string_view & master_key);
             ~KeyHolder();
 
             std::string keygen_key;
@@ -99,6 +99,11 @@ namespace DB
 
         static inline std::optional<KeyHolder> keys;
     };
+
+    inline CompressionCodecPtr getCompressionCodecEncrypted(const std::string_view & master_key)
+    {
+        return std::make_shared<CompressionCodecEncrypted>(master_key);
+    }
 }
 
 #endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */

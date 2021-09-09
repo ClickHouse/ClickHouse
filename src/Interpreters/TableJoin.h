@@ -229,6 +229,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    std::unordered_map<String, String> leftToRightKeyRemap() const;
 };
 
 }

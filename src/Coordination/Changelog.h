@@ -2,6 +2,7 @@
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <city.h>
+#include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -53,13 +54,19 @@ struct ChangelogFileDescription
     uint64_t to_log_index;
 
     std::string path;
+
+    /// How many entries should be stored in this log
+    uint64_t expectedEntriesCountInLog() const
+    {
+        return to_log_index - from_log_index + 1;
+    }
 };
 
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
-/// No compression, no metadata, just entries with headers one by one
-/// Able to read broken files/entries and discard them.
+/// No compression, no metadata, just entries with headers one by one.
+/// Able to read broken files/entries and discard them. Not thread safe.
 class Changelog
 {
 
@@ -81,12 +88,12 @@ public:
 
     uint64_t getNextEntryIndex() const
     {
-        return start_index + logs.size();
+        return max_log_id + 1;
     }
 
     uint64_t getStartIndex() const
     {
-        return start_index;
+        return min_log_id;
     }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
@@ -122,17 +129,32 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
 
+    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    /// Remove all logs from disk
+    void removeAllLogs();
+    /// Init writer for existing log with some entries already written
+    void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
+
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
     Poco::Logger * log;
 
+    /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+
+    /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
+    /// Mapping log_id -> binary offset in log file
     IndexToOffset index_to_start_pos;
+    /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
-    uint64_t start_index = 0;
+    /// Start log_id which exists in all "active" logs
+    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
+    uint64_t min_log_id = 0;
+    uint64_t max_log_id = 0;
 };
 
 }
