@@ -380,25 +380,25 @@ static CompileDAG getCompilableDAG(
 
         if (!is_compilable_function || is_compilable_constant)
         {
-           CompileDAG::Node compile_node;
-           compile_node.function = node->function_base;
-           compile_node.result_type = node->result_type;
+            CompileDAG::Node compile_node;
+            compile_node.function = node->function_base;
+            compile_node.result_type = node->result_type;
 
-           if (is_compilable_constant)
-           {
-               compile_node.type = CompileDAG::CompileType::CONSTANT;
-               compile_node.column = node->column;
-           }
-           else
-           {
+            if (is_compilable_constant)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+            }
+            else
+            {
                 compile_node.type = CompileDAG::CompileType::INPUT;
                 children.emplace_back(node);
-           }
+            }
 
-           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
-           dag.addNode(std::move(compile_node));
-           stack.pop();
-           continue;
+            visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+            dag.addNode(std::move(compile_node));
+            stack.pop();
+            continue;
         }
 
         while (frame.next_child_to_visit < node->children.size())
