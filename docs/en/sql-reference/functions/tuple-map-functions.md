@@ -86,7 +86,7 @@ Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sq
 
 **Example**
 
-Query with a Tuple:
+Query with a tuple:
 
 ```sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
