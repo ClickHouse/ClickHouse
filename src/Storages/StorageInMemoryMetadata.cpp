@@ -325,7 +325,8 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 }
 
 Block StorageInMemoryMetadata::getSampleBlockForColumns(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+    const Names & column_names, const NamesAndTypesList & virtuals,
+    const StorageID & storage_id, const bool skip_virtual_columns) const
 {
     Block res;
 
@@ -345,6 +346,8 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
         }
         else if (auto * it = virtuals_map.find(name); it != virtuals_map.end())
         {
+            if (skip_virtual_columns)
+                continue;
             const auto & type = *it->getMapped();
             res.insert({type->createColumn(), type, name});
         }

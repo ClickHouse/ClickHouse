@@ -387,7 +387,8 @@ public:
                 auto get_block_for_format = [&]() -> Block
                 {
                     if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                        return metadata_snapshot->getSampleBlockForColumns(
+                                columns_description.getNamesOfPhysical(), storage->getVirtuals(), StorageID::createEmpty(), true);
                     return metadata_snapshot->getSampleBlock();
                 };
 

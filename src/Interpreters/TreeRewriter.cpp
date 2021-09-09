@@ -806,16 +806,12 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     if (storage)
     {
         const auto storage_virtuals = storage->getVirtuals();
-        for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
-        {
-            auto column = storage_virtuals.tryGetByName(*it);
-            if (column)
-            {
-                source_columns.push_back(*column);
-                unknown_required_source_columns.erase(it++);
+        for (auto it = storage_virtuals.begin(); it != storage_virtuals.end(); ++it) {
+            auto column = unknown_required_source_columns.find(it->name);
+            if (column != unknown_required_source_columns.end()) {
+                source_columns.push_back(*it);
+                unknown_required_source_columns.erase(column);
             }
-            else
-                ++it;
         }
     }
 
