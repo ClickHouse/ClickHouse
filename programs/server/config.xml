@@ -18,6 +18,7 @@
           - information
           - debug
           - trace
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
@@ -964,6 +965,14 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
+    <!-- Session log. Stores user log in (successful or not) and log out events. -->
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </session_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/

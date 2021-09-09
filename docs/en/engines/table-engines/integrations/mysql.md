@@ -19,6 +19,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 SETTINGS
     [connection_pool_size=16, ]
     [connection_max_tries=3, ]
+    [connection_wait_timeout=5, ] /* 0 -- do not wait */
     [connection_auto_close=true ]
 ;
 ```

@@ -110,7 +110,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
     assert(pool_size);
 
-    if (stale_timeout > 0s)
+    if (stale_timeout > 0ms)
         dump_by_last_update_thread = ThreadFromGlobalPool(&AsynchronousInsertQueue::staleCheck, this);
 }
 
@@ -423,7 +423,8 @@ catch (...)
     tryLogCurrentException("AsynchronousInsertQueue", __PRETTY_FUNCTION__);
 
     for (const auto & entry : data->entries)
-        entry->finish(std::current_exception());
+        if (!entry->isFinished())
+            entry->finish(std::current_exception());
 }
 
 }
