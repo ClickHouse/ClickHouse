@@ -12,8 +12,8 @@ def started_cluster(request):
         cluster = ClickHouseCluster(__file__)
         node = cluster.add_instance('node',
                                     main_configs=["configs_secure/config.d/ssl_conf.xml", 'configs/named_collections.xml'],
-                                    with_mongo=True)
-                                    #with_mongo_secure=request.param)
+                                    with_mongo=True,
+                                    with_mongo_secure=request.param)
         cluster.start()
         yield cluster
     finally:
@@ -40,7 +40,7 @@ def test_simple_select(started_cluster):
 
     node = started_cluster.instances['node']
     node.query(
-        "create table simple_mongo_table(key uint64, data string) engine = mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')")
+        "create table simple_mongo_table(key UInt64, data String) engine = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')")
 
     assert node.query("select count() from simple_mongo_table") == '100\n'
     assert node.query("select sum(key) from simple_mongo_table") == str(sum(range(0, 100))) + '\n'
