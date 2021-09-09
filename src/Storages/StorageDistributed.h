@@ -109,7 +109,7 @@ public:
     void flush() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
@@ -144,7 +144,8 @@ private:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
 
     StorageDistributed(
         const StorageID & id_,

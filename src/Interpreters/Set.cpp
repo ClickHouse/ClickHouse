@@ -402,8 +402,8 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
-    : indexes_mapping(std::move(index_mapping_))
+MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
     std::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -548,11 +548,11 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             break;
         }
     }
-    if (one_element_range)
+    if (one_element_range && has_all_keys)
     {
         /// Here we know that there is one element in range.
         /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
 
         /// Check if it's an empty range
         if (!left_included || !right_included)

@@ -192,7 +192,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
         auto lost_part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
-        if (lost_part_info.level != 0)
+        if (lost_part_info.level != 0 || lost_part_info.mutation != 0)
         {
             Strings source_parts;
             bool part_in_queue = storage.queue.checkPartInQueueAndGetSourceParts(part_name, source_parts);

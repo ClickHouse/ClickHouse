@@ -6,6 +6,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -29,6 +30,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
+    , minmax_count_projection(
+          other.minmax_count_projection ? std::optional<ProjectionDescription>(other.minmax_count_projection->clone()) : std::nullopt)
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -50,6 +53,10 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
+    if (other.minmax_count_projection)
+        minmax_count_projection = other.minmax_count_projection->clone();
+    else
+        minmax_count_projection = std::nullopt;
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
@@ -215,7 +222,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
     return !table_ttl.group_by_ttl.empty();
 }
 
-ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
+ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const
 {
     if (updated_columns.empty())
         return {};
@@ -251,7 +258,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     if (hasRowsTTL())
     {
         auto rows_expression = getRowsTTL().expression;
-        if (add_dependent_columns(rows_expression, required_ttl_columns))
+        if (add_dependent_columns(rows_expression, required_ttl_columns) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -264,12 +271,14 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression, required_ttl_columns))
+        if (add_dependent_columns(entry.expression, required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
+
+    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -449,6 +458,23 @@ namespace
 
         return res;
     }
+
+    /*
+     * This function checks compatibility of enums. It returns true if:
+     * 1. Both types are enums.
+     * 2. The first type can represent all possible values of the second one.
+     * 3. Both types require the same amount of memory.
+     */
+    bool isCompatibleEnumTypes(const IDataType * lhs, const IDataType * rhs)
+    {
+        if (IDataTypeEnum const * enum_type = dynamic_cast<IDataTypeEnum const *>(lhs))
+        {
+            if (!enum_type->contains(*rhs))
+                return false;
+            return enum_type->getMaximumSizeOfValueInMemory() == rhs->getMaximumSizeOfValueInMemory();
+        }
+        return false;
+    }
 }
 
 String listOfColumns(const NamesAndTypesList & available_columns)
@@ -480,12 +506,13 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 column.name,
                 listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->getMapped()))
+        const auto * available_type = it->getMapped();
+        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
                 column.name,
-                it->getMapped()->getName(),
+                available_type->getName(),
                 column.type->getName());
 
         if (unique_names.end() != unique_names.find(column.name))
@@ -524,16 +551,16 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 name,
                 listOfColumns(available_columns));
 
-        const auto & provided_column_type = *it->getMapped();
-        const auto & available_column_type = *jt->getMapped();
+        const auto * provided_column_type = it->getMapped();
+        const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type.equals(available_column_type))
+        if (!provided_column_type->equals(*available_column_type) && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
                 name,
-                provided_column_type.getName(),
-                available_column_type.getName());
+                available_column_type->getName(),
+                provided_column_type->getName());
 
         if (unique_names.end() != unique_names.find(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
@@ -568,12 +595,13 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 column.name,
                 listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->getMapped()))
+        const auto * available_type = it->getMapped();
+        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
                 column.name,
-                it->getMapped()->getName(),
+                available_type->getName(),
                 column.type->getName());
     }
 

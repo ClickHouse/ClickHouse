@@ -161,9 +161,6 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         }
     }
 
-    if (attributes.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary has no attributes defined");
-
     if (config.getBool(config_prefix + ".layout.ip_trie.access_to_key_from_attributes", false))
         access_to_key_from_attributes = true;
 }

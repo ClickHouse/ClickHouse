@@ -45,6 +45,7 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
+include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -126,12 +127,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-# Implies ${WITH_COVERAGE}
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
-    set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
 endif()
 
@@ -163,6 +165,13 @@ if (COMPILER_CLANG)
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0.0)
+		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
+            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
+        endif()
+    endif()
 endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
