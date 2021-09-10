@@ -55,8 +55,10 @@ private:
         struct Entry
         {
         public:
-            String bytes;
-            String query_id;
+            const String bytes;
+            const String query_id;
+
+            Entry(String && bytes_, String && query_id_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             bool wait(const Milliseconds & timeout) const;

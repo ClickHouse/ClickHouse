@@ -69,6 +69,10 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return queryToString(query) == queryToString(other.query) && settings == other.settings;
 }
 
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
+    : bytes(std::move(bytes_)), query_id(std::move(query_id_))
+{
+}
 
 void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr exception_)
 {
@@ -165,11 +169,11 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     auto read_buf = getReadBufferFromASTInsertQuery(query);
 
-    auto entry = std::make_shared<InsertData::Entry>();
-    entry->query_id = query_context->getCurrentQueryId();
-
-    WriteBufferFromString write_buf(entry->bytes);
+    String str_buf;
+    WriteBufferFromString write_buf(str_buf);
     copyData(*read_buf, write_buf);
+
+    auto entry = std::make_shared<InsertData::Entry>(std::move(str_buf), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     Queue::iterator it;
