@@ -316,8 +316,9 @@ hr.is-yellow {
 .navbar-super ul {
   list-style: none;
 }
-.navbar-super li + li {
-  margin-left: 24px;
+.navbar-super li:not(:last-child) {
+  margin-bottom: 0;
+  margin-right: 24px;
 }
 .navbar-super a {
   align-items: center;
