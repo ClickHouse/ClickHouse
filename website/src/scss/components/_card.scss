@@ -1,8 +1,14 @@
 .card {
 	box-shadow: $box-shadow;
 	overflow: hidden;
+	position: relative;
 	transition: box-shadow 0.2s, transform 0.2s;
 	width: 100%;
+
+	&-body {
+		position: relative;
+		z-index: 10;
+	}
 }
 
 .card.is-large .card-body {
@@ -11,6 +17,34 @@
 
 .card.bg-primary-light {
 	border-color: $color-brand-primary;
+}
+
+.card.has-dark-border {
+	border-color: $gray-700;
+}
+
+.card.has-pattern:before,
+.card.has-pattern:after {
+	background-repeat: no-repeat;
+	background-size: auto 100%;
+	bottom: 0;
+	content: '';
+	display: block;
+	position: absolute;
+	top: 0;
+	width: 72px;
+}
+
+.card.has-pattern:before {
+	background-image: url(#{'../images/backgrounds/bg-card-pattern-blue-1.png'});
+	background-position: left top;
+	left: 0;
+}
+
+.card.has-pattern:after {
+	background-image: url(#{'../images/backgrounds/bg-card-pattern-blue-2.png'});
+	background-position: right top;
+	right: 0;
 }
 
 a.card:active,

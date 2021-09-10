@@ -35,4 +35,24 @@
 	&-linkedin {
 		mask-image: url('/images/icons/icon-linkedin-gray.svg');
 	}
+
+	&-linkedin-alt {
+		mask-image: url('/images/icons/icon-linkedin-alt-gray.svg');
+	}
+}
+
+.social-icons.size-small {
+	> a {
+		height: 20px; 
+		width: 20px;
+
+		&:active,
+		&:hover {
+			background: $black;
+		}
+	}
+
+	> a + a {
+		margin-left: $spacer * 2;
+	}
 }

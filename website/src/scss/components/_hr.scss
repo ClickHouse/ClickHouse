@@ -6,6 +6,18 @@ hr {
 	width: 100%;
 }
 
+hr.is-large {
+	height: 8px;
+}
+
+hr.is-medium {
+	background: $gray-500;
+}
+
+hr.is-dark {
+	background: $gray-900;
+}
+
 hr.is-yellow {
 	background: linear-gradient(90deg, $color-secondary-accent-orange 0, $color-secondary-accent-orange 8px, $color-primary-accent-yellow 16px, rgba($color-primary-accent-yellow, 0) 100%);
 	clip-path: polygon(
