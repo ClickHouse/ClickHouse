@@ -4,6 +4,19 @@ import logging
 import subprocess
 import os
 import csv
+from s3_helper import S3Helper
+
+
+def process_logs(s3_client, additional_logs, s3_path_prefix):
+    additional_urls = []
+    for log_path in additional_logs:
+        if log_path:
+            additional_urls.append(
+                s3_client.upload_test_report_to_s3(
+                    log_path,
+                    s3_path_prefix + "/" + os.path.basename(log_path)))
+
+    return additional_urls
 
 
 def process_result(result_folder):
@@ -34,6 +47,31 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
+def upload_results(s3_client, pr_number, commit_sha, state, description, test_results, additional_files):
+    s3_path_prefix = f"{pr_number}/{commit_sha}/style_check"
+    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
+
+     # Add link to help. Anchors in the docs must be adjusted accordingly.
+    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    branch_name = "master"
+    if pr_number != 0:
+        branch_name = "PR #{}".format(pr_number)
+        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
+    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
+
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{run_id}"
+
+    raw_log_url = additional_urls[0]
+    additional_urls.pop(0)
+
+    html_report = create_test_html_report("Style Check (actions)", test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    with open('report.html', 'w') as f:
+        f.write(html_report)
+
+    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
+    logging.info("Search result in url %s", url)
+
+
 def get_pr_url_from_ref(ref):
     try:
         return ref.split("/")[2]
@@ -41,24 +79,25 @@ def get_pr_url_from_ref(ref):
         return "master"
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
     temp_path = os.getenv("RUNNER_TEMP", os.path.abspath("./temp"))
     run_id = os.getenv("GITHUB_RUN_ID", 0)
     commit_sha = os.getenv("GITHUB_SHA", 0)
     ref = os.getenv("GITHUB_REF", "")
+    aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
+    aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
+
     docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
+    if not aws_secret_key_id  or not aws_secret_key:
+        logging.info("No secrets, will not upload anything to S3")
+
+    s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
-    state, description, test_results, additional_files = process_result(temp_path)
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{run_id}"
-    branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(get_pr_url_from_ref(ref))
-    branch_name = "PR #" + str(get_pr_url_from_ref(ref))
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
-    raw_log_url = "noop"
 
-    html_report = create_test_html_report("Style Check (actions)", test_results, raw_log_url, task_url, branch_url, branch_name, commit_url)
-    with open(os.path.join(temp_path, 'report.html'), 'w') as f:
-        f.write(html_report)
+    state, description, test_results, additional_files = process_result(temp_path)
+    upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
