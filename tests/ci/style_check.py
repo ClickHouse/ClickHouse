@@ -60,5 +60,5 @@ if __name__ == "__main__":
     raw_log_url = "noop"
 
     html_report = create_test_html_report("Style Check (actions)", test_results, raw_log_url, task_url, branch_url, branch_name, commit_url)
-    with open('report.html', 'w') as f:
+    with open(os.path.join(temp_path, 'report.html'), 'w') as f:
         f.write(html_report)
