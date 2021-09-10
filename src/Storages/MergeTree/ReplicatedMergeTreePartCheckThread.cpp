@@ -117,7 +117,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
         String replica_path = storage.zookeeper_path + "/replicas/" + *it;
         if (replica_path == storage.replica_path)
         {
-            std::iter_swap(it, replicas.begin() + replicas.size() - 1);
+            std::iter_swap(it, replicas.rbegin());
             break;
         }
     }
