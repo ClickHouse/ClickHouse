@@ -55,7 +55,7 @@ Pipe getSourceFromFromASTInsertQuery(
     auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
-    /// Input buffer will be defind by reading from file buffer or by ConcatReadBuffer (concatenation of data and tail)
+    /// Input buffer will be defined by reading from file buffer or by ConcatReadBuffer (concatenation of data and tail)
     std::unique_ptr<ReadBuffer> input_buffer;
 
     if (ast_insert_query->infile)
