@@ -46,7 +46,6 @@ struct Null
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #endif
-
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
@@ -88,10 +87,10 @@ enum class TypeIndex
     LowCardinality,
     Map,
 };
-
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+
 
 using UInt128 = ::UInt128;
 using UInt256 = ::UInt256;

@@ -183,14 +183,8 @@ namespace impl_
 
 enum class OpCase { Vector, LeftConstant, RightConstant };
 
-template <class T>
-inline constexpr const auto & undec(const T & x)
-{
-    if constexpr (is_decimal<T>)
-        return x.value;
-    else
-        return x;
-}
+template <class T> inline constexpr const auto & undec(const T & x) { return x; }
+template <is_decimal T> inline constexpr const auto & undec(const T & x) { return x.value; }
 
 template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
 struct BinaryOperation
@@ -303,17 +297,15 @@ private:
     using ResultType = OpResultType; // e.g. Decimal32
     using NativeResultType = NativeType<ResultType>; // e.g. UInt32 for Decimal32
 
-    using ResultContainerType = typename std::conditional_t<is_decimal<ResultType>,
-        ColumnDecimal<ResultType>,
-        ColumnVector<ResultType>>::Container;
+    using ResultContainerType = typename ColumnVectorOrDecimal<ResultType>::Container;
 
 public:
-    template <OpCase op_case, bool is_decimal_a, bool is_decimal_b, class A, class B>
-    static void NO_INLINE process(const A & a, const B & b, ResultContainerType & c,
+    template <OpCase op_case, bool is_decimal_a, bool is_decimal_b>
+    static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
         NativeResultType scale_a, NativeResultType scale_b)
     {
-        if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<A>);
-        if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<B>);
+        if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
+        if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
 
         size_t size;
 
@@ -383,10 +375,8 @@ public:
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
     static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b)
+        requires(!is_decimal<A> && !is_decimal<B>)
     {
-        static_assert(!is_decimal<A>);
-        static_assert(!is_decimal<B>);
-
         if constexpr (is_division && is_decimal_b)
             return applyScaledDiv<is_decimal_a>(a, b, scale_a);
         else if constexpr (is_plus_minus_compare)
@@ -787,13 +777,13 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    template <typename T, typename ResultDataType, typename CC, typename C>
-    static auto helperGetOrConvert(const CC & col_const, const C & col)
+    template <typename T, typename ResultDataType>
+    static auto helperGetOrConvert(const auto & col_const, const auto & col)
     {
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = NativeType<ResultType>;
 
-        if constexpr (is_floating_point<ResultDataType> && is_decimal<T>)
+        if constexpr (IsFloatingPoint<ResultDataType> && is_decimal<T>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
         else if constexpr (is_decimal<T>)
             return col_const->template getValue<T>().value;
@@ -801,9 +791,8 @@ class FunctionBinaryArithmetic : public IFunction
             return col_const->template getValue<T>();
     }
 
-    template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck,
-              typename L, typename R, typename VR, typename SA, typename SB>
-    void helperInvokeEither(const L& left, const R& right, VR& vec_res, SA scale_a, SB scale_b) const
+    template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck>
+    void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b) const
     {
         if (check_decimal_overflow)
             OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b);
@@ -811,12 +800,11 @@ class FunctionBinaryArithmetic : public IFunction
             OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b);
     }
 
-    template <class LeftDataType, class RightDataType, class ResultDataType,
-              class L, class R, class CL, class CR>
+    template <class LeftDataType, class RightDataType, class ResultDataType>
     ColumnPtr executeNumericWithDecimal(
-        const L & left, const R & right,
+        const auto & left, const auto & right,
         const ColumnConst * const col_left_const, const ColumnConst * const col_right_const,
-        const CL * const col_left, const CR * const col_right,
+        const auto * const col_left, const auto * const col_right,
         size_t col_left_size) const
     {
         using T0 = typename LeftDataType::FieldType;
@@ -827,8 +815,7 @@ class FunctionBinaryArithmetic : public IFunction
         using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
         using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
 
-        using ColVecResult = std::conditional_t<is_decimal<ResultType>,
-            ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+        using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
         static constexpr const bool left_is_decimal = is_decimal<T0>;
         static constexpr const bool right_is_decimal = is_decimal<T1>;

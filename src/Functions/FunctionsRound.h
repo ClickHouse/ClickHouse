@@ -451,15 +451,16 @@ public:
 /** Select the appropriate processing algorithm depending on the scale.
   */
 template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class Dispatcher
+struct Dispatcher
 {
     template <ScaleMode scale_mode>
     using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static ColumnPtr apply(const ColumnVector<T> * col, Scale scale_arg)
+    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
     {
+        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_general);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
@@ -486,9 +487,15 @@ class Dispatcher
 
         return col_res;
     }
+};
 
-    static ColumnPtr apply(const ColumnDecimal<T> * col, Scale scale_arg)
+template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+struct Dispatcher<T, rounding_mode, tie_breaking_mode>
+{
+public:
+    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
     {
+        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
         auto col_res = ColumnDecimal<T>::create(vec_src.size(), vec_src.getScale());
@@ -498,15 +505,6 @@ class Dispatcher
             DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
 
         return col_res;
-    }
-
-public:
-    static ColumnPtr apply(const IColumn * column, Scale scale_arg)
-    {
-        if constexpr (is_arithmetic_v<T>)
-            return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
-        else if constexpr (is_decimal<T>)
-            return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);
     }
 };
 
