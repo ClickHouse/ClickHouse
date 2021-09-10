@@ -418,7 +418,7 @@ void Connection::sendQuery(
     if (settings)
     {
         std::optional<int> level;
-        std::string method = Poco::toUpper(settings->network_compression_method.toString());
+        std::string method = toUpper(settings->network_compression_method.toString());
 
         /// Bad custom logic
         if (method == "ZSTD")
