@@ -423,7 +423,7 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const
 {
     RowNumber x = _x;
 
@@ -461,9 +461,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
-            // abs(offset) is less than INT_MAX, as checked in the parser, so
+            // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
-            assert(offset >= -INT_MAX);
+            assert(offset >= -INT64_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -493,7 +493,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
     return std::tuple{x, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
 {
     auto [x, o] = moveRowNumberNoCheck(_x, offset);
 
@@ -1620,11 +1620,11 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                     "The offset for function {} must be nonnegative, {} given",
                     getName(), offset);
             }
-            if (offset > INT_MAX)
+            if (offset > INT64_MAX)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The offset for function {} must be less than {}, {} given",
-                    getName(), INT_MAX, offset);
+                    getName(), INT64_MAX, offset);
             }
         }
 
@@ -1698,11 +1698,11 @@ struct WindowFunctionNthValue final : public WindowFunction
                 workspace.argument_column_indices[1]])[
             transform->current_row.row].get<Int64>();
 
-        if (offset > INT_MAX || offset <= 0)
+        if (offset > INT64_MAX || offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The offset for function {} must be in (0, {}], {} given",
-                getName(), INT_MAX, offset);
+                getName(), INT64_MAX, offset);
         }
 
         --offset;
