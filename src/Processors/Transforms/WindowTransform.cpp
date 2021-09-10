@@ -1615,7 +1615,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                     workspace.argument_column_indices[1]])[
                         transform->current_row.row].get<Int64>();
 
-            if (offset > INT64_MAX || offset < 0)
+            /// Either overflow or really negative value, both is not acceptable.
+            if (offset < 0)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The offset for function {} must be in (0, {}], {} given",
@@ -1693,7 +1694,8 @@ struct WindowFunctionNthValue final : public WindowFunction
                 workspace.argument_column_indices[1]])[
             transform->current_row.row].get<Int64>();
 
-        if (offset > INT64_MAX || offset <= 0)
+        /// Either overflow or really negative value, both is not acceptable.
+        if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The offset for function {} must be in (0, {}], {} given",
