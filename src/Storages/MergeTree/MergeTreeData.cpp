@@ -1193,7 +1193,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1214,12 +1214,18 @@ void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifet
             {
                 continue;
             }
+            const std::string & full_path = fullPath(disk, it->path());
+            if (merger_mutator.hasTemporaryPart(basename))
+            {
+                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                continue;
+            }
 
             try
             {
                 if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
+                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
                     disk->removeRecursive(it->path());
                 }
             }
