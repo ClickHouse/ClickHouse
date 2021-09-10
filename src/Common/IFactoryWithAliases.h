@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <common/types.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <unordered_map>
 
@@ -29,7 +29,7 @@ protected:
     {
         if (aliases.count(name))
             return aliases.at(name);
-        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.count(name_lowercase))
+        else if (String name_lowercase = toLower(name); case_insensitive_aliases.count(name_lowercase))
             return case_insensitive_aliases.at(name_lowercase);
         else
             return name;
@@ -57,13 +57,13 @@ public:
         String real_dict_name;
         if (creator_map.count(real_name))
             real_dict_name = real_name;
-        else if (auto real_name_lowercase = Poco::toLower(real_name); case_insensitive_creator_map.count(real_name_lowercase))
+        else if (auto real_name_lowercase = toLower(real_name); case_insensitive_creator_map.count(real_name_lowercase))
             real_dict_name = real_name_lowercase;
         else
             throw Exception(factory_name + ": can't create alias '" + alias_name + "', the real name '" + real_name + "' is not registered",
                 ErrorCodes::LOGICAL_ERROR);
 
-        String alias_name_lowercase = Poco::toLower(alias_name);
+        String alias_name_lowercase = toLower(alias_name);
 
         if (creator_map.count(alias_name) || case_insensitive_creator_map.count(alias_name_lowercase))
             throw Exception(
@@ -92,7 +92,7 @@ public:
 
     bool isCaseInsensitive(const String & name) const
     {
-        String name_lowercase = Poco::toLower(name);
+        String name_lowercase = toLower(name);
         return getCaseInsensitiveMap().count(name_lowercase) || case_insensitive_aliases.count(name_lowercase);
     }
 
@@ -100,7 +100,7 @@ public:
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
-        else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
+        else if (auto jt = case_insensitive_aliases.find(toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
         throw Exception(getFactoryName() + ": name '" + name + "' is not alias", ErrorCodes::LOGICAL_ERROR);
@@ -119,7 +119,7 @@ public:
     /// Return the canonical name (the name used in registration) if it's different from `name`.
     const String & getCanonicalNameIfAny(const String & name) const
     {
-        auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
+        auto it = case_insensitive_name_mapping.find(toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
         return name;
