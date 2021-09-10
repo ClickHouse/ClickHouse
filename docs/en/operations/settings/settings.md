@@ -3532,3 +3532,92 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+The setting defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). If the value is `0`, the size of the regular expression is not limited.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET max_hyperscan_regexp_length = 2;
+SELECT multiMatchAny('abcd', ['a','b','c','d']);
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SET max_hyperscan_regexp_length = 2;
+select multiMatchAny('abcd', ['ab','bcd','c','d']);
+```
+
+Result:
+
+```text
+Regexp length too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). If the value is `0`, the total size of the regular expressions is not limited.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET max_hyperscan_regexp_total_length = 5;
+SELECT multiMatchAny('abcd', ['a','b','c','d']);
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SET max_hyperscan_regexp_total_length = 5;
+select multiMatchAny('abcd', ['ab','bc','c','d']);
+```
+
+Result:
+
+```text
+Total regexp lengths too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
