@@ -8,7 +8,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -82,6 +81,8 @@ StorageFileLog::StorageFileLog(
     {
         throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
     }
+
+    directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
 
     watch_task = getContext()->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
 
@@ -207,13 +208,15 @@ void StorageFileLog::threadFunc()
         {
             auto start_time = std::chrono::steady_clock::now();
 
-            watch_task->activateAndSchedule();
+            watch_task->activate();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
                 if (!checkDependencies(table_id))
                     break;
+
+                watch_task->scheduleAfter(RESCHEDULE_MS);
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
@@ -319,15 +322,15 @@ void StorageFileLog::clearInvalidFiles()
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     std::vector<String> valid_files;
-    for (const auto & it : file_names)
+    for (const auto & file_name : file_names)
     {
-        if (file_status.at(it).status == FileStatus::REMOVED)
+        if (file_status.at(file_name).status == FileStatus::REMOVED)
         {
-            file_status.erase(it);
+            file_status.erase(file_name);
         }
         else
         {
-            valid_files.push_back(it);
+            valid_files.push_back(file_name);
         }
     }
 
@@ -394,52 +397,43 @@ void registerStorageFileLog(StorageFactory & factory)
 
 void StorageFileLog::watchFunc()
 {
-    FileLogDirectoryWatcher dw(path);
-    while (true)
+    auto error = directory_watch->hasError();
+    if (error)
+        LOG_INFO(log, "Error happened during watching directory {}.", directory_watch->getPath());
+
+    auto events = directory_watch->getEvents();
+
+    for (const auto & event : events)
     {
-        sleepForMilliseconds(getPollTimeoutMillisecond());
-
-        auto error = dw.hasError();
-        if (error)
-            LOG_INFO(log, "Error happened during watching directory {}.", dw.getPath());
-
-        auto events = dw.getEvents();
-
-        for (const auto & event : events)
+        std::lock_guard<std::mutex> lock(status_mutex);
+        switch (event.type)
         {
-            std::lock_guard<std::mutex> lock(status_mutex);
-            switch (event.type)
-            {
+            case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+                LOG_TRACE(log, "New event {} watched.", event.callback);
+                if (std::filesystem::is_regular_file(event.path))
+                {
+                    file_status[event.path].reader = std::ifstream(event.path);
+                    file_names.push_back(event.path);
+                }
+                break;
 
-                case Poco::DirectoryWatcher::DW_ITEM_ADDED:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    if (std::filesystem::is_regular_file(event.path))
-                    {
-                        file_status[event.path].reader = std::ifstream(event.path);
-                        file_names.push_back(event.path);
-                    }
-                    break;
+            case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
+                LOG_TRACE(log, "New event {} watched.", event.callback);
+                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+                {
+                    file_status[event.path].status = FileStatus::UPDATED;
+                }
+                break;
 
-                case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
-                    {
-                        file_status[event.path].status = FileStatus::UPDATED;
-                    }
-                    break;
-
-                case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
-                    {
-                        file_status[event.path].status = FileStatus::REMOVED;
-                    }
-                    break;
-            }
+            case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
+            case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
+            case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
+                LOG_TRACE(log, "New event {} watched.", event.callback);
+                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+                {
+                    file_status[event.path].status = FileStatus::REMOVED;
+                }
         }
     }
 }
-
 }
