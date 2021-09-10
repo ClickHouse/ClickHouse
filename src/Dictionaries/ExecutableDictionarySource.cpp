@@ -196,7 +196,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
-            .send_chunk_header = config.getBool(settings_config_prefix + ".implicit_key", false)
+            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false)
         };
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context);
