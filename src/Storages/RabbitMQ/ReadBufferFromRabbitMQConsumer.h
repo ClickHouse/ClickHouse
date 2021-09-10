@@ -15,16 +15,13 @@ namespace Poco
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
-using HandlerPtr = std::shared_ptr<RabbitMQHandler>;
-
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 
 public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
-            HandlerPtr event_handler_,
+            RabbitMQHandler & event_handler_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
@@ -85,7 +82,7 @@ private:
     void iterateEventLoop();
 
     ChannelPtr consumer_channel;
-    HandlerPtr event_handler;
+    RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
     std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;

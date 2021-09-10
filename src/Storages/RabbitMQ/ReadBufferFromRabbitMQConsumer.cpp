@@ -16,7 +16,7 @@ namespace DB
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
-        HandlerPtr event_handler_,
+        RabbitMQHandler & event_handler_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
@@ -159,7 +159,7 @@ bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
 
 void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
-    event_handler->iterateLoop();
+    event_handler.iterateLoop();
 }
 
 
