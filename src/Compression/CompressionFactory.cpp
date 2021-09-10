@@ -6,7 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
@@ -37,11 +37,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     if (level)
     {
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
+        return get(makeASTFunction("CODEC", makeASTFunction(toUpper(family_name), level_literal)), {});
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = std::make_shared<ASTIdentifier>(toUpper(family_name));
         return get(makeASTFunction("CODEC", identifier), {});
     }
 }
