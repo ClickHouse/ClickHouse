@@ -93,9 +93,13 @@ StorageExternalDistributed::StorageExternalDistributed(
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
                 ExternalDataSourceConfiguration configuration
                 {
+                    .host = "",
+                    .port = 0,
                     .username = username,
                     .password = password,
                     .database = remote_database,
+                    .table = remote_table,
+                    .schema = "",
                     .addresses = addresses
                 };
 
