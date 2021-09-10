@@ -995,7 +995,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
             throw Exception(storage_already_exists_error_code,
-                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+                "Directory for {} data {} already exists", toLower(storage_name), String(data_path));
     }
     else
     {
