@@ -80,15 +80,15 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
 
             const ColumnUInt8 & res_column_uint8 = assert_cast<const ColumnUInt8 &>(*result_column);
 
-            const UInt8 * data = res_column_uint8.getData().data();
+            const UInt8 * res_data = res_column_uint8.getData().data();
             size_t size = res_column_uint8.size();
 
             /// Is violated.
-            if (!memoryIsByte(data, size, 1))
+            if (!memoryIsByte(res_data, size, 1))
             {
                 size_t row_idx = 0;
                 for (; row_idx < size; ++row_idx)
-                    if (data[row_idx] != 1)
+                    if (res_data[row_idx] != 1)
                         break;
 
                 Names related_columns = constraint_expr->getRequiredColumns();
