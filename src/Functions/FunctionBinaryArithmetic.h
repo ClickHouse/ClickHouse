@@ -186,7 +186,7 @@ enum class OpCase { Vector, LeftConstant, RightConstant };
 template <class T>
 inline constexpr const auto & undec(const T & x)
 {
-    if constexpr (IsDecimalNumber<T>)
+    if constexpr (is_decimal<T>)
         return x.value;
     else
         return x;
@@ -301,9 +301,9 @@ struct DecimalBinaryOperation
 {
 private:
     using ResultType = OpResultType; // e.g. Decimal32
-    using NativeResultType = typename NativeType<ResultType>::Type; // e.g. UInt32 for Decimal32
+    using NativeResultType = NativeType<ResultType>; // e.g. UInt32 for Decimal32
 
-    using ResultContainerType = typename std::conditional_t<IsDecimalNumber<ResultType>,
+    using ResultContainerType = typename std::conditional_t<is_decimal<ResultType>,
         ColumnDecimal<ResultType>,
         ColumnVector<ResultType>>::Container;
 
@@ -312,8 +312,8 @@ public:
     static void NO_INLINE process(const A & a, const B & b, ResultContainerType & c,
         NativeResultType scale_a, NativeResultType scale_b)
     {
-        if constexpr (op_case == OpCase::LeftConstant) static_assert(!IsDecimalNumber<A>);
-        if constexpr (op_case == OpCase::RightConstant) static_assert(!IsDecimalNumber<B>);
+        if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<A>);
+        if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<B>);
 
         size_t size;
 
@@ -384,8 +384,8 @@ public:
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
     static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b)
     {
-        static_assert(!IsDecimalNumber<A>);
-        static_assert(!IsDecimalNumber<B>);
+        static_assert(!is_decimal<A>);
+        static_assert(!is_decimal<B>);
 
         if constexpr (is_division && is_decimal_b)
             return applyScaledDiv<is_decimal_a>(a, b, scale_a);
@@ -791,11 +791,11 @@ class FunctionBinaryArithmetic : public IFunction
     static auto helperGetOrConvert(const CC & col_const, const C & col)
     {
         using ResultType = typename ResultDataType::FieldType;
-        using NativeResultType = typename NativeType<ResultType>::Type;
+        using NativeResultType = NativeType<ResultType>;
 
-        if constexpr (IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
+        if constexpr (is_floating_point<ResultDataType> && is_decimal<T>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
-        else if constexpr (IsDecimalNumber<T>)
+        else if constexpr (is_decimal<T>)
             return col_const->template getValue<T>().value;
         else
             return col_const->template getValue<T>();
@@ -823,15 +823,15 @@ class FunctionBinaryArithmetic : public IFunction
         using T1 = typename RightDataType::FieldType;
         using ResultType = typename ResultDataType::FieldType;
 
-        using NativeResultType = typename NativeType<ResultType>::Type;
+        using NativeResultType = NativeType<ResultType>;
         using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
         using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
 
-        using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>,
+        using ColVecResult = std::conditional_t<is_decimal<ResultType>,
             ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
-        static constexpr const bool left_is_decimal = IsDecimalNumber<T0>;
-        static constexpr const bool right_is_decimal = IsDecimalNumber<T1>;
+        static constexpr const bool left_is_decimal = is_decimal<T0>;
+        static constexpr const bool right_is_decimal = is_decimal<T1>;
         static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
 
         typename ColVecResult::MutablePtr col_res = nullptr;
@@ -1178,9 +1178,9 @@ public:
             using T0 = typename LeftDataType::FieldType;
             using T1 = typename RightDataType::FieldType;
             using ResultType = typename ResultDataType::FieldType;
-            using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
-            using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
-            using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+            using ColVecT0 = ColumnVectorOrDecimal<T0>;
+            using ColVecT1 = ColumnVectorOrDecimal<T1>;
+            using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
             const auto * const col_left_raw = arguments[0].column.get();
             const auto * const col_right_raw = arguments[1].column.get();
