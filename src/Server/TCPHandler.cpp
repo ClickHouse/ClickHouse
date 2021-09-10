@@ -37,6 +37,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
@@ -543,35 +544,61 @@ void TCPHandler::skipData()
 
 void TCPHandler::processInsertQuery()
 {
-    PushingPipelineExecutor executor(state.io.out);
-    /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-      *  client receive exception before sending data.
-      */
-    executor.start();
+    size_t num_threads = state.io.out.getNumThreads();
 
-    /// Send ColumnsDescription for insertion table
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    auto send_table_columns = [&]()
     {
-        const auto & table_id = query_context->getInsertionTable();
-        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        /// Send ColumnsDescription for insertion table
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
-            if (!table_id.empty())
+            const auto & table_id = query_context->getInsertionTable();
+            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
             {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                }
             }
         }
+    };
+
+    if (num_threads > 1)
+    {
+        PushingAsyncPipelineExecutor executor(state.io.out);
+        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+        *  client receive exception before sending data.
+        */
+        executor.start();
+
+        send_table_columns();
+
+        /// Send block to the client - table structure.
+        sendData(executor.getHeader());
+
+        sendLogs();
+
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
     }
+    else
+    {
+        PushingPipelineExecutor executor(state.io.out);
+        executor.start();
 
-    /// Send block to the client - table structure.
-    sendData(executor.getHeader());
+        send_table_columns();
 
-    sendLogs();
+        sendData(executor.getHeader());
 
-    while (readDataNext())
-        executor.push(std::move(state.block_for_insert));
+        sendLogs();
 
-    executor.finish();
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
+    }
 }
 
 
