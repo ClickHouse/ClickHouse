@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from report import create_test_html_report
+import shutil
 import logging
 import subprocess
 import os
@@ -81,7 +82,7 @@ def get_pr_url_from_ref(ref):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
-    temp_path = os.getenv("RUNNER_TEMP", os.path.abspath("./temp"))
+    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
     run_id = os.getenv("GITHUB_RUN_ID", 0)
     commit_sha = os.getenv("GITHUB_SHA", 0)
     ref = os.getenv("GITHUB_REF", "")
@@ -93,6 +94,9 @@ if __name__ == "__main__":
         logging.info("No secrets, will not upload anything to S3")
 
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
+
+    if os.path.exists(temp_path):
+        shutil.rmtree(temp_path)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
