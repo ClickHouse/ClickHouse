@@ -45,10 +45,15 @@
 {% include "templates/index/hero.html" %}
 {% include "templates/index/why.html" %}
 {% include "templates/index/success.html" %}
-{% include "templates/index/pullquote.html" %}
+
+{% if false %}
+	{% include "templates/index/pullquote.html" %}
+{% endif %}
+
 {% include "templates/index/performance.html" %}
 {% include "templates/index/quickstart.html" %}
 {% include "templates/index/community.html" %}
-{% include "templates/index/newsletter.html" %}
+
+{% include "templates/global/newsletter.html" %}
 
 {% endblock %}
