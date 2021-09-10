@@ -32,6 +32,7 @@
 #include <common/logger_useful.h>
 #include <common/range.h>
 #include <common/scope_guard.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <future>
 #include <condition_variable>
@@ -633,7 +634,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
     bool fsync = distributed_settings.fsync_after_insert;
     bool dir_fsync = distributed_settings.fsync_directories;
 
-    std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
+    std::string compression_method = toUpper(settings.network_compression_method.toString());
     std::optional<int> compression_level;
 
     if (compression_method == "ZSTD")
