@@ -14,11 +14,11 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Poco/String.h> /// toLower
 
 
 namespace DB
@@ -273,7 +273,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         if (auto opt_strictness_id = tryGetIdentifierName(engine_args[0]))
         {
-            const String strictness_str = Poco::toLower(*opt_strictness_id);
+            const String strictness_str = toLower(*opt_strictness_id);
 
             if (strictness_str == "any")
             {
@@ -296,7 +296,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
         {
-            const String kind_str = Poco::toLower(*opt_kind_id);
+            const String kind_str = toLower(*opt_kind_id);
 
             if (kind_str == "left")
                 kind = ASTTableJoin::Kind::Left;
