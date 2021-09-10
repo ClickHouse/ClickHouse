@@ -89,6 +89,7 @@ def test_predefined_connection_configuration(started_cluster):
     hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
     assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
+    node1.query("drop table if exists WebHDFSStorageWithRedirect")
     node1.query(
         "create table WebHDFSStorageWithRedirect (id UInt32, name String, weight Float64) ENGINE = URL(url1, url='http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', format='TSV')")
     assert node1.query("SET max_http_get_redirects=1; select * from WebHDFSStorageWithRedirect") == "1\tMark\t72.53\n"
