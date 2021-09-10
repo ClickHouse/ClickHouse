@@ -3,6 +3,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -57,7 +58,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
-class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -361,6 +361,12 @@ public:
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
+
+    Block getMinMaxCountProjectionBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & required_columns,
+        const SelectQueryInfo & query_info,
+        ContextPtr query_context) const;
 
     bool getQueryProcessingStageWithAggregateProjection(
         ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
@@ -741,7 +747,7 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() const { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
-    Disks getDisksByType(DiskType::Type type) const { return getStoragePolicy()->getDisksByType(type); }
+    Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
@@ -800,10 +806,7 @@ public:
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;
-
-    /// Limiting parallel sends per one table, used in DataPartsExchange
-    std::atomic_uint current_table_sends {0};
+    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
@@ -824,9 +827,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes
@@ -919,6 +922,23 @@ protected:
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
     MergeTreePartsMover parts_mover;
+
+    /// Executors are common for both ReplicatedMergeTree and plain MergeTree
+    /// but they are being started and finished in derived classes, so let them be protected.
+    ///
+    /// Why there are two executors, not one? Or an executor for each kind of operation?
+    /// It is historically formed.
+    /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
+    /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
+    /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
+    BackgroundJobsAssignee background_operations_assignee;
+    BackgroundJobsAssignee background_moves_assignee;
+
+    /// Strongly connected with two fields above.
+    /// Every task that is finished will ask to assign a new one into an executor.
+    /// These callbacks will be passed to the constructor of each task.
+    std::function<void(bool)> common_assignee_trigger;
+    std::function<void(bool)> moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;

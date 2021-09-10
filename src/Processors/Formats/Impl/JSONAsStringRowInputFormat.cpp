@@ -34,6 +34,35 @@ void JSONAsStringRowInputFormat::resetParser()
     buf.reset();
 }
 
+void JSONAsStringRowInputFormat::readPrefix()
+{
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(buf);
+
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() && *buf.position() == '[')
+    {
+        ++buf.position();
+        data_in_square_brackets = true;
+    }
+}
+
+void JSONAsStringRowInputFormat::readSuffix()
+{
+    skipWhitespaceIfAny(buf);
+    if (data_in_square_brackets)
+    {
+        assertChar(']', buf);
+        skipWhitespaceIfAny(buf);
+    }
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+    }
+    assertEOF(buf);
+}
+
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 {
     PeekableReadBufferCheckpoint checkpoint{buf};
@@ -113,7 +142,23 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
 bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
+    if (!allow_new_rows)
+        return false;
+
     skipWhitespaceIfAny(buf);
+    if (!buf.eof())
+    {
+        if (!data_in_square_brackets && *buf.position() == ';')
+        {
+            /// ';' means the end of query, but it cannot be before ']'.
+            return allow_new_rows = false;
+        }
+        else if (data_in_square_brackets && *buf.position() == ']')
+        {
+            /// ']' means the end of query.
+            return allow_new_rows = false;
+        }
+    }
 
     if (!buf.eof())
         readJSONObject(*columns[0]);
@@ -141,6 +186,11 @@ void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
+}
+
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
+{
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 }

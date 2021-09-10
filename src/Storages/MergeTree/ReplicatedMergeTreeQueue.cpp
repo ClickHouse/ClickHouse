@@ -144,7 +144,10 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
             updated = true;
         }
 
-        zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+        {  /// Mutation pointer is a part of "state" and must be updated with state mutex
+            std::lock_guard lock(state_mutex);
+            zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+        }
     }
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
@@ -624,7 +627,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             }
         }
 
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
     }
 
     return stat.version;
@@ -713,7 +716,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     }
 
     if (some_active_mutations_were_killed)
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
 
     if (!entries_to_load.empty())
     {
@@ -847,7 +850,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     }
 
     if (mutation_was_active)
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
 
     return entry;
 }

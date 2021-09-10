@@ -14,7 +14,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard.h>
+#include <common/scope_guard_safe.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
@@ -45,19 +45,18 @@
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Storages/System/attachInformationSchemaTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -549,6 +548,8 @@ if (ThreadFuzzer::instance().isEffective())
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
+    global_context->initializeBackgroundExecutors();
+
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
     bool has_zookeeper = config().has("zookeeper");
@@ -766,6 +767,12 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(dictionaries_lib_path);
     }
 
+    {
+        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
+        global_context->setUserScriptsPath(user_scripts_path);
+        fs::create_directories(user_scripts_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -955,7 +962,7 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
@@ -1125,6 +1132,12 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
+        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
+        /// that may execute DROP before loadMarkedAsDroppedTables() in background,
+        /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
+        database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
@@ -1500,7 +1513,7 @@ if (ThreadFuzzer::instance().isEffective())
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
-        SCOPE_EXIT({
+        SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
             LOG_DEBUG(log, "Waiting for current connections to close.");
 

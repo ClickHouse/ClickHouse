@@ -405,7 +405,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

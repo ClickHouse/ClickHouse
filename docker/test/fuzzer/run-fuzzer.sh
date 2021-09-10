@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086
+# shellcheck disable=SC2086,SC2001
 
 set -eux
 set -o pipefail
@@ -12,7 +12,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-12_debug_none_bundled_unsplitted_disable_False_binary"}
 
 function clone
 {
@@ -76,7 +76,10 @@ function filter_exists_and_template
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
-            echo "$path" | sed -n 's/\.sql\.j2$/.gen.sql/'
+            # SC2001 shellcheck suggests:
+            # echo ${path//.sql.j2/.gen.sql}
+            # but it doesn't allow to use regex
+            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
             echo "'$path' does not exists" >&2
         fi
