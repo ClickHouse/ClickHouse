@@ -8,6 +8,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Defines.h>
 
@@ -85,7 +86,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
-    result.type = Poco::toLower(index_definition->type->name);
+    result.type = toLower(index_definition->type->name);
     result.granularity = index_definition->granularity;
 
     ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
