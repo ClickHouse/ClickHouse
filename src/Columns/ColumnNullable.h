@@ -13,7 +13,6 @@ namespace DB
 
 using NullMap = ColumnUInt8::Container;
 using ConstNullMapPtr = const NullMap *;
-using ConstNullMapPtrVector = std::vector<ConstNullMapPtr>;
 
 /// Class that specifies nullable columns. A nullable column represents
 /// a column, which may have any type, provided with the possibility of

@@ -260,21 +260,32 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , log(&Poco::Logger::get("HashJoin"))
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
-    if (!table_join->oneDisjunct())
+
+    if (isComma(kind) || isCross(kind))
     {
-        /// required right keys concept does not work well if multiple disjuncts,
-        /// we need all keys
-        sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
+        data->type = Type::CROSS;
+        sample_block_with_columns_to_add = right_sample_block;
     }
-    else
+    else if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
         required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
     }
+    else
+    {
+        /// required right keys concept does not work well if multiple disjuncts, we need all keys
+        sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
+    }
 
-//    LOG_DEBUG(log, "Join keys: [{}], required right: [{}]", formatKeysDebug(table_join->getClauses()), fmt::join(required_right_keys.getNames(), ", "));
-    LOG_DEBUG(log, "Columns to add: [{}]", sample_block_with_columns_to_add.dumpStructure());
+    LOG_TRACE(log, "Columns to add: [{}], required right [{}]",
+              sample_block_with_columns_to_add.dumpStructure(), fmt::join(required_right_keys.getNames(), ", "));
+    {
+        std::vector<String> log_text;
+        for (const auto & clause : table_join->getClauses())
+            log_text.push_back(clause.formatDebug());
+        LOG_TRACE(log, "Joining on: {}", fmt::join(log_text, " | "));
+    }
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
 
