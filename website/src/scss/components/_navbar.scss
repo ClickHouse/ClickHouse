@@ -10,8 +10,9 @@
 			list-style: none;
 		}
 
-		li + li {
-			margin-left: 24px;
+		li:not(:last-child) {
+			margin-bottom: 0;
+			margin-right: 24px;
 		}
 
 		a {
