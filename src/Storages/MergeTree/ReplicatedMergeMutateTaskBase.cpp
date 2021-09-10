@@ -37,13 +37,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
         try
         {
-            /// Returns false if
-            bool res = executeImpl();
-
-            if (state == State::SUCCESS)
-                storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
-
-            return res;
+            return executeImpl();
         }
         catch (const Exception & e)
         {
@@ -137,7 +131,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             /// Depending on condition there is no need to execute a merge
             if (state == State::SUCCESS)
-                return false;
+                return true;
 
             if (!prepare())
             {
@@ -198,7 +192,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         }
         case State::SUCCESS :
         {
-            /// Do nothing
+            storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
             return false;
         }
     }
