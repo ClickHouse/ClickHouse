@@ -14,10 +14,8 @@ private:
 
 public:
     using UnderlyingType = T;
-
     template <class Enable = typename std::is_copy_constructible<T>::type>
     constexpr explicit StrongTypedef(const T & t_) : t(t_) {}
-
     template <class Enable = typename std::is_move_constructible<T>::type>
     constexpr explicit StrongTypedef(T && t_) : t(std::move(t_)) {}
 

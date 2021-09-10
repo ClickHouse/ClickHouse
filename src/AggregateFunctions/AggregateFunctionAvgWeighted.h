@@ -34,10 +34,10 @@ public:
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto& weights = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]);
+        const auto& weights = static_cast<const ColumnVectorOrDecimal<Weight> &>(*columns[1]);
 
         this->data(place).numerator += static_cast<Numerator>(
-            static_cast<const DecimalOrVectorCol<Value> &>(*columns[0]).getData()[row_num]) *
+            static_cast<const ColumnVectorOrDecimal<Value> &>(*columns[0]).getData()[row_num]) *
             static_cast<Numerator>(weights.getData()[row_num]);
 
         this->data(place).denominator += static_cast<Denominator>(weights.getData()[row_num]);

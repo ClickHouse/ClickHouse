@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <concepts>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -177,6 +178,7 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     size_t result = writeFloatTextFastPath(x, buffer);
     buf.write(buffer, result);
 }
+
 
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
@@ -884,9 +886,9 @@ inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, b
 
 inline void writeText(is_integer auto x, WriteBuffer & buf)
 {
-    if constexpr (std::same_as<decltype(x), bool>)
+    if constexpr (std::is_same_v<decltype(x), bool>)
         writeBoolText(x, buf);
-    else if constexpr (std::same_as<decltype(x), char>)
+    else if constexpr (std::is_same_v<decltype(x), char>)
         writeChar(x, buf);
     else
         writeIntText(x, buf);

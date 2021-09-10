@@ -6,10 +6,11 @@
 #include <IO/WriteHelpers.h>
 
 #include <functional>
-#include <type_traits>
+
 
 namespace DB
 {
+
 /** Implements the ability to write and read data in/from WriteBuffer/ReadBuffer
   *  with the help of << and >> operators and also manipulators,
   *  providing a way of using, similar to iostreams.
@@ -48,10 +49,10 @@ inline QuoteManipWriteBuffer       operator<< (WriteBuffer & buf, QuoteManip)   
 inline DoubleQuoteManipWriteBuffer operator<< (WriteBuffer & buf, DoubleQuoteManip) { return buf; }
 inline BinaryManipWriteBuffer      operator<< (WriteBuffer & buf, BinaryManip)      { return buf; }
 
-template <typename T> WriteBuffer & operator<< (EscapeManipWriteBuffer buf,      const T & x) { writeText(x, buf.get());         return buf; }
-template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const T & x) { writeQuoted(x, buf.get());       return buf; }
-template <typename T> WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf, const T & x) { writeDoubleQuoted(x, buf.get()); return buf; }
-template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer buf,      const T & x) { writeBinary(x, buf.get());       return buf; }
+template <typename T> WriteBuffer & operator<< (EscapeManipWriteBuffer buf,        const T & x) { writeText(x, buf.get());         return buf; }
+template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer buf,         const T & x) { writeQuoted(x, buf.get());       return buf; }
+template <typename T> WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf,   const T & x) { writeDoubleQuoted(x, buf.get()); return buf; }
+template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer buf,        const T & x) { writeBinary(x, buf.get());       return buf; }
 
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)   { writeEscapedString(x, buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, std::string_view x) { writeEscapedString(x, buf); return buf; }
@@ -85,4 +86,5 @@ template <typename T> ReadBuffer & operator>> (EscapeManipReadBuffer buf,      T
 template <typename T> ReadBuffer & operator>> (QuoteManipReadBuffer buf,       T & x) { readQuoted(x, buf.get());       return buf; }
 template <typename T> ReadBuffer & operator>> (DoubleQuoteManipReadBuffer buf, T & x) { readDoubleQuoted(x, buf.get()); return buf; }
 template <typename T> ReadBuffer & operator>> (BinaryManipReadBuffer buf,      T & x) { readBinary(x, buf.get());       return buf; }
+
 }

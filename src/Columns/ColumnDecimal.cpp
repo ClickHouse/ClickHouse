@@ -19,7 +19,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 
 
-template <class T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
+template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
 namespace DB
 {
