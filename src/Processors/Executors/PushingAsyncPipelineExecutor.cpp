@@ -127,9 +127,7 @@ static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGrou
 }
 
 
-PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(Chain & chain_, size_t num_threads_)
-    : num_threads(num_threads_)
-    , chain(chain_)
+PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(Chain & chain_) : chain(chain_)
 {
     pushing_source = std::make_shared<PushingAsyncSource>(chain.getInputHeader());
     auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputHeader());
@@ -175,7 +173,7 @@ void PushingAsyncPipelineExecutor::start()
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
     {
-        threadFunction(*data, thread_group, num_threads);
+        threadFunction(*data, thread_group, chain.getNumThreads());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));

@@ -104,6 +104,11 @@ void Pipe::addQueryPlan(std::unique_ptr<QueryPlan> plan)
     holder.query_plans.emplace_back(std::move(plan));
 }
 
+PipelineResourcesHolder Pipe::detachResources()
+{
+    return std::move(holder);
+}
+
 Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
 {
     if (!source->getInputs().empty())
@@ -670,9 +675,13 @@ void Pipe::addChains(std::vector<Chain> chains)
     dropTotals();
     dropExtremes();
 
+    size_t max_parallel_streams_for_chains = 0;
+
     Block new_header;
     for (size_t i = 0; i < output_ports.size(); ++i)
     {
+        max_parallel_streams_for_chains += std::max<size_t>(chains[i].getNumThreads(), 1);
+
         if (i == 0)
             new_header = chains[i].getOutputHeader();
         else
@@ -693,6 +702,7 @@ void Pipe::addChains(std::vector<Chain> chains)
     }
 
     header = std::move(new_header);
+    max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
 void Pipe::resize(size_t num_streams, bool force, bool strict)

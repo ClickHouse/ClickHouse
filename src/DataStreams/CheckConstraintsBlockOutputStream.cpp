@@ -63,8 +63,8 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
 
                 /// Check if constraint value is nullable
                 const auto & null_map = column_nullable->getNullMapColumn();
-                const PaddedPODArray<UInt8> & data = null_map.getData();
-                bool null_map_contains_null = !memoryIsZero(data.raw_data(), data.size() * sizeof(UInt8));
+                const PaddedPODArray<UInt8> & null_map_data = null_map.getData();
+                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), null_map_data.size() * sizeof(UInt8));
 
                 if (null_map_contains_null)
                     throw Exception(

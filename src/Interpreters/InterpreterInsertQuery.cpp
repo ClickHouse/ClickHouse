@@ -377,7 +377,10 @@ BlockIO InterpreterInsertQuery::execute()
         });
     }
     else
+    {
         res.out = std::move(out_chains.at(0));
+        res.out.setNumThreads(std::min<size_t>(res.out.getNumThreads(), settings.max_threads));
+    }
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
@@ -385,6 +388,9 @@ BlockIO InterpreterInsertQuery::execute()
         if (auto inner_table = mv->tryGetTargetTable())
             res.pipeline.addStorageHolder(inner_table);
     }
+
+    if (!res.out.empty())
+        res.out.attachResources(QueryPipeline::getPipe(std::move(res.pipeline)).detachResources());
 
     return res;
 }
