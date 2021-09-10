@@ -1,5 +1,4 @@
 name: GitHub Actions Hello self hosted
-description: Trying GithubActions
 on:
   push:
     branches:
