@@ -12,10 +12,10 @@ namespace DB
 {
 
 UserDefinedExecutableFunction::UserDefinedExecutableFunction(
-    const Config & config_,
+    const UserDefinedExecutableFunctionConfiguration & configuration_,
     std::shared_ptr<scope_guard> function_deregister_,
     const ExternalLoadableLifetime & lifetime_)
-    : config(config_)
+    : configuration(configuration_)
     , function_deregister(std::move(function_deregister_))
     , lifetime(lifetime_)
 {
