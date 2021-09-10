@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -357,7 +358,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("Argument of function toDate is unquoted: toDate(" + contents_str + "), must be: toDate('" + contents_str + "')"
             , ErrorCodes::SYNTAX_ERROR);
     }
-    else if (Poco::toLower(getIdentifierName(identifier)) == "position")
+    else if (toLower(getIdentifierName(identifier)) == "position")
     {
         /// POSITION(needle IN haystack) is equivalent to function position(haystack, needle)
         if (const auto * list = expr_list_args->as<ASTExpressionList>())
@@ -2388,7 +2389,7 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
     }
 
     auto function = std::make_shared<ASTFunctionWithKeyValueArguments>(left_bracket_found);
-    function->name = Poco::toLower(identifier->as<ASTIdentifier>()->name());
+    function->name = toLower(identifier->as<ASTIdentifier>()->name());
     function->elements = expr_list_args;
     function->children.push_back(function->elements);
     node = function;
