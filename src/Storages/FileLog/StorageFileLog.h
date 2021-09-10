@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/FileLog/Buffer_fwd.h>
+#include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -83,6 +84,8 @@ private:
 
     std::mutex status_mutex;
 
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
+
     // Stream thread
     struct TaskContext
     {
@@ -109,7 +112,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    [[noreturn]] void watchFunc();
+    void watchFunc();
 };
 
 }
