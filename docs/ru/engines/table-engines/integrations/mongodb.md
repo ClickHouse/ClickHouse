@@ -34,7 +34,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 ## Примеры использования {#usage-example}
 
-Создание таблицы в ClickHouse для чтения данных из колекции MongoDB:
+Создание таблицы в ClickHouse для чтения данных из коллекции MongoDB:
 
 ``` sql
 CREATE TABLE mongo_table
@@ -44,7 +44,7 @@ CREATE TABLE mongo_table
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
 
-Чтение из сервера MongoDB, защищенного SSL:
+Чтение с сервера MongoDB, защищенного SSL:
 
 ``` sql
 CREATE TABLE mongo_table_ssl
