@@ -1150,13 +1150,31 @@ WINDOW w AS (ORDER BY number ASC)
 2	0	2
 3	0	2
 4	0	2
--- UBsan
-SELECT nth_value(number, -9223372036854775808) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(number, 0) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(number, /* INT_MAX+1 */ 2147483648) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(number, /* INT_MAX */ 2147483647) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC);
+-- nth_value UBsan
+SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
 0
-SELECT nth_value(number, 1) OVER w AS v FROM numbers(1) WINDOW w AS (ORDER BY number DESC);
+SELECT nth_value(1, 1) OVER ();
+1
+-- lagInFrame UBsan
+SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT lagInFrame(1, 0) OVER ();
+1
+SELECT lagInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT lagInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+0
+SELECT lagInFrame(1, 1) OVER ();
+0
+-- leadInFrame UBsan
+SELECT leadInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT leadInFrame(1, 0) OVER ();
+1
+SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+0
+SELECT leadInFrame(1, 1) OVER ();
 0
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
