@@ -222,6 +222,7 @@ void MergeTreeReaderCompact::readData(
 
         auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
 
+        /// TODO: Avoid extra copying.
         if (column->empty())
             column = subcolumn;
         else
