@@ -101,7 +101,6 @@ public:
             configuration.format,
             result_block.cloneEmpty(),
             std::move(process),
-            nullptr,
             std::move(tasks),
             shell_command_source_configuration,
             process_pool));
