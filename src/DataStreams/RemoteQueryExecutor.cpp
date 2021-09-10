@@ -13,15 +13,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+
 namespace CurrentMetrics
 {
-extern const Metric SyncDrainedConnections;
-extern const Metric ActiveSyncDrainedConnections;
+    extern const Metric SyncDrainedConnections;
+    extern const Metric ActiveSyncDrainedConnections;
 }
 
 namespace DB
