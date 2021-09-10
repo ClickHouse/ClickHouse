@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ExceptionKeepingTransformRuntimeData::ExceptionKeepingTransformRuntimeData(
     ThreadStatus * thread_status_,
     std::string additional_exception_message_)

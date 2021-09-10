@@ -25,6 +25,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 struct ViewsData
 {
     std::list<ViewRuntimeData> views;
