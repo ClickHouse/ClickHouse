@@ -5,7 +5,7 @@ toc_title: OpenSky
 
 # Набор данных о воздушном движении из сети OpenSky Network 2020
 
-"Данные в этом наборе получены и отфильтрованы из полного набора данных OpenSky, чтобы проиллюстрировать развитие воздушного движения во время пандемии COVID-19. Набор включает в себя все рейсы, которые видели более 2500 участников сети с 1 января 2019 года. Дополнительные данные будут периодически включаться в набор данных до окончания пандемии COVID-19".
+> Данные в этом наборе получены и отфильтрованы из полного набора данных OpenSky, чтобы проиллюстрировать развитие воздушного движения во время пандемии COVID-19. Набор включает в себя все рейсы, которые видели более 2500 участников сети с 1 января 2019 года. Дополнительные данные будут периодически включаться в набор данных до окончания пандемии COVID-19.
 
 Источник: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
@@ -50,25 +50,27 @@ CREATE TABLE opensky
 
 ## Импортируйте данные в ClickHouse
 
-Параллельно загружайте данные в ClickHouse:
+Загрузите параллельными потоками данные в ClickHouse:
 
 ```bash
-ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c '
-    gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
+ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
 ```
 
-Here we pass the list of files (`ls -1 flightlist_*.csv.gz`) to `xargs` for parallel processing.
-`xargs -P100` specifies to use up to 100 parallel workers but as we only have 30 files, the number of workers will be only 30.
+Здесь мы передаем список файлов (`ls -1 flightlist_*.csv.gz`) в `xargs` для параллельной обработки.
 
-For every file, `xargs` will run a script with `bash -c`. The script has substitution in form of `{}` and the `xargs` command will substitute the filename to it (we have asked it for xargs with `-I{}`).
+`xargs -P100` указывает на использование до 100 параллельных обработчиков, но поскольку у нас всего 30 файлов, то количество обработчиков будет всего 30.
 
-The script will decompress the file (`gzip -c -d "{}"`) to standard output (`-c` parameter) and the output is redirected to `clickhouse-client`.
+Для каждого файла `xargs` будет запускать скрипт с `bash -c`. Сценарий имеет подстановку в виде ` {}`, а команда `xargs` заменяет имя файла (мы указали это для xargs с помощью `-I{}`).
 
-Finally, `clickhouse-client` will do insertion. It will read input data in `CSVWithNames` format. We also asked to parse DateTime fields with extended parser (`--date_time_input_format best_effort`) to recognize ISO-8601 format with timezone offsets.
+Скрипт распакует файл (`gzip -c -d "{}"`) в стандартный вывод (параметр`-c`) и перенаправит его в `clickhouse-client`.
 
-Parallel upload takes 24 seconds.
+В итоге: клиент clickhouse добавит данные в таблицу `opensky`. Входные данные импортируются в формате [CSVWithNames](../../interfaces/formats.md#csvwithnames).
 
-If you don't like parallel upload, here is sequential variant:
+Чтобы распознать формат ISO-8601 со смещениями часовых поясов в полях типа `DateTime`, указывается параметр парсера `--date_time_input_format best_effort`.
+
+Загрузка параллельными потоками займёт около 24 секунд.
+
+Также вы можете последовательный вариант загрузки:
 ```bash
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
@@ -87,7 +89,7 @@ SELECT count() FROM opensky;
 66010819
 ```
 
-The size of dataset in ClickHouse is just 2.66 GiB, check it.
+Размер набора данных в ClickHouse составляет всего 2,66 гигабайта, проверьте это.
 
 Запрос:
 
@@ -103,7 +105,7 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
 
 ## Примеры
 
-Total distance travelled is 68 billion kilometers.
+Общее пройденное расстояние составляет 68 миллиардов километров.
 
 Запрос:
 
@@ -119,7 +121,7 @@ SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Average flight distance is around 1000 km.
+Средняя дальность полета составляет около 1000 км.
 
 Запрос:
 
@@ -135,7 +137,7 @@ SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM o
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Most busy origin airports and the average distance seen
+### Наиболее загруженные аэропорты в указанных координатах и среднее пройденное расстояние
 
 Запрос:
 
@@ -259,7 +261,7 @@ LIMIT 100;
      └────────┴─────────┴──────────┴────────────────────────────────────────┘
 ```
 
-### Number of flights from three major Moscow airports, weekly
+### Номера рейсов из трех крупных аэропортов Москвы, еженедельно
 
 Запрос:
 
