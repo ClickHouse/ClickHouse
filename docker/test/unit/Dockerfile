@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-unit-test .
-FROM yandex/clickhouse-stateless-test
+# docker build -t clickhouse/unit-test .
+FROM clickhouse/stateless-test
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
