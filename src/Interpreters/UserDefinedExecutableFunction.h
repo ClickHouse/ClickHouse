@@ -17,26 +17,28 @@ enum class UserDefinedExecutableFunctionType
     executable_pool
 };
 
+struct UserDefinedExecutableFunctionConfiguration
+{
+    UserDefinedExecutableFunctionType type;
+    std::string name;
+    std::string script_path;
+    std::string format;
+    std::vector<DataTypePtr> argument_types;
+    DataTypePtr result_type;
+    /// Pool settings
+    size_t pool_size = 0;
+    size_t command_termination_timeout = 0;
+    size_t max_command_execution_time = 0;
+    /// Send number_of_rows\n before sending chunk to process
+    bool send_chunk_header = false;
+};
+
 class UserDefinedExecutableFunction final : public IExternalLoadable
 {
 public:
 
-    struct Config
-    {
-        UserDefinedExecutableFunctionType type;
-        std::string name;
-        std::string script_path;
-        std::string format;
-        std::vector<DataTypePtr> argument_types;
-        DataTypePtr result_type;
-        /// Pool settings
-        size_t pool_size = 0;
-        size_t command_termination_timeout = 0;
-        size_t max_command_execution_time = 0;
-    };
-
     UserDefinedExecutableFunction(
-        const Config & config_,
+        const UserDefinedExecutableFunctionConfiguration & configuration_,
         std::shared_ptr<scope_guard> function_deregister_,
         const ExternalLoadableLifetime & lifetime_);
 
@@ -47,7 +49,7 @@ public:
 
     const std::string & getLoadableName() const override
     {
-        return config.name;
+        return configuration.name;
     }
 
     bool supportUpdates() const override
@@ -62,12 +64,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedExecutableFunction>(config, function_deregister, lifetime);
+        return std::make_shared<UserDefinedExecutableFunction>(configuration, function_deregister, lifetime);
     }
 
-    const Config & getConfig() const
+    const UserDefinedExecutableFunctionConfiguration & getConfiguration() const
     {
-        return config;
+        return configuration;
     }
 
     std::shared_ptr<UserDefinedExecutableFunction> shared_from_this()
@@ -81,7 +83,7 @@ public:
     }
 
 private:
-    Config config;
+    UserDefinedExecutableFunctionConfiguration configuration;
     std::shared_ptr<scope_guard> function_deregister;
     ExternalLoadableLifetime lifetime;
 };
