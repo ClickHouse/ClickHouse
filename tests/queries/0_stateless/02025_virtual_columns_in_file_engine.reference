@@ -1,0 +1,2 @@
+parquet_use_virtual/data.parquet	data.parquet	value
+data.parquet	parquet_use_virtual/data.parquet	value
