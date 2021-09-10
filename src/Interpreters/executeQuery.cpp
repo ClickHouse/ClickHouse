@@ -54,7 +54,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
 
 #include <random>
