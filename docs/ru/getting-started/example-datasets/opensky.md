@@ -3,26 +3,28 @@ toc_priority: 20
 toc_title: OpenSky
 ---
 
-# Crowdsourced air traffic data from The OpenSky Network 2020
+# Набор данных о воздушном движении из сети OpenSky Network 2020
 
-"The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
+"Данные в этом наборе получены и отфильтрованы из полного набора данных OpenSky, чтобы проиллюстрировать развитие воздушного движения во время пандемии COVID-19. Набор включает в себя все рейсы, которые видели более 2500 участников сети с 1 января 2019 года. Дополнительные данные будут периодически включаться в набор данных до окончания пандемии COVID-19".
 
-Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
+Источник: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
 Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent Lenders
 "Crowdsourced air traffic data from the OpenSky Network 2019–2020"
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021
 
-## Download the Dataset
+## Загрузите набор данных
 
-```
+Выполните команду:
+
+```bash
 wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record/5092942/files/flightlist_\d+_\d+\.csv\.gz' | xargs wget
 ```
 
-Download will take about 2 minutes with good internet connection. There are 30 files with total size of 4.3 GB.
+Загрузка займет около 2 минут при хорошем подключении к Интернету. Будут загружено 30 файлов, общим размером 4,3 ГБ.
 
-## Create the Table
+## Создайте таблицу
 
 ```sql
 CREATE TABLE opensky
@@ -46,9 +48,9 @@ CREATE TABLE opensky
 ) ENGINE = MergeTree ORDER BY (origin, destination, callsign);
 ```
 
-## Import Data
+## Импортируйте данные в ClickHouse
 
-Upload data into ClickHouse in parallel:
+Параллельно загружайте данные в ClickHouse:
 
 ```bash
 ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c '
@@ -71,43 +73,45 @@ If you don't like parallel upload, here is sequential variant:
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
 
-## Validate the Data
+## Проверьте загруженную информацию
 
-Query:
+Запрос:
 
 ```sql
 SELECT count() FROM opensky;
 ```
 
-Result:
+Результат:
 
 ```text
 66010819
 ```
 
-The size of dataset in ClickHouse is just 2.64 GiB:
+The size of dataset in ClickHouse is just 2.66 GiB, check it.
 
-Query:
+Запрос:
 
 ```sql
 SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky';
 ```
 
-Result:
+Результат:
 
 ```text
-2.64 GiB
+2.66 GiB
 ```
 
-## Run Some Queries
+## Примеры
 
-Total distance travelled is 68 billion kilometers:
+Total distance travelled is 68 billion kilometers.
+
+Запрос:
 
 ```sql
 SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) / 1000) FROM opensky;
 ```
 
-Result:
+Результат:
 
 ```text
 ┌─formatReadableQuantity(divide(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 1000))─┐
@@ -117,13 +121,13 @@ Result:
 
 Average flight distance is around 1000 km.
 
-Query:
+Запрос:
 
 ```sql
 SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky;
 ```
 
-Result:
+Результат:
 
 ```text
 ┌─avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2))─┐
@@ -133,7 +137,7 @@ Result:
 
 ### Most busy origin airports and the average distance seen
 
-Query:
+Запрос:
 
 ```sql
 SELECT
@@ -148,7 +152,7 @@ ORDER BY count() DESC
 LIMIT 100;
 ```
 
-Result:
+Результат:
 
 ```text
      ┌─origin─┬─count()─┬─distance─┬─bar────────────────────────────────────┐
@@ -253,11 +257,11 @@ Result:
  99. │ EDDT   │  115122 │   941740 │ █████████▍                             │
 100. │ EFHK   │  114860 │  1629143 │ ████████████████▎                      │
      └────────┴─────────┴──────────┴────────────────────────────────────────┘
-
-100 rows in set. Elapsed: 0.186 sec. Processed 48.31 million rows, 2.17 GB (259.27 million rows/s., 11.67 GB/s.)
 ```
 
 ### Number of flights from three major Moscow airports, weekly
+
+Запрос:
 
 ```sql
 SELECT
@@ -270,7 +274,7 @@ GROUP BY k
 ORDER BY k ASC;
 ```
 
-Result:
+Результат:
 
 ```text
      ┌──────────k─┬────c─┬─bar──────────────────────────────────────────────────────────────────────────┐
@@ -406,10 +410,8 @@ Result:
 130. │ 2021-06-21 │ 6061 │ ████████████████████████████████████████████████████████████▌                │
 131. │ 2021-06-28 │ 2554 │ █████████████████████████▌                                                   │
      └────────────┴──────┴──────────────────────────────────────────────────────────────────────────────┘
-
-131 rows in set. Elapsed: 0.014 sec. Processed 655.36 thousand rows, 11.14 MB (47.56 million rows/s., 808.48 MB/s.)
 ```
 
-### Test it in Playground
+### Online Playground
 
-The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=).
+Вы можете протестировать другие запросы к этому набору данным с помощью интерактивного ресурса [Online Playground](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.
