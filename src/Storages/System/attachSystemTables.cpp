@@ -44,7 +44,6 @@
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/StorageSystemViews.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
@@ -96,7 +95,6 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemZeros>(system_database, "zeros_mt", true);
     attach<StorageSystemDatabases>(system_database, "databases");
     attach<StorageSystemTables>(system_database, "tables");
-    attach<StorageSystemViews>(system_database, "views");
     attach<StorageSystemColumns>(system_database, "columns");
     attach<StorageSystemFunctions>(system_database, "functions");
     attach<StorageSystemEvents>(system_database, "events");

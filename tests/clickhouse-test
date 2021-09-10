@@ -1162,6 +1162,9 @@ def main(args):
             total_tests_run += do_run_tests(
                 jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, args.parallel)
 
+    if server_died.is_set():
+        exit_code.value = 1
+
     if args.hung_check:
 
         # Some queries may execute in background for some time after test was finished. This is normal.

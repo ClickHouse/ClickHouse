@@ -68,23 +68,19 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
         auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
-        if (!buffer_size || settings.max_read_buffer_size < buffer_size)
-            buffer_size = settings.max_read_buffer_size;
+        if (buffer_size)
+            settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
 
         const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
                 fullPath(data_part->volume->getDisk(), full_data_path),
-                [this, full_data_path, buffer_size]()
+                [this, full_data_path]()
                 {
                     return data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        buffer_size,
-                        0,
-                        settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get());
+                        settings.read_settings);
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -104,11 +100,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        buffer_size,
-                        0,
-                        settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get()),
+                        settings.read_settings,
+                        0),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)

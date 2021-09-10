@@ -56,6 +56,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 
+#include <random>
+
 
 namespace ProfileEvents
 {
@@ -462,6 +464,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
 
     setQuerySpecificSettings(ast, context);
+
+    /// There is an option of probabilistic logging of queries.
+    /// If it is used - do the random sampling and "collapse" the settings.
+    /// It allows to consistently log queries with all the subqueries in distributed query processing
+    /// (subqueries on remote nodes will receive these "collapsed" settings)
+    if (!internal && settings.log_queries && settings.log_queries_probability < 1.0)
+    {
+        std::bernoulli_distribution should_write_log{settings.log_queries_probability};
+
+        context->setSetting("log_queries", should_write_log(thread_local_rng));
+        context->setSetting("log_queries_probability", 1.0);
+    }
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
