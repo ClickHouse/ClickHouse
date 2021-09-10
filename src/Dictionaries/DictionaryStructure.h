@@ -12,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <common/EnumReflection.h>
+#include <Core/TypeId.h>
 
 #if defined(__GNUC__)
     /// GCC mistakenly warns about the names in enum class.
@@ -22,7 +23,10 @@ namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
 
-/// We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
+// We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
+// The first can be done by defining AttributeUnderlyingType enum values to TypeIndex values and then performing
+// a enum_cast.
+// The second can be achieved by using ReverseTypeId
 #define map_item(__T) __T = static_cast<TypeIndexUnderlying>(TypeIndex::__T)
 
 enum class AttributeUnderlyingType : TypeIndexUnderlying
@@ -65,26 +69,23 @@ struct DictionaryAttribute final
     const bool is_nullable;
 };
 
-struct T { using AttributeType = int; };
+template <AttributeUnderlyingType type>
+struct DictionaryAttributeType
+{
+    /// Converts @c type to it underlying type e.g. AttributeUnderlyingType::UInt8 -> UInt8
+    using AttributeType = ReverseTypeId<
+        static_cast<TypeIndex>(
+            static_cast<TypeIndexUnderlying>(type))>;
+};
 
 template <typename F>
-void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
+constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-//    for (AttributeUnderlyingType other : magic_enum::enum_values<AttributeUnderlyingType>())
-//        if (type == other)
-//        {
-//
-//        }
-//
-//    switch (type)
-//    {
-//#define M(TYPE) \
-//        case AttributeUnderlyingType::TYPE: \
-//            func(DictionaryAttributeType<AttributeUnderlyingType::TYPE>()); \
-//            break;
-//    FOR_ATTRIBUTE_TYPES(M)
-//#undef M
-//    }
+    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
+    {
+        if (type == other)
+            func(DictionaryAttributeType<other>{});
+    });
 };
 
 struct DictionarySpecialAttribute final

@@ -5,7 +5,6 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
-#include <concepts>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -15,6 +14,7 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 #include <common/DecomposedFloat.h>
+#include <common/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -31,8 +31,6 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <common/EnumReflection.h>
-
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
@@ -44,6 +42,7 @@
 #endif
 
 #include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
@@ -378,7 +377,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
 {
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (is_integer_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
         || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)

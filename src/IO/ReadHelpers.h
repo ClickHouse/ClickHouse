@@ -13,7 +13,7 @@
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
 #include <common/arithmeticOverflow.h>
-#include <common/Concepts.h>
+#include <common/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
@@ -36,10 +36,7 @@
 
 #include <double-conversion/double-conversion.h>
 
-
-/// 1 GiB
-#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
-
+static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
 {
@@ -383,7 +380,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (IsDecimalNumber<T>)
+    if constexpr (is_decimal<T>)
     {
         readIntText<check_overflow>(x.value, buf);
     }
@@ -1154,12 +1151,10 @@ inline bool tryParse(T & res, const char * data, size_t size)
 }
 
 template <typename T>
-inline std::enable_if_t<!is_integer_v<T>, void>
-readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-template <typename T>
-inline std::enable_if_t<is_integer_v<T>, void>
-readTextWithSizeSuffix(T & x, ReadBuffer & buf)
+template <is_integer T>
+inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);
     if (buf.eof())

@@ -24,11 +24,10 @@ namespace ErrorCodes
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <typename T>
+template <is_decimal T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
 {
     using Base = DataTypeDecimalBase<T>;
-    static_assert(IsDecimalNumber<T>);
 
 public:
     using typename Base::FieldType;

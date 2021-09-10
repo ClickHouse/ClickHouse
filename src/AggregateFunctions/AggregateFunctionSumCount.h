@@ -8,7 +8,10 @@
 namespace DB
 {
 template <typename T>
-using DecimalOrNumberDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<AvgFieldType<T>>, DataTypeNumber<AvgFieldType<T>>>;
+using DecimalOrNumberDataType = std::conditional_t<is_decimal<T>,
+    DataTypeDecimal<AvgFieldType<T>>,
+    DataTypeNumber<AvgFieldType<T>>>;
+
 template <typename T>
 class AggregateFunctionSumCount final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionSumCount<T>>
 {
@@ -21,7 +24,7 @@ public:
     DataTypePtr getReturnType() const override
     {
         DataTypes types;
-        if constexpr (IsDecimalNumber<T>)
+        if constexpr (is_decimal<T>)
             types.emplace_back(std::make_shared<DecimalOrNumberDataType<T>>(DecimalOrNumberDataType<T>::maxPrecision(), scale));
         else
             types.emplace_back(std::make_shared<DecimalOrNumberDataType<T>>());

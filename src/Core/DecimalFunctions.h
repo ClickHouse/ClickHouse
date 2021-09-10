@@ -6,7 +6,6 @@
 #include <common/arithmeticOverflow.h>
 
 #include <limits>
-#include <type_traits>
 
 
 namespace DB
@@ -230,7 +229,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
     {
         result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
     }
-    else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
+    else if constexpr (is_integer<To> && (sizeof(To) >= sizeof(NativeT)))
     {
         NativeT whole = getWholePart(decimal, scale);
 
@@ -247,9 +246,9 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 
         result = static_cast<To>(whole);
     }
-    else if constexpr (is_integer_v<To>)
+    else if constexpr (is_integer<To>)
     {
-        using ToNativeT = typename NativeType<To>::Type;
+        using ToNativeT = NativeType<To>;
         using CastTo = std::conditional_t<(is_big_int_v<NativeT> && std::is_same_v<ToNativeT, UInt8>), uint8_t, ToNativeT>;
 
         const NativeT whole = getWholePart(decimal, scale);
