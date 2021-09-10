@@ -6,9 +6,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <unordered_map>
-#include <Poco/String.h>
 
 
 namespace DB
@@ -53,7 +53,7 @@ public:
             throw Exception("Argument of function " + getName() + " must be constant string", ErrorCodes::BAD_ARGUMENTS);
 
         String variable_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        auto variable = global_variable_map.find(Poco::toLower(variable_name));
+        auto variable = global_variable_map.find(toLower(variable_name));
         if (variable == global_variable_map.end())
             return std::make_shared<DataTypeInt32>();
         else
@@ -64,7 +64,7 @@ public:
     {
         const ColumnWithTypeAndName & col = arguments[0];
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
-        auto variable = global_variable_map.find(Poco::toLower(variable_name));
+        auto variable = global_variable_map.find(toLower(variable_name));
 
         Field val = 0;
         if (variable != global_variable_map.end())
