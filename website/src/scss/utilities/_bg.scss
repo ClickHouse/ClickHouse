@@ -2,10 +2,14 @@
 	background-image: linear-gradient(58deg, #FF6443 3%, #FE561D 24%, #E32F0D 93%);
 }
 
+.bg-gradient-light-orange {
+	background-image: linear-gradient(90deg, rgba(#FFCB80, 0) 0%, #FFCB80 100%);
+}
+
 .bg-offset-right {
-	bottom: 40px;
+	bottom: 0;
 	left: 96px;
 	position: absolute;
-	top: 40px;
+	top: 0;
 	width: 100vw;
 }
