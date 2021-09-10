@@ -16,7 +16,6 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -96,9 +95,10 @@ public:
 
     RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -108,8 +108,6 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 

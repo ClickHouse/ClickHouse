@@ -72,7 +72,7 @@ Pipe ExecutableDictionarySource::loadAll()
     ShellCommand::Config config(configuration.command);
     auto process = ShellCommand::execute(config);
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
     return pipe;
 }
 
@@ -91,7 +91,7 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     ShellCommand::Config config(command_with_update_field);
     auto process = ShellCommand::execute(config);
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
     return pipe;
 }
 
@@ -126,7 +126,7 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
     }};
     std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks)));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), std::move(tasks)));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
