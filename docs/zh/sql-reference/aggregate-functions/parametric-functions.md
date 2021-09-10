@@ -19,7 +19,7 @@ histogram(number_of_bins)(values)
 
 **参数**
 
-`number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。
+`number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。 
 
 `values` — [表达式](../syntax.md#syntax-expressions) 输入值。
 
@@ -112,7 +112,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `.*` — 匹配任何事件的数字。 不需要条件参数来匹配这个模式。
 
--   `(?t operator value)` — 分开两个事件的时间。 例如： `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=`, `==`  运算符。
+-   `(?t operator value)` — 分开两个事件的时间。 例如： `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=` 运算符。
 
 **例**
 
@@ -493,6 +493,6 @@ FROM
 
 ## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
-和 [sumMap](./reference/summap.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
+和 [sumMap](reference.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->

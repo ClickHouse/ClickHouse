@@ -18,11 +18,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database)
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
     alias = identifier.tryGetAlias();
 
-    auto table_id = identifier.getTableId();
+    auto table_id = IdentifierSemantic::extractDatabaseAndTable(identifier);
     std::tie(database, table, uuid) = std::tie(table_id.database_name, table_id.table_name, table_id.uuid);
     if (database.empty())
         database = current_database;
@@ -30,9 +30,9 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & 
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = node->as<ASTTableIdentifier>();
+    const auto * identifier = node->as<ASTIdentifier>();
     if (!identifier)
-        throw Exception("Logical error: table identifier expected", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
     *this = DatabaseAndTableWithAlias(*identifier, current_database);
 }
@@ -100,7 +100,7 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !database_and_table_name->as<ASTTableIdentifier>())
+    if (!database_and_table_name || !database_and_table_name->as<ASTIdentifier>())
         return {};
 
     return DatabaseAndTableWithAlias(database_and_table_name);

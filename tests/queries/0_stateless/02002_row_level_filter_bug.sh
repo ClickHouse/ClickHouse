@@ -73,3 +73,6 @@ SELECT count() AS count
 FROM test_table
 WHERE (t_date = '2021-07-15') AND (c = 'aur') AND (a = 313)
 "
+
+$CLICKHOUSE_CLIENT --query "DROP ROW POLICY IF EXISTS ttt_bu_test_table_AWD ON test_table;"
+$CLICKHOUSE_CLIENT --query "drop table if exists test_table"

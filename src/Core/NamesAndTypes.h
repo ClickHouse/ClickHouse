@@ -2,7 +2,6 @@
 
 #include <map>
 #include <list>
-#include <optional>
 #include <string>
 #include <set>
 #include <initializer_list>
@@ -64,7 +63,7 @@ using NamesAndTypes = std::vector<NameAndTypePair>;
 class NamesAndTypesList : public std::list<NameAndTypePair>
 {
 public:
-    NamesAndTypesList() = default;
+    NamesAndTypesList() {}
 
     NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
 

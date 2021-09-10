@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -19,34 +19,20 @@ namespace
 {
 
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction, WithContext
+class FunctionGetSetting : public IFunction
 {
 public:
     static constexpr auto name = "getSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto value = getValue(arguments);
-        return applyVisitor(FieldToDataType{}, value);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        auto value = getValue(arguments);
-        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
-    }
-
-private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (!isString(arguments[0].type))
             throw Exception{"The argument of function " + String{name} + " should be a constant string with the name of a setting",
@@ -57,8 +43,21 @@ private:
                             ErrorCodes::ILLEGAL_COLUMN};
 
         std::string_view setting_name{column->getDataAt(0)};
-        return getContext()->getSettingsRef().get(setting_name);
+        value = context.getSettingsRef().get(setting_name);
+
+        DataTypePtr type = applyVisitor(FieldToDataType{}, value);
+        value = convertFieldToType(value, *type);
+        return type;
     }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumnConst(input_rows_count, value);
+    }
+
+private:
+    mutable Field value;
+    const Context & context;
 };
 
 }

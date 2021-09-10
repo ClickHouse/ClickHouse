@@ -14,11 +14,11 @@ postgres_table_template = """
     id Integer NOT NULL, value Integer, PRIMARY KEY (id))
     """
 
-def get_postgres_conn(cluster, database=False):
+def get_postgres_conn(database=False):
     if database == True:
-        conn_string = f"host={cluster.postgres_ip} port={cluster.postgres_port} dbname='test_database' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' dbname='test_database' user='postgres' password='mysecretpassword'"
     else:
-        conn_string = f"host={cluster.postgres_ip} port={cluster.postgres_port} user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True
@@ -36,7 +36,7 @@ def create_postgres_table(cursor, table_name):
 def started_cluster():
     try:
         cluster.start()
-        conn = get_postgres_conn(cluster)
+        conn = get_postgres_conn()
         cursor = conn.cursor()
         create_postgres_db(cursor, 'test_database')
         yield cluster
@@ -47,7 +47,7 @@ def started_cluster():
 
 def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     # connect to database as well
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query(
@@ -68,7 +68,7 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query(
@@ -94,7 +94,7 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_queries(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query(
@@ -114,7 +114,7 @@ def test_postgresql_database_engine_queries(started_cluster):
 
 
 def test_get_create_table_query_with_multidim_arrays(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query(
@@ -147,11 +147,11 @@ def test_get_create_table_query_with_multidim_arrays(started_cluster):
 
 
 def test_postgresql_database_engine_table_cache(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', '', 1)")
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1)")
 
     create_postgres_table(cursor, 'test_table')
     assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)'
@@ -181,31 +181,6 @@ def test_postgresql_database_engine_table_cache(started_cluster):
 
     node1.query("DROP DATABASE test_database")
     assert 'test_database' not in node1.query('SHOW DATABASES')
-
-
-def test_postgresql_database_with_schema(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
-    cursor = conn.cursor()
-
-    cursor.execute('DROP SCHEMA IF EXISTS test_schema CASCADE')
-    cursor.execute('DROP SCHEMA IF EXISTS "test.nice.schema" CASCADE')
-
-    cursor.execute('CREATE SCHEMA test_schema')
-    cursor.execute('CREATE TABLE test_schema.table1 (a integer)')
-    cursor.execute('CREATE TABLE test_schema.table2 (a integer)')
-    cursor.execute('CREATE TABLE table3 (a integer)')
-
-    node1.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'test_schema')")
-
-    assert(node1.query('SHOW TABLES FROM test_database') == 'table1\ntable2\n')
-
-    node1.query("INSERT INTO test_database.table1 SELECT number from numbers(10000)")
-    assert node1.query("SELECT count() FROM test_database.table1").rstrip() == '10000'
-    node1.query("DETACH TABLE test_database.table1")
-    node1.query("ATTACH TABLE test_database.table1")
-    assert node1.query("SELECT count() FROM test_database.table1").rstrip() == '10000'
-    node1.query("DROP DATABASE test_database")
 
 
 if __name__ == '__main__':

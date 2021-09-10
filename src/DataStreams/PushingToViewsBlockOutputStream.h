@@ -1,45 +1,31 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Interpreters/QueryViewsLog.h>
+#include <Common/Stopwatch.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
-#include <Common/Stopwatch.h>
 
 namespace Poco
 {
 class Logger;
-}
+};
 
 namespace DB
 {
 
-class ReplicatedMergeTreeSink;
+class ReplicatedMergeTreeBlockOutputStream;
+class Context;
 
-struct ViewRuntimeData
-{
-    const ASTPtr query;
-    StorageID table_id;
-    BlockOutputStreamPtr out;
-    std::exception_ptr exception;
-    QueryViewsLogElement::ViewRuntimeStats runtime_stats;
-
-    void setException(std::exception_ptr e)
-    {
-        exception = e;
-        runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
-    }
-};
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
-class PushingToViewsBlockOutputStream : public IBlockOutputStream, WithContext
+class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
     PushingToViewsBlockOutputStream(
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context_,
+        const Context & context_,
         const ASTPtr & query_ptr_,
         bool no_destination = false);
 
@@ -49,25 +35,32 @@ public:
     void flush() override;
     void writePrefix() override;
     void writeSuffix() override;
-    void onProgress(const Progress & progress) override;
 
 private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
-    ReplicatedMergeTreeSink * replicated_output = nullptr;
+    ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
     Poco::Logger * log;
 
+    const Context & context;
     ASTPtr query_ptr;
     Stopwatch main_watch;
 
-    std::vector<ViewRuntimeData> views;
-    ContextMutablePtr select_context;
-    ContextMutablePtr insert_context;
+    struct ViewInfo
+    {
+        ASTPtr query;
+        StorageID table_id;
+        BlockOutputStreamPtr out;
+        std::exception_ptr exception;
+        UInt64 elapsed_ms = 0;
+    };
 
-    void process(const Block & block, ViewRuntimeData & view);
-    void checkExceptionsInViews();
-    void logQueryViews();
+    std::vector<ViewInfo> views;
+    std::unique_ptr<Context> select_context;
+    std::unique_ptr<Context> insert_context;
+
+    void process(const Block & block, ViewInfo & view);
 };
 
 

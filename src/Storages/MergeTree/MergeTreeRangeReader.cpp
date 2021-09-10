@@ -1,8 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
-#include <common/range.h>
-#include <Interpreters/castColumn.h>
+#include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
 #ifdef __SSE2__
@@ -118,7 +117,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
     /// We need to skip some rows before reading
     if (current_offset && !continue_reading)
     {
-        for (size_t mark_num : collections::range(current_mark, index_granularity->getMarksCount()))
+        for (size_t mark_num : ext::range(current_mark, index_granularity->getMarksCount()))
         {
             size_t mark_index_granularity = index_granularity->getMarkRows(mark_num);
             if (current_offset >= mark_index_granularity)
@@ -356,7 +355,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
     /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
     else if (2 * total_zero_rows_in_tails > filter->size())
     {
-        for (auto i : collections::range(0, rows_per_granule.size()))
+        for (auto i : ext::range(0, rows_per_granule.size()))
         {
             rows_per_granule_original.push_back(rows_per_granule[i]);
             rows_per_granule[i] -= zero_tails[i];
@@ -420,7 +419,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     const auto * filter_data = filter_vec.data();
     auto * new_filter_data = new_filter_vec.data();
 
-    for (auto i : collections::range(0, rows_per_granule.size()))
+    for (auto i : ext::range(0, rows_per_granule.size()))
     {
         memcpySmallAllowReadWriteOverflow15(new_filter_data, filter_data, rows_per_granule[i]);
         filter_data += rows_per_granule_original[i];
@@ -487,13 +486,9 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
     ConstantFilterDescription const_description(*new_filter);
     if (const_description.always_true)
-    {
         setFilterConstTrue();
-    }
     else if (const_description.always_false)
-    {
         clear();
-    }
     else
     {
         FilterDescription filter_description(*new_filter);
@@ -521,7 +516,7 @@ size_t MergeTreeRangeReader::ReadResult::countBytesInResultFilter(const IColumn:
 MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
-    const PrewhereExprInfo * prewhere_info_,
+    const PrewhereInfoPtr & prewhere_info_,
     bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part->index_granularity))
@@ -638,14 +633,17 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             return read_result;
 
         bool has_columns = false;
+        for (auto & column : columns)
+        {
+            if (column)
+                has_columns = true;
+        }
+
         size_t total_bytes = 0;
         for (auto & column : columns)
         {
             if (column)
-            {
                 total_bytes += column->byteSize();
-                has_columns = true;
-            }
         }
 
         read_result.addNumBytesRead(total_bytes);
@@ -810,7 +808,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
-    for (auto i : collections::range(0, size))
+    for (auto i : ext::range(0, size))
     {
         if (next_range_to_start < started_ranges.size()
             && i == started_ranges[next_range_to_start].num_granules_read_before_start)
@@ -1044,9 +1042,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// Filter in WHERE instead
     else
     {
-        auto type = getSampleBlock().getByName(prewhere_info->prewhere_column_name).type;
-        ColumnWithTypeAndName col(result.getFilterHolder()->convertToFullColumnIfConst(), std::make_shared<DataTypeUInt8>(), "");
-        result.columns[prewhere_column_pos] = castColumn(col, type);
+        result.columns[prewhere_column_pos] = result.getFilterHolder()->convertToFullColumnIfConst();
+        if (getSampleBlock().getByName(prewhere_info->prewhere_column_name).type->isNullable())
+            result.columns[prewhere_column_pos] = makeNullable(std::move(result.columns[prewhere_column_pos]));
         result.clearFilter(); // Acting as a flag to not filter in PREWHERE
     }
 }
