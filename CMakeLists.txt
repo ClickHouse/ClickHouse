@@ -80,7 +80,7 @@ include (cmake/find/ccache.cmake)
 # ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 2G
+    # set DATA (since RSS does not work since 2.6.x+) to 5G
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
@@ -89,7 +89,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
-       set (RLIMIT_DATA 10000000000)
+       set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
