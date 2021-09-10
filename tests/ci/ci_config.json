@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-11",
+            "compiler": "clang-12",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
