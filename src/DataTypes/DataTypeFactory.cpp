@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
-#include <Poco/String.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
@@ -104,7 +103,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
-    String family_name_lowercase = Poco::toLower(family_name);
+    String family_name_lowercase = toLower(family_name);
 
     if (isAlias(family_name) || isAlias(family_name_lowercase))
         throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
@@ -170,7 +169,7 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
         }
     }
 
-    String family_name_lowercase = Poco::toLower(family_name);
+    String family_name_lowercase = toLower(family_name);
 
     {
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
