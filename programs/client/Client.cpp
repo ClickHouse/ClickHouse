@@ -1932,7 +1932,7 @@ private:
                 compression_method = compression_method_node.value.safeGet<std::string>();
             }
 
-            /// Otherwise, it will be detected from file name automaticly (by chooseCompressionMethod)
+            /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
             /// Buffer for reading from file is created and wrapped with appropriate compression method
             auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
 
