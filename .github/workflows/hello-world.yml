@@ -26,5 +26,6 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: report
-          path: $RUNNER_TEMP/report.html
+          path: ${{ env.RUNNER_TEMP }}/report.html
+      - run: ls -la $RUNNER_TEMP
       - run: echo "🍏 This job's status is ${{ job.status }}."
