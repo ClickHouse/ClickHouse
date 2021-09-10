@@ -1913,16 +1913,30 @@ private:
     {
         /// If INSERT data must be sent.
         auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        /// If query isn't parsed, no information can be gor from it.
         if (!parsed_insert_query)
             return;
 
+        /// If data is got from file (maybe compressed file)
         if (parsed_insert_query->infile)
         {
+            /// Get name of this file (path to file)
             const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
             const auto in_file = in_file_node.value.safeGet<std::string>();
 
-            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+            std::string compression_method;
+            /// Compression method can be specified in query
+            if (parsed_insert_query->compression)
+            {
+                const auto & compression_method_node = parsed_insert_query->compression->as<ASTLiteral &>();
+                compression_method = compression_method_node.value.safeGet<std::string>();
+            }
 
+            /// Otherwise, it will be detected from file name automaticly (by chooseCompressionMethod)
+            /// Buffer for reading from file is created and wrapped with appropriate compression method
+            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+
+            /// Now data is ready to be sent on server.
             try
             {
                 sendDataFrom(*in_buffer, sample, columns_description);
@@ -1933,6 +1947,7 @@ private:
                 throw;
             }
         }
+        /// If query already has data to sent
         else if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
