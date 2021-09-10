@@ -357,13 +357,6 @@ public:
         Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
 
         auto dictionary = helper.getDictionary(dictionary_name);
-
-        if (!WhichDataType(arguments[2].type).isUInt64() && !isTuple(arguments[2].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}, must be UInt64 or tuple(...).",
-                arguments[2].type->getName(),
-                getName());
-
         auto dictionary_key_type = dictionary->getKeyType();
 
         size_t current_arguments_index = 3;
