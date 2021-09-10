@@ -13,7 +13,7 @@
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 using namespace DB;
@@ -65,7 +65,7 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
             MATERIALIZEDMYSQL_TABLE_COLUMNS + ") ENGINE = "
             "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 
-        if (Poco::toUpper(test_type).find("INT") != std::string::npos)
+        if (toUpper(test_type).find("INT") != std::string::npos)
         {
             EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
                 "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, test " + test_type + " UNSIGNED)", context_holder.context)),
