@@ -1209,35 +1209,38 @@ void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifet
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it->name(), "tmp_"))
+            const std::string & basename = it->name();
+            if (!startsWith(basename, "tmp_"))
             {
-                try
+                continue;
+            }
+
+            try
+            {
+                if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
-                    {
-                        LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
-                        disk->removeRecursive(it->path());
-                    }
+                    LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
+                    disk->removeRecursive(it->path());
                 }
-                /// see getModificationTime()
-                catch (const ErrnoException & e)
+            }
+            /// see getModificationTime()
+            catch (const ErrnoException & e)
+            {
+                if (e.getErrno() == ENOENT)
                 {
-                    if (e.getErrno() == ENOENT)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
-                catch (const fs::filesystem_error & e)
+                else
+                    throw;
+            }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
                 {
-                    if (e.code() == std::errc::no_such_file_or_directory)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
+                else
+                    throw;
             }
         }
     }
