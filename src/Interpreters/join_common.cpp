@@ -1,4 +1,3 @@
-#include <unordered_map>
 #include <Interpreters/join_common.h>
 
 #include <Columns/ColumnLowCardinality.h>

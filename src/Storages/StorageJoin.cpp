@@ -377,6 +377,9 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
+        if (!join->getTableJoin().oneDisjunct())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
+
         column_indices.resize(sample_block.columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;

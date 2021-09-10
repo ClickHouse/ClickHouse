@@ -12,10 +12,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/Exception.h>
-#include <Parsers/IAST_fwd.h>
 
-#include <cstddef>
-#include <unordered_map>
 #include <utility>
 #include <memory>
 #include <common/types.h>
@@ -51,7 +48,6 @@ class TableJoin
 
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
-    using Disjuncts = ASTs;
 
     /// Corresponds to one disjunct
     struct JoinOnClause
@@ -114,12 +110,10 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
+    std::vector<JoinOnClause> clauses;
+
     ASTs key_asts_left;
     ASTs key_asts_right;
-
-    Disjuncts disjuncts;
-
-    std::vector<JoinOnClause> clauses;
 
     ASTTableJoin table_join;
 
@@ -154,26 +148,7 @@ private:
     ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename) const;
 
-    /// Calculates common supertypes for corresponding join key columns.
-    template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
-
-    NamesAndTypesList correctedColumnsAddedByJoin() const;
-    void leftToRightKeyRemap(
-        const Names & left_keys,
-        const Names & right_keys,
-        const NameSet & required_right_keys,
-        std::unordered_map<String, String> & key_map) const;
-
-    void addKey(const String & left_name, const String & right_name,
-                const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr)
-    {
-        clauses.back().key_names_left.emplace_back(left_name);
-        key_asts_left.emplace_back(left_ast);
-
-        clauses.back().key_names_right.emplace_back(right_name);
-        key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
-    }
+    void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
 
     void assertHasOneOnExpr() const;
 
@@ -190,9 +165,8 @@ public:
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , join_algorithm(JoinAlgorithm::HASH)
-        , clauses(1)
     {
-        getOnlyClause().key_names_right = key_names_right;
+        clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
         table_join.strictness = strictness;
     }
