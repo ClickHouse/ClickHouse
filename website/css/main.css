@@ -347,8 +347,9 @@ hr.is-yellow {
   align-items: center;
   height: 46px;
 }
-.navbar .nav-item + .nav-item {
-  margin-left: 24px;
+.navbar .nav-item:not(:last-child) {
+  margin-bottom: 0;
+  margin-right: 24px;
 }
 .navbar .nav-link {
   color: #212529;
