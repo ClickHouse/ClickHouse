@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -16,7 +15,10 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Chain.h>
 #include <Processors/QueryPipeline.h>
 
 #if !defined(__clang__)
@@ -100,9 +102,12 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    auto out = std::make_shared<PushingToSinkBlockOutputStream>(table->write({}, metadata_snapshot, context));
-    out->write(block);
-    out->writeSuffix();
+    Chain chain;
+    chain.addSource(table->write({}, metadata_snapshot, context));
+
+    PushingPipelineExecutor executor(chain);
+    executor.push(block);
+    executor.finish();
 
     return data;
 }
@@ -122,7 +127,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     QueryPipeline pipeline;
     pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
-    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    PullingPipelineExecutor executor(pipeline);
 
     Block sample;
     {
@@ -137,8 +142,12 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     WriteBufferFromOwnString out_buf;
     BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
 
-    copyData(*in, *output);
+    Block data;
+    output->writePrefix();
+    while (executor.pull(data))
+        output->write(data);
 
+    output->writeSuffix();
     output->flush();
 
     return out_buf.str();
