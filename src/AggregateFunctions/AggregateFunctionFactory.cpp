@@ -16,7 +16,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -48,7 +48,7 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
 
     if (case_sensitiveness == CaseInsensitive)
     {
-        auto key = Poco::toLower(name);
+        auto key = toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
             throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
                 ErrorCodes::LOGICAL_ERROR);
@@ -127,7 +127,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         found = it->second;
     }
 
-    if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+    if (auto jt = case_insensitive_aggregate_functions.find(toLower(name)); jt != case_insensitive_aggregate_functions.end())
     {
         found = jt->second;
         is_case_insensitive = true;
@@ -143,7 +143,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(
-                    Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? Poco::toLower(name) : name);
+                    Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? toLower(name) : name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
@@ -207,7 +207,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         found = it->second;
     }
 
-    if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+    if (auto jt = case_insensitive_aggregate_functions.find(toLower(name)); jt != case_insensitive_aggregate_functions.end())
         found = jt->second;
 
     if (found.creator)
@@ -243,7 +243,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
     if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
-    String name_lowercase = Poco::toLower(name);
+    String name_lowercase = toLower(name);
     if (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase))
         return true;
 
