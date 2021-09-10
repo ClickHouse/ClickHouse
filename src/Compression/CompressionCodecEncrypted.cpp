@@ -65,9 +65,9 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
 }
 
-} // namespace
+} // end of namespace
 
-} // namespace DB
+} // end of namespace DB
 
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 namespace DB
