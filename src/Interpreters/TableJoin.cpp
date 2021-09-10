@@ -101,7 +101,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
-    , clauses(1)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -234,10 +233,8 @@ ASTPtr TableJoin::rightKeysList() const
 
 Names TableJoin::requiredJoinedNames() const
 {
-    NameSet required_columns_set;
-    for (const auto & clause : clauses)
-        required_columns_set.insert(clause.key_names_right.begin(), clause.key_names_right.end());
-
+    Names key_names_right = getAllNames(JoinTableSide::Right);
+    NameSet required_columns_set(key_names_right.begin(), key_names_right.end());
     for (const auto & joined_column : columns_added_by_join)
         required_columns_set.insert(joined_column.name);
 
@@ -258,16 +255,13 @@ NameSet TableJoin::requiredRightKeys() const
     return required;
 }
 
-
 NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
 {
     NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
 
     for (auto & column : requiredJoinedNames())
-    {
         if (!sample.has(column))
             required_columns.insert(column);
-    }
 
     return getNamesWithAliases(required_columns);
 }
@@ -372,8 +366,9 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 
 bool TableJoin::oneDisjunct() const
 {
-    assert(!clauses.empty());
-    return clauses.size() == 1;
+    if (!isComma(kind()) && !isCross(kind()))
+        assert(!clauses.empty());
+    return clauses.size() <= 1;
 }
 
 bool TableJoin::allowMergeJoin() const
@@ -460,8 +455,7 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
     return true;
 }
 
-
-static void tryRename(String & name, const NameToNameMap & renames)
+static void renameIfNeeded(String & name, const NameToNameMap & renames)
 {
     if (const auto it = renames.find(name); it != renames.end())
         name = it->second;
@@ -479,8 +473,8 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
 
     forAllKeys(clauses, [&](auto & left_key, auto & right_key)
     {
-        tryRename(left_key, left_key_column_rename);
-        tryRename(right_key, right_key_column_rename);
+        renameIfNeeded(left_key, left_key_column_rename);
+        renameIfNeeded(right_key, right_key_column_rename);
         return true;
     });
 
@@ -510,11 +504,11 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
             /// Name mismatch, give up
             left_type_map.clear();
             right_type_map.clear();
-            return false; /// break;
+            return false;
         }
 
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
-            return true; /// continue;
+            return true;
 
         DataTypePtr common_type;
         try
@@ -600,48 +594,34 @@ String TableJoin::renamedRightColumnName(const String & name) const
     return name;
 }
 
+void TableJoin::addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast)
+{
+    clauses.back().key_names_left.emplace_back(left_name);
+    key_asts_left.emplace_back(left_ast);
+
+    clauses.back().key_names_right.emplace_back(right_name);
+    key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
+}
 
 static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_cond)
 {
     if (current_cond == nullptr)
-    {
         /// no conditions, set new one
         current_cond = new_cond;
-    }
     else if (const auto * func = current_cond->as<ASTFunction>(); func && func->name == "and")
-    {
         /// already have `and` in condition, just add new argument
         func->arguments->children.push_back(new_cond);
-    }
     else
-    {
-        /// already have some condition, unite coditions with `and`
+        /// already have some conditions, unite it with `and`
         current_cond = makeASTFunction("and", current_cond, new_cond);
-    }
 }
 
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
-    addJoinConditionWithAnd(is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right, ast);
-}
-
-void TableJoin::leftToRightKeyRemap(
-    const Names & left_keys,
-    const Names & right_keys,
-    const NameSet & required_right_keys,
-    std::unordered_map<String, String> & key_map) const
-{
-    if (hasUsing())
-    {
-        for (size_t i = 0; i < left_keys.size(); ++i)
-        {
-            const String & left_key_name = left_keys[i];
-            const String & right_key_name = right_keys[i];
-
-            if (!required_right_keys.contains(right_key_name))
-                key_map[left_key_name] = right_key_name;
-        }
-    }
+    auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
+    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding join condition for {} table: {} -> {}",
+              (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
+    addJoinConditionWithAnd(cond_ast, ast);
 }
 
 std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
@@ -663,11 +643,11 @@ std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
 Names TableJoin::getAllNames(JoinTableSide side) const
 {
     Names res;
-    forAllKeys(clauses, [&res, side](const auto & left, const auto & right)
-    {
-        res.emplace_back(side == JoinTableSide::Left ? left : right);
-        return true;
-    });
+    auto func = [&res](const auto & name) { res.emplace_back(name); return true; };
+    if (side == JoinTableSide::Left)
+        forAllKeys<LeftSideTag>(clauses, func);
+    else
+        forAllKeys<RightSideTag>(clauses, func);
     return res;
 }
 

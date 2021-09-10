@@ -1,5 +1,4 @@
 #include <Common/assert_cast.h>
-#include <Columns/IColumn.h>
 #include <Interpreters/NullableUtils.h>
 
 
