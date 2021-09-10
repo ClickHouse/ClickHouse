@@ -1,8 +1,8 @@
 #pragma once
 
 #include <vector>
-#include <common/types.h>
 #include <common/EnumReflection.h>
+#include <common/types.h>
 
 namespace DB
 {

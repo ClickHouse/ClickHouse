@@ -1,8 +1,5 @@
 #pragma once
-
-#include <concepts>
 #include "common/extended_types.h"
-#include "common/types.h"
 
 #if !defined(NO_SANITIZE_UNDEFINED)
 #if defined(__clang__)
@@ -11,7 +8,6 @@
     #define NO_SANITIZE_UNDEFINED
 #endif
 #endif
-
 
 namespace DB
 {
@@ -25,20 +21,20 @@ using Decimal256 = Decimal<Int256>;
 
 template <class T>
 concept is_decimal =
-    std::same_as<T, Decimal32>
-    || std::same_as<T, Decimal64>
-    || std::same_as<T, Decimal128>
-    || std::same_as<T, Decimal256>
-    || std::same_as<T, DateTime64>;
+    std::is_same_v<T, Decimal32>
+    || std::is_same_v<T, Decimal64>
+    || std::is_same_v<T, Decimal128>
+    || std::is_same_v<T, Decimal256>
+    || std::is_same_v<T, DateTime64>;
 
 template <class T>
 concept is_over_big_int =
-    std::same_as<T, Int128>
-    || std::same_as<T, UInt128>
-    || std::same_as<T, Int256>
-    || std::same_as<T, UInt256>
-    || std::same_as<T, Decimal128>
-    || std::same_as<T, Decimal256>;
+    std::is_same_v<T, Int128>
+    || std::is_same_v<T, UInt128>
+    || std::is_same_v<T, Int256>
+    || std::is_same_v<T, UInt256>
+    || std::is_same_v<T, Decimal128>
+    || std::is_same_v<T, Decimal256>;
 
 template <class T> struct NativeTypeT { using Type = T; };
 template <is_decimal T> struct NativeTypeT<T> { using Type = typename T::NativeType; };
@@ -69,7 +65,7 @@ struct Decimal
     template <typename U>
     constexpr U convertTo() const
     {
-        if constexpr(is_decimal<U>)
+        if constexpr (is_decimal<U>)
             return convertTo<typename U::NativeType>();
         else
             return static_cast<U>(value);
@@ -106,8 +102,8 @@ template <typename T> inline Decimal<T> operator* (const Decimal<T> & x, const D
 template <typename T> inline Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
 template <typename T> inline Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
 
-// Distinguishable type to allow function resolution/deduction based on value type,
-// but also relatively easy to convert to/from Decimal64.
+/// Distinguishable type to allow function resolution/deduction based on value type,
+/// but also relatively easy to convert to/from Decimal64.
 class DateTime64 : public Decimal64
 {
 public:

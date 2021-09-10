@@ -140,5 +140,7 @@ private:
 
     /// parse range_min and range_max
     void parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix);
+
 };
+
 }

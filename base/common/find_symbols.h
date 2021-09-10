@@ -67,7 +67,11 @@ constexpr uint16_t maybe_negate(uint16_t x)
         return ~x;
 }
 
-enum class ReturnMode { End, Nullptr };
+enum class ReturnMode
+{
+    End,
+    Nullptr,
+};
 
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -180,10 +184,8 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 
 template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
+    requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
-    static_assert(sizeof...(symbols) <= 16, "Symbols mask max size is 16");
-    static_assert(sizeof...(symbols) > 0, "Symbols mask cannot be empty");
-
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
         return find_first_symbols_sse42<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);
@@ -191,7 +193,9 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 #endif
         return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
+
 }
+
 
 template <char... symbols>
 inline const char * find_first_symbols(const char * begin, const char * end)

@@ -41,8 +41,6 @@ template <> struct is_unsigned<UInt256> { static constexpr bool value = true; };
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
-namespace DB
-{
 template <class T> concept is_integer =
     std::is_integral_v<T>
     || std::is_same_v<T, Int128>
@@ -51,7 +49,6 @@ template <class T> concept is_integer =
     || std::is_same_v<T, UInt256>;
 
 template <class T> concept is_floating_point = std::is_floating_point_v<T>;
-}
 
 template <typename T>
 struct is_arithmetic

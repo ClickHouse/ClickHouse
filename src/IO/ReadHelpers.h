@@ -926,11 +926,12 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
     }
 }
 
+
 /// Generic methods to read value in text tab-separated format.
 
 inline void readText(is_integer auto & x, ReadBuffer & buf)
 {
-    if constexpr (std::same_as<decltype(x), bool &>)
+    if constexpr (std::is_same_v<decltype(x), bool &>)
         readBoolText(x, buf);
     else
         readIntText(x, buf);

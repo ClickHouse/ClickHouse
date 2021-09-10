@@ -501,7 +501,7 @@ class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
-template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

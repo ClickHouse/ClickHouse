@@ -7,7 +7,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
-#include <common/EnumReflection.h>
 
 
 namespace DB
@@ -47,6 +46,7 @@ void callWithType(TypeIndex which, F && f)
 
     __builtin_unreachable();
 }
+
 }
 
 
