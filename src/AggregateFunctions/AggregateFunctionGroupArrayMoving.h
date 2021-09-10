@@ -87,16 +87,12 @@ class MovingImpl final
 public:
     using ResultT = typename Data::Accumulator;
 
-    using ColumnSource = std::conditional_t<IsDecimalNumber<T>,
-        ColumnDecimal<T>,
-        ColumnVector<T>>;
+    using ColumnSource = ColumnVectorOrDecimal<T>;
 
     /// Probably for overflow function in the future.
-    using ColumnResult = std::conditional_t<IsDecimalNumber<ResultT>,
-        ColumnDecimal<ResultT>,
-        ColumnVector<ResultT>>;
+    using ColumnResult = ColumnVectorOrDecimal<ResultT>;
 
-    using DataTypeResult = std::conditional_t<IsDecimalNumber<ResultT>,
+    using DataTypeResult = std::conditional_t<is_decimal<ResultT>,
         DataTypeDecimal<ResultT>,
         DataTypeNumber<ResultT>>;
 
@@ -108,7 +104,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (IsDecimalNumber<ResultT>)
+        if constexpr (is_decimal<ResultT>)
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>(
                 DataTypeResult::maxPrecision(), getDecimalScale(*this->argument_types.at(0))));
         else

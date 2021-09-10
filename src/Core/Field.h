@@ -837,12 +837,6 @@ T safeGet(Field & field)
     return field.template safeGet<T>();
 }
 
-template <> inline constexpr const char * TypeName<Array> = "Array";
-template <> inline constexpr const char * TypeName<Tuple> = "Tuple";
-template <> inline constexpr const char * TypeName<Map> = "Map";
-template <> inline constexpr const char * TypeName<AggregateFunctionStateData> = "AggregateFunctionState";
-
-
 template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {

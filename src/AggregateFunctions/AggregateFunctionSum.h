@@ -105,7 +105,7 @@ struct AggregateFunctionSumData
 
         if constexpr (
             (is_integer_v<T> && !is_big_int_v<T>)
-            || (IsDecimalNumber<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -334,9 +334,9 @@ class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, Agg
 public:
     static constexpr bool DateTime64Supported = false;
 
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
+    using ResultDataType = std::conditional_t<is_decimal<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
+    using ColVecResult = std::conditional_t<is_decimal<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
 
     String getName() const override
     {
@@ -361,7 +361,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (IsDecimalNumber<T>)
+        if constexpr (is_decimal<T>)
             return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
         else
             return std::make_shared<ResultDataType>();

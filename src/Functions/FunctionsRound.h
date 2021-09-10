@@ -315,11 +315,11 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
-    static_assert(!IsDecimalNumber<T>);
+    static_assert(!is_decimal<T>);
 
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
-    using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColumnType = ColumnVector<T>;
     using Container = typename ColumnType::Container;
 
 public:
@@ -413,12 +413,10 @@ public:
 };
 
 
-template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class DecimalRoundingImpl
 {
 private:
-    static_assert(IsDecimalNumber<T>);
-
     using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;
@@ -507,7 +505,7 @@ public:
     {
         if constexpr (is_arithmetic_v<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
-        else if constexpr (IsDecimalNumber<T>)
+        else if constexpr (is_decimal<T>)
             return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);
     }
 };

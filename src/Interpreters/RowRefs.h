@@ -23,7 +23,7 @@ struct RowRef
     const Block * block = nullptr;
     SizeT row_num = 0;
 
-    RowRef() {}
+    RowRef() = default;
     RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
 };
 
@@ -232,7 +232,7 @@ public:
         Entry<DateTime64>::LookupPtr>;
 
     AsofRowRefs() {}
-    AsofRowRefs(TypeIndex t);
+    AsofRowRefs(TypeIndex type);
 
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
