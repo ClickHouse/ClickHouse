@@ -3,7 +3,7 @@
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	row-gap: 80px;
-	padding-bottom: 240px;
+	padding-bottom: 120px;
 	position: relative;
 
 	> div {
@@ -144,7 +144,7 @@
 	}
 
 	.col-lg-4,
-	.col-lg-5 {
+	.col-lg-6 {
 		opacity: 0;
 		transform: translateX(24px);
 		transition: 0.4s opacity, 0.4s transform;
@@ -154,12 +154,12 @@
 		transition-delay: 0s;
 	}
 
-	.col-lg-5 {
+	.col-lg-6 {
 		transition-delay: 0.2s;
 	}
 
 	&.is-open .col-lg-4,
-	&.is-open .col-lg-5 {
+	&.is-open .col-lg-6 {
 		opacity: 1;
 		transform: none;
 	}
@@ -168,7 +168,7 @@
 		transition-delay: 0.4s;
 	}
 
-	&.is-open .col-lg-5 {
+	&.is-open .col-lg-6 {
 		transition-delay: 0.2s;
 	}
 }

@@ -149,7 +149,7 @@ a.card:hover:after,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   row-gap: 80px;
-  padding-bottom: 240px;
+  padding-bottom: 120px;
   position: relative;
 }
 .case-study-cards > div {
@@ -270,7 +270,7 @@ a.card:hover:after,
   transform: rotate(0);
 }
 .case-study-card .col-lg-4,
-.case-study-card .col-lg-5 {
+.case-study-card .col-lg-6 {
   opacity: 0;
   transform: translateX(24px);
   transition: 0.4s opacity, 0.4s transform;
@@ -278,17 +278,17 @@ a.card:hover:after,
 .case-study-card .col-lg-4 {
   transition-delay: 0s;
 }
-.case-study-card .col-lg-5 {
+.case-study-card .col-lg-6 {
   transition-delay: 0.2s;
 }
-.case-study-card.is-open .col-lg-4, .case-study-card.is-open .col-lg-5 {
+.case-study-card.is-open .col-lg-4, .case-study-card.is-open .col-lg-6 {
   opacity: 1;
   transform: none;
 }
 .case-study-card.is-open .col-lg-4 {
   transition-delay: 0.4s;
 }
-.case-study-card.is-open .col-lg-5 {
+.case-study-card.is-open .col-lg-6 {
   transition-delay: 0.2s;
 }
 
