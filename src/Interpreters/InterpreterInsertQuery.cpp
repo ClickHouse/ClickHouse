@@ -351,12 +351,18 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
+        auto num_select_threads = res.pipeline.getNumThreads();
+
         res.pipeline.addChains(std::move(out_chains));
 
         res.pipeline.setSinks([&](const Block & cur_header, QueryPipeline::StreamType) -> ProcessorPtr
         {
             return std::make_shared<ExceptionHandlingSink>(cur_header);
         });
+
+        /// Don't use more threads for insert then for select to reduce memory consumption.
+        if (!settings.parallel_view_processing && res.pipeline.getNumThreads() > num_select_threads)
+            res.pipeline.setMaxThreads(num_select_threads);
 
         if (!allow_materialized)
         {
