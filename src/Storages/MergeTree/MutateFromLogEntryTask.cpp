@@ -1,10 +1,8 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <Storages/StorageReplicatedMergeTree.h>
-
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-
+#include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
 {
@@ -12,10 +10,8 @@ namespace ProfileEvents
     extern const Event ReplicatedPartMutations;
 }
 
-
 namespace DB
 {
-
 
 bool MutateFromLogEntryTask::prepare()
 {
@@ -139,7 +135,6 @@ bool MutateFromLogEntryTask::finalize()
 
     return true;
 }
-
 
 
 }

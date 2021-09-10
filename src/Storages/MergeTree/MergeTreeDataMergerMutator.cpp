@@ -46,7 +46,6 @@
 
 #include <boost/algorithm/string/replace.hpp>
 
-
 namespace ProfileEvents
 {
     extern const Event MergedRows;
@@ -66,9 +65,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
-    extern const int ABORTED;
 }
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -414,14 +411,6 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
     return parts_from_partition;
 }
 
-
-// [[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-// {
-//     return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-//         || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-// }
-
-
 /// parts should be sorted.
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
@@ -680,7 +669,6 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 }
 
 
-
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
@@ -761,8 +749,6 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 
     return storage_columns;
 }
-
-
 
 
 ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies)

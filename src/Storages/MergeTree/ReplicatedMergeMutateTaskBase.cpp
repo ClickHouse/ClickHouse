@@ -1,13 +1,11 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
-
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -40,13 +38,12 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         try
         {
             /// Returns false if
-            if (executeImpl())
-                return true;
+            bool res = executeImpl();
 
             if (state == State::SUCCESS)
                 storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
 
-            return false;
+            return res;
         }
         catch (const Exception & e)
         {
@@ -122,10 +119,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
     }
 
-
     return false;
 }
-
 
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
@@ -231,7 +226,6 @@ void ReplicatedMergeMutateTaskBase::prepareCommon()
         state = State::SUCCESS;
     }
 }
-
 
 
 }

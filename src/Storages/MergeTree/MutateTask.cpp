@@ -2,17 +2,6 @@
 
 #include <common/logger_useful.h>
 #include <Common/escapeForFileName.h>
-
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-
-#include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-
-#include <Parsers/queryToString.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-
-
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/TTLCalcInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
@@ -20,6 +9,12 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 
 namespace CurrentMetrics
 {
@@ -33,11 +28,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace MutationHelpers
 {
-
 
 static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry * mutate_entry)
 {
@@ -46,7 +41,6 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 
     return true;
 }
-
 
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
@@ -424,8 +418,7 @@ static NameToNameVector collectFilesForRenames(
 }
 
 
-/// Initialize and write to disk new part fields like checksums, columns,
-/// etc.
+/// Initialize and write to disk new part fields like checksums, columns, etc.
 void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
@@ -483,10 +476,7 @@ void finalizeMutatedPart(
     new_data_part->storage.lockSharedData(*new_data_part);
 }
 
-
-
-} // namespace MutationHelpers
-
+}
 
 struct MutationContext
 {
@@ -540,7 +530,6 @@ struct MutationContext
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
-
 
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
@@ -705,9 +694,9 @@ class PartMergerWriter
 {
 public:
 
-    explicit PartMergerWriter(MutationContextPtr ctx_) : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
+    explicit PartMergerWriter(MutationContextPtr ctx_)
+        : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
     {
-
     }
 
     bool execute()
@@ -880,9 +869,6 @@ bool PartMergerWriter::iterateThroughAllProjections()
     return true;
 }
 
-
-
-
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -995,19 +981,13 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 };
 
-
-
 class MutateSomePartColumnsTask : public IExecutableTask
 {
-
 public:
-
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
-
 
     void onCompleted() override {}
     StorageID getStorageID() override { return {"Mutate", "Task"}; }
-
 
     bool executeStep() override
     {
@@ -1109,7 +1089,6 @@ private:
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
                 ctx->mutating_stream = std::make_shared<TTLCalcInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
-            IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets; // ??
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
@@ -1123,12 +1102,10 @@ private:
 
             ctx->mutating_stream->readPrefix();
             ctx->out->writePrefix();
-
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
         }
-
     }
 
 
@@ -1171,17 +1148,11 @@ private:
     };
 
     State state{State::NEED_PREPARE};
-
     MutationContextPtr ctx;
-
     MergedColumnOnlyOutputStreamPtr out;
-
-    /// Fields
-
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
-
 
 
 MutateTask::MutateTask(

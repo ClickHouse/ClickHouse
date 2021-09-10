@@ -33,7 +33,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
-
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -426,7 +426,6 @@ void MergeTask::finalizeVerticalMergeForOneColumn()
 }
 
 
-
 void MergeTask::finalizeVerticalMergeForAllColumns()
 {
     /// No need to execute this part if it is horizontal merge.
@@ -454,7 +453,6 @@ void MergeTask::mergeMinMaxIndex()
             ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 }
-
 
 
 void MergeTask::prepareProjections()
@@ -514,7 +512,6 @@ void MergeTask::prepareProjections()
             ttl_merges_blocker));
     }
 
-
     /// We will iterate through projections and execute them
     projections_iterator = tasks_for_projections.begin();
 }
@@ -546,7 +543,6 @@ void MergeTask::finalizeProjections()
 }
 
 
-
 void MergeTask::finalize()
 {
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -564,7 +560,7 @@ bool MergeTask::executeVerticalMergeForAllColumns()
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    /// This is the extenal cycle condition
+    /// This is the external cycle condition
     if (column_num_for_vertical_merge >= gathering_column_names_size)
         return false;
 
@@ -593,7 +589,6 @@ bool MergeTask::executeVerticalMergeForAllColumns()
     }
     return false;
 }
-
 
 
 bool MergeTask::execute()

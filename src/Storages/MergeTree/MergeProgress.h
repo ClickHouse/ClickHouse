@@ -1,11 +1,9 @@
 #pragma once
 
-
 #include "common/types.h"
 #include "Common/ProfileEvents.h"
 #include "IO/Progress.h"
 #include "Storages/MergeTree/MergeList.h"
-
 
 namespace ProfileEvents
 {
@@ -32,14 +30,10 @@ namespace DB
 struct MergeStageProgress
 {
     explicit MergeStageProgress(Float64 weight_)
-        : is_first(true) , weight(weight_)
-    {
-    }
+        : is_first(true) , weight(weight_) {}
 
     MergeStageProgress(Float64 initial_progress_, Float64 weight_)
-        : initial_progress(initial_progress_), is_first(false), weight(weight_)
-    {
-    }
+        : initial_progress(initial_progress_), is_first(false), weight(weight_) {}
 
     Float64 initial_progress = 0.0;
     bool is_first;
@@ -96,7 +90,5 @@ public:
         }
     }
 };
-
-
 
 }

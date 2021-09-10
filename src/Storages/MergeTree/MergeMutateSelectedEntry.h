@@ -48,6 +48,4 @@ struct MergeMutateSelectedEntry
 
 using MergeMutateSelectedEntryPtr = std::shared_ptr<MergeMutateSelectedEntry>;
 
-
-
 }

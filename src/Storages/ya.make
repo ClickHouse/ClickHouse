@@ -18,7 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
-    ExecutablePoolSettings.cpp
+    ExecutableSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -41,9 +41,10 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/MergeAlgorithm.cpp
-    MergeTree/MergeExecutor.cpp
     MergeTree/MergeFromLogEntryTask.cpp
     MergeTree/MergeList.cpp
+    MergeTree/MergePlainMergeTreeTask.cpp
+    MergeTree/MergeTask.cpp
     MergeTree/MergeTreeBackgroundExecutor.cpp
     MergeTree/MergeTreeBaseSelectProcessor.cpp
     MergeTree/MergeTreeBlockReadUtils.cpp
@@ -98,10 +99,14 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
+    MergeTree/MutateFromLogEntryTask.cpp
+    MergeTree/MutatePlainMergeTreeTask.cpp
+    MergeTree/MutateTask.cpp
     MergeTree/PartMovesBetweenShardsOrchestrator.cpp
     MergeTree/PartitionPruner.cpp
     MergeTree/PinnedPartUUIDs.cpp
     MergeTree/ReplicatedFetchList.cpp
+    MergeTree/ReplicatedMergeMutateTaskBase.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeCleanupThread.cpp

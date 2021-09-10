@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 {
     if (parts_.empty())

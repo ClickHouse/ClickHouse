@@ -128,7 +128,6 @@ namespace ErrorCodes
     extern const int PARTITION_DOESNT_EXIST;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-    extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;

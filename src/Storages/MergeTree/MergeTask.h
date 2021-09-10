@@ -152,7 +152,7 @@ private:
     TableLockHolder & holder;
     time_t time_of_merge;
     ContextPtr context;
-    /// It is necessary, because of projections presense
+    /// It is necessary, because of projections presence
     ReservationSharedPtr space_reservation;
     bool deduplicate;
     Names deduplicate_by_columns;

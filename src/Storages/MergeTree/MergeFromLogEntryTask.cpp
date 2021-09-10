@@ -1,11 +1,8 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <Storages/StorageReplicatedMergeTree.h>
-
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-
-
+#include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
 {
@@ -16,13 +13,10 @@ namespace ProfileEvents
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
-    extern const int NO_REPLICA_HAS_PART;
-    extern const int ABORTED;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int LOGICAL_ERROR;
 }
 
 

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <optional>
+#include <vector>
+#include <memory>
+#include <unordered_map>
 
+#include <common/shared_ptr_helper.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
-
-#include <optional>
-#include <unordered_map>
-
 
 namespace DB
 {
