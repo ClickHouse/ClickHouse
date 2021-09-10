@@ -26,6 +26,6 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: report
-          path: $RUNNER_TEMP/report.html
+          path: $GITHUB_WORKSPACE/tests/ci/style_check.py
       - run: ls -la $RUNNER_TEMP
       - run: echo "🍏 This job's status is ${{ job.status }}."
