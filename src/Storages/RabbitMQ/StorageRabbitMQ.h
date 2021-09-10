@@ -7,9 +7,8 @@
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
-#include <Storages/RabbitMQ/UVLoop.h>
+#include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -18,8 +17,6 @@
 
 namespace DB
 {
-
-using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
@@ -103,16 +100,9 @@ private:
 
     bool hash_exchange;
     Poco::Logger * log;
-    String address;
-    std::pair<String, UInt16> parsed_address;
-    std::pair<String, String> login_password;
-    String vhost;
-    String connection_string;
-    bool secure;
 
-    UVLoop loop;
-    std::shared_ptr<RabbitMQHandler> event_handler;
-    std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
+    RabbitMQConnectionPtr connection; /// Connection for all consumers
+    RabbitMQConfiguration configuration;
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
@@ -154,7 +144,6 @@ private:
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
-    String formatConnectionInfoForLogs() const;
 
     std::shared_ptr<Context> addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
@@ -167,7 +156,6 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    bool restoreConnection(bool reconnecting);
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
