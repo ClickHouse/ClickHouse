@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -40,12 +41,12 @@ void CompressionCodecFactory::validateCodec(
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(toUpper(family_name), literal)),
             {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = std::make_shared<ASTIdentifier>(toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
             {}, sanity_check, allow_experimental_codecs);
     }
