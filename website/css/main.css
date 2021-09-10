@@ -470,6 +470,7 @@ hr.is-yellow {
 .tabs:before {
   background: #fff;
   border-radius: 7px 7px 0 0;
+  box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
   content: "";
   display: block;
   height: 8px;

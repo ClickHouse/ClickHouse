@@ -4,6 +4,7 @@
 	&:before {
 		background: $white;
 		border-radius: ($border-radius - $border-width) ($border-radius - $border-width) 0 0;
+		box-shadow: $box-shadow;
 		content: '';
 		display: block;
 		height: $border-radius;
