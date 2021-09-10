@@ -27,9 +27,5 @@ jobs:
         run: |
           ls ${{ github.workspace }}
           ls $RUNNER_TEMP
-      - uses: actions/upload-artifact@v2
-        with:
-          name: report
-          path: ${{ runner.temp }}/report.html
       - run: ls -la $RUNNER_TEMP
       - run: echo "🍏 This job's status is ${{ job.status }}."
