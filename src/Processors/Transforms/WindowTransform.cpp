@@ -1614,16 +1614,11 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
                         transform->current_row.row].get<Int64>();
-            if (offset < 0)
+
+            if (offset > INT64_MAX || offset < 0)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be nonnegative, {} given",
-                    getName(), offset);
-            }
-            if (offset > INT64_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be less than {}, {} given",
+                    "The offset for function {} must be in (0, {}], {} given",
                     getName(), INT64_MAX, offset);
             }
         }
