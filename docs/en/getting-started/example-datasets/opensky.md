@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: OpenSky
 ---
 
-# Crowdsourced air traffic data from The OpenSky Network 2020
+# Crowdsourced air traffic data from The OpenSky Network 2020 
 
 "The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
 
@@ -16,7 +16,9 @@ https://doi.org/10.5194/essd-13-357-2021
 
 ## Download the Dataset
 
-```
+Run the command:
+
+```bash
 wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record/5092942/files/flightlist_\d+_\d+\.csv\.gz' | xargs wget
 ```
 
@@ -51,8 +53,7 @@ CREATE TABLE opensky
 Upload data into ClickHouse in parallel:
 
 ```bash
-ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c '
-    gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
+ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
 ```
 
 Here we pass the list of files (`ls -1 flightlist_*.csv.gz`) to `xargs` for parallel processing.
@@ -67,6 +68,7 @@ Finally, `clickhouse-client` will do insertion. It will read input data in `CSVW
 Parallel upload takes 24 seconds.
 
 If you don't like parallel upload, here is sequential variant:
+
 ```bash
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
@@ -85,7 +87,7 @@ Result:
 66010819
 ```
 
-The size of dataset in ClickHouse is just 2.64 GiB:
+The size of dataset in ClickHouse is just 2.66 GiB, check it.
 
 Query:
 
@@ -96,12 +98,14 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
 Result:
 
 ```text
-2.64 GiB
+2.66 GiB
 ```
 
 ## Run Some Queries
 
-Total distance travelled is 68 billion kilometers:
+Total distance travelled is 68 billion kilometers.
+
+Query:
 
 ```sql
 SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) / 1000) FROM opensky;
@@ -253,11 +257,11 @@ Result:
  99. │ EDDT   │  115122 │   941740 │ █████████▍                             │
 100. │ EFHK   │  114860 │  1629143 │ ████████████████▎                      │
      └────────┴─────────┴──────────┴────────────────────────────────────────┘
-
-100 rows in set. Elapsed: 0.186 sec. Processed 48.31 million rows, 2.17 GB (259.27 million rows/s., 11.67 GB/s.)
 ```
 
 ### Number of flights from three major Moscow airports, weekly
+
+Query:
 
 ```sql
 SELECT
@@ -406,10 +410,8 @@ Result:
 130. │ 2021-06-21 │ 6061 │ ████████████████████████████████████████████████████████████▌                │
 131. │ 2021-06-28 │ 2554 │ █████████████████████████▌                                                   │
      └────────────┴──────┴──────────────────────────────────────────────────────────────────────────────┘
-
-131 rows in set. Elapsed: 0.014 sec. Processed 655.36 thousand rows, 11.14 MB (47.56 million rows/s., 808.48 MB/s.)
 ```
 
-### Test it in Playground
+### Online Playground
 
 The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=).
