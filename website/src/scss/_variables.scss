@@ -55,11 +55,16 @@ $theme-colors: (
 	"black": $black,
 
 	"blue": $color-primary-accent-blue,
+	"light-blue": $color-primary-accent-light-blue,
 	"yellow": $color-primary-accent-yellow,
+	"light-yellow": $color-primary-accent-light-yellow,
 	"orange": $color-secondary-accent-orange,
+	"light-orange": $color-secondary-accent-light-orange,
 	"red": $color-secondary-accent-red,
+	"light-red": $color-secondary-accent-light-red,
 
 	"light": $gray-100,
+	"medium": $gray-500,
 	"dark": $gray-900
 );
 

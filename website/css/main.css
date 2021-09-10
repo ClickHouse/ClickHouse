@@ -71,8 +71,13 @@
 .card {
   box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
   overflow: hidden;
+  position: relative;
   transition: box-shadow 0.2s, transform 0.2s;
   width: 100%;
+}
+.card-body {
+  position: relative;
+  z-index: 10;
 }
 
 .card.is-large .card-body {
@@ -81,6 +86,34 @@
 
 .card.bg-primary-light {
   border-color: #ffcc00;
+}
+
+.card.has-dark-border {
+  border-color: #6c757d;
+}
+
+.card.has-pattern:before,
+.card.has-pattern:after {
+  background-repeat: no-repeat;
+  background-size: auto 100%;
+  bottom: 0;
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  width: 72px;
+}
+
+.card.has-pattern:before {
+  background-image: url(../images/backgrounds/bg-card-pattern-blue-1.png);
+  background-position: left top;
+  left: 0;
+}
+
+.card.has-pattern:after {
+  background-image: url(../images/backgrounds/bg-card-pattern-blue-2.png);
+  background-position: right top;
+  right: 0;
 }
 
 a.card:active,
@@ -163,7 +196,7 @@ a.card:hover:after,
   left: calc(-100% - 40px);
 }
 .case-study-card:before {
-  background: no-repeat url(../images/backgrounds/bg-card-pattern.png);
+  background: no-repeat url(../images/backgrounds/bg-card-pattern-red.png);
   background-position: right center;
   background-size: contain;
   content: "";
@@ -267,7 +300,24 @@ a.card:hover:after,
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
+  overflow: hidden;
   position: relative;
+}
+.hero-bg {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  display: block;
+  height: 100%;
+  left: 50%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+.hero > .container {
+  position: relative;
+  z-index: 2;
 }
 
 .hero.has-offset {
@@ -283,6 +333,18 @@ hr {
   width: 100%;
 }
 
+hr.is-large {
+  height: 8px;
+}
+
+hr.is-medium {
+  background: #d6dbdf;
+}
+
+hr.is-dark {
+  background: #495057;
+}
+
 hr.is-yellow {
   background: linear-gradient(90deg, #ff8c00 0, #ff8c00 8px, #ffcc00 16px, rgba(255, 204, 0, 0) 100%);
   -webkit-clip-path: polygon(8px 100%, 0 100%, 0 0, 8px 0, 8px 100%, 16px 100%, 16px 0, 100% 0, 100% 100%);
@@ -291,6 +353,7 @@ hr.is-yellow {
 }
 
 .icon {
+  display: block;
   height: 80px;
   margin-bottom: 24px;
 }
@@ -360,6 +423,36 @@ hr.is-yellow {
 
 .navbar-expand-lg > .container {
   flex-wrap: wrap;
+}
+
+.photo-frame {
+  background: #fff;
+  border: 6px solid #257af4;
+  border-radius: 100%;
+  box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
+  margin-bottom: 24px;
+  max-width: 160px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+.photo-frame:before {
+  content: "";
+  display: block;
+  padding-bottom: 100%;
+  width: 100%;
+}
+.photo-frame img {
+  display: block;
+  height: 100%;
+  left: 0;
+  -o-object-fit: contain;
+     object-fit: contain;
+  -o-object-position: center;
+     object-position: center;
+  position: absolute;
+  top: 0;
+  width: 100%;
 }
 
 .pullquote {
@@ -463,6 +556,21 @@ hr.is-yellow {
 .social-icons-linkedin {
   -webkit-mask-image: url("/images/icons/icon-linkedin-gray.svg");
           mask-image: url("/images/icons/icon-linkedin-gray.svg");
+}
+.social-icons-linkedin-alt {
+  -webkit-mask-image: url("/images/icons/icon-linkedin-alt-gray.svg");
+          mask-image: url("/images/icons/icon-linkedin-alt-gray.svg");
+}
+
+.social-icons.size-small > a {
+  height: 20px;
+  width: 20px;
+}
+.social-icons.size-small > a:active, .social-icons.size-small > a:hover {
+  background: #212529;
+}
+.social-icons.size-small > a + a {
+  margin-left: 16px;
 }
 
 .tabs {
@@ -575,11 +683,15 @@ ul.has-separators li:not(:last-child) {
   background-image: linear-gradient(58deg, #FF6443 3%, #FE561D 24%, #E32F0D 93%);
 }
 
+.bg-gradient-light-orange {
+  background-image: linear-gradient(90deg, rgba(255, 203, 128, 0) 0%, #FFCB80 100%);
+}
+
 .bg-offset-right {
-  bottom: 40px;
+  bottom: 0;
   left: 96px;
   position: absolute;
-  top: 40px;
+  top: 0;
   width: 100vw;
 }
 
@@ -618,6 +730,10 @@ ul.has-separators li:not(:last-child) {
   color: #212529;
   font-size: 14px;
   font-weight: 700;
+}
+
+.text-decoration-underline {
+  text-decoration: underline;
 }
 
 .text-upper {
