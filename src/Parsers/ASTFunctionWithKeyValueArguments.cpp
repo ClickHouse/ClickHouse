@@ -1,6 +1,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
@@ -70,7 +70,7 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
 void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
     elements->formatImpl(settings, state, frame);
     settings.ostr << (has_brackets ? ")" : "");
     settings.ostr << (settings.hilite ? hilite_none : "");
