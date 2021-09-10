@@ -8,7 +8,7 @@ namespace DB
 
 using SimpleTransformPtr = std::shared_ptr<ISimpleTransform>;
 
-/// Recieves format and allows to execute
+/// Receives format and allows to execute
 /// it multiple times for streaming processing of data.
 class StreamingFormatExecutor
 {

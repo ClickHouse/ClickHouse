@@ -10,8 +10,6 @@
 namespace DB
 {
 
-
-
 class Pipe;
 
 /// Prepares a input format, which produce data containing in INSERT query.
