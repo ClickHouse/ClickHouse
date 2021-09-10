@@ -167,13 +167,15 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     query_context->checkAccess(AccessFlags(AccessType::INSERT), insert_query.table_id, sample_block.getNames());
 
+    String bytes;
     auto read_buf = getReadBufferFromASTInsertQuery(query);
 
-    String str_buf;
-    WriteBufferFromString write_buf(str_buf);
-    copyData(*read_buf, write_buf);
+    {
+        WriteBufferFromString write_buf(bytes);
+        copyData(*read_buf, write_buf);
+    }
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(str_buf), query_context->getCurrentQueryId());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     Queue::iterator it;
