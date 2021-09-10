@@ -444,6 +444,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         parent_part,
         suffix,
         &data,
+        this,
         &merges_blocker,
         &ttl_merges_blocker);
 }
@@ -773,5 +774,11 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+
+bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
+{
+    std::lock_guard lock(tmp_parts_lock);
+    return tmp_parts.contains(basename);
+}
 
 }
