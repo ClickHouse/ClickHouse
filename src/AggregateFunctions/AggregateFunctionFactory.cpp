@@ -179,21 +179,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
         /// need to filter aggregation result based on another column for
         /// example.
-        if (nested_name.ends_with(combinator_name))
+        if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
-            /// But the following combinators are allowed regardless nesting:
-            /// - Array
-            /// - OrNull (due to aggregate_functions_null_for_empty)
-            if (combinator_name == "Array" || combinator_name == "OrNull")
-            {
-                /// Is supported.
-            }
-            else
-            {
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
-                    "Nested identical combinator '{}' is not supported",
-                    combinator_name);
-            }
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
         }
 
         DataTypes nested_types = combinator->transformArguments(argument_types);
