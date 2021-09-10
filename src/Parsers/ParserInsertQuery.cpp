@@ -48,7 +48,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
     /// create ASTPtr variables (result of parsing will be put in them).
-    /// They will be used to initialize ASTInsertQuery's fields. 
+    /// They will be used to initialize ASTInsertQuery's fields.
     ASTPtr database;
     ASTPtr table;
     ASTPtr infile;
@@ -93,7 +93,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!name_p.parse(pos, table, expected))
             return false;
 
-        /// If there is a dot, previous name was database name, 
+        /// If there is a dot, previous name was database name,
         /// so read table name after dot.
         if (s_dot.ignore(pos, expected))
         {
@@ -147,7 +147,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
         /// If SELECT is defined, return to position before select and parse
-        /// rest of query as SELECT query. 
+        /// rest of query as SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
@@ -158,8 +158,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_watch.ignore(pos, expected))
     {
-        /// If WATCH is defind, return to position before WATCH and parse
-        /// rest of query as WATCH query. 
+        /// If WATCH is defined, return to position before WATCH and parse
+        /// rest of query as WATCH query.
         pos = before_values;
         ParserWatchQuery watch_p;
         watch_p.parse(pos, watch, expected);
