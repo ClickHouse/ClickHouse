@@ -163,8 +163,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             getContext()->checkAccess(drop_storage, table_id);
-            if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             if (table->isDictionary())
             {

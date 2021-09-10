@@ -46,6 +46,8 @@ struct DiskWebServerSettings
  *       </policies>
  *   </storage_configuration>
  *
+ * If query timeouts -- need to adjust settings: http_connection_timeout, http_receive_timeout, http_receive_timeout.
+ *
  * To get files for upload run:
  * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>
  * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
