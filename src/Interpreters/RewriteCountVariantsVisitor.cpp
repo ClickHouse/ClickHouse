@@ -4,7 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -26,7 +26,7 @@ void RewriteCountVariantsVisitor::visit(ASTFunction & func)
     if (!func.arguments || func.arguments->children.empty() || func.arguments->children.size() > 1 || !func.arguments->children[0])
         return;
 
-    auto name = Poco::toLower(func.name);
+    auto name = toLower(func.name);
 
     if (name != "sum" && name != "count")
         return;
