@@ -115,6 +115,8 @@ public:
     /// For queries with nested interpreters (i.e. StorageDistributed)
     void addQueryPlan(std::unique_ptr<QueryPlan> plan);
 
+    PipelineResourcesHolder detachResources();
+
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
     PipelineResourcesHolder holder;
