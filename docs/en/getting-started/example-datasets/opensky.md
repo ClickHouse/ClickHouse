@@ -5,7 +5,7 @@ toc_title: OpenSky
 
 # Crowdsourced air traffic data from The OpenSky Network 2020 
 
-"The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
+> The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
 
 Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
@@ -63,7 +63,7 @@ For every file, `xargs` will run a script with `bash -c`. The script has substit
 
 The script will decompress the file (`gzip -c -d "{}"`) to standard output (`-c` parameter) and the output is redirected to `clickhouse-client`.
 
-Finally, `clickhouse-client` will do insertion. It will read input data in `CSVWithNames` format. We also asked to parse DateTime fields with extended parser (`--date_time_input_format best_effort`) to recognize ISO-8601 format with timezone offsets.
+Finally, `clickhouse-client` will do insertion. It will read input data in [CSVWithNames](../../interfaces/formats.md#csvwithnames) format. We also asked to parse DateTime fields with extended parser (`--date_time_input_format best_effort`) to recognize ISO-8601 format with timezone offsets.
 
 Parallel upload takes 24 seconds.
 
