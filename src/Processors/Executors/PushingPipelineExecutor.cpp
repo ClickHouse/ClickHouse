@@ -17,7 +17,7 @@ public:
         , need_data_flag(need_data_flag_)
     {}
 
-    String getName() const override { return "PullingOutputFormat"; }
+    String getName() const override { return "PushingSource"; }
 
     void setData(Chunk chunk)
     {
@@ -70,7 +70,7 @@ PushingPipelineExecutor::~PushingPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("PullingPipelineExecutor");
+        tryLogCurrentException("PushingPipelineExecutor");
     }
 }
 

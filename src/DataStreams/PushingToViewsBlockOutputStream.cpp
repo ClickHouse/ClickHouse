@@ -406,6 +406,7 @@ Chain buildPushingToViewsDrain(
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, false, false, false, view_runtime_data);
             BlockIO io = interpreter.execute();
+            io.out.attachResources(QueryPipeline::getPipe(std::move(io.pipeline)).detachResources());
             out = std::move(io.out);
         }
         else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
@@ -473,11 +474,14 @@ Chain buildPushingToViewsDrain(
         auto out = copying_data->getOutputs().begin();
         auto in = finalizing_views->getInputs().begin();
 
+        size_t max_parallel_streams = 0;
+
         std::list<ProcessorPtr> processors;
 
         for (auto & chain : chains)
         {
-            result_chain.attachResourcesFrom(chain);
+            max_parallel_streams += std::max<size_t>(chain.getNumThreads(), 1);
+            result_chain.attachResources(chain.detachResources());
             connect(*out, chain.getInputPort());
             connect(chain.getOutputPort(), *in);
             ++in;
@@ -488,6 +492,7 @@ Chain buildPushingToViewsDrain(
         processors.emplace_front(std::move(copying_data));
         processors.emplace_back(std::move(finalizing_views));
         result_chain = Chain(std::move(processors));
+        result_chain.setNumThreads(max_parallel_streams);
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))

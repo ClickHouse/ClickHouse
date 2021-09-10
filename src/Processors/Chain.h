@@ -21,6 +21,9 @@ public:
 
     bool empty() const { return processors.empty(); }
 
+    size_t getNumThreads() const { return num_threads; }
+    void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
+
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
 
@@ -37,7 +40,7 @@ public:
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
-    void attachResourcesFrom(Chain & other) { holder = std::move(other.holder); }
+    void attachResources(PipelineResourcesHolder holder_) { holder = std::move(holder_); }
     PipelineResourcesHolder detachResources() { return std::move(holder); }
 
     void reset();
@@ -48,6 +51,7 @@ private:
     ///  input port                               output port
     std::list<ProcessorPtr> processors;
     PipelineResourcesHolder holder;
+    size_t num_threads = 0;
 };
 
 }

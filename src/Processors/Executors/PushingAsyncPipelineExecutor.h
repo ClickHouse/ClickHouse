@@ -28,7 +28,7 @@ using Processors = std::vector<ProcessorPtr>;
 class PushingAsyncPipelineExecutor
 {
 public:
-    explicit PushingAsyncPipelineExecutor(Chain & chain, size_t num_threads_);
+    explicit PushingAsyncPipelineExecutor(Chain & chain);
     ~PushingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -47,8 +47,6 @@ public:
     struct Data;
 
 private:
-    size_t num_threads;
-
     Chain & chain;
     std::shared_ptr<PushingAsyncSource> pushing_source;
 
