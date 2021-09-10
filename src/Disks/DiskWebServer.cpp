@@ -1,19 +1,22 @@
 #include "DiskWebServer.h"
 
 #include <common/logger_useful.h>
-
 #include <Common/escapeForFileName.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+
+#include <Access/AccessControlManager.h>
+
+#include <Disks/IDiskRemote.h>
+#include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ReadIndirectBufferFromWebServer.h>
+
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IDiskRemote.h>
-#include <Access/AccessControlManager.h>
-#include <Poco/Exception.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Poco/Exception.h>
 #include <re2/re2.h>
 
 
@@ -62,14 +65,16 @@ void DiskWebServer::initialize(const String & uri_path) const
             file_data.type = is_directory ? FileType::Directory : FileType::File;
             String file_path = fs::path(uri_path) / file_name;
             if (file_data.type == FileType::Directory)
+            {
                 directories_to_load.push_back(file_path);
-            file_path = file_path.substr(url.size());
+                // file_path = fs::path(file_path) / "";
+            }
 
+            file_path = file_path.substr(url.size());
             files.emplace(std::make_pair(file_path, file_data));
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
         }
 
-        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
     }
     catch (Exception & e)
@@ -149,8 +154,31 @@ DiskWebServer::DiskWebServer(
 
 bool DiskWebServer::exists(const String & path) const
 {
-    /// TODO: Actually on server startup we always return false for format_version.txt.
-    return files.find(path) != files.end();
+    LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
+
+    if (files.find(path) != files.end())
+        return true;
+
+    if (path.ends_with(MergeTreeData::FORMAT_VERSION_FILE_NAME) && files.find(fs::path(path).parent_path() / "") == files.end())
+    {
+        try
+        {
+            initialize(fs::path(url) / fs::path(path).parent_path());
+            return files.find(path) != files.end();
+        }
+        catch (...)
+        {
+            const auto message = getCurrentExceptionMessage(false);
+            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
+            if (can_throw)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
+
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
+            return false;
+        }
+    }
+
+    return false;
 }
 
 
