@@ -1913,7 +1913,7 @@ private:
     {
         /// If INSERT data must be sent.
         auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
-        /// If query isn't parsed, no information can be gor from it.
+        /// If query isn't parsed, no information can be got from it.
         if (!parsed_insert_query)
             return;
 
