@@ -31,7 +31,9 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NETWORK_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
+
 
 IStorageURLBase::IStorageURLBase(
     const Poco::URI & uri_,
@@ -397,7 +399,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
                     illegal_args += ", ";
                 illegal_args += arg.first;
             }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguements {} for table function URL", illegal_args);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguments {} for table function URL", illegal_args);
         }
     }
     else

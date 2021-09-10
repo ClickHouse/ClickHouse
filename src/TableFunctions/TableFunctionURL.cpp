@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
@@ -33,7 +38,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
                     illegal_args += ", ";
                 illegal_args += arg.first;
             }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguements {} for table function URL", illegal_args);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguments {} for table function URL", illegal_args);
         }
 
         filename = configuration.url;

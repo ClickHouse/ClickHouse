@@ -163,7 +163,8 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     {
         .database = common_configuration.database,
         .table = common_configuration.table,
-        .schema = common_configuration.schema
+        .schema = common_configuration.schema,
+        .replicas_configurations = {}
     };
 
     if (dict_config.has(dict_config_prefix + ".replica"))
