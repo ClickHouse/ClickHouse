@@ -16,7 +16,6 @@ class IColumn;
 using ColumnRawPtrs = std::vector<const IColumn *>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
-using UInt8ColumnDataPtrVector = std::vector<UInt8ColumnDataPtr>;
 
 namespace JoinCommon
 {

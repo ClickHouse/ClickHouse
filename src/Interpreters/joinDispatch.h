@@ -113,7 +113,7 @@ inline bool joinDispatch(ASTTableJoin::Kind kind, ASTTableJoin::Strictness stric
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
             using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map;
-            std::vector<const MapType*> v;
+            std::vector<const MapType *> v;
             for (const auto & el : mapsv)
             {
                 v.push_back(&std::get<MapType>(*el));
