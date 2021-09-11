@@ -18,7 +18,7 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
-            const RabbitMQConfiguration & configuratin_,
+            const RabbitMQConfiguration & configuration_,
             ContextPtr global_context,
             const Names & routing_keys_,
             const String & exchange_name_,
