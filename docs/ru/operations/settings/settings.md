@@ -3308,6 +3308,30 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
+
+Возможные значения:
+
+-   0 — не ждать.
+-   1 — ждать выполнения действий на своей реплике.
+-   2 — ждать выполнения действий на всех репликах.
+
+Значение по умолчанию: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Указывает время ожидания (в секундах) выполнения запросов [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md) для неактивных реплик.
+
+Возможные значения:
+
+-   0 — не ждать.
+-   Отрицательное целое число — ждать неограниченное время.
+-   Положительное целое число — установить соответствующее количество секунд ожидания.
+
+Значение по умолчанию: `120` секунд.
+
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
 Задает максимальное количество совпадений для регулярного выражения. Настройка применяется для защиты памяти от перегрузки при использовании "жадных" квантификаторов в регулярном выражении для функции [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal).

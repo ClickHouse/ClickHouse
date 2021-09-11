@@ -29,7 +29,7 @@
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
 namespace DB
@@ -218,7 +218,7 @@ public:
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
@@ -349,9 +349,6 @@ private:
 
     int metadata_version = 0;
     /// Threads.
-
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;

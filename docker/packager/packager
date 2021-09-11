@@ -9,9 +9,9 @@ import sys
 SCRIPT_PATH = os.path.realpath(__file__)
 
 IMAGE_MAP = {
-    "deb": "yandex/clickhouse-deb-builder",
-    "binary": "yandex/clickhouse-binary-builder",
-    "unbundled": "yandex/clickhouse-unbundled-builder"
+    "deb": "clickhouse/deb-builder",
+    "binary": "clickhouse/binary-builder",
+    "unbundled": "clickhouse/unbundled-builder"
 }
 
 def check_image_exists_locally(image_name):
