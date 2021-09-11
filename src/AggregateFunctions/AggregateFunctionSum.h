@@ -68,17 +68,6 @@ struct AggregateFunctionSumData
 
         if constexpr (std::is_floating_point_v<T>)
         {
-#if defined(__clang__)
-/// With clang we can tell the compiler to vectorize and it should work with all types when possible, including floating types
-/// Something around the number of SSE registers * the number of elements fit in register.
-/// Recommend half of those for each vectorization
-#pragma clang loop vectorize(enable) vectorize_width(64 / sizeof(T)) unroll_count(128 / sizeof(T))
-            for (size_t i = 0; i < count; i++)
-            {
-                Impl::add(sum, ptr[i]);
-            }
-            return;
-#endif
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
 
