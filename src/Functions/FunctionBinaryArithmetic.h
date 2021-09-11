@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/TypeList.h>
 #include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -183,8 +184,8 @@ namespace impl_
 
 enum class OpCase { Vector, LeftConstant, RightConstant };
 
-template <class T> inline constexpr const auto & undec(const T & x) { return x; }
-template <is_decimal T> inline constexpr const auto & undec(const T & x) { return x.value; }
+constexpr const auto & undec(const auto & x) { return x; }
+constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
 
 template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
 struct BinaryOperation
@@ -506,83 +507,34 @@ class FunctionBinaryArithmetic : public IFunction
     ContextPtr context;
     bool check_decimal_overflow = true;
 
-    template <typename F>
-    static bool castType(const IDataType * type, F && f)
+    static bool castType(const IDataType * type, auto && f)
     {
-        return castTypeToEither<
-            DataTypeUInt8,
-            DataTypeUInt16,
-            DataTypeUInt32,
-            DataTypeUInt64,
-            DataTypeUInt128,
-            DataTypeUInt256,
-            DataTypeInt8,
-            DataTypeInt16,
-            DataTypeInt32,
-            DataTypeInt64,
-            DataTypeInt128,
-            DataTypeInt256,
-            DataTypeFloat32,
-            DataTypeFloat64,
-            DataTypeDate,
-            DataTypeDateTime,
-            DataTypeDecimal<Decimal32>,
-            DataTypeDecimal<Decimal64>,
-            DataTypeDecimal<Decimal128>,
-            DataTypeDecimal<Decimal256>,
-            DataTypeFixedString
-        >(type, std::forward<F>(f));
-    }
+        using Types = TypeList<
+            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
+            DataTypeDate, DataTypeDateTime,
+            DataTypeFixedString>;
 
-    template <typename F>
-    static bool castTypeNoFloats(const IDataType * type, F && f)
-    {
-        return castTypeToEither<
-            DataTypeUInt8,
-            DataTypeUInt16,
-            DataTypeUInt32,
-            DataTypeUInt64,
-            DataTypeUInt128,
-            DataTypeUInt256,
-            DataTypeInt8,
-            DataTypeInt16,
-            DataTypeInt32,
-            DataTypeInt64,
-            DataTypeInt128,
-            DataTypeInt256,
-            DataTypeDate,
-            DataTypeDateTime,
-            DataTypeDecimal<Decimal32>,
-            DataTypeDecimal<Decimal64>,
-            DataTypeDecimal<Decimal128>,
-            DataTypeDecimal<Decimal256>,
-            DataTypeFixedString
-        >(type, std::forward<F>(f));
+        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+
+        using ValidTypes = std::conditional_t<valid_on_float_arguments,
+            typename TypeListConcat<Types, Floats>::Type,
+            Types>;
+
+        return castTypeToEitherTL<ValidTypes>(type, std::forward<decltype(f)>(f));
     }
 
     template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        if constexpr (valid_on_float_arguments)
+        return castType(left, [&](const auto & left_)
         {
-            return castType(left, [&](const auto & left_)
+            return castType(right, [&](const auto & right_)
             {
-                return castType(right, [&](const auto & right_)
-                {
-                    return f(left_, right_);
-                });
+                return f(left_, right_);
             });
-        }
-        else
-        {
-            return castTypeNoFloats(left, [&](const auto & left_)
-            {
-                return castTypeNoFloats(right, [&](const auto & right_)
-                {
-                    return f(left_, right_);
-                });
-            });
-        }
+        });
     }
 
     static FunctionOverloadResolverPtr

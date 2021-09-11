@@ -47,6 +47,11 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 
+using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;
+using DataTypeDecimal64 = DataTypeDecimal<Decimal64>;
+using DataTypeDecimal128 = DataTypeDecimal<Decimal128>;
+using DataTypeDecimal256 = DataTypeDecimal<Decimal256>;
+
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
 {
