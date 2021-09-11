@@ -517,14 +517,8 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 
 bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
-    if (connection->isConnected())
-    {
-        channel = connection->createChannel();
-        return true;
-    }
-
-    channel = nullptr;
-    return false;
+    channel = connection->createChannel();
+    return channel != nullptr;
 }
 
 
@@ -773,10 +767,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    ChannelPtr consumer_channel;
-    if (connection->isConnected())
-        consumer_channel = connection->createChannel();
-
+    ChannelPtr consumer_channel = connection->createChannel();
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         std::move(consumer_channel), connection->getHandler(), queues, ++consumer_id,
         unique_strbase, log, row_delimiter, queue_size, stream_cancelled);

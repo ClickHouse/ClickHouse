@@ -41,8 +41,8 @@ public:
 
     void stopLoop();
 
-    bool connectionRunning() { return connection_running.load(); }
-    bool loopRunning() { return loop_running.load(); }
+    bool connectionRunning() const { return connection_running.load(); }
+    bool loopRunning() const { return loop_running.load(); }
 
     void updateLoopState(UInt8 state) { loop_state.store(state); }
     UInt8 getLoopState() { return loop_state.load(); }
