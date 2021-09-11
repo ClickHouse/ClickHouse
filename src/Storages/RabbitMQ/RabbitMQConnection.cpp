@@ -26,12 +26,69 @@ String RabbitMQConnection::connectionInfoForLog() const
 bool RabbitMQConnection::isConnected()
 {
     std::lock_guard lock(mutex);
-    return event_handler.connectionRunning() && connection->usable();
+    return isConnectedImpl();
 }
 
 bool RabbitMQConnection::connect()
 {
     std::lock_guard lock(mutex);
+    connectImpl();
+    return event_handler.connectionRunning();
+}
+
+bool RabbitMQConnection::reconnect()
+{
+    std::lock_guard lock(mutex);
+    if (isConnectedImpl())
+        return true;
+
+    disconnectImpl();
+
+    /// This will force immediate closure if not yet closed
+    if (!connection->closed())
+        connection->close(true);
+
+    LOG_TRACE(log, "Trying to restore connection to {}", connectionInfoForLog());
+    connectImpl();
+
+    return event_handler.connectionRunning();
+}
+
+ChannelPtr RabbitMQConnection::createChannel()
+{
+    std::lock_guard lock(mutex);
+
+    if (!isConnectedImpl())
+        return nullptr;
+
+    return std::make_unique<AMQP::TcpChannel>(connection.get());
+}
+
+void RabbitMQConnection::disconnect(bool immediately)
+{
+    std::lock_guard lock(mutex);
+    disconnectImpl(immediately);
+}
+
+void RabbitMQConnection::heartbeat()
+{
+    std::lock_guard lock(mutex);
+    connection->heartbeat();
+}
+
+bool RabbitMQConnection::closed()
+{
+    std::lock_guard lock(mutex);
+    return connection->closed();
+}
+
+bool RabbitMQConnection::isConnectedImpl() const
+{
+    return event_handler.connectionRunning() && connection->usable();
+}
+
+void RabbitMQConnection::connectImpl()
+{
     if (configuration.connection_string.empty())
     {
         AMQP::Login login(configuration.username, configuration.password);
@@ -50,31 +107,10 @@ bool RabbitMQConnection::connect()
         event_handler.iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
-    return event_handler.connectionRunning();
 }
 
-bool RabbitMQConnection::reconnect()
+void RabbitMQConnection::disconnectImpl(bool immediately)
 {
-    disconnect();
-    {
-        /// This will force immediate closure if not yet closed
-        std::lock_guard lock(mutex);
-        if (!connection->closed())
-            connection->close(true);
-    }
-    LOG_TRACE(log, "Trying to restore connection to {}", connectionInfoForLog());
-    return connect();
-}
-
-ChannelPtr RabbitMQConnection::createChannel()
-{
-    std::lock_guard lock(mutex);
-    return std::make_unique<AMQP::TcpChannel>(connection.get());
-}
-
-void RabbitMQConnection::disconnect(bool immediately)
-{
-    std::lock_guard lock(mutex);
     connection->close(immediately);
 
     /** Connection is not closed immediately (firstly, all pending operations are completed, and then
