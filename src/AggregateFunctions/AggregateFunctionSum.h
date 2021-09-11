@@ -128,7 +128,7 @@ struct AggregateFunctionSumData
             /// We reinterpret the floating point number as an unsigned integer of the same size
             /// This was tested with clang12. gcc11 would need to be tricked into vectorizing by iterating over the integer representation
             static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            typedef typename std::conditional<sizeof(Value) == 4, uint32_t, uint64_t>::type equivalent_integer;
+            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
 
 #if defined(__clang__)
             /// Without these instructions clang will prefer using a jump as it knows that the number might be zero, and that's
