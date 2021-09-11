@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
 #include <Common/Macros.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
