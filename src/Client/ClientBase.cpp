@@ -1234,6 +1234,84 @@ void ClientBase::showClientVersion()
 }
 
 
+void ClientBase::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments)
+{
+    /** We allow different groups of arguments:
+        * - common arguments;
+        * - arguments for any number of external tables each in form "--external args...",
+        *   where possible args are file, name, format, structure, types;
+        * - param arguments for prepared statements.
+        * Split these groups before processing.
+        */
+
+    bool in_external_group = false;
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        const char * arg = argv[arg_num];
+
+        if (0 == strcmp(arg, "--external"))
+        {
+            in_external_group = true;
+            external_tables_arguments.emplace_back(Arguments{""});
+        }
+        /// Options with value after equal sign.
+        else if (in_external_group
+            && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
+                || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
+                || 0 == strncmp(arg, "--types=", strlen("--types="))))
+        {
+            external_tables_arguments.back().emplace_back(arg);
+        }
+        /// Options with value after whitespace.
+        else if (in_external_group
+            && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
+                || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+        {
+            if (arg_num + 1 < argc)
+            {
+                external_tables_arguments.back().emplace_back(arg);
+                ++arg_num;
+                arg = argv[arg_num];
+                external_tables_arguments.back().emplace_back(arg);
+            }
+            else
+                break;
+        }
+        else
+        {
+            in_external_group = false;
+
+            /// Parameter arg after underline.
+            if (startsWith(arg, "--param_"))
+            {
+                const char * param_continuation = arg + strlen("--param_");
+                const char * equal_pos = strchr(param_continuation, '=');
+
+                if (equal_pos == param_continuation)
+                    throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                if (equal_pos)
+                {
+                    /// param_name=value
+                    query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
+                }
+                else
+                {
+                    /// param_name value
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    query_parameters.emplace(String(param_continuation), String(arg));
+                }
+            }
+            else
+                common_arguments.emplace_back(arg);
+        }
+    }
+}
+
+
 void ClientBase::init(int argc, char ** argv)
 {
     namespace po = boost::program_options;
