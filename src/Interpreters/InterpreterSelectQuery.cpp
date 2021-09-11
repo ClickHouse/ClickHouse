@@ -2041,7 +2041,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 }
 
-
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_unique<FilterStep>(
@@ -2051,6 +2050,79 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     query_plan.addStep(std::move(where_step));
 }
 
+void InterpreterSelectQuery::initAggregatorParams(
+    const Block & current_data_stream_header,
+    AggregatorParamsPtr & params_ptr,
+    const AggregateDescriptions & aggregates,
+    bool overflow_row, const Settings & settings,
+    size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes)
+{
+    auto & query = getSelectQuery();
+    if (query.group_by_with_grouping_sets)
+    {
+        ColumnNumbers keys;
+        ColumnNumbers all_keys;
+        ColumnNumbersList keys_vector;
+        std::unordered_set<size_t> keys_set;
+        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
+        {
+            keys.clear();
+            for (const auto & key : aggregation_keys)
+            {
+                size_t key_name_pos = current_data_stream_header.getPositionByName(key.name);
+                keys_set.insert(key_name_pos);
+                keys.push_back(key_name_pos);
+            }
+            keys_vector.push_back(keys);
+        }
+        all_keys.assign(keys_set.begin(), keys_set.end());
+
+        params_ptr = std::make_unique<Aggregator::Params>(
+            current_data_stream_header,
+            all_keys,
+            keys_vector,
+            aggregates,
+            overflow_row,
+            settings.max_rows_to_group_by,
+            settings.group_by_overflow_mode,
+            group_by_two_level_threshold,
+            group_by_two_level_threshold_bytes,
+            settings.max_bytes_before_external_group_by,
+            settings.empty_result_for_aggregation_by_empty_set
+                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                    && query_analyzer->hasConstAggregationKeys()),
+            context->getTemporaryVolume(),
+            settings.max_threads,
+            settings.min_free_disk_space_for_temporary_data,
+            settings.compile_aggregate_expressions,
+            settings.min_count_to_compile_aggregate_expression);
+    }
+    else
+    {
+        ColumnNumbers keys;
+        for (const auto & key : query_analyzer->aggregationKeys())
+            keys.push_back(current_data_stream_header.getPositionByName(key.name));
+
+        params_ptr = std::make_unique<Aggregator::Params>(
+            current_data_stream_header,
+            keys,
+            aggregates,
+            overflow_row,
+            settings.max_rows_to_group_by,
+            settings.group_by_overflow_mode,
+            group_by_two_level_threshold,
+            group_by_two_level_threshold_bytes,
+            settings.max_bytes_before_external_group_by,
+            settings.empty_result_for_aggregation_by_empty_set
+                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                    && query_analyzer->hasConstAggregationKeys()),
+            context->getTemporaryVolume(),
+            settings.max_threads,
+            settings.min_free_disk_space_for_temporary_data,
+            settings.compile_aggregate_expressions,
+            settings.min_count_to_compile_aggregate_expression);
+    }
+}
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
@@ -2068,78 +2140,17 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
                 descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+
     const Settings & settings = context->getSettingsRef();
-    std::shared_ptr<Aggregator::Params> params_ptr;
 
-    auto & query = getSelectQuery();
-    if (query.group_by_with_grouping_sets)
-    {
-        ColumnNumbers keys;
-        ColumnNumbers all_keys;
-        ColumnNumbersList keys_vector;
-        std::unordered_set<size_t> keys_set;
-        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
-        {
-            keys.clear();
-            for (const auto & key : aggregation_keys)
-            {
-                size_t key_name_pos = header_before_aggregation.getPositionByName(key.name);
-                keys_set.insert(key_name_pos);
-                keys.push_back(key_name_pos);
-            }
-            keys_vector.push_back(keys);
-        }
-        all_keys.assign(keys_set.begin(), keys_set.end());
+    AggregatorParamsPtr params_ptr;
+    initAggregatorParams(header_before_aggregation, params_ptr, aggregates, overflow_row, settings,
+                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
 
-        params_ptr = std::make_shared<Aggregator::Params>(
-            header_before_aggregation,
-            all_keys,
-            keys_vector,
-            aggregates,
-            overflow_row,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            settings.group_by_two_level_threshold,
-            settings.group_by_two_level_threshold_bytes,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set
-                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                    && query_analyzer->hasConstAggregationKeys()),
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression);
-    }
-    else
-    {
-        ColumnNumbers keys;
-        for (const auto & key : query_analyzer->aggregationKeys())
-            keys.push_back(header_before_aggregation.getPositionByName(key.name));
-
-        params_ptr = std::make_shared<Aggregator::Params>(
-            header_before_aggregation,
-            keys,
-            aggregates,
-            overflow_row,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            settings.group_by_two_level_threshold,
-            settings.group_by_two_level_threshold_bytes,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set
-                || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                    && query_analyzer->hasConstAggregationKeys()),
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression);
-    }
     SortDescription group_by_sort_description;
 
-    if (group_by_info && settings.optimize_aggregation_in_order && !query.group_by_with_grouping_sets)
-        group_by_sort_description = getSortDescriptionFromGroupBy(query);
+    if (group_by_info && settings.optimize_aggregation_in_order)
+        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
     else
         group_by_info = nullptr;
 
@@ -2212,76 +2223,14 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
     query_plan.addStep(std::move(totals_having_step));
 }
 
-
 void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
 {
     const auto & header_before_transform = query_plan.getCurrentDataStream().header;
 
     const Settings & settings = context->getSettingsRef();
-    std::shared_ptr<Aggregator::Params> params_ptr;
 
-    auto & query = getSelectQuery();
-    if (query.group_by_with_grouping_sets)
-    {
-        ColumnNumbers keys;
-        ColumnNumbers all_keys;
-        ColumnNumbersList keys_vector;
-        std::unordered_set<size_t> keys_set;
-        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
-        {
-            keys.clear();
-            for (const auto & key : aggregation_keys)
-            {
-                size_t key_name_pos = header_before_transform.getPositionByName(key.name);
-                keys_set.insert(key_name_pos);
-                keys.push_back(key_name_pos);
-            }
-            keys_vector.push_back(keys);
-        }
-        all_keys.assign(keys_set.begin(), keys_set.end());
-
-        params_ptr = std::make_shared<Aggregator::Params>(
-            header_before_transform,
-            all_keys,
-            keys_vector,
-            query_analyzer->aggregates(),
-            false,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            0,
-            0,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set,
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression);
-    }
-    else
-    {
-        ColumnNumbers keys;
-        for (const auto & key : query_analyzer->aggregationKeys())
-            keys.push_back(header_before_transform.getPositionByName(key.name));
-
-        params_ptr = std::make_shared<Aggregator::Params>(
-            header_before_transform,
-            keys,
-            query_analyzer->aggregates(),
-            false,
-            settings.max_rows_to_group_by,
-            settings.group_by_overflow_mode,
-            0,
-            0,
-            settings.max_bytes_before_external_group_by,
-            settings.empty_result_for_aggregation_by_empty_set,
-            context->getTemporaryVolume(),
-            settings.max_threads,
-            settings.min_free_disk_space_for_temporary_data,
-            settings.compile_aggregate_expressions,
-            settings.min_count_to_compile_aggregate_expression);
-    }
-
+    AggregatorParamsPtr params_ptr;
+    initAggregatorParams(header_before_transform, params_ptr, query_analyzer->aggregates(), false, settings, 0, 0);
     auto transform_params = std::make_shared<AggregatingTransformParams>(*params_ptr, true);
 
     QueryPlanStepPtr step;

@@ -765,7 +765,7 @@ bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & nod
     ParserToken s_close(TokenType::ClosingRoundBracket);
     ParserExpressionWithOptionalAlias p_expression(false);
     ParserList p_command(std::make_unique<ParserExpressionWithOptionalAlias>(false),
-                          std::make_unique<ParserToken>(TokenType::Comma), false);
+                          std::make_unique<ParserToken>(TokenType::Comma), true);
 
     do
     {
@@ -778,6 +778,9 @@ bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & nod
             {
                 return false;
             }
+            auto list = std::make_shared<ASTExpressionList>(',');
+            list->children.push_back(command);
+            command = std::move(list);
         }
         else
         {
