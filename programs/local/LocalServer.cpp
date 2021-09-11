@@ -71,15 +71,25 @@ void LocalServer::processError(const String & query) const
     if (ignore_error)
         return;
 
-    if (server_exception)
+    if (is_interactive)
     {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
-        fmt::print(stderr, "\n");
+        if (server_exception)
+        {
+            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
+            fmt::print(stderr, "\n");
+        }
+        if (client_exception)
+        {
+            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
+            fmt::print(stderr, "\n");
+        }
     }
-    if (client_exception)
+    else
     {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
-        fmt::print(stderr, "\n");
+        if (server_exception)
+            server_exception->rethrow();
+        if (client_exception)
+            client_exception->rethrow();
     }
 }
 
@@ -353,13 +363,6 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::loadSuggestionData(Suggest & suggest)
-{
-    if (is_interactive && !config().getBool("disable_suggestion", false))
-        suggest.load(global_context);
-}
-
-
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -421,7 +424,7 @@ String LocalServer::getQueryTextPrefix()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = std::make_unique<LocalConnection>(global_context);
+    connection = LocalConnection::createConnection(connection_parameters, global_context);
 }
 
 
@@ -463,11 +466,6 @@ try
     else
     {
         runNonInteractive();
-
-        // if (server_exception)
-        //     server_exception->rethrow();
-        // if (client_exception)
-        //     client_exception->rethrow();
     }
 
     cleanup();
@@ -503,6 +501,8 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
+
+        load_suggestions = true;
     }
     else
     {

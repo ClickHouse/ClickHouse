@@ -53,7 +53,10 @@ class LocalConnection : public IServerConnection, WithContext
 {
 public:
     explicit LocalConnection(ContextPtr context_);
+
     ~LocalConnection() override;
+
+    static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context);
 
     void setDefaultDatabase(const String & database) override;
 
@@ -81,7 +84,7 @@ public:
 
     void sendCancel() override;
 
-    void sendData(const Block &, const String &, bool) override;
+    void sendData(const Block & block, const String & name = "", bool scalar = false) override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
@@ -122,6 +125,7 @@ private:
 
     ContextMutablePtr query_context;
     Session session;
+    std::optional<ThreadStatus> thread_status;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     std::optional<LocalQueryState> state;

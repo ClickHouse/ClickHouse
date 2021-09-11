@@ -10,7 +10,9 @@ class Client : public ClientBase
 {
 public:
     Client() = default;
+
     void initialize(Poco::Util::Application & self) override;
+
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
@@ -20,7 +22,6 @@ protected:
 
     void connect() override;
     void processError(const String & query) const override;
-    void loadSuggestionData(Suggest & suggest) override;
 
     void readArguments(int argc, char ** argv,
                        Arguments & common_arguments,

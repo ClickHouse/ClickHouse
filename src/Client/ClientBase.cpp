@@ -1040,7 +1040,14 @@ void ClientBase::runInteractive()
 
     std::optional<Suggest> suggest;
     suggest.emplace();
-    loadSuggestionData(*suggest);
+    if (load_suggestions)
+    {
+        /// Load suggestion data from the server.
+        if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+        else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
+            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+    }
 
     if (home_path.empty())
     {
@@ -1271,6 +1278,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("multiline,m", "multiline")
         ("multiquery,n", "multiquery")
+
+        ("suggestion_limit", po::value<int>()->default_value(10000),
+            "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")

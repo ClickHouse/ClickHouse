@@ -119,6 +119,6 @@ public:
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
 };
 
-using ServerConnection = std::unique_ptr<IServerConnection>;
+using ServerConnectionPtr = std::unique_ptr<IServerConnection>;
 
 }

@@ -51,7 +51,6 @@ protected:
 
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
-    virtual void loadSuggestionData(Suggest &) = 0;
 
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
@@ -133,6 +132,7 @@ protected:
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
+    bool load_suggestions = false;
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
@@ -141,7 +141,7 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     uint64_t terminal_width = 0;
 
-    std::unique_ptr<IServerConnection> connection;
+    ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 
     String format; /// Query results output format.
