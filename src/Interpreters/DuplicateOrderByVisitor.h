@@ -9,11 +9,19 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
+}
+
 
 /// Checks if SELECT has stateful functions
 class ASTFunctionStatefulData
@@ -59,14 +67,33 @@ public:
     {
         if (done)
             return;
+        done = true;
 
-        if (select_query.orderBy() && !select_query.limitBy() && !select_query.limitByOffset() &&
-            !select_query.limitByLength() && !select_query.limitLength() && !select_query.limitOffset())
+        if (select_query.orderBy())
         {
+            /// If we have limits then the ORDER BY is non-removable.
+            if (select_query.limitBy()
+                || select_query.limitByOffset()
+                || select_query.limitByLength()
+                || select_query.limitLength()
+                || select_query.limitOffset())
+            {
+                return;
+            }
+
+            /// If ORDER BY contains filling (in addition to sorting) it is non-removable.
+            for (const auto & child : select_query.orderBy()->children)
+            {
+                auto * ast = child->as<ASTOrderByElement>();
+                if (!ast || ast->children.empty())
+                    throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
+                if (ast->with_fill)
+                    return;
+            }
+
             select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
         }
-
-        done = true;
     }
 };
 
