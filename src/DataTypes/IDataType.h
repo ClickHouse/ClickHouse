@@ -80,6 +80,9 @@ public:
     virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+
+    using SubcolumnCallback = std::function<void(const String &, const DataTypePtr &, const ISerialization::SubstreamPath &)>;
+    void forEachSubcolumn(const SubcolumnCallback & callback) const;
     Names getSubcolumnNames() const;
 
     /// Returns default serialization of data type.
