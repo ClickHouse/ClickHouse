@@ -84,8 +84,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 800 seconds
-    set (RLIMIT_CPU 800)
+    # set CPU time limit to 1000 seconds
+    set (RLIMIT_CPU 1000)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
