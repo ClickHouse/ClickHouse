@@ -46,8 +46,6 @@ RUN apt-get update \
         gdb \
         git \
         gperf \
-        libicu-dev \
-        libreadline-dev \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         lld-${LLVM_VERSION} \
