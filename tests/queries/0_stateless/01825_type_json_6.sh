@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_6;"
 
-$CLICKHOUSE_CLIENT -q"CREATE TABLE t_json_6 (data JSON) ENGINE = MergeTree ORDER BY tuple();"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_6 (data JSON) ENGINE = MergeTree ORDER BY tuple();"
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_6 FORMAT JSONAsObject"
 {
@@ -51,6 +51,6 @@ cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_6 FORMAT JSONAsObject"
 EOF
 
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT toTypeName(data) FROM t_json_6;"
-$CLICKHOUSE_CLIENT -q "SELECT data.key, data.out.type, data.out.value, data.out.outputs.index, data.out.outputs.index FROM t_json_6 ORDER BY data.key"
+$CLICKHOUSE_CLIENT -q "SELECT data.key, data.out.type, data.out.value, data.out.outputs.index, data.out.outputs.n FROM t_json_6 ORDER BY data.key"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_json_6;"
