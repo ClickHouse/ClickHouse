@@ -853,6 +853,10 @@ bool ClientBase::receiveEndOfQuery()
                 onLogData(packet.block);
                 break;
 
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                return true;
+
             default:
                 throw NetException(
                     "Unexpected packet from server (expected Exception, EndOfStream or Log, got "

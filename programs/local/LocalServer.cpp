@@ -47,7 +47,6 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
-#include <Interpreters/Session.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -61,7 +60,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
@@ -425,7 +423,7 @@ String LocalServer::getQueryTextPrefix()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context);
+    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
 }
 
 
