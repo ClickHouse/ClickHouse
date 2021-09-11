@@ -233,7 +233,8 @@ void MaterializedMySQLSyncThread::stopSynchronization()
     if (!sync_quit && background_thread_pool)
     {
         sync_quit = true;
-        background_thread_pool->join();
+        if (background_thread_pool->joinable())
+            background_thread_pool->join();
         client.disconnect();
     }
 }
