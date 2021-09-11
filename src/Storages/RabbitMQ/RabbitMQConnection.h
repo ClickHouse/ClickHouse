@@ -32,9 +32,9 @@ public:
 
     void disconnect(bool immediately = false);
 
-    void heartbeat() { connection->heartbeat(); }
+    void heartbeat();
 
-    bool closed() { return connection->closed(); }
+    bool closed();
 
     ChannelPtr createChannel();
 
@@ -44,6 +44,12 @@ public:
     String connectionInfoForLog() const;
 
 private:
+    bool isConnectedImpl() const;
+
+    void connectImpl();
+
+    void disconnectImpl(bool immediately = false);
+
     RabbitMQConfiguration configuration;
     Poco::Logger * log;
 

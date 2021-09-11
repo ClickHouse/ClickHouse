@@ -275,7 +275,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
-        else if ((!producer_channel->usable() && connection.isConnected()) || (!connection.isConnected() && connection.reconnect()))
+        else if ((!producer_channel->usable() && connection.isConnected()) || connection.reconnect())
             setupChannel();
     }
 
