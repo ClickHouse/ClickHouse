@@ -426,7 +426,7 @@ void registerStorageURL(StorageFactory & factory)
     factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
-        auto configuration = StorageURL::getConfiguration(engine_args, args.getContext());
+        auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
         auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
         Poco::URI uri(configuration.url);
 
