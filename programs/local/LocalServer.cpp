@@ -75,7 +75,8 @@ void LocalServer::processError(const String & query) const
     {
         if (server_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
+            bool print_stack_trace = config().getBool("stacktrace", false);
+            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, getExceptionMessage(*server_exception, print_stack_trace, true));
             fmt::print(stderr, "\n");
         }
         if (client_exception)
@@ -694,13 +695,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
-}
-
-
-void LocalServer::readArguments(int argc, char ** argv, Arguments & arguments, std::vector<Arguments> &)
-{
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-        arguments.emplace_back(argv[arg_num]);
 }
 
 

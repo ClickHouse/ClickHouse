@@ -40,7 +40,6 @@ protected:
     String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
     void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
