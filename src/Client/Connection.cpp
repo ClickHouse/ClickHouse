@@ -12,6 +12,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -967,6 +968,21 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
             "Unexpected packet from server " + getDescription() + " (expected " + expected
             + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
             ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+}
+
+ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
+{
+    return std::make_unique<Connection>(
+        parameters.host,
+        parameters.port,
+        parameters.default_database,
+        parameters.user,
+        parameters.password,
+        "", /* cluster */
+        "", /* cluster_secret */
+        "client",
+        parameters.compression,
+        parameters.security);
 }
 
 }

@@ -459,16 +459,6 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
-void Client::loadSuggestionData(Suggest & suggest)
-{
-    if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
-    {
-        /// Load suggestion data from the server.
-        suggest.load(connection_parameters, config().getInt("suggestion_limit"));
-    }
-}
-
-
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -583,17 +573,7 @@ void Client::connect()
 
     try
     {
-        connection = std::make_unique<Connection>(
-            connection_parameters.host,
-            connection_parameters.port,
-            connection_parameters.default_database,
-            connection_parameters.user,
-            connection_parameters.password,
-            "", /* cluster */
-            "", /* cluster_secret */
-            "client",
-            connection_parameters.compression,
-            connection_parameters.security);
+        connection = Connection::createConnection(connection_parameters, global_context);
 
         if (max_client_network_bandwidth)
         {
@@ -622,6 +602,7 @@ void Client::connect()
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
+    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false));
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -1141,9 +1122,6 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
-
-        ("suggestion_limit", po::value<int>()->default_value(10000),
-            "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
