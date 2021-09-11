@@ -25,7 +25,9 @@ class LocalServer : public ClientBase, public Loggers
 {
 public:
     LocalServer() = default;
+
     void initialize(Poco::Util::Application & self) override;
+
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
@@ -34,7 +36,6 @@ protected:
 
     void connect() override;
     void processError(const String & query) const override;
-    void loadSuggestionData(Suggest &) override;
 
     String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;

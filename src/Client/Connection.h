@@ -27,6 +27,7 @@ namespace DB
 struct Settings;
 
 class Connection;
+struct ConnectionParameters;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
@@ -71,6 +72,8 @@ public:
 
         setDescription();
     }
+
+    static ServerConnectionPtr createConnection(const ConnectionParameters & connection, ContextPtr context);
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override

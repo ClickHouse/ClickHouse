@@ -18,6 +18,9 @@ LocalConnection::LocalConnection(ContextPtr context_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
+
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
 }
 
 LocalConnection::~LocalConnection()
@@ -305,7 +308,16 @@ bool LocalConnection::pollImpl()
 Packet LocalConnection::receivePacket()
 {
     Packet packet;
-    if (!next_packet_type || !state)
+    if (!state)
+    {
+        packet.type = Protocol::Server::EndOfStream;
+        return packet;
+    }
+
+    if (!next_packet_type)
+        poll();
+
+    if (!next_packet_type)
     {
         packet.type = Protocol::Server::EndOfStream;
         return packet;
@@ -388,5 +400,11 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
 {
     /// Do nothing.
 }
+
+ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context)
+{
+    return std::make_unique<LocalConnection>(current_context);
+}
+
 
 }
