@@ -114,9 +114,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
-        s.one_line
+        if (!group_by_with_grouping_sets)
+        {
+            s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        }
     }
 
     if (group_by_with_rollup)
@@ -126,7 +129,15 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_grouping_sets)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH GROUPING SETS" << (s.hilite ? hilite_none : "");
+    {
+        bool tmp_need_parens = frame.need_parens;
+        frame.need_parens = true;
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
+        s.one_line
+        ? groupBy()->formatImpl(s, state, frame)
+        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        frame.need_parens = tmp_need_parens;
+    }
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
