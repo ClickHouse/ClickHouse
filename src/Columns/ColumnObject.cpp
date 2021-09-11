@@ -13,7 +13,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
 
-
 namespace DB
 {
 
@@ -28,25 +27,45 @@ namespace ErrorCodes
 namespace
 {
 
+Array createEmptyArrayField(size_t num_dimensions)
+{
+    Array array;
+    Array * current_array = &array;
+    for (size_t i = 1; i < num_dimensions; ++i)
+    {
+        current_array->push_back(Array());
+        current_array = &current_array->back().get<Array &>();
+    }
+
+    return array;
+}
+
 class FieldVisitorReplaceNull : public StaticVisitor<Field>
 {
 public:
-    [[maybe_unused]] explicit FieldVisitorReplaceNull(const Field & replacement_)
+    [[maybe_unused]] explicit FieldVisitorReplaceNull(
+        const Field & replacement_, size_t num_dimensions_)
         : replacement(replacement_)
+        , num_dimensions(num_dimensions_)
     {
     }
-
-    Field operator()(const Null &) const { return replacement; }
 
     template <typename T>
     Field operator()(const T & x) const
     {
-        if constexpr (std::is_base_of_v<FieldVector, T>)
+        if constexpr (std::is_same_v<T, Null>)
         {
+            return num_dimensions
+                ? createEmptyArrayField(num_dimensions)
+                : replacement;
+        }
+        else if constexpr (std::is_same_v<T, Array>)
+        {
+            assert(num_dimensions > 0);
             const size_t size = x.size();
-            T res(size);
+            Array res(size);
             for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(*this, x[i]);
+                res[i] = applyVisitor(FieldVisitorReplaceNull(replacement, num_dimensions - 1), x[i]);
             return res;
         }
         else
@@ -54,7 +73,8 @@ public:
     }
 
 private:
-    Field replacement;
+    const Field & replacement;
+    size_t num_dimensions;
 };
 
 class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
@@ -66,16 +86,24 @@ public:
             return 1;
 
         const size_t size = x.size();
-        size_t dimensions = applyVisitor(*this, x[0]);
-        for (size_t i = 1; i < size; ++i)
+        std::optional<size_t> dimensions;
+
+        for (size_t i = 0; i < size; ++i)
         {
+            /// Do not count Nulls, because they will be replaced by default
+            /// values with proper number of dimensions.
+            if (x[i].isNull())
+                continue;
+
             size_t current_dimensions = applyVisitor(*this, x[i]);
-            if (current_dimensions != dimensions)
+            if (!dimensions)
+                dimensions = current_dimensions;
+            else if (current_dimensions != *dimensions)
                 throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
                     "Number of dimensions mismatched among array elements");
         }
 
-        return 1 + dimensions;
+        return 1 + dimensions.value_or(0);
     }
 
     template <typename T>
@@ -239,6 +267,7 @@ void ColumnObject::Subcolumn::insert(Field field)
     if (is_nullable && !base_type->isNullable())
         base_type = makeNullable(base_type);
 
+    auto value_type = createArrayOfType(base_type, value_dim);
     if (!is_nullable && base_type->isNullable())
     {
         base_type = removeNullable(base_type);
@@ -248,10 +277,11 @@ void ColumnObject::Subcolumn::insert(Field field)
             return;
         }
 
-        field = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault()), std::move(field));
+        value_type = createArrayOfType(base_type, value_dim);
+        auto default_value = value_type->getDefault();
+        field = applyVisitor(FieldVisitorReplaceNull(default_value, value_dim), std::move(field));
     }
 
-    auto value_type = createArrayOfType(base_type, value_dim);
     bool type_changed = false;
 
     if (data.empty())
