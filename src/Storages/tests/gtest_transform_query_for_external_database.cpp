@@ -128,6 +128,18 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
           R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('hello', 'world'))");
 }
 
+TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
+          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+    check(state, 1,
+          "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+}
+
 TEST(TransformQueryForExternalDatabase, InWithTable)
 {
     const State & state = State::instance();
