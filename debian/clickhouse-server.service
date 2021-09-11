@@ -1,7 +1,8 @@
 [Unit]
 Description=ClickHouse Server (analytic DBMS for big data)
 Requires=network-online.target
-After=network-online.target
+After=time-sync.target network-online.target
+Wants=time-sync.target
 
 [Service]
 Type=simple
