@@ -70,7 +70,6 @@ struct AggregateFunctionSumData
         {
 #if defined(__clang__)
 /// With clang we can tell the compiler to vectorize and it should work with all types when possible, including floating types
-/// TODO: Test how this affects non floating point types
 /// Something around the number of SSE registers * the number of elements fit in register.
 /// Recommend half of those for each vectorization
 #pragma clang loop vectorize(enable) vectorize_width(64 / sizeof(T)) unroll_count(128 / sizeof(T))
@@ -139,23 +138,24 @@ struct AggregateFunctionSumData
             /// For floating point we use a similar trick as above, except that now we use a mask instead (0 to discard, 0xFF..FF to keep)
             /// We reinterpret the floating point number as an unsigned integer of the same size
             /// This was tested with clang12. gcc11 would need to be tricked into vectorizing by iterating over the integer representation
-            static_assert(sizeof(T) == 4 || sizeof(T) == 8);
-            typedef typename std::conditional<sizeof(T) == 4, uint32_t, uint64_t>::type equivalent_integer;
+            static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
+            typedef typename std::conditional<sizeof(Value) == 4, uint32_t, uint64_t>::type equivalent_integer;
 
 #if defined(__clang__)
             /// Without these instructions clang will prefer using a jump as it knows that the number might be zero, and that's
             /// ~10x slower than doing the bitwise operator and the add under SSE4
-#pragma clang loop vectorize(enable) vectorize_width(64/sizeof(T)) unroll_count(128 / sizeof(T))
+#pragma clang loop vectorize(enable) vectorize_width(64/sizeof(Value)) unroll_count(128 / sizeof(Value))
 #endif
             for (size_t i = 0; i < count; i++)
             {
                 equivalent_integer value;
-                std::memcpy(&value, &ptr[i], sizeof(T)); // Will be optimized by the compiler when strict aliasing isn't necessary
-                value &= (!*condition_map != add_if_zero) - 1; // When we want to add it this will &= -1 (no-op)
-                T d;
-                std::memcpy(&d, &value, sizeof(T)); // Same as above
+                std::memcpy(&value, &ptr[i], sizeof(Value)); // Will be optimized by the compiler when strict aliasing isn't necessary
+                value &= (!condition_map[i] != add_if_zero) - 1; // When we want to add it this will &= -1 (no-op)
+                Value d;
+                std::memcpy(&d, &value, sizeof(Value)); // Same as above
                 Impl::add(sum, d);
             }
+
             return;
         }
 
