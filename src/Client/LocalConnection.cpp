@@ -21,6 +21,11 @@ LocalConnection::LocalConnection(ContextPtr context_)
 
     if (!CurrentThread::isInitialized())
         thread_status.emplace();
+
+    query_context = session.makeQueryContext();
+    query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    query_context->setCurrentQueryId("");
+    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 }
 
 LocalConnection::~LocalConnection()
@@ -65,14 +70,10 @@ void LocalConnection::sendQuery(
     state->query_id = query_id_;
     state->query = query_;
 
-    query_context = session.makeQueryContext();
-    query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
-    query_context->setCurrentQueryId("");
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
-    CurrentThread::QueryScope query_scope_holder(query_context);
-
     state->after_send_progress.restart();
     state->query_execution_time.restart();
+
+    CurrentThread::QueryScope query_scope_holder(query_context);
 
     try
     {
@@ -187,7 +188,6 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
-    query_context.reset();
 }
 
 bool LocalConnection::poll(size_t)
@@ -355,13 +355,6 @@ Packet LocalConnection::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet.type)
                 + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-    }
-
-    if (state)
-    {
-        auto max_execution_time = query_context->getSettingsRef().max_execution_time.totalSeconds();
-        if (max_execution_time && state->query_execution_time.elapsedSeconds() > static_cast<Float64>(max_execution_time))
-            state->is_finished = true;
     }
 
     next_packet_type.reset();
