@@ -109,7 +109,7 @@ static void check(
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, state.getColumns(), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
 
-    EXPECT_EQ(transformed_query, expected);
+    EXPECT_EQ(transformed_query, expected) << query;
 }
 
 
