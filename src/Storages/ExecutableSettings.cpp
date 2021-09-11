@@ -1,4 +1,4 @@
-#include "ExecutablePoolSettings.h"
+#include "ExecutableSettings.h"
 
 #include <Common/Exception.h>
 
@@ -14,9 +14,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(ExecutablePoolSettingsTraits, LIST_OF_EXECUTABLE_POOL_SETTINGS);
+IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS);
 
-void ExecutablePoolSettings::loadFromQuery(ASTStorage & storage_def)
+void ExecutableSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
