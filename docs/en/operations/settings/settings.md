@@ -3499,6 +3499,30 @@ Possible values:
 
 Default value: `0`.
 
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   1 — Wait for own execution.
+-   2 — Wait for everyone.
+
+Default value: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   Negative integer — Wait for unlimited time.
+-   Positive integer — The number of seconds to wait.
+
+Default value: `120` seconds.
+
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.

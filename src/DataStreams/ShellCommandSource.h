@@ -52,14 +52,12 @@ public:
         const std::string & format,
         const Block & sample_block,
         std::unique_ptr<ShellCommand> && command_,
-        Poco::Logger * log_,
         std::vector<SendDataTask> && send_data_tasks = {},
         const ShellCommandSourceConfiguration & configuration_ = {},
         std::shared_ptr<ProcessPool> process_pool_ = nullptr)
         : SourceWithProgress(sample_block)
         , command(std::move(command_))
         , configuration(configuration_)
-        , log(log_)
         , process_pool(process_pool_)
     {
         for (auto && send_data_task : send_data_tasks)
@@ -133,7 +131,6 @@ protected:
         }
         catch (...)
         {
-            tryLogCurrentException(log);
             command = nullptr;
             throw;
         }
@@ -175,8 +172,6 @@ private:
     ShellCommandSourceConfiguration configuration;
 
     size_t current_read_rows = 0;
-
-    Poco::Logger * log;
 
     std::shared_ptr<ProcessPool> process_pool;
 
