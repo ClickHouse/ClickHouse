@@ -3,7 +3,7 @@
 # Provides:          clickhouse-server
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Required-Start:    $network
+# Required-Start:    $time $network
 # Required-Stop:     $network
 # Short-Description: Yandex clickhouse-server daemon
 ### END INIT INFO
