@@ -283,7 +283,8 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         String name = elem->children.front()->getColumnName();
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
-        if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+        if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
+            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
