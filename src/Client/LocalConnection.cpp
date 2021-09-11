@@ -12,9 +12,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
+    , send_progress(send_progress_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -25,7 +26,8 @@ LocalConnection::LocalConnection(ContextPtr context_)
     query_context = session.makeQueryContext();
     query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     query_context->setCurrentQueryId("");
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    if (send_progress)
+        query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 }
 
 LocalConnection::~LocalConnection()
@@ -70,9 +72,10 @@ void LocalConnection::sendQuery(
     state->query_id = query_id_;
     state->query = query_;
 
-    state->after_send_progress.restart();
-    state->query_execution_time.restart();
+    if (send_progress)
+        state->after_send_progress.restart();
 
+    next_packet_type.reset();
     CurrentThread::QueryScope query_scope_holder(query_context);
 
     try
@@ -195,7 +198,11 @@ bool LocalConnection::poll(size_t)
     if (!state)
         return false;
 
-    if (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay)
+    /// Wait for next poll to collect current packet.
+    if (next_packet_type)
+        return true;
+
+    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
     {
         state->after_send_progress.restart();
         next_packet_type = Protocol::Server::Progress;
@@ -267,7 +274,7 @@ bool LocalConnection::poll(size_t)
         }
     }
 
-    if (state->is_finished && !state->sent_progress)
+    if (state->is_finished && send_progress && !state->sent_progress)
     {
         state->sent_progress = true;
         next_packet_type = Protocol::Server::Progress;
@@ -328,6 +335,7 @@ Packet LocalConnection::receivePacket()
     {
         case Protocol::Server::Totals: [[fallthrough]];
         case Protocol::Server::Extremes: [[fallthrough]];
+        case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
         {
             if (state->block)
@@ -394,9 +402,9 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     /// Do nothing.
 }
 
-ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context)
+ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)
 {
-    return std::make_unique<LocalConnection>(current_context);
+    return std::make_unique<LocalConnection>(current_context, send_progress);
 }
 
 

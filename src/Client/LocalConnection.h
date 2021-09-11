@@ -45,18 +45,17 @@ struct LocalQueryState
     Progress progress;
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
-    Stopwatch query_execution_time;
 };
 
 
 class LocalConnection : public IServerConnection, WithContext
 {
 public:
-    explicit LocalConnection(ContextPtr context_);
+    explicit LocalConnection(ContextPtr context_, bool send_progress_ = false);
 
     ~LocalConnection() override;
 
-    static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context);
+    static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
 
     void setDefaultDatabase(const String & database) override;
 
@@ -125,6 +124,7 @@ private:
 
     ContextMutablePtr query_context;
     Session session;
+    bool send_progress;
     std::optional<ThreadStatus> thread_status;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
