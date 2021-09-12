@@ -3540,6 +3540,7 @@ Defines the maximum length for each regular expression in the [hyperscan multi-m
 Possible values:
 
 -   Positive integer.
+-   0 - The length is not limited.
 
 Default value: `0`.
 
