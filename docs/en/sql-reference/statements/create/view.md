@@ -113,12 +113,6 @@ Watch a live view while doing a parallel insert into the source table.
 WATCH lv;
 ```
 
-```sql
-INSERT INTO mt VALUES (1);
-INSERT INTO mt VALUES (2);
-INSERT INTO mt VALUES (3);
-```
-
 ```bash
 ┌─sum(x)─┬─_version─┐
 │      1 │        1 │
@@ -129,6 +123,12 @@ INSERT INTO mt VALUES (3);
 ┌─sum(x)─┬─_version─┐
 │      6 │        3 │
 └────────┴──────────┘
+```
+
+```sql
+INSERT INTO mt VALUES (1);
+INSERT INTO mt VALUES (2);
+INSERT INTO mt VALUES (3);
 ```
 
 Or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
