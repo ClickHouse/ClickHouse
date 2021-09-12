@@ -3608,8 +3608,7 @@ Result:
 Query:
 
 ```sql
-SET max_hyperscan_regexp_total_length = 5;
-select multiMatchAny('abcd', ['ab','bc','c','d']);
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
 ```
 
 Result:
