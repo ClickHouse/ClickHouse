@@ -50,6 +50,7 @@ void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
+void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -115,10 +116,10 @@ void registerAggregateFunctions()
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
         registerAggregateFunctionSingleValueOrNull(factory);
+        registerAggregateFunctionIntervalLengthSum(factory);
+        registerAggregateFunctionExponentialMovingAverage(factory);
 
         registerWindowFunctions(factory);
-
-        registerAggregateFunctionIntervalLengthSum(factory);
     }
 
     {
