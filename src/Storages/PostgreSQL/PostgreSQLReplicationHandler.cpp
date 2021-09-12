@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & replication_identifier,
-    const String & remote_database_name_,
+    const String & postgres_database_,
     const String & current_database_name_,
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
@@ -37,13 +37,15 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
     , is_attach(is_attach_)
-    , remote_database_name(remote_database_name_)
+    , postgres_database(postgres_database_)
+    , postgres_schema(replication_settings.materialized_postgresql_schema)
     , current_database_name(current_database_name_)
     , connection_info(connection_info_)
     , max_block_size(replication_settings.materialized_postgresql_max_block_size)
     , allow_automatic_update(replication_settings.materialized_postgresql_allow_automatic_update)
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings.materialized_postgresql_tables_list)
+    , schema_can_be_in_tables_list(replication_settings.materialized_postgresql_tables_list_with_schema)
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
     , milliseconds_to_wait(RESCHEDULE_MS)
@@ -70,6 +72,27 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 void PostgreSQLReplicationHandler::startup()
 {
     startup_task->activateAndSchedule();
+}
+
+
+String PostgreSQLReplicationHandler::doubleQuoteWithPossibleSchema(const String & table_name) const
+{
+    if (table_name.starts_with("\""))
+        return table_name;
+
+    if (auto pos = table_name.find('.'); schema_can_be_in_tables_list && !tables_list.empty() && pos != std::string::npos)
+    {
+        schema_as_a_part_of_table_name = true;
+
+        auto schema  = table_name.substr(0, pos);
+        auto table = table_name.substr(pos + 1);
+        return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
+    }
+
+    if (postgres_schema.empty())
+        return doubleQuoteString(table_name);
+
+    return doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(table_name);
 }
 
 
@@ -148,7 +171,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
-                e.addMessage("while loading table {}.{}", remote_database_name, table_name);
+                e.addMessage("while loading table {}.{}", postgres_database, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
@@ -191,7 +214,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
-                e.addMessage("while loading table {}.{}", remote_database_name, table_name);
+                e.addMessage("while loading table {}.{}", postgres_database, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 if (throw_on_error)
@@ -214,6 +237,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             publication_name,
             start_lsn,
             max_block_size,
+            schema_as_a_part_of_table_name,
             allow_automatic_update,
             nested_storages);
 
@@ -234,7 +258,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
-    query_str = fmt::format("SELECT * FROM {}", doubleQuoteString(table_name));
+    query_str = fmt::format("SELECT * FROM {}", doubleQuoteWithPossibleSchema(table_name));
 
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
@@ -339,12 +363,17 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
     {
         if (tables_list.empty())
         {
+            if (materialized_storages.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No tables to replicate");
+
+            WriteBufferFromOwnString buf;
             for (const auto & storage_data : materialized_storages)
             {
-                if (!tables_list.empty())
-                    tables_list += ", ";
-                tables_list += doubleQuoteString(storage_data.first);
+                buf << doubleQuoteWithPossibleSchema(storage_data.first);
+                buf << ",";
             }
+            tables_list = buf.str();
+            tables_list.resize(tables_list.size() - 1);
         }
 
         if (tables_list.empty())
@@ -565,17 +594,44 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
     }
 
     tx.commit();
+
+    /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
+    /// or
+    /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
+    if (!tables_list.empty())
+    {
+        Strings tables_names;
+        splitInto<','>(tables_names, tables_list);
+        if (tables_names.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
+
+        WriteBufferFromOwnString buf;
+        for (auto & table_name : tables_names)
+        {
+            boost::trim(table_name);
+            buf << doubleQuoteWithPossibleSchema(table_name);
+            buf << ",";
+        }
+        tables_list = buf.str();
+        tables_list.resize(tables_list.size() - 1);
+    }
+    /// Also we make sure that queries in postgres always use quoted version "table_schema"."table_name".
+    /// But tables in ClickHouse in case of multi-schame database are never double-quoted.
+    /// It is ok, because they are accessed with backticks: postgres_database.`table_schema.table_name`.
+    /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
+
     return result_tables;
 }
 
 
 NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
-    std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
+    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
+    String schema, table;
 
-    for (auto table_name : tx.stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
+    for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
+        tables.insert(schema.empty() ? table : schema + '.' + table);
 
     return tables;
 }
@@ -587,7 +643,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialized_postgresql_database)
         return nullptr;
 
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, doubleQuoteWithPossibleSchema(table_name), true, true, true));
 }
 
 

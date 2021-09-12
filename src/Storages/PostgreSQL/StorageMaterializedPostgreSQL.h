@@ -24,6 +24,11 @@
 namespace DB
 {
 
+/** TODO list:
+ * - Actually I think we can support ddl even though logical replication does not fully support it.
+ *   But some basic ddl like adding/dropping columns, changing column type, column names -- is managable.
+ */
+
 /** Case of single MaterializedPostgreSQL table engine.
  *
  * A user creates a table with engine MaterializedPostgreSQL. Order by expression must be specified (needed for

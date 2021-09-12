@@ -19,6 +19,10 @@ namespace DB
     M(Bool, materialized_postgresql_allow_automatic_update, false, "Allow to reload table in the background, when schema changes are detected", 0) \
     M(String, materialized_postgresql_replication_slot, "", "A user-created replication slot", 0) \
     M(String, materialized_postgresql_snapshot, "", "User provided snapshot in case he manages replication slots himself", 0) \
+    M(String, materialized_postgresql_schema, "", "PostgreSQL schema", 0) \
+    M(Bool, materialized_postgresql_tables_list_with_schema, true, \
+        "Consider by default that if there is a dot in tables list 'name.name', " \
+        "then the first name is postgres schema and second is postgres table. This setting is needed to allow table names with dots", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS)
 
