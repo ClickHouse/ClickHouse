@@ -2033,8 +2033,21 @@ private:
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;
-        while (executor.pull(block))
+        while (true)
         {
+            try
+            {
+                if (!executor.pull(block))
+                {
+                    break;
+                }
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("(in query: {})", full_query));
+                throw;
+            }
+
             /// Check if server send Log packet
             receiveLogs();
 
