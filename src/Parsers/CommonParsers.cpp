@@ -1,29 +1,14 @@
-#include <Common/StringUtils/StringUtils.h>
 #include <Parsers/CommonParsers.h>
 #include <common/find_symbols.h>
-#include <IO/Operators.h>
-
-#include <string.h>        /// strncmp, strncasecmp
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
+bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expected & expected)
 {
     if (pos->type != TokenType::BareWord)
         return false;
 
-    if (s.empty())
-        throw Exception("Keyword cannot be an empty string", ErrorCodes::LOGICAL_ERROR);
-
-    const char * current_word = s.data();
-    const char * const s_end = s.end();
+    const char * current_word = s.begin();
 
     while (true)
     {
@@ -32,8 +17,8 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
         if (pos->type != TokenType::BareWord)
             return false;
 
-        const char * next_whitespace = find_first_symbols<' ', '\0'>(current_word, s_end);
-        size_t word_length = next_whitespace - current_word;
+        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.end());
+        const size_t word_length = next_whitespace - current_word;
 
         if (word_length != pos->size())
             return false;

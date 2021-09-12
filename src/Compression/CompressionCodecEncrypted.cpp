@@ -106,14 +106,15 @@ namespace DB
 
     std::string CompressionCodecEncrypted::lastErrorString()
     {
-        std::array<char, 1024> buffer;
+        std::array<char, 1024> buffer{};
         ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
         return std::string(buffer.data());
     }
 
     std::string CompressionCodecEncrypted::deriveKey(const std::string_view & master_key)
     {
-        std::string_view salt(""); // No salt: derive keys in a deterministic manner.
+        /// No salt: derive keys in a deterministic manner.
+        std::string_view salt(""); // NOLINT
         std::string_view info("Codec Encrypted('AES-128-GCM-SIV') key generation key");
         std::array<char, 32> result;
 

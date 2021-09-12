@@ -15,10 +15,10 @@ namespace ErrorCodes
 
 MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version)
 {
-    if (auto part_opt = tryParsePartName(part_name, format_version); !part_opt)
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
-    else
+    if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
+    else
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
 }
 
 void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)

@@ -5,20 +5,22 @@
 namespace DB
 {
 
-/// Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
-/// All case insensitive. Requires word boundary.
-/// For compound keywords, any whitespace characters and comments could be in the middle.
-/// Example: ORDER/* HELLO */BY
+/** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
+  * All case insensitive. Requires word boundary.
+  * For compound keywords, any whitespace characters and comments could be in the middle.
+  */
+/// Example: ORDER/* Hello */BY
 class ParserKeyword : public IParserBase
 {
 private:
     std::string_view s;
 
 public:
-    constexpr ParserKeyword(std::string_view s_): s(s_) {} //NOLINT
+    //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
+    constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
 
 protected:
-    constexpr const char * getName() const final { return s.data(); }
+    constexpr const char * getName() const override { return s.data(); }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) final;
 };

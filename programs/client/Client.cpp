@@ -1031,18 +1031,29 @@ private:
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
+            fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
+                server_version,
+                getExceptionMessage(*server_exception, print_stack_trace, true));
             if (is_interactive)
-                std::cerr << std::endl;
+            {
+                fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
+            }
         }
 
         if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
+            fmt::print(stderr, "Error on processing query: {}\n", client_exception->message());
             if (is_interactive)
             {
                 fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
             }
         }
 
@@ -1244,13 +1255,17 @@ private:
                     if (!server_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                        fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
+                            test_hint.serverError(),
+                            full_query);
                     }
                     else if (server_exception->code() != test_hint.serverError())
                     {
                         error_matches_hint = false;
-                        std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                                  << "." << std::endl;
+                        fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
+                            test_hint.serverError(),
+                            server_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1259,13 +1274,17 @@ private:
                     if (!client_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                        fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
+                            test_hint.clientError(),
+                            full_query);
                     }
                     else if (client_exception->code() != test_hint.clientError())
                     {
                         error_matches_hint = false;
-                        fmt::print(
-                            stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                        fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
+                            test_hint.clientError(),
+                            client_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1281,13 +1300,17 @@ private:
             {
                 if (test_hint.clientError())
                 {
-                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
+                        test_hint.clientError(),
+                        full_query);
                     error_matches_hint = false;
                 }
 
                 if (test_hint.serverError())
                 {
-                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
+                        test_hint.serverError(),
+                        full_query);
                     error_matches_hint = false;
                 }
             }
@@ -2010,8 +2033,21 @@ private:
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;
-        while (executor.pull(block))
+        while (true)
         {
+            try
+            {
+                if (!executor.pull(block))
+                {
+                    break;
+                }
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("(in query: {})", full_query));
+                throw;
+            }
+
             /// Check if server send Log packet
             receiveLogs();
 
@@ -2285,7 +2321,10 @@ private:
             if (!pager.empty())
             {
                 signal(SIGPIPE, SIG_IGN);
-                pager_cmd = ShellCommand::execute(pager, true);
+
+                ShellCommand::Config config(pager);
+                config.pipe_stdin_only = true;
+                pager_cmd = ShellCommand::execute(config);
                 out_buf = &pager_cmd->in;
             }
             else

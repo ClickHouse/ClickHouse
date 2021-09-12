@@ -1436,3 +1436,144 @@ FROM numbers(3);
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
 ```
+
+## snowflakeToDateTime {#snowflaketodatetime}
+
+Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime](../data-types/datetime.md).
+
+**Синтаксис**
+
+``` sql
+snowflakeToDateTime(value [, time_zone])
+```
+
+**Аргументы**
+
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-  Значение, преобразованное в фомат [DateTime](../data-types/datetime.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```
+
+Результат:
+
+``` text
+
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime64 {#snowflaketodatetime64}
+
+Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime64](../data-types/datetime64.md).
+
+**Синтаксис**
+
+``` sql
+snowflakeToDateTime64(value [, time_zone])
+```
+
+**Аргументы**
+
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-  Значение, преобразованное в фомат [DateTime64](../data-types/datetime64.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+```
+
+Результат:
+
+``` text
+
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## dateTimeToSnowflake {#datetimetosnowflake}
+
+Преобразует значение [DateTime](../data-types/datetime.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflake(value)
+```
+
+**Аргументы**
+
+-   `value` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
+```
+
+Результат:
+
+``` text
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+```
+
+## dateTime64ToSnowflake {#datetime64tosnowflake}
+
+Преобразует значение [DateTime64](../data-types/datetime64.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
+
+**Синтаксис**
+
+``` sql
+dateTime64ToSnowflake(value)
+```
+
+**Аргументы**
+
+-   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
+
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
+```
+
+Результат:
+
+``` text
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
+```
