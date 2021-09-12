@@ -27,7 +27,7 @@ template <typename Derived>
 struct ExponentiallySmoothedBase
 {
     double value = 0;
-    /// So the first update will have weight near 1. Cannot use -inf becuase subtraction will lead to nan.
+    /// So the first update will have weight near 1. Cannot use -inf because subtraction will lead to nan.
     double update_time = std::numeric_limits<double>::lowest();
 
     ExponentiallySmoothedBase()
