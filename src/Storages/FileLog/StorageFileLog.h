@@ -99,8 +99,6 @@ private:
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
-    TaskThread watch_task;
-
     void threadFunc();
 
     void clearInvalidFiles();
@@ -112,7 +110,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    void watchFunc();
+    bool updateFileStatus();
 };
 
 }

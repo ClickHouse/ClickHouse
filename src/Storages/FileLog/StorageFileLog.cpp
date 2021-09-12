@@ -84,8 +84,6 @@ StorageFileLog::StorageFileLog(
 
     directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
 
-    watch_task = getContext()->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
-
     auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
     task = std::make_shared<TaskContext>(std::move(thread));
 }
@@ -101,16 +99,17 @@ Pipe StorageFileLog::read(
 {
     std::lock_guard<std::mutex> lock(status_mutex);
 
-    auto modified_context = Context::createCopy(local_context);
+    updateFileStatus();
 
-    clearInvalidFiles();
-
-    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_names.size());
     /// No files to parse
-    if (max_streams_number == 0)
+    if (file_names.empty())
     {
         return Pipe{};
     }
+
+    auto modified_context = Context::createCopy(local_context);
+
+    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_names.size());
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
@@ -142,7 +141,6 @@ void StorageFileLog::shutdown()
 
     LOG_TRACE(log, "Waiting for cleanup");
     task->holder->deactivate();
-    watch_task->deactivate();
 
     for (auto & file : file_status)
     {
@@ -208,20 +206,16 @@ void StorageFileLog::threadFunc()
         {
             auto start_time = std::chrono::steady_clock::now();
 
-            watch_task->activate();
-
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
                 if (!checkDependencies(table_id))
                     break;
 
-                watch_task->scheduleAfter(RESCHEDULE_MS);
-
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                auto stream_is_stalled = streamToViews();
-                if (stream_is_stalled)
+                auto file_status_no_update = streamToViews();
+                if (file_status_no_update)
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
                     break;
@@ -234,6 +228,7 @@ void StorageFileLog::threadFunc()
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
+                updateFileStatus();
             }
         }
     }
@@ -242,7 +237,6 @@ void StorageFileLog::threadFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    watch_task->deactivate();
     // Wait for attached views
     if (!task->stream_cancelled)
         task->holder->scheduleAfter(RESCHEDULE_MS);
@@ -260,9 +254,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    clearInvalidFiles();
-
-    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_names.size());
+    auto max_streams_number = std::min(filelog_settings->filelog_max_threads.value, file_names.size());
     /// No files to parse
     if (max_streams_number == 0)
     {
@@ -280,13 +272,14 @@ bool StorageFileLog::streamToViews()
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
+    auto names = block_io.out->getHeader().getNames();
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
             metadata_snapshot,
             new_context,
-            block_io.out->getHeader().getNames(),
+            names,
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
@@ -314,27 +307,11 @@ bool StorageFileLog::streamToViews()
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
         formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
-    return true;
+    return updateFileStatus();
 }
 
 void StorageFileLog::clearInvalidFiles()
 {
-    /// Do not need to hold file_status lock, since it will be holded
-    /// by caller when call this function
-    std::vector<String> valid_files;
-    for (const auto & file_name : file_names)
-    {
-        if (file_status.at(file_name).status == FileStatus::REMOVED)
-        {
-            file_status.erase(file_name);
-        }
-        else
-        {
-            valid_files.push_back(file_name);
-        }
-    }
-
-    file_names.swap(valid_files);
 }
 
 void registerStorageFileLog(StorageFactory & factory)
@@ -395,7 +372,7 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
-void StorageFileLog::watchFunc()
+bool StorageFileLog::updateFileStatus()
 {
     auto error = directory_watch->hasError();
     if (error)
@@ -405,7 +382,6 @@ void StorageFileLog::watchFunc()
 
     for (const auto & event : events)
     {
-        std::lock_guard<std::mutex> lock(status_mutex);
         switch (event.type)
         {
             case Poco::DirectoryWatcher::DW_ITEM_ADDED:
@@ -435,5 +411,23 @@ void StorageFileLog::watchFunc()
                 }
         }
     }
+    /// Do not need to hold file_status lock, since it will be holded
+    /// by caller when call this function
+    std::vector<String> valid_files;
+    for (const auto & file_name : file_names)
+    {
+        if (file_status.at(file_name).status == FileStatus::REMOVED)
+        {
+            file_status.erase(file_name);
+        }
+        else
+        {
+            valid_files.push_back(file_name);
+        }
+    }
+
+    file_names.swap(valid_files);
+
+    return events.empty() || file_names.empty();
 }
 }
