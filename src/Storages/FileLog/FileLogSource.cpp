@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const auto MAX_FAILED_POLL_ATTEMPTS = 10;
+
 FileLogSource::FileLogSource(
     StorageFileLog & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -91,10 +93,11 @@ Chunk FileLogSource::generate()
     };
 
     size_t total_rows = 0;
+    size_t failed_poll_attempts = 0;
 
+    Stopwatch watch;
     while (true)
     {
-        Stopwatch watch;
         size_t new_rows = 0;
         if (buffer->poll())
         {
@@ -111,8 +114,14 @@ Chunk FileLogSource::generate()
         {
             total_rows = total_rows + new_rows;
         }
+        else
+        {
+            ++failed_poll_attempts;
+        }
 
-        if (!buffer->hasMorePolledRecords() && ((total_rows >= max_block_size) || watch.elapsedMilliseconds() > poll_time_out))
+        if (!buffer->hasMorePolledRecords()
+            && ((total_rows >= max_block_size) || watch.elapsedMilliseconds() > poll_time_out
+                || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
         }
