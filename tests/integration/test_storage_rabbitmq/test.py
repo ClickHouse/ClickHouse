@@ -18,7 +18,7 @@ from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/rabbitmq.xml'],
+                                main_configs=['configs/rabbitmq.xml', 'configs/macros.xml'],
                                 with_rabbitmq=True)
 
 
@@ -227,6 +227,37 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     result = ''
     while True:
         result = instance.query('SELECT * FROM test.view ORDER BY key')
+        if rabbitmq_check_result(result):
+            break
+
+    rabbitmq_check_result(result, True)
+
+
+def test_rabbitmq_macros(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
+                     rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
+                     rabbitmq_format = '{rabbitmq_format}'
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    message = ''
+    for i in range(50):
+        message += json.dumps({'key': i, 'value': i}) + '\n'
+    channel.basic_publish(exchange='macro', routing_key='', body=message)
+    
+    connection.close()
+    time.sleep(1)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if rabbitmq_check_result(result):
             break
 
