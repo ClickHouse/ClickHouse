@@ -5102,7 +5102,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    const DataPartsVector all_parts = getDataPartsVector(IMergeTreeDataPart::all_part_states);
+    const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
     /// Why all parts (not only Committed) are moved to detached/:
