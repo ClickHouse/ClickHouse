@@ -19,6 +19,8 @@ Calculates the result of the logical conjunction between two or more values. Cor
 and(val1, val2...)
 ```
 
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `and` function according to a short scheme. So `vali` will be evaluated only on rows where `val1` and `val2` and ... and `val{i-1}` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number != 0 and intDiv(1, number) == 0 and number != 2 and intDiv(1, number - 2) == 0 FROM numbers(10)`.
+
 **Arguments**
 
 -   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
@@ -68,8 +70,10 @@ Calculates the result of the logical disjunction between two or more values. Cor
 **Syntax**
 
 ``` sql
-and(val1, val2...)
+or(val1, val2...)
 ```
+
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `or` function according to a short scheme. So `vali` will be evaluated only on rows where (not `val1`) and (not `val2`) and ... and (not `val{i-1}`) is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number == 0 or intDiv(1, number) != 0 or number == 2 or intDiv(1, number - 2) != 0 FROM numbers(10)`.
 
 **Arguments**
 
