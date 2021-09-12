@@ -3580,7 +3580,7 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). If the value is `0`, the total size of the regular expressions is not limited.
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
 
 Possible values:
 
