@@ -21,7 +21,7 @@ class PostgreSQLReplicationHandler
 public:
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
-            const String & remote_database_name_,
+            const String & postgres_database_,
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
@@ -80,6 +80,8 @@ private:
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
+    String doubleQuoteWithPossibleSchema(const String & table_name) const;
+
     Poco::Logger * log;
     ContextPtr context;
 
@@ -89,13 +91,19 @@ private:
     /// If new publication is created at start up - always drop replication slot if it exists.
     bool new_publication = false;
 
-    const String remote_database_name, current_database_name;
+    String postgres_database;
+    String postgres_schema;
+    String current_database_name;
 
     /// Connection string and address for logs.
     postgres::ConnectionInfo connection_info;
 
     /// max_block_size for replication stream.
     const size_t max_block_size;
+
+    /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
+    /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
+    mutable bool schema_as_a_part_of_table_name = false;
 
     /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
     /// This setting allows to reloas table in the background.
@@ -106,6 +114,7 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
+    bool schema_can_be_in_tables_list;
 
     bool user_managed_slot = true;
     String user_provided_snapshot;
@@ -126,8 +135,6 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
-
-    String postgres_schema;
 };
 
 }

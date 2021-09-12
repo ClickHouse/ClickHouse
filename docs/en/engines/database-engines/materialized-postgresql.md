@@ -25,11 +25,13 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 
 ## Settings {#settings}
 
--   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
-
 -   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
+-   [materialized_postgresql_schema](../../operations/settings/settings.md#materialized-postgresql-schema)
+
 -   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
+
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
 -   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
 
@@ -38,11 +40,38 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 ``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS materialized_postgresql_max_block_size = 65536,
-         materialized_postgresql_tables_list = 'table1,table2,table3';
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
 ```
+
+PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be used in two ways.
+
+1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
+Tables are accessed via table name only:
+
+``` sql
+CREATE DATABASE postgres_database
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema = 'postgres_schema';
+
+SELECT * FROM postgres_database.table1;
+```
+
+2. Any number of schemas for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
+Tables are accessed via schema name and table name at the same time:
+
+``` sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3';
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+But in this case all tables in `materialized_postgresql_tables_list` must be written with its schema name.
+
 
 ## Requirements {#requirements}
 
