@@ -3586,6 +3586,7 @@ Sets the maximum length total of all regular expressions in each [hyperscan mult
 Possible values:
 
 -   Positive integer.
+-   0 - The length is not limited.
 
 Default value: `0`.
 
