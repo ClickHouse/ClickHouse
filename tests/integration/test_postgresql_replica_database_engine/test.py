@@ -1041,7 +1041,8 @@ def test_schema_1(started_cluster):
 
     create_materialized_db(ip=started_cluster.postgres_ip,
                            port=started_cluster.postgres_port,
-                           settings=["materialized_postgresql_tables_list = '{}'".format(publication_tables)])
+                           settings=["materialized_postgresql_tables_list = '{}'".format(publication_tables),
+                                     "materialized_postgresql_allow_automatic_update = 1"])
 
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)

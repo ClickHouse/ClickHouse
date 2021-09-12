@@ -148,7 +148,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     auto initial_sync = [&]()
     {
-        LOG_TRACE(log, "Starting tables sync load");
+        LOG_DEBUG(log, "Starting tables sync load");
 
         if (user_managed_slot)
         {
@@ -221,7 +221,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     throw;
             }
         }
-        LOG_TRACE(log, "Loaded {} tables", nested_storages.size());
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
     }
 
     tx.commit();
@@ -288,7 +288,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name
 
     nested_storage = materialized_storage->prepare();
     auto nested_table_id = nested_storage->getStorageID();
-    LOG_TRACE(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+    LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
     return nested_storage;
 }
@@ -300,6 +300,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
     bool schedule_now = consumer->consume(skipped_tables);
 
+    LOG_DEBUG(log, "checking for skipped tables: {}", skipped_tables.size());
     if (!skipped_tables.empty())
     {
         try
@@ -314,7 +315,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
     if (stop_synchronization)
     {
-        LOG_TRACE(log, "Replication thread is stopped");
+        LOG_DEBUG(log, "Replication thread is stopped");
         return;
     }
 
@@ -331,7 +332,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
         if (milliseconds_to_wait < BACKOFF_TRESHOLD_MS)
             milliseconds_to_wait *= 2;
 
-        LOG_TRACE(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
+        LOG_DEBUG(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
     }
 }
 
@@ -384,7 +385,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
         try
         {
             tx.exec(query_str);
-            LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, tables_list);
+            LOG_DEBUG(log, "Created publication {} with tables list: {}", publication_name, tables_list);
             new_publication = true;
         }
         catch (Exception & e)
@@ -395,7 +396,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
     }
     else
     {
-        LOG_TRACE(log, "Using existing publication ({}) version", publication_name);
+        LOG_DEBUG(log, "Using existing publication ({}) version", publication_name);
     }
 }
 
@@ -417,7 +418,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 
     start_lsn = result[0][2].as<std::string>();
 
-    LOG_TRACE(log, "Replication slot {} already exists (active: {}). Restart lsn position: {}, confirmed flush lsn: {}",
+    LOG_DEBUG(log, "Replication slot {} already exists (active: {}). Restart lsn position: {}, confirmed flush lsn: {}",
             slot_name, result[0][0].as<bool>(), result[0][1].as<std::string>(), start_lsn);
 
     return true;
@@ -442,7 +443,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::result result{tx.exec(query_str)};
         start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
-        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}", replication_slot, start_lsn);
+        LOG_DEBUG(log, "Created replication slot: {}, start lsn: {}", replication_slot, start_lsn);
     }
     catch (Exception & e)
     {
@@ -465,7 +466,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
     std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
 
     tx.exec(query_str);
-    LOG_TRACE(log, "Dropped replication slot: {}", slot_name);
+    LOG_DEBUG(log, "Dropped replication slot: {}", slot_name);
 }
 
 
@@ -473,7 +474,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     tx.exec(query_str);
-    LOG_TRACE(log, "Dropped publication: {}", publication_name);
+    LOG_DEBUG(log, "Dropped publication: {}", publication_name);
 }
 
 
@@ -680,8 +681,8 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             auto table_id = materialized_storage->getNestedStorageID();
             auto temp_table_id = temp_nested_storage->getStorageID();
 
-            LOG_TRACE(log, "Starting background update of table {} with table {}",
-                      table_id.getNameForLogs(), temp_table_id.getNameForLogs());
+            LOG_DEBUG(log, "Starting background update of table {} ({} with {})",
+                      table_name, table_id.getNameForLogs(), temp_table_id.getNameForLogs());
 
             auto ast_rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
@@ -710,7 +711,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
                     auto nested_storage_metadata = nested_storage->getInMemoryMetadataPtr();
                     auto nested_sample_block = nested_storage_metadata->getSampleBlock();
-                    LOG_TRACE(log, "Updated table {}. New structure: {}",
+                    LOG_DEBUG(log, "Updated table {}. New structure: {}",
                               nested_table_id.getNameForLogs(), nested_sample_block.dumpStructure());
 
                     auto materialized_storage_metadata = nested_storage->getInMemoryMetadataPtr();
