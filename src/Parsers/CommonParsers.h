@@ -25,6 +25,8 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// Parsers can use "WORD"_kw instead of ParserKeyword s_word("WORD");
+constexpr ParserKeyword operator "" _kw(const char * keyword, size_t len) { return {{keyword, len}}; }
 
 class ParserToken : public IParserBase
 {
