@@ -104,8 +104,8 @@ struct AggregateFunctionSumData
         const auto * end = ptr + count;
 
         if constexpr (
-            (is_integer_v<T> && !is_big_int_v<T>)
-            || (IsDecimalNumber<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+            (is_integer<T> && !is_big_int_v<T>)
+            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -334,9 +334,7 @@ class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, Agg
 public:
     static constexpr bool DateTime64Supported = false;
 
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
 
     String getName() const override
     {
@@ -361,10 +359,13 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (IsDecimalNumber<T>)
-            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        if constexpr (!is_decimal<T>)
+            return std::make_shared<DataTypeNumber<TResult>>();
         else
-            return std::make_shared<ResultDataType>();
+        {
+            using DataType = DataTypeDecimal<TResult>;
+            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -431,8 +432,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & column = assert_cast<ColVecResult &>(to);
-        column.getData().push_back(this->data(place).get());
+        castColumnToResult(to).getData().push_back(this->data(place).get());
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -511,6 +511,14 @@ public:
 
 private:
     UInt32 scale;
+
+    static constexpr auto & castColumnToResult(IColumn & to)
+    {
+        if constexpr (is_decimal<T>)
+            return assert_cast<ColumnDecimal<TResult> &>(to);
+        else
+            return assert_cast<ColumnVector<TResult> &>(to);
+    }
 };
 
 }

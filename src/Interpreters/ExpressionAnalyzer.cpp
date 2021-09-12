@@ -625,7 +625,7 @@ void makeWindowDescriptionFromAST(const Context & context,
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Window frame '{}' is not implemented (while processing '{}')",
-            WindowFrame::toString(definition.frame_type),
+            definition.frame_type,
             ast->formatForErrorMessage());
     }
 

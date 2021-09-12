@@ -617,8 +617,8 @@ void WindowTransform::advanceFrameStart()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame start type '{}' for frame '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.begin_type),
-                        WindowFrame::toString(window_description.frame.type));
+                        window_description.frame.begin_type,
+                        window_description.frame.type);
             }
             break;
     }
@@ -849,7 +849,7 @@ void WindowTransform::advanceFrameEnd()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The frame end type '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.end_type));
+                        window_description.frame.end_type);
             }
             break;
     }

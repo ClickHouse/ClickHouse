@@ -61,8 +61,6 @@ public:
         FUNCTION,
     };
 
-    static const char * typeToString(ActionType type);
-
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;

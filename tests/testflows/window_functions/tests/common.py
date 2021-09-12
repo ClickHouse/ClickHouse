@@ -33,7 +33,7 @@ def syntax_error():
     return (62, "Exception: Syntax error")
 
 def groups_frame_error():
-    return (48, "Exception: Window frame 'GROUPS' is not implemented")
+    return (48, "Exception: Window frame 'Groups' is not implemented")
 
 def getuid():
     if current().subtype == TestSubType.Example:
