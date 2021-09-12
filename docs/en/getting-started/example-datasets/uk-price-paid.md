@@ -110,11 +110,11 @@ SELECT count() FROM uk_price_paid;
 
 Result:
 
-```text
-26248711
-```
+┌──count()─┐
+│ 26321785 │
+└──────────┘
 
-The size of dataset in ClickHouse is just 226 MiB:
+The size of dataset in ClickHouse is just 278 MiB:
 
 Query:
 
@@ -125,12 +125,14 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price
 Result:
 
 ```text
-226.40 MiB
+┌─formatReadableSize(total_bytes)─┐
+│ 278.80 MiB                      │
+└─────────────────────────────────┘
 ```
 
 ## Run Some Queries
 
-### Average price per year
+### Average price per year:
 
 Query:
 
@@ -145,33 +147,31 @@ Result:
 │ 1995 │  67932 │ █████▍                                 │
 │ 1996 │  71505 │ █████▋                                 │
 │ 1997 │  78532 │ ██████▎                                │
-│ 1998 │  85435 │ ██████▋                                │
-│ 1999 │  96036 │ ███████▋                               │
-│ 2000 │ 107478 │ ████████▌                              │
-│ 2001 │ 118886 │ █████████▌                             │
-│ 2002 │ 137940 │ ███████████                            │
-│ 2003 │ 155888 │ ████████████▍                          │
+│ 1998 │  85436 │ ██████▋                                │
+│ 1999 │  96037 │ ███████▋                               │
+│ 2000 │ 107479 │ ████████▌                              │
+│ 2001 │ 118885 │ █████████▌                             │
+│ 2002 │ 137941 │ ███████████                            │
+│ 2003 │ 155889 │ ████████████▍                          │
 │ 2004 │ 178885 │ ██████████████▎                        │
-│ 2005 │ 189350 │ ███████████████▏                       │
+│ 2005 │ 189351 │ ███████████████▏                       │
 │ 2006 │ 203528 │ ████████████████▎                      │
-│ 2007 │ 219377 │ █████████████████▌                     │
+│ 2007 │ 219378 │ █████████████████▌                     │
 │ 2008 │ 217056 │ █████████████████▎                     │
 │ 2009 │ 213419 │ █████████████████                      │
-│ 2010 │ 236110 │ ██████████████████▊                    │
-│ 2011 │ 232804 │ ██████████████████▌                    │
-│ 2012 │ 238366 │ ███████████████████                    │
+│ 2010 │ 236109 │ ██████████████████▊                    │
+│ 2011 │ 232805 │ ██████████████████▌                    │
+│ 2012 │ 238367 │ ███████████████████                    │
 │ 2013 │ 256931 │ ████████████████████▌                  │
-│ 2014 │ 279917 │ ██████████████████████▍                │
-│ 2015 │ 297264 │ ███████████████████████▋               │
-│ 2016 │ 313197 │ █████████████████████████              │
-│ 2017 │ 346070 │ ███████████████████████████▋           │
-│ 2018 │ 350117 │ ████████████████████████████           │
-│ 2019 │ 351010 │ ████████████████████████████           │
-│ 2020 │ 368974 │ █████████████████████████████▌         │
-│ 2021 │ 384351 │ ██████████████████████████████▋        │
+│ 2014 │ 279915 │ ██████████████████████▍                │
+│ 2015 │ 297266 │ ███████████████████████▋               │
+│ 2016 │ 313201 │ █████████████████████████              │
+│ 2017 │ 346097 │ ███████████████████████████▋           │
+│ 2018 │ 350116 │ ████████████████████████████           │
+│ 2019 │ 351013 │ ████████████████████████████           │
+│ 2020 │ 369420 │ █████████████████████████████▌         │
+│ 2021 │ 386903 │ ██████████████████████████████▊        │
 └──────┴────────┴────────────────────────────────────────┘
-
-27 rows in set. Elapsed: 0.027 sec. Processed 26.25 million rows, 157.49 MB (955.96 million rows/s., 5.74 GB/s.)
 ```
 
 ### Average price per year in London:
@@ -182,43 +182,45 @@ Query:
 SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 100) FROM uk_price_paid WHERE town = 'LONDON' GROUP BY year ORDER BY year;
 ```
 
+Result:
+
 ```text
 ┌─year─┬───price─┬─bar(round(avg(price)), 0, 2000000, 100)───────────────┐
-│ 1995 │  109112 │ █████▍                                                │
+│ 1995 │  109116 │ █████▍                                                │
 │ 1996 │  118667 │ █████▊                                                │
 │ 1997 │  136518 │ ██████▋                                               │
 │ 1998 │  152983 │ ███████▋                                              │
-│ 1999 │  180633 │ █████████                                             │
-│ 2000 │  215830 │ ██████████▋                                           │
-│ 2001 │  232996 │ ███████████▋                                          │
-│ 2002 │  263672 │ █████████████▏                                        │
+│ 1999 │  180637 │ █████████                                             │
+│ 2000 │  215838 │ ██████████▋                                           │
+│ 2001 │  232994 │ ███████████▋                                          │
+│ 2002 │  263670 │ █████████████▏                                        │
 │ 2003 │  278394 │ █████████████▊                                        │
-│ 2004 │  304665 │ ███████████████▏                                      │
+│ 2004 │  304666 │ ███████████████▏                                      │
 │ 2005 │  322875 │ ████████████████▏                                     │
-│ 2006 │  356192 │ █████████████████▋                                    │
-│ 2007 │  404055 │ ████████████████████▏                                 │
+│ 2006 │  356191 │ █████████████████▋                                    │
+│ 2007 │  404054 │ ████████████████████▏                                 │
 │ 2008 │  420741 │ █████████████████████                                 │
-│ 2009 │  427754 │ █████████████████████▍                                │
+│ 2009 │  427753 │ █████████████████████▍                                │
 │ 2010 │  480306 │ ████████████████████████                              │
 │ 2011 │  496274 │ ████████████████████████▋                             │
-│ 2012 │  519441 │ █████████████████████████▊                            │
-│ 2013 │  616209 │ ██████████████████████████████▋                       │
-│ 2014 │  724144 │ ████████████████████████████████████▏                 │
-│ 2015 │  792112 │ ███████████████████████████████████████▌              │
-│ 2016 │  843568 │ ██████████████████████████████████████████▏           │
-│ 2017 │  982566 │ █████████████████████████████████████████████████▏    │
-│ 2018 │ 1016845 │ ██████████████████████████████████████████████████▋   │
-│ 2019 │ 1043277 │ ████████████████████████████████████████████████████▏ │
-│ 2020 │ 1003963 │ ██████████████████████████████████████████████████▏   │
-│ 2021 │  940794 │ ███████████████████████████████████████████████       │
+│ 2012 │  519442 │ █████████████████████████▊                            │
+│ 2013 │  616212 │ ██████████████████████████████▋                       │
+│ 2014 │  724154 │ ████████████████████████████████████▏                 │
+│ 2015 │  792129 │ ███████████████████████████████████████▌              │
+│ 2016 │  843655 │ ██████████████████████████████████████████▏           │
+│ 2017 │  982642 │ █████████████████████████████████████████████████▏    │
+│ 2018 │ 1016835 │ ██████████████████████████████████████████████████▋   │
+│ 2019 │ 1042849 │ ████████████████████████████████████████████████████▏ │
+│ 2020 │ 1011889 │ ██████████████████████████████████████████████████▌   │
+│ 2021 │  960343 │ ████████████████████████████████████████████████      │
 └──────┴─────────┴───────────────────────────────────────────────────────┘
-
-27 rows in set. Elapsed: 0.024 sec. Processed 26.25 million rows, 76.88 MB (1.08 billion rows/s., 3.15 GB/s.)
 ```
 
 Something happened in 2013. I don't have a clue. Maybe you have a clue what happened in 2020?
 
 ### The most expensive neighborhoods:
+
+Query:
 
 ```sql
 SELECT
@@ -237,116 +239,113 @@ ORDER BY price DESC
 LIMIT 100;
 ```
 
+Result:
+
 ```text
+
 ┌─town─────────────────┬─district───────────────┬────c─┬───price─┬─bar(round(avg(price)), 0, 5000000, 100)────────────────────────────┐
-│ LONDON               │ CITY OF WESTMINSTER    │ 3372 │ 3305225 │ ██████████████████████████████████████████████████████████████████ │
-│ LONDON               │ CITY OF LONDON         │  257 │ 3294478 │ █████████████████████████████████████████████████████████████████▊ │
-│ LONDON               │ KENSINGTON AND CHELSEA │ 2367 │ 2342422 │ ██████████████████████████████████████████████▋                    │
-│ LEATHERHEAD          │ ELMBRIDGE              │  108 │ 1927143 │ ██████████████████████████████████████▌                            │
-│ VIRGINIA WATER       │ RUNNYMEDE              │  142 │ 1868819 │ █████████████████████████████████████▍                             │
-│ LONDON               │ CAMDEN                 │ 2815 │ 1736788 │ ██████████████████████████████████▋                                │
-│ THORNTON HEATH       │ CROYDON                │  521 │ 1733051 │ ██████████████████████████████████▋                                │
-│ WINDLESHAM           │ SURREY HEATH           │  103 │ 1717255 │ ██████████████████████████████████▎                                │
-│ BARNET               │ ENFIELD                │  115 │ 1503458 │ ██████████████████████████████                                     │
-│ OXFORD               │ SOUTH OXFORDSHIRE      │  298 │ 1275200 │ █████████████████████████▌                                         │
-│ LONDON               │ ISLINGTON              │ 2458 │ 1274308 │ █████████████████████████▍                                         │
-│ COBHAM               │ ELMBRIDGE              │  364 │ 1260005 │ █████████████████████████▏                                         │
-│ LONDON               │ HOUNSLOW               │  618 │ 1215682 │ ████████████████████████▎                                          │
-│ ASCOT                │ WINDSOR AND MAIDENHEAD │  379 │ 1215146 │ ████████████████████████▎                                          │
-│ LONDON               │ RICHMOND UPON THAMES   │  654 │ 1207551 │ ████████████████████████▏                                          │
-│ BEACONSFIELD         │ BUCKINGHAMSHIRE        │  307 │ 1186220 │ ███████████████████████▋                                           │
-│ RICHMOND             │ RICHMOND UPON THAMES   │  805 │ 1100420 │ ██████████████████████                                             │
-│ LONDON               │ HAMMERSMITH AND FULHAM │ 2888 │ 1062959 │ █████████████████████▎                                             │
-│ WEYBRIDGE            │ ELMBRIDGE              │  607 │ 1027161 │ ████████████████████▌                                              │
-│ RADLETT              │ HERTSMERE              │  265 │ 1015896 │ ████████████████████▎                                              │
-│ SALCOMBE             │ SOUTH HAMS             │  124 │ 1014393 │ ████████████████████▎                                              │
-│ BURFORD              │ WEST OXFORDSHIRE       │  102 │  993100 │ ███████████████████▋                                               │
-│ ESHER                │ ELMBRIDGE              │  454 │  969770 │ ███████████████████▍                                               │
-│ HINDHEAD             │ WAVERLEY               │  128 │  967786 │ ███████████████████▎                                               │
-│ BROCKENHURST         │ NEW FOREST             │  121 │  967046 │ ███████████████████▎                                               │
-│ LEATHERHEAD          │ GUILDFORD              │  191 │  964489 │ ███████████████████▎                                               │
-│ GERRARDS CROSS       │ BUCKINGHAMSHIRE        │  376 │  958555 │ ███████████████████▏                                               │
-│ EAST MOLESEY         │ ELMBRIDGE              │  181 │  943457 │ ██████████████████▋                                                │
-│ OLNEY                │ MILTON KEYNES          │  220 │  942892 │ ██████████████████▋                                                │
-│ CHALFONT ST GILES    │ BUCKINGHAMSHIRE        │  135 │  926950 │ ██████████████████▌                                                │
-│ HENLEY-ON-THAMES     │ SOUTH OXFORDSHIRE      │  509 │  905732 │ ██████████████████                                                 │
-│ KINGSTON UPON THAMES │ KINGSTON UPON THAMES   │  889 │  899689 │ █████████████████▊                                                 │
-│ BELVEDERE            │ BEXLEY                 │  313 │  895336 │ █████████████████▊                                                 │
-│ CRANBROOK            │ TUNBRIDGE WELLS        │  404 │  888190 │ █████████████████▋                                                 │
-│ LONDON               │ EALING                 │ 2460 │  865893 │ █████████████████▎                                                 │
-│ MAIDENHEAD           │ BUCKINGHAMSHIRE        │  114 │  863814 │ █████████████████▎                                                 │
-│ LONDON               │ MERTON                 │ 1958 │  857192 │ █████████████████▏                                                 │
-│ GUILDFORD            │ WAVERLEY               │  131 │  854447 │ █████████████████                                                  │
-│ LONDON               │ HACKNEY                │ 3088 │  846571 │ ████████████████▊                                                  │
-│ LYMM                 │ WARRINGTON             │  285 │  839920 │ ████████████████▋                                                  │
-│ HARPENDEN            │ ST ALBANS              │  606 │  836994 │ ████████████████▋                                                  │
-│ LONDON               │ WANDSWORTH             │ 6113 │  832292 │ ████████████████▋                                                  │
-│ LONDON               │ SOUTHWARK              │ 3612 │  831319 │ ████████████████▋                                                  │
-│ BERKHAMSTED          │ DACORUM                │  502 │  830356 │ ████████████████▌                                                  │
-│ KINGS LANGLEY        │ DACORUM                │  137 │  821358 │ ████████████████▍                                                  │
-│ TONBRIDGE            │ TUNBRIDGE WELLS        │  339 │  806736 │ ████████████████▏                                                  │
-│ EPSOM                │ REIGATE AND BANSTEAD   │  157 │  805903 │ ████████████████                                                   │
-│ WOKING               │ GUILDFORD              │  161 │  803283 │ ████████████████                                                   │
-│ STOCKBRIDGE          │ TEST VALLEY            │  168 │  801973 │ ████████████████                                                   │
-│ TEDDINGTON           │ RICHMOND UPON THAMES   │  539 │  798591 │ ███████████████▊                                                   │
-│ OXFORD               │ VALE OF WHITE HORSE    │  329 │  792907 │ ███████████████▋                                                   │
-│ LONDON               │ BARNET                 │ 3624 │  789583 │ ███████████████▋                                                   │
-│ TWICKENHAM           │ RICHMOND UPON THAMES   │ 1090 │  787760 │ ███████████████▋                                                   │
-│ LUTON                │ CENTRAL BEDFORDSHIRE   │  196 │  786051 │ ███████████████▋                                                   │
-│ TONBRIDGE            │ MAIDSTONE              │  277 │  785746 │ ███████████████▋                                                   │
-│ TOWCESTER            │ WEST NORTHAMPTONSHIRE  │  186 │  783532 │ ███████████████▋                                                   │
-│ LONDON               │ LAMBETH                │ 4832 │  783422 │ ███████████████▋                                                   │
-│ LUTTERWORTH          │ HARBOROUGH             │  515 │  781775 │ ███████████████▋                                                   │
-│ WOODSTOCK            │ WEST OXFORDSHIRE       │  135 │  777499 │ ███████████████▌                                                   │
-│ ALRESFORD            │ WINCHESTER             │  196 │  775577 │ ███████████████▌                                                   │
-│ LONDON               │ NEWHAM                 │ 2942 │  768551 │ ███████████████▎                                                   │
-│ ALDERLEY EDGE        │ CHESHIRE EAST          │  168 │  768280 │ ███████████████▎                                                   │
-│ MARLOW               │ BUCKINGHAMSHIRE        │  301 │  762784 │ ███████████████▎                                                   │
-│ BILLINGSHURST        │ CHICHESTER             │  134 │  760920 │ ███████████████▏                                                   │
-│ LONDON               │ TOWER HAMLETS          │ 4183 │  759635 │ ███████████████▏                                                   │
-│ MIDHURST             │ CHICHESTER             │  245 │  759101 │ ███████████████▏                                                   │
-│ THAMES DITTON        │ ELMBRIDGE              │  227 │  753347 │ ███████████████                                                    │
-│ POTTERS BAR          │ WELWYN HATFIELD        │  163 │  752926 │ ███████████████                                                    │
-│ REIGATE              │ REIGATE AND BANSTEAD   │  555 │  740961 │ ██████████████▋                                                    │
-│ TADWORTH             │ REIGATE AND BANSTEAD   │  477 │  738997 │ ██████████████▋                                                    │
-│ SEVENOAKS            │ SEVENOAKS              │ 1074 │  734658 │ ██████████████▋                                                    │
-│ PETWORTH             │ CHICHESTER             │  138 │  732432 │ ██████████████▋                                                    │
-│ BOURNE END           │ BUCKINGHAMSHIRE        │  127 │  730742 │ ██████████████▌                                                    │
-│ PURLEY               │ CROYDON                │  540 │  727721 │ ██████████████▌                                                    │
-│ OXTED                │ TANDRIDGE              │  320 │  726078 │ ██████████████▌                                                    │
-│ LONDON               │ HARINGEY               │ 2988 │  724573 │ ██████████████▍                                                    │
-│ BANSTEAD             │ REIGATE AND BANSTEAD   │  373 │  713834 │ ██████████████▎                                                    │
-│ PINNER               │ HARROW                 │  480 │  712166 │ ██████████████▏                                                    │
-│ MALMESBURY           │ WILTSHIRE              │  293 │  707747 │ ██████████████▏                                                    │
-│ RICKMANSWORTH        │ THREE RIVERS           │  732 │  705400 │ ██████████████                                                     │
-│ SLOUGH               │ BUCKINGHAMSHIRE        │  359 │  705002 │ ██████████████                                                     │
-│ GREAT MISSENDEN      │ BUCKINGHAMSHIRE        │  214 │  704904 │ ██████████████                                                     │
-│ READING              │ SOUTH OXFORDSHIRE      │  295 │  701697 │ ██████████████                                                     │
-│ HYTHE                │ FOLKESTONE AND HYTHE   │  457 │  700334 │ ██████████████                                                     │
-│ WELWYN               │ WELWYN HATFIELD        │  217 │  699649 │ █████████████▊                                                     │
-│ CHIGWELL             │ EPPING FOREST          │  242 │  697869 │ █████████████▊                                                     │
-│ BARNET               │ BARNET                 │  906 │  695680 │ █████████████▊                                                     │
-│ HASLEMERE            │ CHICHESTER             │  120 │  694028 │ █████████████▊                                                     │
-│ LEATHERHEAD          │ MOLE VALLEY            │  748 │  692026 │ █████████████▋                                                     │
-│ LONDON               │ BRENT                  │ 1945 │  690799 │ █████████████▋                                                     │
-│ HASLEMERE            │ WAVERLEY               │  258 │  690765 │ █████████████▋                                                     │
-│ NORTHWOOD            │ HILLINGDON             │  252 │  690753 │ █████████████▋                                                     │
-│ WALTON-ON-THAMES     │ ELMBRIDGE              │  871 │  689431 │ █████████████▋                                                     │
-│ INGATESTONE          │ BRENTWOOD              │  150 │  688345 │ █████████████▋                                                     │
-│ OXFORD               │ OXFORD                 │ 1761 │  686114 │ █████████████▋                                                     │
-│ CHISLEHURST          │ BROMLEY                │  410 │  682892 │ █████████████▋                                                     │
-│ KINGS LANGLEY        │ THREE RIVERS           │  109 │  682320 │ █████████████▋                                                     │
-│ ASHTEAD              │ MOLE VALLEY            │  280 │  680483 │ █████████████▌                                                     │
-│ WOKING               │ SURREY HEATH           │  269 │  679035 │ █████████████▌                                                     │
-│ ASCOT                │ BRACKNELL FOREST       │  160 │  678632 │ █████████████▌                                                     │
+│ LONDON               │ CITY OF WESTMINSTER    │ 3606 │ 3280239 │ █████████████████████████████████████████████████████████████████▌ │
+│ LONDON               │ CITY OF LONDON         │  274 │ 3160502 │ ███████████████████████████████████████████████████████████████▏   │
+│ LONDON               │ KENSINGTON AND CHELSEA │ 2550 │ 2308478 │ ██████████████████████████████████████████████▏                    │
+│ LEATHERHEAD          │ ELMBRIDGE              │  114 │ 1897407 │ █████████████████████████████████████▊                             │
+│ LONDON               │ CAMDEN                 │ 3033 │ 1805404 │ ████████████████████████████████████                               │
+│ VIRGINIA WATER       │ RUNNYMEDE              │  156 │ 1753247 │ ███████████████████████████████████                                │
+│ WINDLESHAM           │ SURREY HEATH           │  108 │ 1677613 │ █████████████████████████████████▌                                 │
+│ THORNTON HEATH       │ CROYDON                │  546 │ 1671721 │ █████████████████████████████████▍                                 │
+│ BARNET               │ ENFIELD                │  124 │ 1505840 │ ██████████████████████████████                                     │
+│ COBHAM               │ ELMBRIDGE              │  387 │ 1237250 │ ████████████████████████▋                                          │
+│ LONDON               │ ISLINGTON              │ 2668 │ 1236980 │ ████████████████████████▋                                          │
+│ OXFORD               │ SOUTH OXFORDSHIRE      │  321 │ 1220907 │ ████████████████████████▍                                          │
+│ LONDON               │ RICHMOND UPON THAMES   │  704 │ 1215551 │ ████████████████████████▎                                          │
+│ LONDON               │ HOUNSLOW               │  671 │ 1207493 │ ████████████████████████▏                                          │
+│ ASCOT                │ WINDSOR AND MAIDENHEAD │  407 │ 1183299 │ ███████████████████████▋                                           │
+│ BEACONSFIELD         │ BUCKINGHAMSHIRE        │  330 │ 1175615 │ ███████████████████████▌                                           │
+│ RICHMOND             │ RICHMOND UPON THAMES   │  874 │ 1110444 │ ██████████████████████▏                                            │
+│ LONDON               │ HAMMERSMITH AND FULHAM │ 3086 │ 1053983 │ █████████████████████                                              │
+│ SURBITON             │ ELMBRIDGE              │  100 │ 1011800 │ ████████████████████▏                                              │
+│ RADLETT              │ HERTSMERE              │  283 │ 1011712 │ ████████████████████▏                                              │
+│ SALCOMBE             │ SOUTH HAMS             │  127 │ 1011624 │ ████████████████████▏                                              │
+│ WEYBRIDGE            │ ELMBRIDGE              │  655 │ 1007265 │ ████████████████████▏                                              │
+│ ESHER                │ ELMBRIDGE              │  485 │  986581 │ ███████████████████▋                                               │
+│ LEATHERHEAD          │ GUILDFORD              │  202 │  977320 │ ███████████████████▌                                               │
+│ BURFORD              │ WEST OXFORDSHIRE       │  111 │  966893 │ ███████████████████▎                                               │
+│ BROCKENHURST         │ NEW FOREST             │  129 │  956675 │ ███████████████████▏                                               │
+│ HINDHEAD             │ WAVERLEY               │  137 │  953753 │ ███████████████████                                                │
+│ GERRARDS CROSS       │ BUCKINGHAMSHIRE        │  419 │  951121 │ ███████████████████                                                │
+│ EAST MOLESEY         │ ELMBRIDGE              │  192 │  936769 │ ██████████████████▋                                                │
+│ CHALFONT ST GILES    │ BUCKINGHAMSHIRE        │  146 │  925515 │ ██████████████████▌                                                │
+│ LONDON               │ TOWER HAMLETS          │ 4388 │  918304 │ ██████████████████▎                                                │
+│ OLNEY                │ MILTON KEYNES          │  235 │  910646 │ ██████████████████▏                                                │
+│ HENLEY-ON-THAMES     │ SOUTH OXFORDSHIRE      │  540 │  902418 │ ██████████████████                                                 │
+│ LONDON               │ SOUTHWARK              │ 3885 │  892997 │ █████████████████▋                                                 │
+│ KINGSTON UPON THAMES │ KINGSTON UPON THAMES   │  960 │  885969 │ █████████████████▋                                                 │
+│ LONDON               │ EALING                 │ 2658 │  871755 │ █████████████████▍                                                 │
+│ CRANBROOK            │ TUNBRIDGE WELLS        │  431 │  862348 │ █████████████████▏                                                 │
+│ LONDON               │ MERTON                 │ 2099 │  859118 │ █████████████████▏                                                 │
+│ BELVEDERE            │ BEXLEY                 │  346 │  842423 │ ████████████████▋                                                  │
+│ GUILDFORD            │ WAVERLEY               │  143 │  841277 │ ████████████████▋                                                  │
+│ HARPENDEN            │ ST ALBANS              │  657 │  841216 │ ████████████████▋                                                  │
+│ LONDON               │ HACKNEY                │ 3307 │  837090 │ ████████████████▋                                                  │
+│ LONDON               │ WANDSWORTH             │ 6566 │  832663 │ ████████████████▋                                                  │
+│ MAIDENHEAD           │ BUCKINGHAMSHIRE        │  123 │  824299 │ ████████████████▍                                                  │
+│ KINGS LANGLEY        │ DACORUM                │  145 │  821331 │ ████████████████▍                                                  │
+│ BERKHAMSTED          │ DACORUM                │  543 │  818415 │ ████████████████▎                                                  │
+│ GREAT MISSENDEN      │ BUCKINGHAMSHIRE        │  226 │  802807 │ ████████████████                                                   │
+│ BILLINGSHURST        │ CHICHESTER             │  144 │  797829 │ ███████████████▊                                                   │
+│ WOKING               │ GUILDFORD              │  176 │  793494 │ ███████████████▋                                                   │
+│ STOCKBRIDGE          │ TEST VALLEY            │  178 │  793269 │ ███████████████▋                                                   │
+│ EPSOM                │ REIGATE AND BANSTEAD   │  172 │  791862 │ ███████████████▋                                                   │
+│ TONBRIDGE            │ TUNBRIDGE WELLS        │  360 │  787876 │ ███████████████▋                                                   │
+│ TEDDINGTON           │ RICHMOND UPON THAMES   │  595 │  786492 │ ███████████████▋                                                   │
+│ TWICKENHAM           │ RICHMOND UPON THAMES   │ 1155 │  786193 │ ███████████████▋                                                   │
+│ LYNDHURST            │ NEW FOREST             │  102 │  785593 │ ███████████████▋                                                   │
+│ LONDON               │ LAMBETH                │ 5228 │  774574 │ ███████████████▍                                                   │
+│ LONDON               │ BARNET                 │ 3955 │  773259 │ ███████████████▍                                                   │
+│ OXFORD               │ VALE OF WHITE HORSE    │  353 │  772088 │ ███████████████▍                                                   │
+│ TONBRIDGE            │ MAIDSTONE              │  305 │  770740 │ ███████████████▍                                                   │
+│ LUTTERWORTH          │ HARBOROUGH             │  538 │  768634 │ ███████████████▎                                                   │
+│ WOODSTOCK            │ WEST OXFORDSHIRE       │  140 │  766037 │ ███████████████▎                                                   │
+│ MIDHURST             │ CHICHESTER             │  257 │  764815 │ ███████████████▎                                                   │
+│ MARLOW               │ BUCKINGHAMSHIRE        │  327 │  761876 │ ███████████████▏                                                   │
+│ LONDON               │ NEWHAM                 │ 3237 │  761784 │ ███████████████▏                                                   │
+│ ALDERLEY EDGE        │ CHESHIRE EAST          │  178 │  757318 │ ███████████████▏                                                   │
+│ LUTON                │ CENTRAL BEDFORDSHIRE   │  212 │  754283 │ ███████████████                                                    │
+│ PETWORTH             │ CHICHESTER             │  154 │  754220 │ ███████████████                                                    │
+│ ALRESFORD            │ WINCHESTER             │  219 │  752718 │ ███████████████                                                    │
+│ POTTERS BAR          │ WELWYN HATFIELD        │  174 │  748465 │ ██████████████▊                                                    │
+│ HASLEMERE            │ CHICHESTER             │  128 │  746907 │ ██████████████▊                                                    │
+│ TADWORTH             │ REIGATE AND BANSTEAD   │  502 │  743252 │ ██████████████▋                                                    │
+│ THAMES DITTON        │ ELMBRIDGE              │  244 │  741913 │ ██████████████▋                                                    │
+│ REIGATE              │ REIGATE AND BANSTEAD   │  581 │  738198 │ ██████████████▋                                                    │
+│ BOURNE END           │ BUCKINGHAMSHIRE        │  138 │  735190 │ ██████████████▋                                                    │
+│ SEVENOAKS            │ SEVENOAKS              │ 1156 │  730018 │ ██████████████▌                                                    │
+│ OXTED                │ TANDRIDGE              │  336 │  729123 │ ██████████████▌                                                    │
+│ INGATESTONE          │ BRENTWOOD              │  166 │  728103 │ ██████████████▌                                                    │
+│ LONDON               │ BRENT                  │ 2079 │  720605 │ ██████████████▍                                                    │
+│ LONDON               │ HARINGEY               │ 3216 │  717780 │ ██████████████▎                                                    │
+│ PURLEY               │ CROYDON                │  575 │  716108 │ ██████████████▎                                                    │
+│ WELWYN               │ WELWYN HATFIELD        │  222 │  710603 │ ██████████████▏                                                    │
+│ RICKMANSWORTH        │ THREE RIVERS           │  798 │  704571 │ ██████████████                                                     │
+│ BANSTEAD             │ REIGATE AND BANSTEAD   │  401 │  701293 │ ██████████████                                                     │
+│ CHIGWELL             │ EPPING FOREST          │  261 │  701203 │ ██████████████                                                     │
+│ PINNER               │ HARROW                 │  528 │  698885 │ █████████████▊                                                     │
+│ HASLEMERE            │ WAVERLEY               │  280 │  696659 │ █████████████▊                                                     │
+│ SLOUGH               │ BUCKINGHAMSHIRE        │  396 │  694917 │ █████████████▊                                                     │
+│ WALTON-ON-THAMES     │ ELMBRIDGE              │  946 │  692395 │ █████████████▋                                                     │
+│ READING              │ SOUTH OXFORDSHIRE      │  318 │  691988 │ █████████████▋                                                     │
+│ NORTHWOOD            │ HILLINGDON             │  271 │  690643 │ █████████████▋                                                     │
+│ FELTHAM              │ HOUNSLOW               │  763 │  688595 │ █████████████▋                                                     │
+│ ASHTEAD              │ MOLE VALLEY            │  303 │  687923 │ █████████████▋                                                     │
+│ BARNET               │ BARNET                 │  975 │  686980 │ █████████████▋                                                     │
+│ WOKING               │ SURREY HEATH           │  283 │  686669 │ █████████████▋                                                     │
+│ MALMESBURY           │ WILTSHIRE              │  323 │  683324 │ █████████████▋                                                     │
+│ AMERSHAM             │ BUCKINGHAMSHIRE        │  496 │  680962 │ █████████████▌                                                     │
+│ CHISLEHURST          │ BROMLEY                │  430 │  680209 │ █████████████▌                                                     │
+│ HYTHE                │ FOLKESTONE AND HYTHE   │  490 │  676908 │ █████████████▌                                                     │
+│ MAYFIELD             │ WEALDEN                │  101 │  676210 │ █████████████▌                                                     │
+│ ASCOT                │ BRACKNELL FOREST       │  168 │  676004 │ █████████████▌                                                     │
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
-
-100 rows in set. Elapsed: 0.039 sec. Processed 26.25 million rows, 278.03 MB (674.32 million rows/s., 7.14 GB/s.)
 ```
-
-### Test it in Playground
-
-The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
 
 ## Let's speed up queries using projections
 
@@ -354,7 +353,7 @@ The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhou
 
 ### Build a projection 
 
-Create an aggregate projection by dimensions (toYear(date), district, town):
+Create an aggregate projection by dimensions `toYear(date)`, `district`, `town`.
 
 ```sql
 ALTER TABLE uk_price_paid
@@ -374,7 +373,7 @@ ALTER TABLE uk_price_paid
     );
 ```
 
-Populate the projection for existing data (without it projection will be created for only newly inserted data)
+Populate the projection for existing data (without it projection will be created for only newly inserted data).
 
 ```sql
 ALTER TABLE uk_price_paid
@@ -384,14 +383,15 @@ SETTINGS mutations_sync = 1;
 
 ## Test performance
 
-Enable projections for selects and let's run the same 3 queries.
+Let's run the same 3 queries.
+
+Enable projections for selects
 
 ```sql
-set allow_experimental_projection_optimization=1;
+SET allow_experimental_projection_optimization = 1;
 ```
 
-
-### Average price per year
+### Query 1. Average price per year
 
 Query:
 
@@ -412,36 +412,34 @@ Result:
 │ 1995 │  67932 │ █████▍                                 │
 │ 1996 │  71505 │ █████▋                                 │
 │ 1997 │  78532 │ ██████▎                                │
-│ 1998 │  85435 │ ██████▋                                │
-│ 1999 │  96036 │ ███████▋                               │
-│ 2000 │ 107478 │ ████████▌                              │
-│ 2001 │ 118886 │ █████████▌                             │
-│ 2002 │ 137940 │ ███████████                            │
-│ 2003 │ 155888 │ ████████████▍                          │
+│ 1998 │  85436 │ ██████▋                                │
+│ 1999 │  96037 │ ███████▋                               │
+│ 2000 │ 107479 │ ████████▌                              │
+│ 2001 │ 118885 │ █████████▌                             │
+│ 2002 │ 137941 │ ███████████                            │
+│ 2003 │ 155889 │ ████████████▍                          │
 │ 2004 │ 178885 │ ██████████████▎                        │
-│ 2005 │ 189350 │ ███████████████▏                       │
+│ 2005 │ 189351 │ ███████████████▏                       │
 │ 2006 │ 203528 │ ████████████████▎                      │
-│ 2007 │ 219377 │ █████████████████▌                     │
+│ 2007 │ 219378 │ █████████████████▌                     │
 │ 2008 │ 217056 │ █████████████████▎                     │
 │ 2009 │ 213419 │ █████████████████                      │
-│ 2010 │ 236110 │ ██████████████████▊                    │
-│ 2011 │ 232804 │ ██████████████████▌                    │
-│ 2012 │ 238366 │ ███████████████████                    │
+│ 2010 │ 236109 │ ██████████████████▊                    │
+│ 2011 │ 232805 │ ██████████████████▌                    │
+│ 2012 │ 238367 │ ███████████████████                    │
 │ 2013 │ 256931 │ ████████████████████▌                  │
-│ 2014 │ 279917 │ ██████████████████████▍                │
-│ 2015 │ 297264 │ ███████████████████████▋               │
-│ 2016 │ 313197 │ █████████████████████████              │
-│ 2017 │ 346070 │ ███████████████████████████▋           │
-│ 2018 │ 350117 │ ████████████████████████████           │
-│ 2019 │ 351010 │ ████████████████████████████           │
-│ 2020 │ 368974 │ █████████████████████████████▌         │
-│ 2021 │ 384351 │ ██████████████████████████████▋        │
+│ 2014 │ 279915 │ ██████████████████████▍                │
+│ 2015 │ 297266 │ ███████████████████████▋               │
+│ 2016 │ 313201 │ █████████████████████████              │
+│ 2017 │ 346097 │ ███████████████████████████▋           │
+│ 2018 │ 350116 │ ████████████████████████████           │
+│ 2019 │ 351013 │ ████████████████████████████           │
+│ 2020 │ 369420 │ █████████████████████████████▌         │
+│ 2021 │ 386903 │ ██████████████████████████████▊        │
 └──────┴────────┴────────────────────────────────────────┘
-
-27 rows in set. Elapsed: 0.003 sec. Processed 106.87 thousand rows, 3.21 MB (31.92 million rows/s., 959.03 MB/s.)
 ```
 
-### Average price per year in London
+### Query 2. Average price per year in London
 
 Query:
 
@@ -460,39 +458,39 @@ Result:
 
 ```text
 ┌─year─┬───price─┬─bar(round(avg(price)), 0, 2000000, 100)───────────────┐
-│ 1995 │  109112 │ █████▍                                                │
+│ 1995 │  109116 │ █████▍                                                │
 │ 1996 │  118667 │ █████▊                                                │
 │ 1997 │  136518 │ ██████▋                                               │
 │ 1998 │  152983 │ ███████▋                                              │
-│ 1999 │  180633 │ █████████                                             │
-│ 2000 │  215830 │ ██████████▋                                           │
-│ 2001 │  232996 │ ███████████▋                                          │
-│ 2002 │  263672 │ █████████████▏                                        │
+│ 1999 │  180637 │ █████████                                             │
+│ 2000 │  215838 │ ██████████▋                                           │
+│ 2001 │  232994 │ ███████████▋                                          │
+│ 2002 │  263670 │ █████████████▏                                        │
 │ 2003 │  278394 │ █████████████▊                                        │
-│ 2004 │  304665 │ ███████████████▏                                      │
+│ 2004 │  304666 │ ███████████████▏                                      │
 │ 2005 │  322875 │ ████████████████▏                                     │
-│ 2006 │  356192 │ █████████████████▋                                    │
-│ 2007 │  404055 │ ████████████████████▏                                 │
+│ 2006 │  356191 │ █████████████████▋                                    │
+│ 2007 │  404054 │ ████████████████████▏                                 │
 │ 2008 │  420741 │ █████████████████████                                 │
-│ 2009 │  427754 │ █████████████████████▍                                │
+│ 2009 │  427753 │ █████████████████████▍                                │
 │ 2010 │  480306 │ ████████████████████████                              │
 │ 2011 │  496274 │ ████████████████████████▋                             │
-│ 2012 │  519441 │ █████████████████████████▊                            │
-│ 2013 │  616209 │ ██████████████████████████████▋                       │
-│ 2014 │  724144 │ ████████████████████████████████████▏                 │
-│ 2015 │  792112 │ ███████████████████████████████████████▌              │
-│ 2016 │  843568 │ ██████████████████████████████████████████▏           │
-│ 2017 │  982566 │ █████████████████████████████████████████████████▏    │
-│ 2018 │ 1016845 │ ██████████████████████████████████████████████████▋   │
-│ 2019 │ 1043277 │ ████████████████████████████████████████████████████▏ │
-│ 2020 │ 1003963 │ ██████████████████████████████████████████████████▏   │
-│ 2021 │  940794 │ ███████████████████████████████████████████████       │
+│ 2012 │  519442 │ █████████████████████████▊                            │
+│ 2013 │  616212 │ ██████████████████████████████▋                       │
+│ 2014 │  724154 │ ████████████████████████████████████▏                 │
+│ 2015 │  792129 │ ███████████████████████████████████████▌              │
+│ 2016 │  843655 │ ██████████████████████████████████████████▏           │
+│ 2017 │  982642 │ █████████████████████████████████████████████████▏    │
+│ 2018 │ 1016835 │ ██████████████████████████████████████████████████▋   │
+│ 2019 │ 1042849 │ ████████████████████████████████████████████████████▏ │
+│ 2020 │ 1011889 │ ██████████████████████████████████████████████████▌   │
+│ 2021 │  960343 │ ████████████████████████████████████████████████      │
 └──────┴─────────┴───────────────────────────────────────────────────────┘
-
-27 rows in set. Elapsed: 0.005 sec. Processed 106.87 thousand rows, 3.53 MB (23.49 million rows/s., 775.95 MB/s.)
 ```
 
-### The most expensive neighborhoods: the condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020)
+### Query 3. The most expensive neighborhoods
+
+The condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020).
 
 Query:
 
@@ -517,115 +515,129 @@ Result:
 
 ```text
 ┌─town─────────────────┬─district───────────────┬────c─┬───price─┬─bar(round(avg(price)), 0, 5000000, 100)────────────────────────────┐
-│ LONDON               │ CITY OF WESTMINSTER    │ 3372 │ 3305225 │ ██████████████████████████████████████████████████████████████████ │
-│ LONDON               │ CITY OF LONDON         │  257 │ 3294478 │ █████████████████████████████████████████████████████████████████▊ │
-│ LONDON               │ KENSINGTON AND CHELSEA │ 2367 │ 2342422 │ ██████████████████████████████████████████████▋                    │
-│ LEATHERHEAD          │ ELMBRIDGE              │  108 │ 1927143 │ ██████████████████████████████████████▌                            │
-│ VIRGINIA WATER       │ RUNNYMEDE              │  142 │ 1868819 │ █████████████████████████████████████▍                             │
-│ LONDON               │ CAMDEN                 │ 2815 │ 1736788 │ ██████████████████████████████████▋                                │
-│ THORNTON HEATH       │ CROYDON                │  521 │ 1733051 │ ██████████████████████████████████▋                                │
-│ WINDLESHAM           │ SURREY HEATH           │  103 │ 1717255 │ ██████████████████████████████████▎                                │
-│ BARNET               │ ENFIELD                │  115 │ 1503458 │ ██████████████████████████████                                     │
-│ OXFORD               │ SOUTH OXFORDSHIRE      │  298 │ 1275200 │ █████████████████████████▌                                         │
-│ LONDON               │ ISLINGTON              │ 2458 │ 1274308 │ █████████████████████████▍                                         │
-│ COBHAM               │ ELMBRIDGE              │  364 │ 1260005 │ █████████████████████████▏                                         │
-│ LONDON               │ HOUNSLOW               │  618 │ 1215682 │ ████████████████████████▎                                          │
-│ ASCOT                │ WINDSOR AND MAIDENHEAD │  379 │ 1215146 │ ████████████████████████▎                                          │
-│ LONDON               │ RICHMOND UPON THAMES   │  654 │ 1207551 │ ████████████████████████▏                                          │
-│ BEACONSFIELD         │ BUCKINGHAMSHIRE        │  307 │ 1186220 │ ███████████████████████▋                                           │
-│ RICHMOND             │ RICHMOND UPON THAMES   │  805 │ 1100420 │ ██████████████████████                                             │
-│ LONDON               │ HAMMERSMITH AND FULHAM │ 2888 │ 1062959 │ █████████████████████▎                                             │
-│ WEYBRIDGE            │ ELMBRIDGE              │  607 │ 1027161 │ ████████████████████▌                                              │
-│ RADLETT              │ HERTSMERE              │  265 │ 1015896 │ ████████████████████▎                                              │
-│ SALCOMBE             │ SOUTH HAMS             │  124 │ 1014393 │ ████████████████████▎                                              │
-│ BURFORD              │ WEST OXFORDSHIRE       │  102 │  993100 │ ███████████████████▋                                               │
-│ ESHER                │ ELMBRIDGE              │  454 │  969770 │ ███████████████████▍                                               │
-│ HINDHEAD             │ WAVERLEY               │  128 │  967786 │ ███████████████████▎                                               │
-│ BROCKENHURST         │ NEW FOREST             │  121 │  967046 │ ███████████████████▎                                               │
-│ LEATHERHEAD          │ GUILDFORD              │  191 │  964489 │ ███████████████████▎                                               │
-│ GERRARDS CROSS       │ BUCKINGHAMSHIRE        │  376 │  958555 │ ███████████████████▏                                               │
-│ EAST MOLESEY         │ ELMBRIDGE              │  181 │  943457 │ ██████████████████▋                                                │
-│ OLNEY                │ MILTON KEYNES          │  220 │  942892 │ ██████████████████▋                                                │
-│ CHALFONT ST GILES    │ BUCKINGHAMSHIRE        │  135 │  926950 │ ██████████████████▌                                                │
-│ HENLEY-ON-THAMES     │ SOUTH OXFORDSHIRE      │  509 │  905732 │ ██████████████████                                                 │
-│ KINGSTON UPON THAMES │ KINGSTON UPON THAMES   │  889 │  899689 │ █████████████████▊                                                 │
-│ BELVEDERE            │ BEXLEY                 │  313 │  895336 │ █████████████████▊                                                 │
-│ CRANBROOK            │ TUNBRIDGE WELLS        │  404 │  888190 │ █████████████████▋                                                 │
-│ LONDON               │ EALING                 │ 2460 │  865893 │ █████████████████▎                                                 │
-│ MAIDENHEAD           │ BUCKINGHAMSHIRE        │  114 │  863814 │ █████████████████▎                                                 │
-│ LONDON               │ MERTON                 │ 1958 │  857192 │ █████████████████▏                                                 │
-│ GUILDFORD            │ WAVERLEY               │  131 │  854447 │ █████████████████                                                  │
-│ LONDON               │ HACKNEY                │ 3088 │  846571 │ ████████████████▊                                                  │
-│ LYMM                 │ WARRINGTON             │  285 │  839920 │ ████████████████▋                                                  │
-│ HARPENDEN            │ ST ALBANS              │  606 │  836994 │ ████████████████▋                                                  │
-│ LONDON               │ WANDSWORTH             │ 6113 │  832292 │ ████████████████▋                                                  │
-│ LONDON               │ SOUTHWARK              │ 3612 │  831319 │ ████████████████▋                                                  │
-│ BERKHAMSTED          │ DACORUM                │  502 │  830356 │ ████████████████▌                                                  │
-│ KINGS LANGLEY        │ DACORUM                │  137 │  821358 │ ████████████████▍                                                  │
-│ TONBRIDGE            │ TUNBRIDGE WELLS        │  339 │  806736 │ ████████████████▏                                                  │
-│ EPSOM                │ REIGATE AND BANSTEAD   │  157 │  805903 │ ████████████████                                                   │
-│ WOKING               │ GUILDFORD              │  161 │  803283 │ ████████████████                                                   │
-│ STOCKBRIDGE          │ TEST VALLEY            │  168 │  801973 │ ████████████████                                                   │
-│ TEDDINGTON           │ RICHMOND UPON THAMES   │  539 │  798591 │ ███████████████▊                                                   │
-│ OXFORD               │ VALE OF WHITE HORSE    │  329 │  792907 │ ███████████████▋                                                   │
-│ LONDON               │ BARNET                 │ 3624 │  789583 │ ███████████████▋                                                   │
-│ TWICKENHAM           │ RICHMOND UPON THAMES   │ 1090 │  787760 │ ███████████████▋                                                   │
-│ LUTON                │ CENTRAL BEDFORDSHIRE   │  196 │  786051 │ ███████████████▋                                                   │
-│ TONBRIDGE            │ MAIDSTONE              │  277 │  785746 │ ███████████████▋                                                   │
-│ TOWCESTER            │ WEST NORTHAMPTONSHIRE  │  186 │  783532 │ ███████████████▋                                                   │
-│ LONDON               │ LAMBETH                │ 4832 │  783422 │ ███████████████▋                                                   │
-│ LUTTERWORTH          │ HARBOROUGH             │  515 │  781775 │ ███████████████▋                                                   │
-│ WOODSTOCK            │ WEST OXFORDSHIRE       │  135 │  777499 │ ███████████████▌                                                   │
-│ ALRESFORD            │ WINCHESTER             │  196 │  775577 │ ███████████████▌                                                   │
-│ LONDON               │ NEWHAM                 │ 2942 │  768551 │ ███████████████▎                                                   │
-│ ALDERLEY EDGE        │ CHESHIRE EAST          │  168 │  768280 │ ███████████████▎                                                   │
-│ MARLOW               │ BUCKINGHAMSHIRE        │  301 │  762784 │ ███████████████▎                                                   │
-│ BILLINGSHURST        │ CHICHESTER             │  134 │  760920 │ ███████████████▏                                                   │
-│ LONDON               │ TOWER HAMLETS          │ 4183 │  759635 │ ███████████████▏                                                   │
-│ MIDHURST             │ CHICHESTER             │  245 │  759101 │ ███████████████▏                                                   │
-│ THAMES DITTON        │ ELMBRIDGE              │  227 │  753347 │ ███████████████                                                    │
-│ POTTERS BAR          │ WELWYN HATFIELD        │  163 │  752926 │ ███████████████                                                    │
-│ REIGATE              │ REIGATE AND BANSTEAD   │  555 │  740961 │ ██████████████▋                                                    │
-│ TADWORTH             │ REIGATE AND BANSTEAD   │  477 │  738997 │ ██████████████▋                                                    │
-│ SEVENOAKS            │ SEVENOAKS              │ 1074 │  734658 │ ██████████████▋                                                    │
-│ PETWORTH             │ CHICHESTER             │  138 │  732432 │ ██████████████▋                                                    │
-│ BOURNE END           │ BUCKINGHAMSHIRE        │  127 │  730742 │ ██████████████▌                                                    │
-│ PURLEY               │ CROYDON                │  540 │  727721 │ ██████████████▌                                                    │
-│ OXTED                │ TANDRIDGE              │  320 │  726078 │ ██████████████▌                                                    │
-│ LONDON               │ HARINGEY               │ 2988 │  724573 │ ██████████████▍                                                    │
-│ BANSTEAD             │ REIGATE AND BANSTEAD   │  373 │  713834 │ ██████████████▎                                                    │
-│ PINNER               │ HARROW                 │  480 │  712166 │ ██████████████▏                                                    │
-│ MALMESBURY           │ WILTSHIRE              │  293 │  707747 │ ██████████████▏                                                    │
-│ RICKMANSWORTH        │ THREE RIVERS           │  732 │  705400 │ ██████████████                                                     │
-│ SLOUGH               │ BUCKINGHAMSHIRE        │  359 │  705002 │ ██████████████                                                     │
-│ GREAT MISSENDEN      │ BUCKINGHAMSHIRE        │  214 │  704904 │ ██████████████                                                     │
-│ READING              │ SOUTH OXFORDSHIRE      │  295 │  701697 │ ██████████████                                                     │
-│ HYTHE                │ FOLKESTONE AND HYTHE   │  457 │  700334 │ ██████████████                                                     │
-│ WELWYN               │ WELWYN HATFIELD        │  217 │  699649 │ █████████████▊                                                     │
-│ CHIGWELL             │ EPPING FOREST          │  242 │  697869 │ █████████████▊                                                     │
-│ BARNET               │ BARNET                 │  906 │  695680 │ █████████████▊                                                     │
-│ HASLEMERE            │ CHICHESTER             │  120 │  694028 │ █████████████▊                                                     │
-│ LEATHERHEAD          │ MOLE VALLEY            │  748 │  692026 │ █████████████▋                                                     │
-│ LONDON               │ BRENT                  │ 1945 │  690799 │ █████████████▋                                                     │
-│ HASLEMERE            │ WAVERLEY               │  258 │  690765 │ █████████████▋                                                     │
-│ NORTHWOOD            │ HILLINGDON             │  252 │  690753 │ █████████████▋                                                     │
-│ WALTON-ON-THAMES     │ ELMBRIDGE              │  871 │  689431 │ █████████████▋                                                     │
-│ INGATESTONE          │ BRENTWOOD              │  150 │  688345 │ █████████████▋                                                     │
-│ OXFORD               │ OXFORD                 │ 1761 │  686114 │ █████████████▋                                                     │
-│ CHISLEHURST          │ BROMLEY                │  410 │  682892 │ █████████████▋                                                     │
-│ KINGS LANGLEY        │ THREE RIVERS           │  109 │  682320 │ █████████████▋                                                     │
-│ ASHTEAD              │ MOLE VALLEY            │  280 │  680483 │ █████████████▌                                                     │
-│ WOKING               │ SURREY HEATH           │  269 │  679035 │ █████████████▌                                                     │
-│ ASCOT                │ BRACKNELL FOREST       │  160 │  678632 │ █████████████▌                                                     │
+│ LONDON               │ CITY OF WESTMINSTER    │ 3606 │ 3280239 │ █████████████████████████████████████████████████████████████████▌ │
+│ LONDON               │ CITY OF LONDON         │  274 │ 3160502 │ ███████████████████████████████████████████████████████████████▏   │
+│ LONDON               │ KENSINGTON AND CHELSEA │ 2550 │ 2308478 │ ██████████████████████████████████████████████▏                    │
+│ LEATHERHEAD          │ ELMBRIDGE              │  114 │ 1897407 │ █████████████████████████████████████▊                             │
+│ LONDON               │ CAMDEN                 │ 3033 │ 1805404 │ ████████████████████████████████████                               │
+│ VIRGINIA WATER       │ RUNNYMEDE              │  156 │ 1753247 │ ███████████████████████████████████                                │
+│ WINDLESHAM           │ SURREY HEATH           │  108 │ 1677613 │ █████████████████████████████████▌                                 │
+│ THORNTON HEATH       │ CROYDON                │  546 │ 1671721 │ █████████████████████████████████▍                                 │
+│ BARNET               │ ENFIELD                │  124 │ 1505840 │ ██████████████████████████████                                     │
+│ COBHAM               │ ELMBRIDGE              │  387 │ 1237250 │ ████████████████████████▋                                          │
+│ LONDON               │ ISLINGTON              │ 2668 │ 1236980 │ ████████████████████████▋                                          │
+│ OXFORD               │ SOUTH OXFORDSHIRE      │  321 │ 1220907 │ ████████████████████████▍                                          │
+│ LONDON               │ RICHMOND UPON THAMES   │  704 │ 1215551 │ ████████████████████████▎                                          │
+│ LONDON               │ HOUNSLOW               │  671 │ 1207493 │ ████████████████████████▏                                          │
+│ ASCOT                │ WINDSOR AND MAIDENHEAD │  407 │ 1183299 │ ███████████████████████▋                                           │
+│ BEACONSFIELD         │ BUCKINGHAMSHIRE        │  330 │ 1175615 │ ███████████████████████▌                                           │
+│ RICHMOND             │ RICHMOND UPON THAMES   │  874 │ 1110444 │ ██████████████████████▏                                            │
+│ LONDON               │ HAMMERSMITH AND FULHAM │ 3086 │ 1053983 │ █████████████████████                                              │
+│ SURBITON             │ ELMBRIDGE              │  100 │ 1011800 │ ████████████████████▏                                              │
+│ RADLETT              │ HERTSMERE              │  283 │ 1011712 │ ████████████████████▏                                              │
+│ SALCOMBE             │ SOUTH HAMS             │  127 │ 1011624 │ ████████████████████▏                                              │
+│ WEYBRIDGE            │ ELMBRIDGE              │  655 │ 1007265 │ ████████████████████▏                                              │
+│ ESHER                │ ELMBRIDGE              │  485 │  986581 │ ███████████████████▋                                               │
+│ LEATHERHEAD          │ GUILDFORD              │  202 │  977320 │ ███████████████████▌                                               │
+│ BURFORD              │ WEST OXFORDSHIRE       │  111 │  966893 │ ███████████████████▎                                               │
+│ BROCKENHURST         │ NEW FOREST             │  129 │  956675 │ ███████████████████▏                                               │
+│ HINDHEAD             │ WAVERLEY               │  137 │  953753 │ ███████████████████                                                │
+│ GERRARDS CROSS       │ BUCKINGHAMSHIRE        │  419 │  951121 │ ███████████████████                                                │
+│ EAST MOLESEY         │ ELMBRIDGE              │  192 │  936769 │ ██████████████████▋                                                │
+│ CHALFONT ST GILES    │ BUCKINGHAMSHIRE        │  146 │  925515 │ ██████████████████▌                                                │
+│ LONDON               │ TOWER HAMLETS          │ 4388 │  918304 │ ██████████████████▎                                                │
+│ OLNEY                │ MILTON KEYNES          │  235 │  910646 │ ██████████████████▏                                                │
+│ HENLEY-ON-THAMES     │ SOUTH OXFORDSHIRE      │  540 │  902418 │ ██████████████████                                                 │
+│ LONDON               │ SOUTHWARK              │ 3885 │  892997 │ █████████████████▋                                                 │
+│ KINGSTON UPON THAMES │ KINGSTON UPON THAMES   │  960 │  885969 │ █████████████████▋                                                 │
+│ LONDON               │ EALING                 │ 2658 │  871755 │ █████████████████▍                                                 │
+│ CRANBROOK            │ TUNBRIDGE WELLS        │  431 │  862348 │ █████████████████▏                                                 │
+│ LONDON               │ MERTON                 │ 2099 │  859118 │ █████████████████▏                                                 │
+│ BELVEDERE            │ BEXLEY                 │  346 │  842423 │ ████████████████▋                                                  │
+│ GUILDFORD            │ WAVERLEY               │  143 │  841277 │ ████████████████▋                                                  │
+│ HARPENDEN            │ ST ALBANS              │  657 │  841216 │ ████████████████▋                                                  │
+│ LONDON               │ HACKNEY                │ 3307 │  837090 │ ████████████████▋                                                  │
+│ LONDON               │ WANDSWORTH             │ 6566 │  832663 │ ████████████████▋                                                  │
+│ MAIDENHEAD           │ BUCKINGHAMSHIRE        │  123 │  824299 │ ████████████████▍                                                  │
+│ KINGS LANGLEY        │ DACORUM                │  145 │  821331 │ ████████████████▍                                                  │
+│ BERKHAMSTED          │ DACORUM                │  543 │  818415 │ ████████████████▎                                                  │
+│ GREAT MISSENDEN      │ BUCKINGHAMSHIRE        │  226 │  802807 │ ████████████████                                                   │
+│ BILLINGSHURST        │ CHICHESTER             │  144 │  797829 │ ███████████████▊                                                   │
+│ WOKING               │ GUILDFORD              │  176 │  793494 │ ███████████████▋                                                   │
+│ STOCKBRIDGE          │ TEST VALLEY            │  178 │  793269 │ ███████████████▋                                                   │
+│ EPSOM                │ REIGATE AND BANSTEAD   │  172 │  791862 │ ███████████████▋                                                   │
+│ TONBRIDGE            │ TUNBRIDGE WELLS        │  360 │  787876 │ ███████████████▋                                                   │
+│ TEDDINGTON           │ RICHMOND UPON THAMES   │  595 │  786492 │ ███████████████▋                                                   │
+│ TWICKENHAM           │ RICHMOND UPON THAMES   │ 1155 │  786193 │ ███████████████▋                                                   │
+│ LYNDHURST            │ NEW FOREST             │  102 │  785593 │ ███████████████▋                                                   │
+│ LONDON               │ LAMBETH                │ 5228 │  774574 │ ███████████████▍                                                   │
+│ LONDON               │ BARNET                 │ 3955 │  773259 │ ███████████████▍                                                   │
+│ OXFORD               │ VALE OF WHITE HORSE    │  353 │  772088 │ ███████████████▍                                                   │
+│ TONBRIDGE            │ MAIDSTONE              │  305 │  770740 │ ███████████████▍                                                   │
+│ LUTTERWORTH          │ HARBOROUGH             │  538 │  768634 │ ███████████████▎                                                   │
+│ WOODSTOCK            │ WEST OXFORDSHIRE       │  140 │  766037 │ ███████████████▎                                                   │
+│ MIDHURST             │ CHICHESTER             │  257 │  764815 │ ███████████████▎                                                   │
+│ MARLOW               │ BUCKINGHAMSHIRE        │  327 │  761876 │ ███████████████▏                                                   │
+│ LONDON               │ NEWHAM                 │ 3237 │  761784 │ ███████████████▏                                                   │
+│ ALDERLEY EDGE        │ CHESHIRE EAST          │  178 │  757318 │ ███████████████▏                                                   │
+│ LUTON                │ CENTRAL BEDFORDSHIRE   │  212 │  754283 │ ███████████████                                                    │
+│ PETWORTH             │ CHICHESTER             │  154 │  754220 │ ███████████████                                                    │
+│ ALRESFORD            │ WINCHESTER             │  219 │  752718 │ ███████████████                                                    │
+│ POTTERS BAR          │ WELWYN HATFIELD        │  174 │  748465 │ ██████████████▊                                                    │
+│ HASLEMERE            │ CHICHESTER             │  128 │  746907 │ ██████████████▊                                                    │
+│ TADWORTH             │ REIGATE AND BANSTEAD   │  502 │  743252 │ ██████████████▋                                                    │
+│ THAMES DITTON        │ ELMBRIDGE              │  244 │  741913 │ ██████████████▋                                                    │
+│ REIGATE              │ REIGATE AND BANSTEAD   │  581 │  738198 │ ██████████████▋                                                    │
+│ BOURNE END           │ BUCKINGHAMSHIRE        │  138 │  735190 │ ██████████████▋                                                    │
+│ SEVENOAKS            │ SEVENOAKS              │ 1156 │  730018 │ ██████████████▌                                                    │
+│ OXTED                │ TANDRIDGE              │  336 │  729123 │ ██████████████▌                                                    │
+│ INGATESTONE          │ BRENTWOOD              │  166 │  728103 │ ██████████████▌                                                    │
+│ LONDON               │ BRENT                  │ 2079 │  720605 │ ██████████████▍                                                    │
+│ LONDON               │ HARINGEY               │ 3216 │  717780 │ ██████████████▎                                                    │
+│ PURLEY               │ CROYDON                │  575 │  716108 │ ██████████████▎                                                    │
+│ WELWYN               │ WELWYN HATFIELD        │  222 │  710603 │ ██████████████▏                                                    │
+│ RICKMANSWORTH        │ THREE RIVERS           │  798 │  704571 │ ██████████████                                                     │
+│ BANSTEAD             │ REIGATE AND BANSTEAD   │  401 │  701293 │ ██████████████                                                     │
+│ CHIGWELL             │ EPPING FOREST          │  261 │  701203 │ ██████████████                                                     │
+│ PINNER               │ HARROW                 │  528 │  698885 │ █████████████▊                                                     │
+│ HASLEMERE            │ WAVERLEY               │  280 │  696659 │ █████████████▊                                                     │
+│ SLOUGH               │ BUCKINGHAMSHIRE        │  396 │  694917 │ █████████████▊                                                     │
+│ WALTON-ON-THAMES     │ ELMBRIDGE              │  946 │  692395 │ █████████████▋                                                     │
+│ READING              │ SOUTH OXFORDSHIRE      │  318 │  691988 │ █████████████▋                                                     │
+│ NORTHWOOD            │ HILLINGDON             │  271 │  690643 │ █████████████▋                                                     │
+│ FELTHAM              │ HOUNSLOW               │  763 │  688595 │ █████████████▋                                                     │
+│ ASHTEAD              │ MOLE VALLEY            │  303 │  687923 │ █████████████▋                                                     │
+│ BARNET               │ BARNET                 │  975 │  686980 │ █████████████▋                                                     │
+│ WOKING               │ SURREY HEATH           │  283 │  686669 │ █████████████▋                                                     │
+│ MALMESBURY           │ WILTSHIRE              │  323 │  683324 │ █████████████▋                                                     │
+│ AMERSHAM             │ BUCKINGHAMSHIRE        │  496 │  680962 │ █████████████▌                                                     │
+│ CHISLEHURST          │ BROMLEY                │  430 │  680209 │ █████████████▌                                                     │
+│ HYTHE                │ FOLKESTONE AND HYTHE   │  490 │  676908 │ █████████████▌                                                     │
+│ MAYFIELD             │ WEALDEN                │  101 │  676210 │ █████████████▌                                                     │
+│ ASCOT                │ BRACKNELL FOREST       │  168 │  676004 │ █████████████▌                                                     │
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
-
-100 rows in set. Elapsed: 0.005 sec. Processed 12.85 thousand rows, 813.40 KB (2.73 million rows/s., 172.95 MB/s.)
 ```
 
 All 3 queries work much faster and read fewer rows.
 
+```text
+Query 1
+
+no projection: 27 rows in set. Elapsed: 0.158 sec. Processed 26.32 million rows, 157.93 MB (166.57 million rows/s., 999.39 MB/s.)
+   projection: 27 rows in set. Elapsed: 0.007 sec. Processed 105.96 thousand rows, 3.33 MB (14.58 million rows/s., 458.13 MB/s.)
+
+
+Query 2
+
+no projection: 27 rows in set. Elapsed: 0.163 sec. Processed 26.32 million rows, 80.01 MB (161.75 million rows/s., 491.64 MB/s.)
+   projection: 27 rows in set. Elapsed: 0.008 sec. Processed 105.96 thousand rows, 3.67 MB (13.29 million rows/s., 459.89 MB/s.)
+
+Query 3
+
+no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows, 62.47 MB (382.13 million rows/s., 906.93 MB/s.)
+   projection: 100 rows in set. Elapsed: 0.029 sec. Processed 8.08 thousand rows, 511.08 KB (276.06 thousand rows/s., 17.47 MB/s.)
 ```
-Q1) 
-no projection: 27 rows in set. Elapsed: 0.027 sec. Processed 26.25 million rows, 157.49 MB (955.96 million rows/s., 5.74 GB/s.)
-   projection: 27 rows in set. Elapsed: 0.003 sec. Processed 106.87 thousand rows, 3.21 MB (31.92 million rows/s., 959.03 MB/s.)
-```
+
+### Test it in Playground
+
+The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
