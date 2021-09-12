@@ -7,7 +7,7 @@
 #include <IO/SnappyReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 
 int main()
@@ -33,7 +33,7 @@ int main()
         output.resize(out.count());
         std::cout << "output: " << output << std::endl;
     }
-    catch (const DB::Exception & e)
+    catch (const Exception & e)
     {
         std::cerr << e.what() << ", " << e.displayText() << std::endl;
         return 1;

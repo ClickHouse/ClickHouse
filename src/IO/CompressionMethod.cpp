@@ -15,6 +15,7 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/SnappyReadBuffer.h>
+#include <IO/SnappyWriteBuffer.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -148,6 +149,12 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2WriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
 #endif
+
+#if USE_SNAPPY
+    if (method == CompressionMethod::Snappy)
+        return std::make_unique<SnappyWriteBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+#endif
+
     if (method == CompressionMethod::None)
         return nested;
 

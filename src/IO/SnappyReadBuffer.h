@@ -2,7 +2,6 @@
 
 #include <Common/config.h>
 
-
 #if USE_SNAPPY
 #include <memory>
 
@@ -11,6 +10,8 @@
 
 namespace DB
 {
+
+/// Reads compressed data from ReadBuffer in_ and performs decompression using snappy library.
 class SnappyReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
 {
     public:
