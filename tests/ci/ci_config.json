@@ -22,7 +22,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "gcc-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -82,7 +82,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "gcc-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -347,7 +347,7 @@
         },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "gcc-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -551,7 +551,7 @@
         },
         "Unit tests release gcc": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "gcc-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
