@@ -816,8 +816,7 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
         static const Accessor the_instance = [] \
         { \
             Accessor res; \
-            constexpr int IMPORTANT = 1; \
-            UNUSED(IMPORTANT); \
+            [[maybe_unused]] constexpr int IMPORTANT = 1; \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
             for (size_t i : collections::range(res.field_infos.size())) \
             { \

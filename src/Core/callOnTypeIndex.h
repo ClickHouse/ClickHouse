@@ -1,8 +1,9 @@
 #pragma once
 
 #include <utility>
-
 #include <Core/Types.h>
+#include <Core/TypeId.h>
+#include <common/TypeList.h>
 
 namespace DB
 {
@@ -14,142 +15,73 @@ struct TypePair
     using RightType = U;
 };
 
+struct Dispatch { bool _int, _float, _decimal, _datetime; }; //NOLINT
 
-template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-bool callOnBasicType(TypeIndex number, F && f)
+namespace detail
 {
-    if constexpr (_int)
-    {
-        switch (number)
-        {
-            case TypeIndex::UInt8:        return f(TypePair<T, UInt8>());
-            case TypeIndex::UInt16:       return f(TypePair<T, UInt16>());
-            case TypeIndex::UInt32:       return f(TypePair<T, UInt32>());
-            case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
-            case TypeIndex::UInt128:      return f(TypePair<T, UInt128>());
-            case TypeIndex::UInt256:      return f(TypePair<T, UInt256>());
+constexpr auto Ints =
+{
+    TypeIndex::UInt8, TypeIndex::UInt16, TypeIndex::UInt32, TypeIndex::UInt64, TypeIndex::UInt128, TypeIndex::UInt256,
+    TypeIndex::Int8, TypeIndex::Int16, TypeIndex::Int32, TypeIndex::Int64 , TypeIndex::Int128, TypeIndex::Int256,
+    TypeIndex::Enum8, TypeIndex::Enum16
+};
 
-            case TypeIndex::Int8:         return f(TypePair<T, Int8>());
-            case TypeIndex::Int16:        return f(TypePair<T, Int16>());
-            case TypeIndex::Int32:        return f(TypePair<T, Int32>());
-            case TypeIndex::Int64:        return f(TypePair<T, Int64>());
-            case TypeIndex::Int128:       return f(TypePair<T, Int128>());
-            case TypeIndex::Int256:       return f(TypePair<T, Int256>());
+constexpr auto Floats = { TypeIndex::Float32, TypeIndex::Float64 };
+constexpr auto Decimals = { TypeIndex::Decimal32, TypeIndex::Decimal64, TypeIndex::Decimal128, TypeIndex::Decimal256 };
 
-            case TypeIndex::Enum8:        return f(TypePair<T, Int8>());
-            case TypeIndex::Enum16:       return f(TypePair<T, Int16>());
+constexpr auto DateTimes = { TypeIndex::Date, TypeIndex::Date32, TypeIndex::DateTime, TypeIndex::DateTime64 };
+}
 
-            default:
-                break;
-        }
-    }
+template <typename T, Dispatch D>
+constexpr bool callOnBasicType(TypeIndex number, auto && f)
+{
+    auto functor = [number, f = std::forward<decltype(f)>(f)](auto index) {
+        if (number == index) f(TypePair<T, ReverseTypeId<index>>());
+        return number == index;
+    };
 
-    if constexpr (_decimal)
-    {
-        switch (number)
-        {
-            case TypeIndex::Decimal32:    return f(TypePair<T, Decimal32>());
-            case TypeIndex::Decimal64:    return f(TypePair<T, Decimal64>());
-            case TypeIndex::Decimal128:   return f(TypePair<T, Decimal128>());
-            case TypeIndex::Decimal256:   return f(TypePair<T, Decimal256>());
-            default:
-                break;
-        }
-    }
+    if constexpr(D._int)
+        if (static_for<Ints>(functor))
+            return true;
 
-    if constexpr (_float)
-    {
-        switch (number)
-        {
-            case TypeIndex::Float32:      return f(TypePair<T, Float32>());
-            case TypeIndex::Float64:      return f(TypePair<T, Float64>());
-            default:
-                break;
-        }
-    }
+    if constexpr(D._float)
+        if (static_for<Floats>(functor))
+            return true;
 
-    if constexpr (_datetime)
-    {
-        switch (number)
-        {
-            case TypeIndex::Date:         return f(TypePair<T, UInt16>());
-            case TypeIndex::Date32:       return f(TypePair<T, Int32>());
-            case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
-            case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
-            default:
-                break;
-        }
-    }
+    if constexpr(D._decimal)
+        if (static_for<Decimals>(functor))
+            return true;
+
+    if constexpr(D._datetime)
+        if (static_for<DateTimes>(functor))
+            return true;
 
     return false;
 }
 
-/// Unroll template using TypeIndex
-template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+template <Dispatch D>
+constexpr bool callOnBasicTypes(TypeIndex type, TypeIndex other, auto && f)
 {
-    if constexpr (_int)
-    {
-        switch (type_num1)
-        {
-            case TypeIndex::UInt8: return callOnBasicType<UInt8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::UInt16: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::UInt32: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::UInt64: return callOnBasicType<UInt64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::UInt128: return callOnBasicType<UInt128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::UInt256: return callOnBasicType<UInt256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+    auto functor = [type, other, f = std::forward<decltype(f)>(f)](auto index) {
+        if (type == index) callOnBasicType<index, d>(other, f);
+        return type == index;
+    };
 
-            case TypeIndex::Int8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Int16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Int32: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Int64: return callOnBasicType<Int64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Int128: return callOnBasicType<Int128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Int256: return callOnBasicType<Int256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+    if constexpr(D._int)
+        if (static_for<Ints>(functor))
+            return true;
 
-            case TypeIndex::Enum8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Enum16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+    if constexpr(D._float)
+        if (static_for<Floats>(functor))
+            return true;
 
-            default:
-                break;
-        }
-    }
+    if constexpr(D._decimal)
+        if (static_for<Decimals>(functor))
+            return true;
 
-    if constexpr (_decimal)
-    {
-        switch (type_num1)
-        {
-            case TypeIndex::Decimal32: return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Decimal64: return callOnBasicType<Decimal64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Decimal128: return callOnBasicType<Decimal128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Decimal256: return callOnBasicType<Decimal256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            default:
-                break;
-        }
-    }
-
-    if constexpr (_float)
-    {
-        switch (type_num1)
-        {
-            case TypeIndex::Float32: return callOnBasicType<Float32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Float64: return callOnBasicType<Float64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            default:
-                break;
-        }
-    }
-
-    if constexpr (_datetime)
-    {
-        switch (type_num1)
-        {
-            case TypeIndex::Date: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Date32: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::DateTime: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::DateTime64: return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            default:
-                break;
-        }
-    }
+    if constexpr(D._datetime)
+        if (static_for<DateTimes>(functor))
+            return true;
 
     return false;
 }

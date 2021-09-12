@@ -1,9 +1,7 @@
 #pragma once
 
-#include <functional>
 #include <type_traits>
 #include <utility>
-
 
 template <typename T, typename Tag>
 struct StrongTypedef
@@ -14,35 +12,38 @@ private:
 
 public:
     using UnderlyingType = T;
-    template <class Enable = typename std::is_copy_constructible<T>::type>
-    constexpr explicit StrongTypedef(const T & t_) : t(t_) {}
-    template <class Enable = typename std::is_move_constructible<T>::type>
-    constexpr explicit StrongTypedef(T && t_) : t(std::move(t_)) {}
 
-    template <class Enable = typename std::is_default_constructible<T>::type>
-    constexpr StrongTypedef(): t() {}
+    constexpr explicit StrongTypedef(const T & t_) requires(std::is_copy_constructible_v<T>) : t(t_) {}
+    constexpr explicit StrongTypedef(T && t_) requires(std::is_move_constructible_v<T>) : t(std::move(t_)) {}
+    constexpr StrongTypedef() requires(std::is_default_constructible_v<T>) : t() {}
 
     constexpr StrongTypedef(const Self &) = default;
     constexpr StrongTypedef(Self &&) = default;
 
-    Self & operator=(const Self &) = default;
-    Self & operator=(Self &&) = default;
+    constexpr StrongTypedef & operator=(const Self &) = default;
+    constexpr StrongTypedef & operator=(Self &&) = default;
 
-    template <class Enable = typename std::is_copy_assignable<T>::type>
-    Self & operator=(const T & rhs) { t = rhs; return *this;}
+    constexpr StrongTypedef & operator=(const T & rhs) requires(std::is_copy_assignable_v<T>)
+    {
+        t = rhs;
+        return *this;
+    }
 
-    template <class Enable = typename std::is_move_assignable<T>::type>
-    Self & operator=(T && rhs) { t = std::move(rhs); return *this;}
+    constexpr StrongTypedef & operator=(T && rhs) requires(std::is_move_assignable_v<T>)
+    {
+        t = std::move(rhs);
+        return *this;
+    }
 
-    operator const T & () const { return t; }
-    operator T & () { return t; }
+    constexpr operator const T & () const { return t; }
+    constexpr operator T & () { return t; }
 
-    bool operator==(const Self & rhs) const { return t == rhs.t; }
-    bool operator<(const Self & rhs) const { return t < rhs.t; }
-    bool operator>(const Self & rhs) const { return t > rhs.t; }
+    constexpr bool operator==(const Self & rhs) const { return t == rhs.t; }
+    constexpr bool operator<(const Self & rhs) const { return t < rhs.t; }
+    constexpr bool operator>(const Self & rhs) const { return t > rhs.t; }
 
-    T & toUnderType() { return t; }
-    const T & toUnderType() const { return t; }
+    constexpr T & toUnderType() { return t; }
+    constexpr const T & toUnderType() const { return t; }
 };
 
 
@@ -58,7 +59,4 @@ namespace std
     };
 }
 
-#define STRONG_TYPEDEF(T, D) \
-    struct D ## Tag {}; \
-    using D = StrongTypedef<T, D ## Tag>; \
-
+#define STRONG_TYPEDEF(T, D) using D = StrongTypedef<T, struct D ## Tag>;

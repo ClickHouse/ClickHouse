@@ -19,6 +19,7 @@ struct IntervalKind
         Quarter,
         Year,
     };
+
     Kind kind = Second;
 
     IntervalKind(Kind kind_ = Second) : kind(kind_) {}
@@ -34,28 +35,46 @@ struct IntervalKind
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Hour`.
     static IntervalKind fromAvgSeconds(Int64 num_seconds);
 
-    /// Returns an uppercased version of what `toString()` returns.
-    const char * toKeyword() const;
+    /// Returns an uppercase version of toString().
+    std::string toKeyword() const
+    {
+        std::string out { magic_enum::enum_name(kind) };
+        std::transform(out.begin(), out.end(), out.begin(), ::toupper);
+        return out;
+    }
 
-    const char * toLowercasedKeyword() const;
+    std::string toLowercasedKeyword() const
+    {
+        std::string out { magic_enum::enum_name(kind) };
+        out[0] = tolower(out[0]);
+        return out;
+    }
 
-    /// Returns the string which can be passed to the `unit` parameter of the dateDiff() function.
-    /// For example, `IntervalKind{IntervalKind::Day}.getDateDiffParameter()` returns "day".
-    const char * toDateDiffUnit() const;
+    /**
+     * Returns string which can be passed to the `unit` parameter of the dateDiff() function.
+     * @example IntervalKind{IntervalKind::Day}.getDateDiffParameter()  == "day"
+     */
+    std::string toDateDiffUnit() const { return toLowercasedKeyword(); }
 
-    /// Returns the name of the function converting a number to the interval data type.
-    /// For example, `IntervalKind{IntervalKind::Day}.getToIntervalDataTypeFunctionName()`
-    /// returns "toIntervalDay".
-    const char * toNameOfFunctionToIntervalDataType() const;
+    /**
+     * Returns name of the function converting a number to the interval data type.
+     * @example IntervalKind{IntervalKind::Day}.getToIntervalDataTypeFunctionName() == "toIntervalDay"
+     */
+    std::string toNameOfFunctionToIntervalDataType() const
+    {
+        return fmt::format("toInterval{}", magic_enum::enum_name(kind));
+    }
 
     /// Returns the name of the function extracting time part from a date or a time.
     /// For example, `IntervalKind{IntervalKind::Day}.getExtractTimePartFunctionName()`
     /// returns "toDayOfMonth".
     const char * toNameOfFunctionExtractTimePart() const;
 
-    /// Converts the string representation of an interval kind to its IntervalKind equivalent.
-    /// Returns false if the conversion unsucceeded.
-    /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
-    static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
+    /**
+     * Converts lowercase string representation of an interval kind to its IntervalKind equivalent.
+     * @example tryParse("second") = {IntervalKind::Second}
+     * @example tryParse("Secondd") = std::nullopt
+     */
+    static std::optional<IntervalKind::Kind> tryParse(std::string_view kind);
 };
 }

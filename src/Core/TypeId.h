@@ -58,4 +58,8 @@ TYPEID_MAP(String)
 
 struct Array;
 TYPEID_MAP(Array)
+
+/// Special cases:
+template <> struct ReverseTypeIdT<TypeIndex::Enum8> : std::true_type { using T = Int8; };
+template <> struct ReverseTypeIdT<TypeIndex::Enum16> : std::true_type { using T = Int16; };
 }

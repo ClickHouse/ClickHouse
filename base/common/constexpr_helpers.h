@@ -30,3 +30,9 @@ constexpr bool static_for(Func && f)
     using T = decltype(Begin);
     return static_for_impl<T, Begin>(std::forward<Func>(f), std::make_integer_sequence<T, End - Begin>{});
 }
+
+template <auto Container, typename Func>
+constexpr bool static_for(Func && f)
+{
+    return static_for<Container.begin(), Container.end()>(std::forward<Func>(f));
+}
