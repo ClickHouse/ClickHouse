@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-ubsan, no-msan, no-fasttest
 
 set -e
 
