@@ -22,16 +22,19 @@ namespace DB
   * It is possible to update the value with values in monotonic order of time.
   * If it is updated with non-monotonic order, the calculation becomes non-deterministic.
   */
-struct ExponentiallySmoothedCounter
+
+template <typename Derived>
+struct ExponentiallySmoothedBase
 {
     double value = 0;
-    double update_time = -std::numeric_limits<double>::infinity();  /// So the first update will have weight 1.
+    /// So the first update will have weight near 1. Cannot use -inf becuase subtraction will lead to nan.
+    double update_time = std::numeric_limits<double>::lowest();
 
-    ExponentiallySmoothedCounter()
+    ExponentiallySmoothedBase()
     {
     }
 
-    ExponentiallySmoothedCounter(double current_value, double current_time)
+    ExponentiallySmoothedBase(double current_value, double current_time)
         : value(current_value), update_time(current_time)
     {
     }
@@ -46,6 +49,19 @@ struct ExponentiallySmoothedCounter
         return value * decay(current_time, update_time, half_decay_time);
     }
 
+    void merge(const ExponentiallySmoothedBase & other, double half_decay_time)
+    {
+        static_cast<Derived *>(this)->add(other.value, other.update_time, half_decay_time);
+    }
+
+    bool less(const ExponentiallySmoothedBase & other, double half_decay_time) const
+    {
+        return get(other.update_time, half_decay_time) < other.value;
+    }
+};
+
+struct ExponentiallySmoothedAverage : ExponentiallySmoothedBase<ExponentiallySmoothedAverage>
+{
     void add(double new_value, double current_time, double half_decay_time)
     {
         if (current_time > update_time)
@@ -62,15 +78,25 @@ struct ExponentiallySmoothedCounter
             value = value * (1 - new_value_weight) + new_value * new_value_weight;
         }
     }
+};
 
-    void merge(const ExponentiallySmoothedCounter & other, double half_decay_time)
+struct ExponentiallySmoothedSum : ExponentiallySmoothedBase<ExponentiallySmoothedSum>
+{
+    void add(double new_value, double current_time, double half_decay_time)
     {
-        add(other.value, other.update_time, half_decay_time);
-    }
-
-    bool less(const ExponentiallySmoothedCounter & other, double half_decay_time) const
-    {
-        return get(other.update_time, half_decay_time) < other.value;
+        if (current_time > update_time)
+        {
+            /// Add newer value.
+            double old_value_weight = decay(current_time, update_time, half_decay_time);
+            value = value * old_value_weight + new_value;
+            update_time = current_time;
+        }
+        else
+        {
+            /// Add older value.
+            double new_value_weight = decay(update_time, current_time, half_decay_time);
+            value = value + new_value * new_value_weight;
+        }
     }
 };
 
