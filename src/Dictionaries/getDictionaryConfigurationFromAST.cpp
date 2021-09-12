@@ -181,7 +181,7 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (auto child : children)
+    for (const auto & child : children)
     {
         const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
         result.push_back(key_part->name());
