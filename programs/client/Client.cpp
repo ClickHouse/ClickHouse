@@ -6,6 +6,7 @@
 #include "QueryFuzzer.h"
 #include "Suggest.h"
 #include "TestHint.h"
+#include "TestTags.h"
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -1078,12 +1079,17 @@ private:
 
         bool echo_query = echo_queries;
 
+        /// Test tags are started with "--" so they are interpreted as comments anyway.
+        /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+        /// because we don't want test tags to be echoed.
+        size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
         /// An exception is VALUES format where we also support semicolon in
         /// addition to end of line.
 
-        const char * this_query_begin = all_queries_text.data();
+        const char * this_query_begin = all_queries_text.data() + test_tags_length;
         const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
         while (this_query_begin < all_queries_end)
