@@ -3535,7 +3535,7 @@ Default value: `1000`.
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-The setting defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). If the value is `0`, the size of the regular expression is not limited.
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
 
 Possible values:
 
