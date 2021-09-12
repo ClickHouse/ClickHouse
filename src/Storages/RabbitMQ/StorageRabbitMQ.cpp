@@ -224,6 +224,8 @@ std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) 
 
 void StorageRabbitMQ::loopingFunc()
 {
+    if (!rabbit_is_ready)
+        return;
     if (connection->isConnected())
         connection->getHandler().startLoop();
 }
