@@ -260,6 +260,39 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
+## input_format_parquet_import_nested {#input_format_parquet_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_arrow_import_nested {#input_format_arrow_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_orc_import_nested {#input_format_orc_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md#data-format-orc) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../sql-reference/syntax.md) section.
@@ -3465,6 +3498,30 @@ Possible values:
 -   1 — Projection optimization is obligatory.
 
 Default value: `0`.
+
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   1 — Wait for own execution.
+-   2 — Wait for everyone.
+
+Default value: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   Negative integer — Wait for unlimited time.
+-   Positive integer — The number of seconds to wait.
+
+Default value: `120` seconds.
 
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
