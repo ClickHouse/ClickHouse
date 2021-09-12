@@ -3,6 +3,4 @@ add_subdirectory(StringUtils)
 #add_subdirectory(ZooKeeper)
 #add_subdirectory(ConfigProcessor)
 
-if (ENABLE_EXAMPLES)
-    add_subdirectory(examples)
-endif()
+add_subdirectory(examples)

@@ -34,6 +34,9 @@ public:
     UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
     double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
+    double startSeconds() const        { return static_cast<double>(start_ns) / 1000000000ULL; }
+    double currentSeconds() const      { return static_cast<double>(is_running ? nanoseconds() : stop_ns) / 1000000000ULL; }
+
 private:
     UInt64 start_ns = 0;
     UInt64 stop_ns = 0;

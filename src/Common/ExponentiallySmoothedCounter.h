@@ -49,6 +49,11 @@ struct ExponentiallySmoothedBase
         return value * decay(current_time, update_time, half_decay_time);
     }
 
+    double refresh(double current_time, double half_decay_time)
+    {
+        value = get(current_time, half_decay_time);
+    }
+
     void merge(const ExponentiallySmoothedBase & other, double half_decay_time)
     {
         static_cast<Derived *>(this)->add(other.value, other.update_time, half_decay_time);
