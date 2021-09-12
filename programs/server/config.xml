@@ -193,11 +193,11 @@
         <!-- The following file is used only if ssl_require_client_auth=1 -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
              Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- Default compression level (applied if client doesn't specify another level).
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
              Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
