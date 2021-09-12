@@ -402,7 +402,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (auto child : children)
+    for (const auto & child : children)
     {
         const ASTPair * pair = child->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
