@@ -54,6 +54,7 @@ off_t SnappyReadBuffer::seek(off_t off, int whence)
             String("Cannot seek through buffer") + " because seek position (" + toString(new_pos) + ") is out of bounds [0, "
                 + toString(working_buffer.size()) + "]",
             ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+    position() = working_buffer.begin() + new_pos;
     return new_pos;
 }
 
