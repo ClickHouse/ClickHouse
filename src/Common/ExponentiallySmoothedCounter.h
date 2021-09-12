@@ -14,7 +14,7 @@ namespace DB
   * It can be understood as an average over sliding window, but with different kernel.
   *
   * As an advantage, it is easy to update. Instead of collecting values and calculating a series of x1 / 2 + x2 / 4 + x3 / 8...
-  * just calculate x_old * weight + x_new * (1 - weight), where weight is and exponent of time passed.
+  * just calculate x_old * weight + x_new * (1 - weight), where weight is an exponent of (negative) time passed.
   *
   * It is often used for resource usage metrics. For example, "load average" in Linux is exponentially smoothed moving average.
   * We can use exponentially smoothed counters in query scheduler.
