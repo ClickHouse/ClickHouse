@@ -497,6 +497,8 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Xz;
         else if (std::string::npos != http_response_compression_methods.find("zstd"))
             http_response_compression_method = CompressionMethod::Zstd;
+        else if (std::string::npos != http_response_compression_methods.find("snappy"))
+            http_response_compression_method = CompressionMethod::Snappy;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;

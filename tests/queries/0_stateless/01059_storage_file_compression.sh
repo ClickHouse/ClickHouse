@@ -18,5 +18,5 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(), max(x) FROM file('${CLICKHOUSE_DAT
 
 for m in gz br xz zst lz4 bz2 snappy
 do
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() < 4000000, max(x) FROM file('${CLICKHOUSE_DATABASE}/${m}.tsv.${m}', RowBinary, 'x UInt8', 'none')"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() < 5000000, max(x) FROM file('${CLICKHOUSE_DATABASE}/${m}.tsv.${m}', RowBinary, 'x UInt8', 'none')"
 done

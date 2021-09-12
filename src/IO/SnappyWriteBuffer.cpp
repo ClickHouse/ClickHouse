@@ -1,6 +1,6 @@
 #include <Common/config.h>
 
-#ifdef USE_SNAPPY
+#if USE_SNAPPY
 #include <string.h>
 
 #include <snappy.h>

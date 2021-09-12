@@ -2,7 +2,7 @@
 
 #include <Common/config.h>
 
-#ifdef USE_SNAPPY
+#if USE_SNAPPY
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 
