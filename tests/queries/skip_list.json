@@ -112,12 +112,10 @@
         "01153_attach_mv_uuid",
         "01157_replace_table",
         "01185_create_or_replace_table",
-        /// Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database.
-        "rocksdb",
+        "rocksdb", /// Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database
         "01914_exchange_dictionaries" /// Requires Atomic database
     ],
     "database-replicated": [
-        /// Unclassified
         "memory_tracking",
         "memory_usage",
         "live_view",
@@ -125,68 +123,67 @@
         "01269_create_with_null",
         "01451_replicated_detach_drop_and_quorum",
         "01188_attach_table_from_path",
-        /// ON CLUSTER is not allowed
-        "01181_db_atomic_drop_on_cluster",
-        "01175_distributed_ddl_output_mode",
+        
+        "01181_db_atomic_drop_on_cluster",   /// ON CLUSTER is not allowed
+        "01175_distributed_ddl_output_mode", /// ON CLUSTER is not allowed
         "01415_sticking_mutations",
-        /// user_files
-        "01721_engine_file_truncate_on_insert",
-        /// Fails due to additional replicas or shards
-        "quorum",
-        "01650_drop_part_and_deduplication_zookeeper",
-        "01532_execute_merges_on_single_replica",
-        "00652_replicated_mutations_default_database_zookeeper",
-        "00620_optimize_on_nonleader_replica_zookeeper",
-        "01158_zookeeper_log",
-        /// grep -c
-        "01018_ddl_dictionaries_bad_queries",
-        "00908_bloom_filter_index",
-        /// Unsupported type of ALTER query
-        "01650_fetch_patition_with_macro_in_zk_path",
-        "01451_detach_drop_part",
-        "01451_replicated_detach_drop_part",
-        "01417_freeze_partition_verbose",
-        "01417_freeze_partition_verbose_zookeeper",
-        "01130_in_memory_parts_partitons",
-        "01060_shutdown_table_after_detach",
-        "01021_only_tuple_columns",
-        "01015_attach_part",
-        "00955_test_final_mark",
-        "00753_alter_attach",
-        "00626_replace_partition_from_table_zookeeper",
-        "00626_replace_partition_from_table",
-        "00152_insert_different_granularity",
-        "00054_merge_tree_partitions",
-        "01781_merge_tree_deduplication",
-        "00980_zookeeper_merge_tree_alter_settings",
-        "00980_merge_alter_settings",
-        "02009_array_join_partition",
-        "02012_changed_enum_type_non_replicated",
-        "02012_zookeeper_changed_enum_type",
-        "02012_zookeeper_changed_enum_type_incompatible",
-        /// Old syntax is not allowed
-        "01062_alter_on_mutataion_zookeeper",
-        "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
-        "00754_alter_modify_order_by_replicated_zookeeper",
-        "00652_replicated_mutations_zookeeper",
-        "00623_replicated_truncate_table_zookeeper",
-        "00516_deduplication_after_drop_partition_zookeeper",
-        "00446_clear_column_in_partition_concurrent_zookeeper",
-        "00236_replicated_drop_on_non_leader_zookeeper",
-        "00226_zookeeper_deduplication_and_unexpected_parts",
-        "00215_primary_key_order_zookeeper",
-        "00121_drop_column_zookeeper",
-        "00083_create_merge_tree_zookeeper",
-        "00062_replicated_merge_tree_alter_zookeeper",
-        /// Does not support renaming of multiple tables in single query
-        "00634_rename_view",
-        "00140_rename",
-        /// Different query_id
-        "01943_query_id_check",
-        /// Requires investigation
-        "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size",
-        "00166_explain_estimate"
+        "01721_engine_file_truncate_on_insert", /// user_files
+        
+        "quorum",                                                /// Fails due to additional replicas or shards
+        "01650_drop_part_and_deduplication_zookeeper",           /// Fails due to additional replicas or shards
+        "01532_execute_merges_on_single_replica",                /// Fails due to additional replicas or shards
+        "00652_replicated_mutations_default_database_zookeeper", /// Fails due to additional replicas or shards
+        "00620_optimize_on_nonleader_replica_zookeeper",         /// Fails due to additional replicas or shards
+        "01158_zookeeper_log",                                   /// Fails due to additional replicas or shards
+        
+        "01018_ddl_dictionaries_bad_queries", /// grep -c
+        "00908_bloom_filter_index",           /// grep -c
+        
+        "01650_fetch_patition_with_macro_in_zk_path",     /// Unsupported type of ALTER query
+        "01451_detach_drop_part",                         /// Unsupported type of ALTER query
+        "01451_replicated_detach_drop_part",              /// Unsupported type of ALTER query
+        "01417_freeze_partition_verbose",                 /// Unsupported type of ALTER query
+        "01417_freeze_partition_verbose_zookeeper",       /// Unsupported type of ALTER query
+        "01130_in_memory_parts_partitons",                /// Unsupported type of ALTER query
+        "01060_shutdown_table_after_detach",              /// Unsupported type of ALTER query
+        "01021_only_tuple_columns",                       /// Unsupported type of ALTER query
+        "01015_attach_part",                              /// Unsupported type of ALTER query
+        "00955_test_final_mark",                          /// Unsupported type of ALTER query
+        "00753_alter_attach",                             /// Unsupported type of ALTER query
+        "00626_replace_partition_from_table_zookeeper",   /// Unsupported type of ALTER query
+        "00626_replace_partition_from_table",             /// Unsupported type of ALTER query
+        "00152_insert_different_granularity",             /// Unsupported type of ALTER query
+        "00054_merge_tree_partitions",                    /// Unsupported type of ALTER query
+        "01781_merge_tree_deduplication",                 /// Unsupported type of ALTER query
+        "00980_zookeeper_merge_tree_alter_settings",      /// Unsupported type of ALTER query
+        "00980_merge_alter_settings",                     /// Unsupported type of ALTER query
+        "02009_array_join_partition",                     /// Unsupported type of ALTER query
+        "02012_changed_enum_type_non_replicated",         /// Unsupported type of ALTER query
+        "02012_zookeeper_changed_enum_type",              /// Unsupported type of ALTER query
+        "02012_zookeeper_changed_enum_type_incompatible", /// Unsupported type of ALTER query
+        
+        "01062_alter_on_mutataion_zookeeper",                         /// Old syntax is not allowed
+        "00925_zookeeper_empty_replicated_merge_tree_optimize_final", /// Old syntax is not allowed
+        "00754_alter_modify_order_by_replicated_zookeeper",           /// Old syntax is not allowed
+        "00652_replicated_mutations_zookeeper",                       /// Old syntax is not allowed
+        "00623_replicated_truncate_table_zookeeper",                  /// Old syntax is not allowed
+        "00516_deduplication_after_drop_partition_zookeeper",         /// Old syntax is not allowed
+        "00446_clear_column_in_partition_concurrent_zookeeper",       /// Old syntax is not allowed
+        "00236_replicated_drop_on_non_leader_zookeeper",              /// Old syntax is not allowed
+        "00226_zookeeper_deduplication_and_unexpected_parts",         /// Old syntax is not allowed
+        "00215_primary_key_order_zookeeper",                          /// Old syntax is not allowed
+        "00121_drop_column_zookeeper",                                /// Old syntax is not allowed
+        "00083_create_merge_tree_zookeeper",                          /// Old syntax is not allowed
+        "00062_replicated_merge_tree_alter_zookeeper",                /// Old syntax is not allowed
+        
+        "00634_rename_view", /// Does not support renaming of multiple tables in single query
+        "00140_rename",      /// Does not support renaming of multiple tables in single query
+        
+        "01943_query_id_check", /// Different query_id
+        
+        "00953_zookeeper_suetin_deduplication_bug", /// Requires investigation
+        "01783_http_chunk_size",                    /// Requires investigation
+        "00166_explain_estimate"                    /// Requires investigation
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
