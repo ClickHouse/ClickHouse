@@ -3594,8 +3594,7 @@ Default value: `0`.
 Query:
 
 ```sql
-SET max_hyperscan_regexp_total_length = 5;
-SELECT multiMatchAny('abcd', ['a','b','c','d']);
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
 ```
 
 Result:
