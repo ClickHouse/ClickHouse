@@ -3555,9 +3555,10 @@ SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp
 Result:
 
 ```text
-┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
-│                                           1 │
-└─────────────────────────────────────────────┘
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
 ```
 
 Query:
