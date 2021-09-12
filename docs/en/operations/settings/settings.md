@@ -3475,3 +3475,17 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Allows to calculate the [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) and [or](../../sql-reference/functions/logical-functions.md#logical-or-function) functions according to a short scheme.
+
+Possible values:
+
+- `enable ` — Enables short-circuit function evaluation for functions that are suitable for it (can throw or computationally heavy).
+- `force_enable` — Enables short-circuit function evaluation for all functions.
+- `disable` — Disables short-circuit function evaluation.
+
+Default value: `enable`.
+
+This is necessary to optimize the execution of complex expressions in these functions and to prevent possible exceptions (such as division by zero, when it is not expected).
