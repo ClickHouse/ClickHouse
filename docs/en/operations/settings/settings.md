@@ -3571,7 +3571,7 @@ select multiMatchAny('abcd', ['ab','bcd','c','d']);
 Result:
 
 ```text
-Regexp length too large.
+Exception: Regexp length too large.
 ```
 
 **See Also**
