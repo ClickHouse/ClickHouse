@@ -19,21 +19,23 @@ namespace ErrorCodes
 
 
 /** See the comments in ExponentiallySmoothedCounter.h
-  * Caveats:
+  * Variant with "sum" is deterministic while "average" have caveats:
   * - if aggregated data is unordered, the calculation is non-deterministic;
   * - so, multithreaded and distributed aggregation is also non-deterministic;
   * - it highly depends on what value will be first and last;
   * Nevertheless it is useful in window functions and aggregate functions over ordered data.
   */
-class AggregateFunctionExponentialMovingAverage final
-    : public IAggregateFunctionDataHelper<ExponentiallySmoothedCounter, AggregateFunctionExponentialMovingAverage>
+template <typename Data>
+class AggregateFunctionExponentialMoving final
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionExponentialMoving<Data>>
 {
 private:
+    String name;
     Float64 half_decay;
 
 public:
-    AggregateFunctionExponentialMovingAverage(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<ExponentiallySmoothedCounter, AggregateFunctionExponentialMovingAverage>(argument_types_, params)
+    AggregateFunctionExponentialMoving(const DataTypes & argument_types_, const Array & params, String name_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionExponentialMoving>(argument_types_, params), name(std::move(name_))
     {
         if (params.size() != 1)
             throw Exception{"Aggregate function " + getName() + " requires exactly one parameter: half decay time.",
@@ -42,7 +44,10 @@ public:
         half_decay = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
     }
 
-    String getName() const override { return "exponentialMovingAverage"; }
+    String getName() const override
+    {
+        return name;
+    }
 
     DataTypePtr getReturnType() const override
     {
@@ -82,10 +87,10 @@ public:
     }
 };
 
-
-void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory)
+template <typename Data>
+void registerAggregateFunctionExponentialMoving(AggregateFunctionFactory & factory, const char * func_name)
 {
-    factory.registerFunction("exponentialMovingAverage",
+    factory.registerFunction(func_name,
         [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *) -> AggregateFunctionPtr
         {
             assertBinary(name, argument_types);
@@ -93,8 +98,18 @@ void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory 
                 if (!isNumber(*type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Both arguments for aggregate function {} must have numeric type, got {}", name, type->getName());
-            return std::make_shared<AggregateFunctionExponentialMovingAverage>(argument_types, params);
+            return std::make_shared<AggregateFunctionExponentialMoving<Data>>(argument_types, params, name);
         });
+}
+
+void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory)
+{
+    registerAggregateFunctionExponentialMoving<ExponentiallySmoothedAverage>(factory, "exponentialMovingAverage");
+}
+
+void registerAggregateFunctionExponentialMovingSum(AggregateFunctionFactory & factory)
+{
+    registerAggregateFunctionExponentialMoving<ExponentiallySmoothedSum>(factory, "exponentialMovingSum");
 }
 
 }
