@@ -3,8 +3,6 @@
 #include <common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
-#include <Access/AccessControlManager.h>
-
 #include <Disks/IDiskRemote.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ReadIndirectBufferFromWebServer.h>
@@ -17,7 +15,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Poco/Exception.h>
-#include <re2/re2.h>
 
 
 namespace DB
@@ -115,25 +112,22 @@ public:
             const String & uri_,
             RemoteMetadata metadata_,
             ContextPtr context_,
-            size_t max_read_tries_,
             size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
         , uri(uri_)
         , context(context_)
-        , max_read_tries(max_read_tries_)
         , buf_size(buf_size_)
     {
     }
 
     std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, max_read_tries, buf_size);
+        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size);
     }
 
 private:
     String uri;
     ContextPtr context;
-    size_t max_read_tries;
     size_t buf_size;
 };
 
@@ -142,12 +136,12 @@ DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & url_,
             ContextPtr context_,
-            SettingsPtr settings_)
+            size_t min_bytes_for_seek_)
         : WithContext(context_->getGlobalContext())
         , log(&Poco::Logger::get("DiskWeb"))
         , url(url_)
         , name(disk_name_)
-        , settings(std::move(settings_))
+        , min_bytes_for_seek(min_bytes_for_seek_)
 {
 }
 
@@ -196,8 +190,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), settings->max_read_tries, read_settings.remote_fs_buffer_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
+    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
 
@@ -275,12 +269,16 @@ void registerDiskWebServer(DiskFactory & factory)
         String uri{config.getString(config_prefix + ".endpoint")};
         if (!uri.ends_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
+        try
+        {
+            Poco::URI poco_uri(uri);
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
+        }
 
-        auto settings = std::make_unique<DiskWebServerSettings>(
-            context->getGlobalContext()->getSettingsRef().http_max_single_read_retries,
-            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
-
-        return std::make_shared<DiskWebServer>(disk_name, uri, context, std::move(settings));
+        return std::make_shared<DiskWebServer>(disk_name, uri, context, config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
     };
 
     factory.registerDiskType("web", creator);
