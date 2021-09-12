@@ -6,7 +6,9 @@
 #include <unordered_map>
 #include <queue>
 #include <memory>
+
 #include <iostream>
+#include <fmt/format.h>
 
 #include <Common/ExponentiallySmoothedCounter.h>
 #include <Common/Stopwatch.h>
@@ -106,8 +108,8 @@ public:
             /// Sum all resource usage counters together to form priority.
             task_with_key.priority_key.counter.merge(stat.counter, smooth_interval);
 
-            if (stat.concurrency + 1 > constraint.max_concurrency
-                && stat.concurrency + 1 - constraint.max_concurrency > max_deficit_value)
+            if (stat.concurrency >= constraint.max_concurrency
+                && stat.concurrency - constraint.max_concurrency >= max_deficit_value)
             {
                 max_deficit_value = stat.concurrency - constraint.max_concurrency;
                 max_deficit = it;
@@ -118,9 +120,20 @@ public:
 
         /// If there is deficit, put it in a queue with max deficit.
         if (max_deficit)
+        {
+            std::cerr << "Selected queue " << max_deficit.value()->first << "\n";
             waiting_queues[max_deficit.value()->first].push(std::move(task_with_key));
+        }
         else
+        {
+            for (const auto & constraint : task_with_key.task.resource_keys)
+                ++stats[constraint.key].concurrency;
+
+            for (const auto & stat : stats)
+                std::cerr << fmt::format("push, {}, stat {}, concurrency {}\n", stat.first, stat.second.counter.get(Stopwatch().currentSeconds(), smooth_interval), stat.second.concurrency);
+
             ready_queue.push(std::move(task_with_key));
+        }
     }
 
     /// Measures how long task was executing and updates the counters.
@@ -130,13 +143,8 @@ public:
         Stopwatch watch;
         Scheduler & parent;
 
-        Handle(Task task_, Scheduler & parent_, std::lock_guard<std::mutex> &) : task(std::move(task_)), parent(parent_)
+        Handle(Task task_, Scheduler & parent_) : task(std::move(task_)), parent(parent_)
         {
-            for (const auto & constraint : task.resource_keys)
-            {
-                Stat & stat = parent.stats[constraint.key];
-                ++stat.concurrency;
-            }
         }
 
         ~Handle()
@@ -148,7 +156,7 @@ public:
             std::lock_guard lock(parent.mutex);
 
             std::optional<typename Queues::iterator> min_deficit;
-            size_t min_deficit_value = 0;
+            int64_t min_deficit_value = 0;
 
             for (const auto & constraint : task.resource_keys)
             {
@@ -174,7 +182,7 @@ public:
                         }
                     }
 
-                    size_t current_deficit = stat.concurrency - candidate_task_max_concurrency;
+                    int64_t current_deficit = stat.concurrency - candidate_task_max_concurrency;
                     if (!min_deficit || current_deficit < min_deficit_value
                         || (current_deficit == min_deficit_value && min_deficit.value()->second.top().priority_key < candidate_task.priority_key))
                     {
@@ -188,7 +196,12 @@ public:
             if (min_deficit)
             {
                 auto queue_it = *min_deficit;
-                parent.ready_queue.push(queue_it->second.top());
+                auto & elem = queue_it->second.top();
+
+                for (const auto & constraint : elem.task.resource_keys)
+                    ++parent.stats[constraint.key].concurrency;
+
+                parent.ready_queue.push(elem);
                 queue_it->second.pop();
 
                 if (queue_it->second.empty())
@@ -217,9 +230,9 @@ public:
             return {};
 
         for (const auto & stat : stats)
-            std::cerr << stat.first << ", " << stat.second.counter.get(Stopwatch().currentSeconds(), smooth_interval) << ", " << stat.second.concurrency << "\n";
+            std::cerr << fmt::format("pop, {}, stat {}, concurrency {}\n", stat.first, stat.second.counter.get(Stopwatch().currentSeconds(), smooth_interval), stat.second.concurrency);
 
-        HandlePtr res = std::make_shared<Handle>(ready_queue.top().task, *this, lock);
+        HandlePtr res = std::make_shared<Handle>(ready_queue.top().task, *this);
         ready_queue.pop();
         return res;
     }

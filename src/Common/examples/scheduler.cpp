@@ -36,11 +36,13 @@ int main(int, char **)
     {
         for (size_t i = 0; i < 1000; ++i)
         {
+            std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
+
             Sched::Task task;
             task.priority = i % 3;
-            task.weight = 1 + i / 3 % 2;
+            task.weight = i / 3 % 2 ? 10 : 1;
             task.resource_keys.emplace_back(Sched::ResourceConstraint{"all", 4});
-            task.resource_keys.emplace_back(Sched::ResourceConstraint{fmt::format("user{}", task.weight), 4});
+            task.resource_keys.emplace_back(Sched::ResourceConstraint{fmt::format("user{}", task.weight), 10});
 
             task.data.idx = i;
             task.data.seconds = 1;
