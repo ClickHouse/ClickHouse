@@ -3,6 +3,7 @@
 
 namespace DB
 {
+
 /// Create NullSource with specified structure.
 class ReadNothingStep : public ISourceStep
 {
@@ -13,4 +14,5 @@ public:
 
     void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 };
+
 }

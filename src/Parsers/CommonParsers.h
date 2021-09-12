@@ -22,7 +22,7 @@ public:
 protected:
     constexpr const char * getName() const override { return s.data(); }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) final;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 /// Parsers can use "WORD"_kw instead of ParserKeyword s_word("WORD");
@@ -54,9 +54,9 @@ protected:
 class ParserNothing : public IParserBase
 {
 public:
-    constexpr const char * getName() const final { return "nothing"; }
+    const char * getName() const override { return "nothing"; }
 
-    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) final { return true; }
+    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };
 
 }

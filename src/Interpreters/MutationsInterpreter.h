@@ -153,4 +153,5 @@ private:
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
 };
+
 }

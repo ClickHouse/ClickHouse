@@ -1826,7 +1826,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 
     /// Limitation on the number of columns to read.
-    /// It's not applied in 'only_analyze' mode because the query could be analyzed without removal of unnecessary columns.
+    /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.
     if (!options.only_analyze && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception(
             ErrorCodes::TOO_MANY_COLUMNS,
@@ -2034,6 +2034,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 }
 
+
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_unique<FilterStep>(
@@ -2042,6 +2043,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
 }
+
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {

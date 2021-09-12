@@ -156,8 +156,6 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(Status status);
-
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
       * It may access input and output ports,

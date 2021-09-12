@@ -1127,19 +1127,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-<<<<<<< HEAD
-        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
-        {
-            return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
-
-=======
         assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, metadata_snapshot, merge_entry, share_lock] () mutable
             {
                 return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
             }, common_assignee_trigger, getStorageID()));
->>>>>>> upstream/master
         return true;
     }
 
@@ -1149,29 +1141,12 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
             {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-<<<<<<< HEAD
-        }, PoolType::MERGE_MUTATE});
-
-        return true;
-    }
-
-    bool executed = false;
-
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-        getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
-    {
-        executor.execute({[this, share_lock]
-        {
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
-            return true;
-        }, PoolType::MERGE_MUTATE});
-        executed = true;
-=======
             }, common_assignee_trigger, getStorageID()));
         return true;
     }
     bool scheduled = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+            getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
@@ -1180,25 +1155,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 return true;
             }, common_assignee_trigger, getStorageID()));
         scheduled = true;
->>>>>>> upstream/master
     }
 
     if (time_after_previous_cleanup_parts.compareAndRestartDeferred(
             getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
-<<<<<<< HEAD
-        executor.execute({[this, share_lock]
-        {
-            /// All use relative_data_path which changes during rename
-            /// so execute under share lock.
-            clearOldPartsFromFilesystem();
-            clearOldWriteAheadLogs();
-            clearOldMutations();
-            clearEmptyParts();
-            return true;
-        }, PoolType::MERGE_MUTATE});
-        executed = true;
-=======
         assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
@@ -1211,8 +1172,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 return true;
             }, common_assignee_trigger, getStorageID()));
         scheduled = true;
->>>>>>> upstream/master
-     }
+    }
 
     return scheduled;
 }

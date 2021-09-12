@@ -23,9 +23,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <common/logger_useful.h>
 #include <Common/JSONBuilder.h>
-#include "../../../contrib/magic_enum/include/magic_enum.hpp" //FIXME
-
-using magic_enum::enum_name;
 
 namespace ProfileEvents
 {
@@ -1111,7 +1108,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
     auto result = getAnalysisResult();
     std::string prefix(format_settings.offset, format_settings.indent_char);
-    format_settings.out << prefix << "ReadType: " << enum_name(result.read_type) << '\n';
+    format_settings.out << prefix << "ReadType: " << magic_enum::enum_name(result.read_type) << '\n';
 
     if (!result.index_stats.empty())
     {
@@ -1123,7 +1120,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto result = getAnalysisResult();
-    map.add("Read Type", enum_name(result.read_type));
+    map.add("Read Type", magic_enum::enum_name(result.read_type));
     if (!result.index_stats.empty())
     {
         map.add("Parts", result.index_stats.back().num_parts_after);
@@ -1152,7 +1149,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (stat.type == IndexType::None)
                 continue;
 
-            format_settings.out << prefix << indent << enum_name(stat.type) << '\n';
+            format_settings.out << prefix << indent << magic_enum::enum_name(stat.type) << '\n';
 
             if (!stat.name.empty())
                 format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
@@ -1204,7 +1201,7 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 
             auto index_map = std::make_unique<JSONBuilder::JSONMap>();
 
-            index_map->add("Type", enum_name(stat.type));
+            index_map->add("Type", magic_enum::enum_name(stat.type));
 
             if (!stat.name.empty())
                 index_map->add("Name", stat.name);
