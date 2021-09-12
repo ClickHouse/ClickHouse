@@ -11,7 +11,7 @@ namespace DB
   *
   * Exponentially smoothed average over time is weighted average with weight proportional to negative exponent of the time passed.
   * For example, the last value is taken with weight 1/2, the value one second ago with weight 1/4, two seconds ago - 1/8, etc.
-  * It can be understand as an average over sliding window, but with different kernel.
+  * It can be understood as an average over sliding window, but with different kernel.
   *
   * As an advantage, it is easy to update. Instead of collecting values and calculating a series of x1/2 + x2/4 + x3/8...
   * just calculate x_old * weight + x_new * (1 - weight), where weight is and exponent of time passed.
