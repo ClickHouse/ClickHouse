@@ -275,11 +275,10 @@ function run_tests
         00834_cancel_http_readonly_queries_on_client_close
         00911_tautological_compare
 
-        # Hyperscan
-        00926_multimatch
-        00929_multi_match_edit_distance
-        01681_hyperscan_debug_assertion
-        02004_max_hyperscan_regex_length
+        00926_multimatch # Hyperscan
+        00929_multi_match_edit_distance # Hyperscan
+        01681_hyperscan_debug_assertion # Hyperscan
+        02004_max_hyperscan_regex_length # Hyperscan
 
         01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
@@ -344,70 +343,54 @@ function run_tests
         sha256
         xz
 
-        # Not sure why these two fail even in sequential mode. Disabled for now
-        # to make some progress.
-        00646_url_engine
-        00974_query_profiler
+        00646_url_engine     # Not sure why fail even in sequential mode. Disabled for now to make some progress.
+        00974_query_profiler # Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
-         # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
-        01504_rocksdb
-        01686_rocksdb
+        01504_rocksdb        # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+        01686_rocksdb        # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
 
-        # Look at DistributedFilesToInsert, so cannot run in parallel.
-        01460_DistributedFilesToInsert
+        01460_DistributedFilesToInsert # Look at DistributedFilesToInsert, so cannot run in parallel.
 
         01541_max_memory_usage_for_user_long
 
-        # Require python libraries like scipy, pandas and numpy
-        01322_ttest_scipy
-        01561_mann_whitney_scipy
+        01322_ttest_scipy        # Require python libraries like scipy, pandas and numpy
+        01561_mann_whitney_scipy # Require python libraries like scipy, pandas and numpy
 
-        01545_system_errors
-        # Checks system.errors
-        01563_distributed_query_finish
+        01545_system_errors            # Checks system.errors
+        01563_distributed_query_finish # Checks system.errors
 
-        # nc - command not found
-        01601_proxy_protocol
-        01622_defaults_for_url_engine
+        01601_proxy_protocol          # nc - command not found
+        01622_defaults_for_url_engine # nc - command not found
 
-        # JSON functions
-        01666_blns
+        01666_blns # JSON functions
 
-        # Requires postgresql-client
-        01802_test_postgresql_protocol_with_row_policy
+        01802_test_postgresql_protocol_with_row_policy # Requires postgresql-client
 
-        # Depends on AWS
-        01801_s3_cluster
-        02012_settings_clause_for_s3
+        01801_s3_cluster             # Depends on AWS
+        02012_settings_clause_for_s3 # Depends on AWS
 
-        # needs psql
-        01889_postgresql_protocol_null_fields
+        01889_postgresql_protocol_null_fields    # needs psql
 
-        # needs pv
-        01923_network_receive_time_metric_insert
+        01923_network_receive_time_metric_insert # needs pv
 
         01889_sqlite_read_write
 
-        # needs s2
-        01849_geoToS2
-        01851_s2_to_geo
-        01852_s2_get_neighbours
-        01853_s2_cells_intersect
-        01854_s2_cap_contains
-        01854_s2_cap_union
+        01849_geoToS2            # needs s2
+        01851_s2_to_geo          # needs s2
+        01852_s2_get_neighbours  # needs s2
+        01853_s2_cells_intersect # needs s2
+        01854_s2_cap_contains    # needs s2
+        01854_s2_cap_union       # needs s2
 
-        # needs s3
-        01944_insert_partition_by
+        01944_insert_partition_by # needs s3
 
-        # depends on Go
-        02013_zlib_read_after_eof
+        02013_zlib_read_after_eof # depends on Go
 
-        # Accesses CH via mysql table function (which is unavailable)
-        01747_system_session_log_long
+        01747_system_session_log_long # Accesses CH via mysql table function (which is unavailable)
     )
 
-    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
-            --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" \
+    time clickhouse-test --hung-check -j 8 --order=random \
+            --fast-tests-only --no-long --testname --shard --zookeeper \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_log.txt"
