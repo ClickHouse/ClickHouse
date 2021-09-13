@@ -83,6 +83,7 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
 -   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — Map between replica name and is replica active.
+-   `last_queue_update_exception`- When the queue contains broken entries. Especially important when ClickHouse breaks backward compatibility between versions and log entries written by newer versions aren't parseable by old versions.
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
 If you do not request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
