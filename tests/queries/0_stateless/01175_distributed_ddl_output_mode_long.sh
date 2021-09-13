@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: long, distributed, no-msan, no-replicated-database
+# Tag no-msan: issue 21600
+# Tag no-replicated-database: ON CLUSTER is not allowed
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

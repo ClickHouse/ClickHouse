@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on OpenSSL
+
 DROP TABLE IF EXISTS encryption_test;
 CREATE TABLE encryption_test (i Int, s String Codec(Encrypted('AES-128-GCM-SIV'))) ENGINE = MergeTree ORDER BY i;
 
