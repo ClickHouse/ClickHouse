@@ -1,7 +1,7 @@
-#  docker build -t clickhouse/binary-builder .
+#  docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -37,29 +37,35 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install \
         bash \
-        build-essential \
-        ccache \
         cmake \
+        ccache \
         curl \
-        g++-10 \
-        gcc-10 \
-        gdb \
-        git \
-        gperf \
+        gcc-9 \
+        g++-9 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
+        clang-11 \
+        clang-tidy-11 \
+        lld-11 \
+        llvm-11 \
+        llvm-11-dev \
         libicu-dev \
         libreadline-dev \
-        clang-12 \
-        clang-tidy-12 \
-        lld-12 \
-        llvm-12 \
-        llvm-12-dev \
-        libicu-dev \
-        libreadline-dev \
-        moreutils \
         ninja-build \
-        pigz \
-        rename \
+        gperf \
+        git \
+        opencl-headers \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         tzdata \
+        gperf \
+        cmake \
+        gdb \
+        rename \
+        build-essential \
         --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler
@@ -76,7 +82,7 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd .. \
     && rm -rf apple-libtapi
 
-# Build and install tools for cross-linking to Darwin (x86-64)
+# Build and install tools for cross-linking to Darwin
 RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
@@ -85,17 +91,8 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd ../.. \
     && rm -rf cctools-port
 
-# Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
-    && ./configure --prefix=/cctools --with-libtapi=/cctools \
-        --target=aarch64-apple-darwin \
-    && make install \
-    && cd ../.. \
-    && rm -rf cctools-port
-
-# Download toolchain and SDK for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+# Download toolchain for Darwin
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
@@ -116,4 +113,4 @@ RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["/bin/bash", "/build.sh"]

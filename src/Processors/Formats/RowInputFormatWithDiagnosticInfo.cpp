@@ -117,7 +117,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-    if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
+    if (isNativeNumber(type) || isDateOrDateTime(type))
     {
         /// An empty string instead of a value.
         if (curr_position == prev_position)

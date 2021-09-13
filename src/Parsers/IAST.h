@@ -5,7 +5,6 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
@@ -42,10 +41,8 @@ public:
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
-
     /** Same as the above but ensure no alias names are used. This is for index analysis */
     String getColumnNameWithoutAlias() const;
-
     virtual void appendColumnName(WriteBuffer &) const
     {
         throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
@@ -226,9 +223,6 @@ public:
     static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
-
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
 
 public:
     /// For syntax highlighting.

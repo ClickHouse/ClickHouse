@@ -4,7 +4,7 @@
         
         <source>
             <executable>
-		<command>cat /etc/clickhouse-server/dictionaries/source.csv</command>
+		<command>cat /etc/clickhouse-server/config.d/source.csv</command>
             	<format>CSVWithNames</format>
             </executable>
 

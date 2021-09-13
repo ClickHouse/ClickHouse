@@ -19,17 +19,15 @@ SRCS(
     DatabaseReplicated.cpp
     DatabaseReplicatedSettings.cpp
     DatabaseReplicatedWorker.cpp
+    DatabaseWithDictionaries.cpp
     DatabasesCommon.cpp
     MySQL/ConnectionMySQLSettings.cpp
-    MySQL/DatabaseMaterializedMySQL.cpp
-    MySQL/DatabaseMySQL.cpp
+    MySQL/DatabaseConnectionMySQL.cpp
+    MySQL/DatabaseMaterializeMySQL.cpp
     MySQL/FetchTablesColumnsList.cpp
     MySQL/MaterializeMetadata.cpp
-    MySQL/MaterializedMySQLSettings.cpp
-    MySQL/MaterializedMySQLSyncThread.cpp
-    SQLite/DatabaseSQLite.cpp
-    SQLite/SQLiteUtils.cpp
-    SQLite/fetchSQLiteTableStructure.cpp
+    MySQL/MaterializeMySQLSettings.cpp
+    MySQL/MaterializeMySQLSyncThread.cpp
 
 )
 

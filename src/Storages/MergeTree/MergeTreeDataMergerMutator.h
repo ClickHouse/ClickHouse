@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 
 
 namespace DB
@@ -21,13 +20,6 @@ enum class SelectPartsDecision
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
-};
-
-enum class ExecuteTTLType
-{
-    NONE = 0,
-    NORMAL = 1,
-    RECALCULATE= 2,
 };
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
@@ -133,13 +125,10 @@ public:
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
-        ContextPtr context,
+        const Context & context,
         const ReservationPtr & space_reservation,
         bool deduplicate,
-        const Names & deduplicate_by_columns,
-        const MergeTreeData::MergingParams & merging_params,
-        const IMergeTreeDataPart * parent_part = nullptr,
-        const String & prefix = "");
+        const Names & deduplicate_by_columns);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
@@ -148,7 +137,7 @@ public:
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
-        ContextPtr context,
+        const Context & context,
         const ReservationPtr & space_reservation,
         TableLockHolder & table_lock_holder);
 
@@ -188,8 +177,7 @@ private:
         const MergeTreeDataPartPtr & source_part,
         const Block & updated_header,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const String & mrk_extension,
-        const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc);
+        const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
@@ -203,81 +191,48 @@ private:
         const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
-        const ProjectionsDescription & all_projections,
-        const MutationCommands & commands_for_removes);
-
-    static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
+    static bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
     static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
-        const NameSet & updated_columns,
+        const NamesAndTypesList & updated_columns,
         const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        const NameSet & materialized_indices,
-        const MergeTreeData::DataPartPtr & source_part);
-
-    static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
-        const NameSet & updated_columns,
-        const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & materialized_projections,
-        const MergeTreeData::DataPartPtr & source_part);
-
-    void writeWithProjections(
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
-        BlockInputStreamPtr mutating_stream,
-        IMergedBlockOutputStream & out,
-        time_t time_of_mutation,
-        MergeListEntry & merge_entry,
-        const ReservationPtr & space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context,
-        IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
+        const Context & context);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & skip_indices,
-        const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
+        const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        ExecuteTTLType execute_ttl_type,
-        bool need_sync,
-        const ReservationPtr & space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context);
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
         const MergeTreeDataPartPtr & source_part,
         const StorageMetadataPtr & metadata_snapshot,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
         const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
+        const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        ExecuteTTLType execute_ttl_type,
-        bool need_sync,
-        const ReservationPtr & space_reservation,
-        TableLockHolder & holder,
-        ContextPtr context);
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        ExecuteTTLType execute_ttl_type,
+        bool need_remove_expired_values,
         const CompressionCodecPtr & codec);
 
 public :
@@ -291,11 +246,7 @@ private:
 
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound,
-        const NamesAndTypesList & gathering_columns,
-        bool deduplicate,
-        bool need_remove_expired_values,
-        const MergeTreeData::MergingParams & merging_params) const;
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
 
     bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
 

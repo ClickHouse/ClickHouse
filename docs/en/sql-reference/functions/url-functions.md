@@ -5,7 +5,7 @@ toc_title: URLs
 
 # Functions for Working with URLs {#functions-for-working-with-urls}
 
-All these functions do not follow the RFC. They are maximally simplified for improved performance.
+All these functions don’t follow the RFC. They are maximally simplified for improved performance.
 
 ## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
 
@@ -55,7 +55,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 ```
 
 ``` text
@@ -98,7 +98,7 @@ Type: `String`.
 **Example**
 
 ``` sql
-SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 ```
 
 ``` text
@@ -283,7 +283,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 Result:
 
-```text
+```text 
 ┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
 │ foo                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -398,7 +398,7 @@ Result:
 
 ## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}
 
-If the URL does not have anything similar, the URL remains unchanged.
+If the URL doesn’t have anything similar, the URL remains unchanged.
 
 ### cutWWW {#cutwww}
 
@@ -420,3 +420,4 @@ Removes the query string and fragment identifier. The question mark and number s
 
 Removes the ‘name’ URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
