@@ -102,7 +102,7 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
 
 ## [экспериментально] Переход с ZooKeeper
 
-Плавный переход с ZooKeeper на ClickHouse Keeper невозможен, необходимо остановить кластер ZooKeeper, преобразовать данные и запустить ClickHouse Keeper. `clickhouse-keeper-converter` конвертирует журналы и снэпшоты ZooKeeper в снэпшот ClickHouse Keeper. Это работает только для версии ZooKeeper выше 3.4. Для перехода выполните следующие шаги:
+Плавный переход с ZooKeeper на ClickHouse Keeper невозможен, необходимо остановить кластер ZooKeeper, преобразовать данные и запустить ClickHouse Keeper. Утилита `clickhouse-keeper-converter` конвертирует журналы и снэпшоты ZooKeeper в снэпшот ClickHouse Keeper. Работа утилиты проверена только для версий ZooKeeper выше 3.4. Для миграции необходимо выполнить следующие шаги:
 
 1. Остановите все узлы ZooKeeper.
 
