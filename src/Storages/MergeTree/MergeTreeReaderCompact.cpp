@@ -219,7 +219,14 @@ void MergeTreeReaderCompact::readData(
         auto serialization = type_in_storage->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
-        column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+
+        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+
+        /// TODO: Avoid extra copying.
+        if (column->empty())
+            column = subcolumn;
+        else
+            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
     }
     else
     {

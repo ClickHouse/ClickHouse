@@ -163,7 +163,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     LOG_DEBUG(
         log,
         "Choose {} projection {}",
-        ProjectionDescription::typeToString(query_info.projection->desc->type),
+        query_info.projection->desc->type,
         query_info.projection->desc->name);
 
     Pipes pipes;

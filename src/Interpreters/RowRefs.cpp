@@ -69,7 +69,7 @@ void AsofRowRefs::insert(TypeIndex type, const IColumn & asof_column, const Bloc
         using T = std::decay_t<decltype(t)>;
         using LookupPtr = typename Entry<T>::LookupPtr;
 
-        using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+        using ColumnType = ColumnVectorOrDecimal<T>;
         const auto & column = typeid_cast<const ColumnType &>(asof_column);
 
         T key = column.getElement(row_num);
@@ -93,7 +93,7 @@ const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality
         using EntryType = Entry<T>;
         using LookupPtr = typename EntryType::LookupPtr;
 
-        using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+        using ColumnType = ColumnVectorOrDecimal<T>;
         const auto & column = typeid_cast<const ColumnType &>(asof_column);
         T key = column.getElement(row_num);
         auto & typed_lookup = std::get<LookupPtr>(lookups);
