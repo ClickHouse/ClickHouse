@@ -713,7 +713,15 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         }
 
         if (is_asof)
+        {
+            if (!analyzed_join.oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
             data.asofToJoinKeys();
+        }
+
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+
     }
 }
 
