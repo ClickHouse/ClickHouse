@@ -1,3 +1,6 @@
+-- Tags: long, zookeeper, no-replicated-database
+-- Tag no-replicated-database: Fails due to additional replicas or shards
+
 DROP TABLE IF EXISTS mutations_and_quorum1;
 DROP TABLE IF EXISTS mutations_and_quorum2;
 
