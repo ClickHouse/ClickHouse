@@ -13,9 +13,22 @@ private:
 public:
     using UnderlyingType = T;
 
-    constexpr explicit StrongTypedef(const T & t_) requires(std::is_copy_constructible_v<T>) : t(t_) {}
-    constexpr explicit StrongTypedef(T && t_) requires(std::is_move_constructible_v<T>) : t(std::move(t_)) {}
-    constexpr StrongTypedef() requires(std::is_default_constructible_v<T>) : t() {}
+    //NOLINTNEXTLINE Want to be able to initialize StrongTypedef<String> from std::string_view.
+    constexpr StrongTypedef(const T & t_)
+        requires(std::is_copy_constructible_v<T> && !std::is_trivially_constructible_v<T>)
+        : t(t_) {}
+
+    constexpr explicit StrongTypedef(T && t_)
+        requires(std::is_move_constructible_v<T> && !std::is_trivially_constructible_v<T>)
+        : t(std::move(t_)) {}
+
+    constexpr explicit StrongTypedef(T t_)
+        requires(std::is_trivially_constructible_v<T>)
+        : t(t_) {}
+
+    constexpr StrongTypedef()
+        requires(std::is_default_constructible_v<T>)
+        : t() {}
 
     constexpr StrongTypedef(const Self &) = default;
     constexpr StrongTypedef(Self &&) = default;
@@ -23,15 +36,24 @@ public:
     constexpr StrongTypedef & operator=(const Self &) = default;
     constexpr StrongTypedef & operator=(Self &&) = default;
 
-    constexpr StrongTypedef & operator=(const T & rhs) requires(std::is_copy_assignable_v<T>)
+    constexpr StrongTypedef & operator=(const T & rhs)
+        requires(std::is_copy_assignable_v<T> && !std::is_trivially_copy_assignable_v<T>)
     {
         t = rhs;
         return *this;
     }
 
-    constexpr StrongTypedef & operator=(T && rhs) requires(std::is_move_assignable_v<T>)
+    constexpr StrongTypedef & operator=(T && rhs)
+        requires(std::is_move_assignable_v<T> && !std::is_trivially_copy_assignable_v<T>)
     {
         t = std::move(rhs);
+        return *this;
+    }
+
+    constexpr StrongTypedef & operator=(T rhs)
+        requires(std::is_trivially_copy_assignable_v<T>)
+    {
+        t = rhs;
         return *this;
     }
 
@@ -46,7 +68,6 @@ public:
     constexpr const T & toUnderType() const { return t; }
 };
 
-
 namespace std
 {
     template <typename T, typename Tag>
@@ -58,5 +79,3 @@ namespace std
         }
     };
 }
-
-#define STRONG_TYPEDEF(T, D) using D = StrongTypedef<T, struct D ## Tag>;

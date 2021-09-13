@@ -52,6 +52,15 @@ using DataTypeDecimal64 = DataTypeDecimal<Decimal64>;
 using DataTypeDecimal128 = DataTypeDecimal<Decimal128>;
 using DataTypeDecimal256 = DataTypeDecimal<Decimal256>;
 
+namespace data_types
+{
+template <class T>
+concept is_decimal = std::is_same_v<T, DataTypeDecimal32>
+    || std::is_same_v<T, DataTypeDecimal64>
+    || std::is_same_v<T, DataTypeDecimal128>
+    || std::is_same_v<T, DataTypeDecimal256>;
+}
+
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
 {

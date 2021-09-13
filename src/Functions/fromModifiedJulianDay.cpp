@@ -172,16 +172,16 @@ namespace DB
             DataTypes argument_types = { from_type };
 
             FunctionBasePtr base;
-            auto call = [&](const auto & types) -> bool
-            {
-                using Types = std::decay_t<decltype(types)>;
-                using FromIntType = typename Types::RightType;
-                using FromDataType = DataTypeNumber<FromIntType>;
 
-                base = std::make_unique<FunctionBaseFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>(argument_types, return_type);
-                return true;
+            constexpr Dispatch d { ._int = true };
+
+            const bool built = dispatchOverDataType<d>(from_type->getTypeId(), [&]<class DataType>(Id<DataType>)
+            {
+                using FromDay = FunctionBaseFromModifiedJulianDay<Name, DataType, nullOnErrors>;
+                base = std::make_unique<FromDay>(argument_types, return_type);
+                return STATIC_STOP;
             };
-            bool built = callOnBasicType<void, true, false, false, false>(from_type->getTypeId(), call);
+
             if (built)
                 return base;
 

@@ -72,9 +72,9 @@ inline bool joinDispatchInit(ASTTableJoin::Kind kind, ASTTableJoin::Strictness s
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
             maps = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map();
-            return true;
+            return STATIC_STOP;
         }
-        return false;
+        return STATIC_CONTINUE;
     });
 }
 
@@ -94,9 +94,9 @@ inline bool joinDispatch(ASTTableJoin::Kind kind, ASTTableJoin::Strictness stric
                 std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
                 std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
                 std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps));
-            return true;
+            return STATIC_STOP;
         }
-        return false;
+        return STATIC_CONTINUE;
     });
 }
 

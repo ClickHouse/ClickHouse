@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#define STRONG_TYPEDEF(T, D) using D = StrongTypedef<T, struct D ## Tag>;
+
 
 TEST(StrongTypedefSuite, TypedefsOfTheSameType)
 {

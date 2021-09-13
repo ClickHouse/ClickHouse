@@ -149,7 +149,7 @@ public:
         String partition_id;
     };
 
-    STRONG_TYPEDEF(String, PartitionID)
+    using PartitionID = StrongTypedef<String, struct PartitionIDTag>;
 
     /// Alter conversions which should be applied on-fly for part. Build from of
     /// the most recent mutation commands for part. Now we have only rename_map

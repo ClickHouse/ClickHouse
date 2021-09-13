@@ -86,10 +86,8 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool //-V657
+        auto call = [&]<class Type>(TypePair<void, Type>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using Type = typename Types::RightType;
             using ColVecType = ColumnDecimal<Type>;
 
             if (const ColumnConst * const_column = checkAndGetColumnConst<ColVecType>(src_column.column.get()))
@@ -109,7 +107,10 @@ public:
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
-        if (!callOnBasicType<void, false, false, true, false>(dec_type_idx, call))
+
+        constexpr Dispatch d { ._int = false, ._float = false, ._decimal = true, ._datetime = false };
+
+        if (!dispatchOverType<d>(dec_type_idx, call))
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 

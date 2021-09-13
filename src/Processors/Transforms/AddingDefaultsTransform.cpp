@@ -56,11 +56,8 @@ static void mixNumberColumns(
     const ColumnPtr & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
-    auto call = [&](const auto & types)
+    auto call = [&]<class DataType>(TypePair<void, DataType>)
     {
-        using Types = std::decay_t<decltype(types)>;
-        using DataType = typename Types::LeftType;
-
         if constexpr (!std::is_same_v<DataType, DataTypeString> && !std::is_same_v<DataType, DataTypeFixedString>)
         {
             using FieldType = typename DataType::FieldType;
@@ -96,7 +93,7 @@ static void mixNumberColumns(
         return false;
     };
 
-    if (!callOnIndexAndDataType<void>(type_idx, call))
+    if (!dispatchOverDataType(type_idx, std::move(call)))
         throw Exception("Unexpected type on mixNumberColumns", ErrorCodes::LOGICAL_ERROR);
 }
 

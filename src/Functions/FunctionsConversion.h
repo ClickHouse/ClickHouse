@@ -1661,16 +1661,12 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        auto call = [&](const auto & types, const auto & tag) -> bool
+        // FIXME change Left <-> Right
+        auto call = [&]<class Left, class Right, class Tag>(TypePair<Right, Left>, Tag)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftDataType = typename Types::LeftType;
-            using RightDataType = typename Types::RightType;
-            using SpecialTag = std::decay_t<decltype(tag)>;
-
-            if constexpr (IsDataTypeDecimal<RightDataType>)
+            if constexpr (IsDataTypeDecimal<Right>)
             {
-                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<Right, DataTypeDateTime64>)
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
@@ -1686,36 +1682,37 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(arguments, result_type, input_rows_count, scale);
             }
-            else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
+            else if constexpr (IsDataTypeDateOrDateTime<Right> && std::is_same_v<Left, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, dt64->getScale());
-            }
-            else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-            {
-                using LeftT = typename LeftDataType::FieldType;
-                using RightT = typename RightDataType::FieldType;
 
-                static constexpr bool bad_left =
-                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
-                static constexpr bool bad_right =
-                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                    arguments, result_type, input_rows_count, dt64->getScale());
+            }
+            else if constexpr (IsDataTypeDecimalOrNumber<Left> && IsDataTypeDecimalOrNumber<Right>)
+            {
+                template <class DT>
+                constexpr bool bad = is_decimal<DT>
+                    || is_floating_point<DT>
+                    || is_big_int_v<DT>
+                    || is_signed_v<DT>;
+
+                constexpr bool bad_left = bad<typename Left::FieldType>;
+                constexpr bool bad_right = bad<typename Left::FieldType>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
-                if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
-                              (bad_right && std::is_same_v<LeftDataType, DataTypeUUID>))
-                {
+                if constexpr ((bad_left && std::is_same_v<Right, DataTypeUUID>) ||
+                              (bad_right && std::is_same_v<Left, DataTypeUUID>))
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
-                }
                 else
-                    result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                    result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                        arguments, result_type, input_rows_count);
             }
             else
-            {
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
-            }
+                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                    arguments, result_type, input_rows_count);
 
             return true;
         };
@@ -1728,9 +1725,10 @@ private:
 
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
-                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{}))
-                    throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                if (!dispatchOverDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag()))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument of function {}",
+                        arguments[0].type->getName(), getName());
 
                 return result_column;
             }
@@ -3266,56 +3264,50 @@ private:
 
         WrapperType ret;
 
-        auto make_default_wrapper = [&](const auto & types) -> bool
+        auto make_default_wrapper = [&]<class To>(TypePair<void, To>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using ToDataType = typename Types::LeftType;
-
             if constexpr (
-                std::is_same_v<ToDataType, DataTypeUInt8> ||
-                std::is_same_v<ToDataType, DataTypeUInt16> ||
-                std::is_same_v<ToDataType, DataTypeUInt32> ||
-                std::is_same_v<ToDataType, DataTypeUInt64> ||
-                std::is_same_v<ToDataType, DataTypeUInt128> ||
-                std::is_same_v<ToDataType, DataTypeUInt256> ||
-                std::is_same_v<ToDataType, DataTypeInt8> ||
-                std::is_same_v<ToDataType, DataTypeInt16> ||
-                std::is_same_v<ToDataType, DataTypeInt32> ||
-                std::is_same_v<ToDataType, DataTypeInt64> ||
-                std::is_same_v<ToDataType, DataTypeInt128> ||
-                std::is_same_v<ToDataType, DataTypeInt256> ||
-                std::is_same_v<ToDataType, DataTypeFloat32> ||
-                std::is_same_v<ToDataType, DataTypeFloat64> ||
-                std::is_same_v<ToDataType, DataTypeDate> ||
-                std::is_same_v<ToDataType, DataTypeDate32> ||
-                std::is_same_v<ToDataType, DataTypeDateTime> ||
-                std::is_same_v<ToDataType, DataTypeUUID>)
+                std::is_same_v<To, DataTypeUInt8> ||
+                std::is_same_v<To, DataTypeUInt16> ||
+                std::is_same_v<To, DataTypeUInt32> ||
+                std::is_same_v<To, DataTypeUInt64> ||
+                std::is_same_v<To, DataTypeUInt128> ||
+                std::is_same_v<To, DataTypeUInt256> ||
+                std::is_same_v<To, DataTypeInt8> ||
+                std::is_same_v<To, DataTypeInt16> ||
+                std::is_same_v<To, DataTypeInt32> ||
+                std::is_same_v<To, DataTypeInt64> ||
+                std::is_same_v<To, DataTypeInt128> ||
+                std::is_same_v<To, DataTypeInt256> ||
+                std::is_same_v<To, DataTypeFloat32> ||
+                std::is_same_v<To, DataTypeFloat64> ||
+                std::is_same_v<To, DataTypeDate> ||
+                std::is_same_v<To, DataTypeDate32> ||
+                std::is_same_v<To, DataTypeDateTime> ||
+                std::is_same_v<To, DataTypeUUID>)
             {
-                ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                ret = createWrapper(from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);
                 return true;
             }
-            if constexpr (
+            else if constexpr (
                 std::is_same_v<ToDataType, DataTypeEnum8> ||
                 std::is_same_v<ToDataType, DataTypeEnum16>)
             {
                 ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
             }
-            if constexpr (
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>> ||
-                std::is_same_v<ToDataType, DataTypeDateTime64>)
+            else if constexpr (data_types::is_decimal<To> || std::is_same_v<To, DataTypeDateTime64>)
             {
-                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                ret = createDecimalWrapper(
+                    from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);
+
                 return true;
             }
 
             return false;
         };
 
-        if (callOnIndexAndDataType<void>(to_type->getTypeId(), make_default_wrapper))
+        if (dispatchOverDataType(to_type->getTypeId(), std::move(make_default_wrapper)))
             return ret;
 
         switch (to_type->getTypeId())

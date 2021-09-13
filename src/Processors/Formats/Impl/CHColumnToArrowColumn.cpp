@@ -2,6 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <common/IsArcadiaBuild.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -456,31 +457,29 @@ namespace DB
         }
         else if (isDecimal(column_type))
         {
-            auto fill_decimal = [&](const auto & types) -> bool
+            auto fill_decimal = [&]<class To>(TypePair<void, To>)
             {
-                using Types = std::decay_t<decltype(types)>;
-                using ToDataType = typename Types::LeftType;
-                if constexpr (
-                    std::is_same_v<ToDataType,DataTypeDecimal<Decimal32>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                if constexpr (data_types::is_decimal<To> && !std::is_same_v<To, DataTypeDecimal256>)
                 {
-                    fillArrowArrayWithDecimalColumnData<ToDataType, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                    fillArrowArrayWithDecimalColumnData<To, Int128, arrow::Decimal128, arrow::Decimal128Builder>(
+                        column, null_bytemap, array_builder, format_name, start, end);
+
                     return true;
                 }
-#if !defined(ARCADIA_BUILD)
-                if constexpr (std::is_same_v<ToDataType,DataTypeDecimal<Decimal256>>)
+                else if constexpr (IS_ARCADIA_BUILD && std::is_same_v<To, DataTypeDecimal256>)
                 {
-                    fillArrowArrayWithDecimalColumnData<ToDataType, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                    fillArrowArrayWithDecimalColumnData<To, Int256, arrow::Decimal256, arrow::Decimal256Builder>(
+                        column, null_bytemap, array_builder, format_name, start, end);
+
                     return true;
                 }
-#endif
 
                 return false;
             };
 
-            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal))
-                throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with decimal data with type {}", column_type_name};
+            if (!dispatchOverDataType(column_type->getTypeId(), std::move(fill_decimal)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot fill arrow array with decimal data with type {}", column_type_name);
         }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_type_name) \
@@ -563,15 +562,10 @@ namespace DB
         if (isDecimal(column_type))
         {
             std::shared_ptr<arrow::DataType> arrow_type;
-            const auto create_arrow_type = [&](const auto & types) -> bool {
-                using Types = std::decay_t<decltype(types)>;
-                using ToDataType = typename Types::LeftType;
 
-                if constexpr (
-                    std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
+            auto create_arrow_type = [&]<class To>(TypePair<void, To>)
+            {
+                if constexpr(data_types::is_decimal<To>)
                 {
                     const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
@@ -580,8 +574,12 @@ namespace DB
 
                 return false;
             };
-            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), create_arrow_type))
-                throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot convert decimal type {} to arrow type", column_type->getFamilyName()};
+
+            if (!dispatchOverDataType(column_type->getTypeId(), std::move(create_arrow_type)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot convert type {} to arrow type",
+                    column_type->getFamilyName()};
+
             return arrow_type;
         }
 

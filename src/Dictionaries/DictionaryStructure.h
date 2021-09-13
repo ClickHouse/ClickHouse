@@ -86,10 +86,10 @@ constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && 
         if (type == other)
         {
             func(DictionaryAttributeType<other>{});
-            return false;
+            return STATIC_STOP;
         }
 
-        return true;
+        return STATIC_CONTINUE;
     });
 };
 

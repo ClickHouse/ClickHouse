@@ -91,11 +91,8 @@ struct ArrayAggregateImpl
     {
         DataTypePtr result;
 
-        auto call = [&](const auto & types)
+        auto call = [&]<class DataType>(TypePair<void, DataType>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using DataType = typename Types::LeftType;
-
             if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
             {
                 result = std::make_shared<DataTypeFloat64>();
@@ -121,7 +118,7 @@ struct ArrayAggregateImpl
             return false;
         };
 
-        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
+        if (!dispatchOverDataType(expression_return->getTypeId(), std::move(call)))
         {
             throw Exception(
                 "array aggregation function cannot be performed on type " + expression_return->getName(),

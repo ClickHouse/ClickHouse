@@ -5,13 +5,6 @@
 #include "Decimal.h"
 #include "UUID.h"
 
-namespace DB::TypeLists
-{
-    using Ints = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64>;
-
-    using Decimals = TypeList<Decimal32, Decimal64, Decimal128, Decimal256>;
-}
-
 namespace DB
 {
 using TypeListNativeNumbers = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;

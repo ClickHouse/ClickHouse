@@ -1,38 +1,27 @@
 #pragma once
 
-#include <ios>
-#include <type_traits>
 #include <magic_enum.hpp>
 #include <fmt/format.h>
+#include "static_for.h"
 
 template <class T> concept is_enum = std::is_enum_v<T>;
 
-namespace detail
-{
-template <is_enum E, class F, size_t ...I>
-constexpr void static_for(F && f, std::index_sequence<I...>)
-{
-    (!(std::forward<F>(f)(std::integral_constant<E, magic_enum::enum_value<E>(I)>())) || ...);
-}
-}
-
 /**
- * Iterate over enum values in compile-time (compile-time switch/case, loop unrolling).
+ * Iterate over enum values in compile time. See common/static_for.h
  *
- * If F returns false on some value, iteration over values will stop.
+ * @code{.cpp}
+ * enum class E { A, B, C };
+ * template <E v> void foo();
  *
- * @example static_for<E>([](auto enum_value) { return template_func<enum_value>(); }
- * ^ enum_value can be used as a template parameter
+ * static_for<E>([](auto enum_value) {
+ *     foo<enum_value>();
+ * });
+ * @endcode
  */
 template <is_enum E, class F>
-constexpr void static_for(F && f)
-    requires(std::is_same_v<bool,
-            std::invoke_result_t<F,
-                std::integral_constant<E,
-                    magic_enum::enum_value<E>(0)>>>)
+constexpr bool static_for(F && f)
 {
-    constexpr size_t count = magic_enum::enum_count<E>();
-    detail::static_for<E>(std::forward<F>(f), std::make_index_sequence<count>());
+    return static_for<magic_enum::enum_values<E>()>(std::forward<F>(f));
 }
 
 /// Enable printing enum values as strings via fmt + magic_enum

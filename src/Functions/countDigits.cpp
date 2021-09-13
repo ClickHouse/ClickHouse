@@ -57,25 +57,28 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&]<class T>(TypePair<void, T>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using Type = typename Types::RightType;
-            using ColVecType = ColumnVectorOrDecimal<Type>;
+            using ColVecType = ColumnVectorOrDecimal<T>;
 
             if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
-                execute<Type>(*col_vec, *result_column, input_rows_count);
-                return true;
+                execute<T>(*col_vec, *result_column, input_rows_count);
+                return STATIC_STOP;
             }
 
-            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal column while executing function {}", getName());
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
-        if (!callOnBasicType<void, true, false, true, false>(dec_type_idx, call))
-            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        constexpr Dispatch d { ._int = true, ._decimal = true };
+
+        if (!dispatchOverType<d>(dec_type_idx, std::move(call)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Wrong call for {} with {}",
+                getName(), src_column.type->getName());
 
         return result_column;
     }

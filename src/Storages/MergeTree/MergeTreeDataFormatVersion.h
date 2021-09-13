@@ -5,9 +5,6 @@
 
 namespace DB
 {
-
-STRONG_TYPEDEF(UInt32, MergeTreeDataFormatVersion)
-
-const MergeTreeDataFormatVersion MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING {1};
-
+using MergeTreeDataFormatVersion = StrongTypedef<UInt32, struct MergeTreeDataFormatVersionTag>;
+constexpr MergeTreeDataFormatVersion MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING {1};
 }

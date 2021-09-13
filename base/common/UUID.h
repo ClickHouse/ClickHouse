@@ -5,5 +5,5 @@
 
 namespace DB
 {
-STRONG_TYPEDEF(UInt128, UUID)
+using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 }
