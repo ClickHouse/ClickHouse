@@ -308,9 +308,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
     else
@@ -318,9 +317,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter())
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
 }

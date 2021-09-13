@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS `01945.db`;
 CREATE DATABASE `01945.db`;
 
