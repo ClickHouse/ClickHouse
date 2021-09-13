@@ -25,12 +25,12 @@ def test_select(started_cluster):
     try:
         name = "filelog_table"
         node1.query("""
-            CREATE TABLE {name} (id UInt64, value UInt64) Engine=FileLog("logs", "CSV")
+            CREATE TABLE {name} (id UInt64, value UInt64) Engine=FileLog('logs', 'CSV')
         """.format(name=name))
 
         assert node1.query("SELECT sum(id) FROM {name}".format(name=name)) == "55\n"
 
-        shutil.copy("user_files/logs/data.csv" "user_files/logs/data_copy.csv")
+        shutil.copy("user_files/logs/data.csv", "user_files/logs/data_copy.csv")
 
         assert node1.query("SELECT sum(id) FROM {name}".format(name=name)) == "55\n"
 
@@ -43,7 +43,7 @@ def test_stream_to_view(started_cluster):
     try:
         name = "filelog_table"
         node1.query("""
-            CREATE TABLE {name} (id UInt64, value UInt64) Engine=FileLog("logs", "CSV")
+            CREATE TABLE {name} (id UInt64, value UInt64) Engine=FileLog('logs', 'CSV')
         """.format(name=name))
 
         target_name = "mv"
