@@ -6,7 +6,7 @@ toc_title: UK Property Price Paid
 # UK Property Price Paid
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
-The size of the dataset in uncompressed form is about 4 GiB and it will take about 226 MiB in ClickHouse.
+The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
 
 Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
 Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
@@ -14,6 +14,8 @@ Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
 Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
 
 ## Download the Dataset
+
+Run the command:
 
 ```bash
 wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv
@@ -114,7 +116,7 @@ Result:
 │ 26321785 │
 └──────────┘
 
-The size of dataset in ClickHouse is just 278 MiB:
+The size of dataset in ClickHouse is just 278 MiB, check it.
 
 Query:
 
@@ -132,7 +134,7 @@ Result:
 
 ## Run Some Queries
 
-### Average price per year:
+### Query 1. Average Price Per Year
 
 Query:
 
@@ -174,7 +176,7 @@ Result:
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Average price per year in London:
+### Query 2. Average Price per Year in London
 
 Query:
 
@@ -218,7 +220,7 @@ Result:
 
 Something happened in 2013. I don't have a clue. Maybe you have a clue what happened in 2020?
 
-### The most expensive neighborhoods:
+### Query 3. The Most Expensive Neighborhoods
 
 Query:
 
@@ -347,13 +349,13 @@ Result:
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-## Let's speed up queries using projections
+## Let's Speed Up Queries Using Projections
 
 [Projections](https://../../sql-reference/statements/alter/projection/) allow to improve queries speed by storing pre-aggregated data.
 
-### Build a projection 
+### Build a Projection 
 
-Create an aggregate projection by dimensions `toYear(date)`, `district`, `town`.
+Create an aggregate projection by dimensions `toYear(date)`, `district`, `town`:
 
 ```sql
 ALTER TABLE uk_price_paid
@@ -373,7 +375,7 @@ ALTER TABLE uk_price_paid
     );
 ```
 
-Populate the projection for existing data (without it projection will be created for only newly inserted data).
+Populate the projection for existing data (without it projection will be created for only newly inserted data):
 
 ```sql
 ALTER TABLE uk_price_paid
@@ -381,17 +383,17 @@ ALTER TABLE uk_price_paid
 SETTINGS mutations_sync = 1;
 ```
 
-## Test performance
+## Test Performance
 
 Let's run the same 3 queries.
 
-Enable projections for selects
+Enable projections for selects:
 
 ```sql
 SET allow_experimental_projection_optimization = 1;
 ```
 
-### Query 1. Average price per year
+### Query 1. Average Price Per Year
 
 Query:
 
@@ -439,7 +441,7 @@ Result:
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Query 2. Average price per year in London
+### Query 2. Average Price Per Year in London
 
 Query:
 
@@ -488,7 +490,7 @@ Result:
 └──────┴─────────┴───────────────────────────────────────────────────────┘
 ```
 
-### Query 3. The most expensive neighborhoods
+### Query 3. The Most Expensive Neighborhoods
 
 The condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020).
 
@@ -638,6 +640,6 @@ no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows
    projection: 100 rows in set. Elapsed: 0.029 sec. Processed 8.08 thousand rows, 511.08 KB (276.06 thousand rows/s., 17.47 MB/s.)
 ```
 
-### Test it in Playground
+### Test It in Playground
 
 The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
