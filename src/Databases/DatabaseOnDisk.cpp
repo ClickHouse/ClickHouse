@@ -46,7 +46,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool has_force_restore_data_flag)
+    bool force_restore)
 {
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
@@ -88,7 +88,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            has_force_restore_data_flag)
+            force_restore)
     };
 }
 

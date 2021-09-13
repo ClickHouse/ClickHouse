@@ -39,7 +39,7 @@ namespace
         DatabaseOrdinary & database,
         const String & database_name,
         const String & metadata_path,
-        bool has_force_restore_data_flag)
+        bool force_restore)
     {
         try
         {
@@ -48,7 +48,7 @@ namespace
                 database_name,
                 database.getTableDataPath(query),
                 context,
-                has_force_restore_data_flag);
+                force_restore);
 
             database.attachTable(table_name, table, database.getTableDataPath(query));
         }
@@ -75,7 +75,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -85,7 +85,7 @@ void DatabaseOrdinary::loadStoredObjects(
     ParsedTablesMetadata metadata;
     loadTablesMetadata(local_context, metadata);
 
-    size_t total_tables = metadata.metadata.size() - metadata.total_dictionaries;
+    size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
 
     AtomicStopwatch watch;
     std::atomic<size_t> dictionaries_processed{0};
@@ -101,18 +101,18 @@ void DatabaseOrdinary::loadStoredObjects(
     /// loading of its config only, it doesn't involve loading the dictionary itself.
 
     /// Attach dictionaries.
-    for (const auto & name_with_path_and_query : metadata.metadata)
+    for (const auto & name_with_path_and_query : metadata.parsed_tables)
     {
         const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.first;
-        const auto & ast = name_with_path_and_query.second.second;
+        const auto & path = name_with_path_and_query.second.path;
+        const auto & ast = name_with_path_and_query.second.ast;
         const auto & create_query = ast->as<const ASTCreateQuery &>();
 
         if (create_query.is_dictionary)
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, has_force_restore_data_flag);
+                loadTableFromMetadata(local_context, path, name, ast, force_restore);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
@@ -123,18 +123,18 @@ void DatabaseOrdinary::loadStoredObjects(
     pool.wait();
 
     /// Attach tables.
-    for (const auto & name_with_path_and_query : metadata.metadata)
+    for (const auto & name_with_path_and_query : metadata.parsed_tables)
     {
         const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.first;
-        const auto & ast = name_with_path_and_query.second.second;
+        const auto & path = name_with_path_and_query.second.path;
+        const auto & ast = name_with_path_and_query.second.ast;
         const auto & create_query = ast->as<const ASTCreateQuery &>();
 
         if (!create_query.is_dictionary)
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, has_force_restore_data_flag);
+                loadTableFromMetadata(local_context, path, name, ast, force_restore);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -147,13 +147,13 @@ void DatabaseOrdinary::loadStoredObjects(
     if (!skip_startup_tables)
     {
         /// After all tables was basically initialized, startup them.
-        startupTables(pool, has_force_restore_data_flag, force_attach);
+        startupTables(pool, force_restore, force_attach);
     }
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
 {
-    size_t prev_tables_count = metadata.metadata.size();
+    size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
     auto process_metadata = [&metadata, this](const String & file_name)
@@ -190,16 +190,16 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 QualifiedTableName qualified_name{database_name, create_query->table};
 
                 std::lock_guard lock{metadata.mutex};
-                metadata.metadata[qualified_name] = std::make_pair(full_path.string(), std::move(ast));
+                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 if (data.dependencies.empty())
                 {
-                    metadata.independent_tables.emplace_back(std::move(qualified_name));
+                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
                 }
                 else
                 {
                     for (const auto & dependency : data.dependencies)
                     {
-                        metadata.dependencies_info[dependency].dependent_tables.push_back(qualified_name);
+                        metadata.dependencies_info[dependency].dependent_database_objects.push_back(qualified_name);
                         ++metadata.dependencies_info[qualified_name].dependencies_count;
                     }
                 }
@@ -215,11 +215,12 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
     iterateMetadataFiles(local_context, process_metadata);
 
-    size_t objects_in_database = metadata.metadata.size() - prev_tables_count;
+    size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
     size_t tables_in_database = objects_in_database - dictionaries_in_database;
 
-    LOG_INFO(log, "Total {} tables and {} dictionaries.", tables_in_database, dictionaries_in_database);
+    LOG_INFO(log, "Metadata processed, database {} has {} tables and {} dictionaries in total.",
+             database_name, tables_in_database, dictionaries_in_database);
 }
 
 void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
@@ -261,6 +262,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
     }
     catch (...)
     {
+        /// We have to wait for jobs to finish here, because job function has reference to variables on the stack of current thread.
         thread_pool.wait();
         throw;
     }
