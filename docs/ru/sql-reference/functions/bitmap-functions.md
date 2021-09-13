@@ -66,9 +66,8 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 **Аргументы**
 
 -   `bitmap` – битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
-
 -   `range_start` – начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
--   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+-   `cardinality_limit` – верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
 
 **Возвращаемое значение**
 
@@ -90,6 +89,44 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
+```
+
+## subBitmap {#subBitmap}
+
+Создает подмножество битмапа, ограниченное параметром `cardinality_limit` со смещением `offset`.
+
+**Синтаксис**
+
+``` sql
+subBitmap(bitmap, offset, cardinality_limit)
+```
+
+**Аргументы**
+
+-   `bitmap` – битмап. Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `offset` – количество смещений. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `cardinality_limit` – верхний предел подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+Подмножество битмапа.
+
+Тип: `Bitmap object`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
+```
+
+Результат:
+
+``` text
+┌─res─────────────────────────────┐
+│ [10,11,12,13,14,15,16,17,18,19] │
+└─────────────────────────────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}

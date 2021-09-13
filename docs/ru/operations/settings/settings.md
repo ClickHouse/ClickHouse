@@ -807,6 +807,26 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: 2013265920.
 
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах в ClickHouse для выполнения очистки старых временных каталогов.
+
+Возможное значение:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах в ClickHouse для выполнения очистки старых кусков, WAL-ов и мутаций.
+
+Возможное значение:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
+
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Минимальный объём данных, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск.
