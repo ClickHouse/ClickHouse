@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel, no-fasttest
+# Tag no-fasttest: Accesses CH via mysql table function (which is unavailable)
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
