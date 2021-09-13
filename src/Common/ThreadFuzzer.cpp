@@ -31,6 +31,10 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 namespace DB
 {
 
