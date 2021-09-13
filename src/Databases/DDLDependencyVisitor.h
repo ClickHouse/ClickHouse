@@ -9,7 +9,10 @@ namespace DB
 class ASTFunction;
 class ASTFunctionWithKeyValueArguments;
 
-
+/// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
+/// from column default expressions (joinGet, dictGet, etc)
+/// or dictionary source (for dictionaries from local ClickHouse table).
+/// Does not validate AST, works a best-effort way.
 class DDLDependencyVisitor
 {
 public:

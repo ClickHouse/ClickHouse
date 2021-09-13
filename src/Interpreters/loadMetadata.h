@@ -15,6 +15,8 @@ void loadMetadataSystem(ContextMutablePtr context);
 /// Use separate function to load system tables.
 void loadMetadata(ContextMutablePtr context, const String & default_database_name = {});
 
+/// Background operations in system tables may slowdown loading of the rest tables,
+/// so we startup system tables after all databases are loaded.
 void startupSystemTables();
 
 }

@@ -26,15 +26,21 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
-using ParsedMetadata = std::map<QualifiedTableName, std::pair<String, ASTPtr>>;
+struct ParsedTableMetadata
+{
+    String path;
+    ASTPtr ast;
+};
+
+using ParsedMetadata = std::map<QualifiedTableName, ParsedTableMetadata>;
 using TableNames = std::vector<QualifiedTableName>;
 
 struct DependenciesInfo
 {
     /// How many dependencies this table have
     size_t dependencies_count = 0;
-    /// List of tables which depend on this table
-    TableNames dependent_tables;
+    /// List of tables/dictionaries which depend on this table/dictionary
+    TableNames dependent_database_objects;
 };
 
 using DependenciesInfos = std::unordered_map<QualifiedTableName, DependenciesInfo>;
@@ -45,18 +51,18 @@ struct ParsedTablesMetadata
     String default_database;
 
     std::mutex mutex;
-    ParsedMetadata metadata;
+    ParsedMetadata parsed_tables;
 
     /// For logging
     size_t total_dictionaries = 0;
 
-    /// List of tables that do not have any dependencies and can be loaded
-    TableNames independent_tables;
+    /// List of tables/dictionaries that do not have any dependencies and can be loaded
+    TableNames independent_database_objects;
 
     /// Actually it contains two different maps (with, probably, intersecting keys):
-    /// 1. table name -> number of dependencies
-    /// 2. table name -> dependent tables list (adjacency list of dependencies graph).
-    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_tables contains A.
+    /// 1. table/dictionary name -> number of dependencies
+    /// 2. table/dictionary name -> dependent tables/dictionaries list (adjacency list of dependencies graph).
+    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A.
     /// And dependencies_info[C].dependencies_count is a number of incoming edges for vertex C (how many tables we have to load before C).
     DependenciesInfos dependencies_info;
 };
@@ -81,7 +87,7 @@ private:
     bool force_attach;
 
     Strings databases_to_load;
-    ParsedTablesMetadata all_tables;
+    ParsedTablesMetadata metadata;
     Poco::Logger * log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
@@ -92,7 +98,7 @@ private:
 
     void loadTablesInTopologicalOrder(ThreadPool & pool);
 
-    DependenciesInfosIter removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_tables);
+    DependenciesInfosIter removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_database_objects);
 
     void startLoadingIndependentTables(ThreadPool & pool, size_t level);
 
