@@ -52,7 +52,7 @@ public:
         );
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override 
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override 
     {
         const auto * col_hindex = arguments[0].column.get();
 
@@ -62,16 +62,16 @@ public:
         offsets->reserve(input_rows_count);
         IColumn::Offset current_offset = 0;
 
-        for(size_t row = 0; row < input_rows_count; ++row) 
+        for (size_t row = 0; row < input_rows_count; ++row) 
         {
             H3Index h3index = col_hindex->getUInt(row);
             CellBoundary boundary{};
 
             auto err = cellToBoundary(h3index, &boundary);
-            if(err)
+            if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
             
-            for(int vert = 0; vert < boundary.numVerts; ++vert) 
+            for (int vert = 0; vert < boundary.numVerts; ++vert) 
             {
                 latitude->insert(radsToDegs(boundary.verts[vert].lat));
                 longitude->insert(radsToDegs(boundary.verts[vert].lng));
@@ -80,7 +80,6 @@ public:
             current_offset += boundary.numVerts;
             offsets->insert(current_offset);
         }
-
 
         return ColumnArray::create(
             ColumnTuple::create(Columns{std::move(latitude), std::move(longitude)}),
