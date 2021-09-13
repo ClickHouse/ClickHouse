@@ -416,9 +416,9 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool force_restore, bool /*force_attach*/)
 {
-    if (!has_force_restore_data_flag)
+    if (!force_restore)
         return;
 
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
@@ -435,10 +435,10 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool h
 }
 
 void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
 {
-    beforeLoadingMetadata(local_context, has_force_restore_data_flag, force_attach);
-    DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseOrdinary::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
 }
 
 void DatabaseAtomic::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)

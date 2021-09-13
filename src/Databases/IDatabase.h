@@ -129,7 +129,7 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects(
         ContextMutablePtr /*context*/,
-        bool /*has_force_restore_data_flag*/,
+        bool /*force_restore*/,
         bool /*force_attach*/ = false,
         bool /* skip_startup_tables */ = false)
     {
@@ -139,7 +139,7 @@ public:
 
     virtual void beforeLoadingMetadata(
         ContextMutablePtr /*context*/,
-        bool /*has_force_restore_data_flag*/,
+        bool /*force_restore*/,
         bool /*force_attach*/)
     {
     }
