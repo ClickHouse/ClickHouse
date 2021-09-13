@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
@@ -1513,6 +1514,279 @@ struct WindowFunctionDenseRank final : public WindowFunction
     }
 };
 
+struct WindowFunctionExponentialTimeDecayedSum final : public WindowFunction
+{
+    WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (parameters_.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly one parameter", name_);
+        }
+        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+
+        if (argument_types.size() != 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly two arguments", name_);
+        }
+
+        if (!isNumber(argument_types[0]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "First argument must be a number, '{}' given",
+                argument_types[0]->getName());
+        }
+
+        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Second argument must be DateTime or DateTime64, '{}' given",
+                argument_types[1]->getName());
+        }
+    }
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeFloat64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
+
+        Float64 last_val = 0;
+        Float64 last_t = 0;
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
+                last_val = column_val->getFloat64(column_val->size()-1);
+                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
+                last_t = column_t->getFloat64(column_t->size()-1);
+            }
+        }
+        else
+        {
+            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
+            last_val = column_val->getFloat64(current_row.row-1);
+            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
+            last_t = column_t->getFloat64(current_row.row-1);
+        }
+
+        IColumn & to = *current_block.output_columns[function_index];
+
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+
+        Float64 c = exp((last_t-t)/decay_length);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(x + c * last_val);
+    }
+
+    private:
+        Float64 decay_length;
+};
+
+struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
+{
+    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (parameters_.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly one parameter", name_);
+        }
+        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+
+        if (argument_types.size() != 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly two arguments", name_);
+        }
+
+        if (!isNumber(argument_types[0]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "First argument must be a number, '{}' given",
+                argument_types[0]->getName());
+        }
+
+        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Second argument must be DateTime or DateTime64, '{}' given",
+                argument_types[1]->getName());
+        }
+    }
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeFloat64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
+
+        Float64 last_val = 0;
+        Float64 last_t = 0;
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
+                last_val = column_val->getFloat64(column_val->size()-1);
+                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
+                last_t = column_t->getFloat64(column_t->size()-1);
+            }
+        }
+        else
+        {
+            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
+            last_val = column_val->getFloat64(current_row.row-1);
+            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
+            last_t = column_t->getFloat64(current_row.row-1);
+        }
+
+        IColumn & to = *current_block.output_columns[function_index];
+
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+
+        Float64 c = exp((last_t-t)/decay_length);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(std::max(x, c * last_val));
+    }
+
+    private:
+        Float64 decay_length;
+};
+
+struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
+{
+    WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (parameters_.size() != 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} cannot be parameterized", name_);
+        }
+
+        if (argument_types.size() != 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes no arguments", name_);
+        }
+    }
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeUInt64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
+
+        IColumn & to = *current_block.output_columns[function_index];
+
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(transform->current_row_number - transform->frame_start.row);
+    }
+};
+
+struct WindowFunctionExponentialTimeDecayedAvg final : public WindowFunction
+{
+    WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (parameters_.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly one parameter", name_);
+        }
+        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+
+        if (argument_types.size() != 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly two arguments", name_);
+        }
+
+        if (!isNumber(argument_types[0]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "First argument must be a number, '{}' given",
+                argument_types[0]->getName());
+        }
+
+        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Second argument must be DateTime or DateTime64, '{}' given",
+                argument_types[1]->getName());
+        }
+    }
+
+    DataTypePtr getReturnType() const override
+    { return std::make_shared<DataTypeFloat64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
+
+        Float64 last_val = 0;
+        Float64 last_t = 0;
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
+                last_val = column_val->getFloat64(column_val->size()-1) * (transform->current_row_number - transform->frame_start.row - 1);
+                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
+                last_t = column_t->getFloat64(column_t->size()-1);
+            }
+        }
+        else
+        {
+            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
+            last_val = column_val->getFloat64(current_row.row-1) * (transform->current_row_number - transform->frame_start.row - 1);
+            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
+            last_t = column_t->getFloat64(current_row.row-1);
+        }
+
+        IColumn & to = *current_block.output_columns[function_index];
+
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+
+        Float64 c = exp((last_t-t)/decay_length);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back((x + c * last_val)/(transform->current_row_number - transform->frame_start.row));
+    }
+
+    private:
+        Float64 decay_length;
+};
+
 struct WindowFunctionRowNumber final : public WindowFunction
 {
     WindowFunctionRowNumber(const std::string & name_,
@@ -1720,6 +1994,34 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+                name, argument_types, parameters);
+        }, properties});
+
+    factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
+                name, argument_types, parameters);
+        }, properties});
+
+    factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(
+                name, argument_types, parameters);
+        }, properties});
+
+    factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
+                name, argument_types, parameters);
+        }, properties});
+
+    factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
         }, properties});
 }
