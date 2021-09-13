@@ -4285,8 +4285,6 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        queue.initialize(getZooKeeper());
-
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
