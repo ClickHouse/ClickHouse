@@ -1665,6 +1665,14 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+UInt32 Context::getZooKeeperSessionUptime() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->expired())
+        return 0;
+    return shared->zookeeper->getSessionUptime();
+}
+
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
 {
     /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
