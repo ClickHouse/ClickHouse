@@ -85,6 +85,7 @@ target_link_libraries (common
         replxx
         cctz
         fmt
+        magic_enum
 )
 
 if (ENABLE_TESTS)
