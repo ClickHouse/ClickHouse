@@ -53,7 +53,7 @@ public:
     DiskWebServer(const String & disk_name_,
                   const String & url_,
                   ContextPtr context,
-                  size_t min_bytes_for_seel_);
+                  size_t min_bytes_for_seek_);
 
     bool supportZeroCopyReplication() const override { return false; }
 
