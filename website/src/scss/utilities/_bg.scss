@@ -8,8 +8,12 @@
 
 .bg-offset-right {
 	bottom: 0;
-	left: 96px;
+	left: 40px;
 	position: absolute;
 	top: 0;
 	width: 100vw;
+
+	@media screen and (min-width: 980px) {
+		left: 96px;
+	}
 }

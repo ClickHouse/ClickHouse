@@ -82,7 +82,7 @@ $enable-shadows:                              false;
 $enable-gradients:                            false;
 $enable-transitions:                          true;
 $enable-grid-classes:                         true;
-$enable-responsive-font-sizes:                false;
+$enable-responsive-font-sizes:                true;
 
 
 // Spacing
@@ -123,11 +123,12 @@ $body-color:                $black;
 // adapting to different screen sizes, for use in media queries.
 
 $grid-breakpoints: (
-  xs: 0,
-  sm: 576px,
+  xxs: 0,
+  xs: 400px,
+  sm: 616px,
   md: 768px,
-  lg: 992px,
-  xl: 1200px
+  lg: 980px,
+  xl: 1240px
 );
 
 
@@ -136,9 +137,10 @@ $grid-breakpoints: (
 // Define the maximum width of `.container` for different screen sizes.
 
 $container-max-widths: (
-  sm: 540px,
-  md: 720px,
-  lg: 960px,
+  xs: 576px,
+  sm: 576px,
+  md: 748px,
+  lg: 948px,
   xl: 1118px
 );
 
