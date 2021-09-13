@@ -1,3 +1,15 @@
+.btn {
+	@media screen and (max-width: 978.98px) {
+		padding: 8px 16px;
+	}
+}
+
+.btn-lg {
+	@media screen and (max-width: 978.98px) {
+		padding: 12px 24px;
+	}
+}
+
 .btn-primary {
 	color: $black;
 
