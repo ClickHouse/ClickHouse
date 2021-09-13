@@ -36,19 +36,23 @@ cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/b.txt
 
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
+${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order by k as select * from file_log;"
 
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/c.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
 
-sleep 5
+sleep 10
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
 echo  111, 111 >> ${user_files_path}/logs/a.txt
 
-sleep 5
+sleep 10
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
+
+${CLICKHOUSE_CLIENT} --query "drop table file_log;"
+${CLICKHOUSE_CLIENT} --query "drop table mv;"
 
 rm -rf ${user_files_path}/logs
