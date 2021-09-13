@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS t_json_3;
 
 CREATE TABLE t_json_3(id UInt64, data JSON)
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_3/t_json_3', 'r1') ORDER BY tuple();
 
 SYSTEM STOP MERGES t_json_3;
 
