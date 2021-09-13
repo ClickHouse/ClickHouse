@@ -4,14 +4,13 @@
 	&:before {
 		background: $white;
 		border-radius: ($border-radius - $border-width) ($border-radius - $border-width) 0 0;
-		box-shadow: $box-shadow;
 		content: '';
 		display: block;
 		height: $border-radius;
 		left: 1px;
 		position: absolute;
 		right: 1px;
-		top: 64px;
+		top: 76px;
 		z-index: 10;
 	}
 
@@ -21,15 +20,20 @@
 		border-radius: $border-radius;
 		border-style: solid;
 		border-width: $border-width;
+		box-shadow: $box-shadow;
 		padding: 40px;
 	}
 
 	.nav-tabs {
 		border-bottom: 0;
 		flex-wrap: nowrap;
-		height: 64px + $border-radius;
-		margin-bottom: -($border-radius + $border-width);
+		height: 76px + $border-radius;
+		margin: -20px -20px #{-($border-radius + $border-width)};
+		mask-image: linear-gradient(90deg, transparent 0%, #000 20px, #000 calc(100% - 20px), transparent 100%);
+		overflow: auto;
 		overflow-x: auto;
+		overflow-y: visible;
+		padding: 20px 20px 0;
 		position: relative;
 	}
 
@@ -38,17 +42,20 @@
 		border-bottom: 0;
 		color: $gray-700;
 		display: flex;
+		font-size: $font-size-sm;
 		flex-shrink: 0;
-		height: 64px + $border-radius;
+		height: 56px + $border-radius;
 		justify-content: center;
-		padding: 0 40px $border-radius;
+		padding: 0 16px $border-radius;
 		text-align: center;
 		white-space: nowrap;
 	}
 
 	.nav-link.active {
 		background: $white;
+		box-shadow: 0 -4px 8px rgba($gray-700, .1);
 		font-weight: $font-weight-bold;
+		padding: 0 32px $border-radius;
 	}
 }
 
