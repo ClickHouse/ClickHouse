@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|MODIFY|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -25,6 +25,7 @@ The following actions are supported:
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
+-   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
@@ -192,6 +193,20 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
+
+## MATERIALIZE COLUMN {#materialize-column}
+
+<description>
+
+Syntax:
+
+```sql
+ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
+```
+
+**See Also**
+
+- [MATERIALIZED](../../statements/create/table.md#materialized).
 
 ## Limitations {#alter-query-limitations}
 
