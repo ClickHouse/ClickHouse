@@ -247,7 +247,7 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 
 const String & getIdentifierNameRef(const IAST * ast)
 {
-    static const String empty = "";
+    static const String empty;
 
     if (ast)
     {

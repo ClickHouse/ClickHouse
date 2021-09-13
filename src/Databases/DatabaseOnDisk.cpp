@@ -214,7 +214,7 @@ void DatabaseOnDisk::createTable(
 {
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(table_name == create.table);
+    assert(table_name == create.getTable());
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -678,7 +678,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
                 "File {} contains both UUID and table name. Will use name `{}` instead of `{}`",
                 metadata_file_path,
                 table_name,
-                create.table);
+                create.getTable());
         create.setTable(table_name);
     }
 
