@@ -11,10 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
 ReadBufferFromFileLog::ReadBufferFromFileLog(
     StorageFileLog & storage_,
     size_t max_batch_size,
