@@ -62,12 +62,17 @@ private:
         size_t hard_priority = 0;
         ExponentiallySmoothedSum counter;
 
+        bool better(const PriorityKey & other) const
+        {
+            return hard_priority < other.hard_priority
+                || (hard_priority == other.hard_priority
+                    && counter.less(other.counter, smooth_interval));
+        }
+
         bool operator< (const PriorityKey & other) const
         {
             /// Negation is for priority_queue.
-            return other.hard_priority < hard_priority
-                || (other.hard_priority == hard_priority
-                    && other.counter.less(counter, smooth_interval));
+            return other.better(*this);
         }
     };
 
@@ -76,9 +81,15 @@ private:
         Task task;
         PriorityKey priority_key;
 
+        bool better(const TaskWithPriorityKey & other) const
+        {
+            return priority_key.better(other.priority_key);
+        }
+
         bool operator< (const TaskWithPriorityKey & other) const
         {
-            return priority_key < other.priority_key;
+            /// Negation is for priority_queue.
+            return other.better(*this);
         }
     };
 
@@ -155,51 +166,54 @@ public:
 
             std::lock_guard lock(parent.mutex);
 
-            std::optional<typename Queues::iterator> min_deficit;
-            int64_t min_deficit_value = 0;
+            std::optional<typename Queues::iterator> best_priority;
 
             for (const auto & constraint : task.resource_keys)
             {
                 Stat & stat = parent.stats[constraint.key];
                 --stat.concurrency;
                 stat.counter.add(elapsed_seconds / task.weight, current_seconds, smooth_interval);
+            }
 
-                /// Find some waiting task to be moved to ready queue.
-                if (auto queue_it = parent.waiting_queues.find(constraint.key); queue_it != parent.waiting_queues.end())
+            /// Find some waiting task to be moved to ready queue.
+            for (auto queue_it = parent.waiting_queues.begin(); queue_it != parent.waiting_queues.end(); ++queue_it)
+            {
+                std::cerr << "Waiting queue " << queue_it->first << "\n";
+
+                const TaskWithPriorityKey & candidate_task = queue_it->second.top();
+
+                bool suitable = true;
+                for (const auto & constraint : candidate_task.task.resource_keys)
                 {
-                    auto & queue = queue_it->second;
-                    assert(!queue.empty()); /// Empty queues are deleted.
+                    std::cerr << fmt::format("suitable: {}, {}, stat {}, concurrency {}\n", parent.stats[constraint.key].concurrency < constraint.max_concurrency, constraint.key, candidate_task.priority_key.counter.get(current_seconds, smooth_interval), parent.stats[constraint.key].concurrency);
 
-                    const TaskWithPriorityKey & candidate_task = queue.top();
-
-                    size_t candidate_task_max_concurrency = 0;
-                    for (const auto & resource_key : candidate_task.task.resource_keys)
+                    if (parent.stats[constraint.key].concurrency >= constraint.max_concurrency)
                     {
-                        if (resource_key.key == constraint.key)
-                        {
-                            candidate_task_max_concurrency = resource_key.max_concurrency;
-                            break;
-                        }
+                        suitable = false;
+                        break;
                     }
+                }
 
-                    int64_t current_deficit = stat.concurrency - candidate_task_max_concurrency;
-                    if (!min_deficit || current_deficit < min_deficit_value
-                        || (current_deficit == min_deficit_value && min_deficit.value()->second.top().priority_key < candidate_task.priority_key))
-                    {
-                        min_deficit_value = current_deficit;
-                        min_deficit = queue_it;
-                    }
+                if (suitable
+                    && (!best_priority || candidate_task.priority_key.better(best_priority.value()->second.top().priority_key)))
+                {
+                    best_priority = queue_it;
                 }
             }
 
             /// Maybe move some task to ready queue.
-            if (min_deficit)
+            if (best_priority)
             {
-                auto queue_it = *min_deficit;
+                auto queue_it = *best_priority;
                 auto & elem = queue_it->second.top();
 
                 for (const auto & constraint : elem.task.resource_keys)
+                {
                     ++parent.stats[constraint.key].concurrency;
+
+                    const auto & stat = parent.stats[constraint.key];
+                    std::cerr << fmt::format("best, {}, stat {}, concurrency {}\n", constraint.key, elem.priority_key.counter.get(current_seconds, smooth_interval), stat.concurrency);
+                }
 
                 parent.ready_queue.push(elem);
                 queue_it->second.pop();
@@ -230,7 +244,7 @@ public:
             return {};
 
         for (const auto & stat : stats)
-            std::cerr << fmt::format("pop, {}, stat {}, concurrency {}\n", stat.first, stat.second.counter.get(Stopwatch().currentSeconds(), smooth_interval), stat.second.concurrency);
+            std::cerr << fmt::format("pop, {}, stat {}, concurrency {}\n", stat.first, ready_queue.top().priority_key.counter.get(Stopwatch().currentSeconds(), smooth_interval), stat.second.concurrency);
 
         HandlePtr res = std::make_shared<Handle>(ready_queue.top().task, *this);
         ready_queue.pop();

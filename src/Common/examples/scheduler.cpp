@@ -39,10 +39,10 @@ int main(int, char **)
             std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 
             Sched::Task task;
-            task.priority = i % 3;
+            task.priority = 0;//i % 3;
             task.weight = i / 3 % 2 ? 10 : 1;
             task.resource_keys.emplace_back(Sched::ResourceConstraint{"all", 4});
-            task.resource_keys.emplace_back(Sched::ResourceConstraint{fmt::format("user{}", task.weight), 10});
+            task.resource_keys.emplace_back(Sched::ResourceConstraint{fmt::format("user{}", task.weight), 4});
 
             task.data.idx = i;
             task.data.seconds = 1;
