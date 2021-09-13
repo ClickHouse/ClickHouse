@@ -286,7 +286,8 @@ Chain buildPushingToViewsDrain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data)
+    ExceptionKeepingTransformRuntimeDataPtr runtime_data,
+    const Block & lv_storage)
 {
     checkStackSize();
     Chain result_chain;
@@ -414,7 +415,7 @@ Chain buildPushingToViewsDrain(
             type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsDrain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_runtime_data);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_runtime_data, storage_header);
         }
         else
             out = buildPushingToViewsDrain(
@@ -438,7 +439,7 @@ Chain buildPushingToViewsDrain(
             nullptr,
             std::move(runtime_stats)});
 
-        //if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
+        if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data->source_storage_id, views_data->source_metadata_snapshot, views_data->source_storage);
@@ -497,7 +498,7 @@ Chain buildPushingToViewsDrain(
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        auto sink = std::make_shared<PushingToLiveViewSink>(storage_header, *live_view, storage, context);
+        auto sink = std::make_shared<PushingToLiveViewSink>(lv_storage, *live_view, storage, context);
         sink->setRuntimeData(runtime_data);
         result_chain.addSource(std::move(sink));
     }

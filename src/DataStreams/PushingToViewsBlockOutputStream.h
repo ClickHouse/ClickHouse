@@ -51,7 +51,8 @@ Chain buildPushingToViewsDrain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data);
+    ExceptionKeepingTransformRuntimeDataPtr runtime_data,
+    const Block & lv_storage = {});
 
 
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
