@@ -582,7 +582,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
-            DataTypeFixedString, String>;
+            DataTypeFixedString, DataTypeString>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
 
