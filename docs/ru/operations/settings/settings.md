@@ -3344,7 +3344,7 @@ SETTINGS index_granularity = 8192 │
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) нескольких регулярных выражений в строке. 
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) совпадений в строке. 
 
 Возможные значения:
 
@@ -3389,7 +3389,7 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
-Задает максимальную общую длину всех регулярных выражений в [hyperscan-функции поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) нескольких регулярных выражений в строке.
+Задает максимальную общую длину всех регулярных выражений в каждой [hyperscan-функции поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) совпадений в строке.
 
 Возможные значения:
 
