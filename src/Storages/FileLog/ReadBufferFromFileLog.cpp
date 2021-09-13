@@ -103,23 +103,35 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
     for (size_t i = start; i < end; ++i)
     {
         auto & file = file_status[file_names[i]];
-        if (file.status == StorageFileLog::FileStatus::NO_CHANGE || file.status == StorageFileLog::FileStatus::REMOVED)
+        if (file.status == StorageFileLog::FileStatus::NO_CHANGE)
             continue;
 
-        while (read_records_size < need_records_size && file.reader.good() && !file.reader.eof())
+        auto reader = std::ifstream(file_names[i]);
+
+        reader.seekg(0, reader.end);
+        auto stream_end = reader.tellg();
+
+        reader.seekg(file.last_read_position);
+
+        while (read_records_size < need_records_size && reader.tellg() < stream_end)
         {
             Record record;
-            std::getline(file.reader, record);
+            std::getline(reader, record);
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
-        // Read to the end of the file
-        if (file.reader.eof())
+        file.last_read_position = reader.tellg();
+
+        if (reader.tellg() == stream_end)
+        {
             file.status = StorageFileLog::FileStatus::NO_CHANGE;
+        }
 
         if (read_records_size == need_records_size)
+        {
             break;
+        }
     }
 }
 
