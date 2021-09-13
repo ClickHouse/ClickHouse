@@ -1,9 +1,9 @@
-# docker build -t yandex/clickhouse-kerberos-kdc .
+# docker build -t clickhouse/kerberos-kdc .
+FROM centos:6
 
-FROM centos:6.6
-# old OS to make is faster and smaller
+RUN sed -i '/^mirrorlist/s/^/#/;/^#baseurl/{s/#//;s/mirror.centos.org\/centos\/$releasever/vault.centos.org\/6.10/}' /etc/yum.repos.d/*B*
 
-RUN yum install -y krb5-server krb5-libs krb5-auth-dialog krb5-workstation
+RUN yum install -y ca-certificates krb5-server krb5-libs krb5-auth-dialog krb5-workstation
 
 EXPOSE 88 749
 

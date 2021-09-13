@@ -7,6 +7,8 @@
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
 #include <common/sort.h>
+#include <Core/TypeId.h>
+#include <Core/TypeName.h>
 
 #include <cmath>
 
@@ -59,11 +61,9 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <typename T>
+template <is_decimal T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
-    static_assert(IsDecimalNumber<T>);
-
 private:
     using Self = ColumnDecimal;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -210,7 +210,12 @@ protected:
     }
 };
 
-template <typename T>
+template <class> class ColumnVector;
+template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
+template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
+template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
+
+template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
