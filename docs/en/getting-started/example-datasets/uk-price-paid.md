@@ -351,7 +351,7 @@ Result:
 
 ## Let's Speed Up Queries Using Projections
 
-[Projections](https://../../sql-reference/statements/alter/projection/) allow to improve queries speed by storing pre-aggregated data.
+[Projections](../../sql-reference/statements/alter/projection.md) allow to improve queries speed by storing pre-aggregated data.
 
 ### Build a Projection 
 
