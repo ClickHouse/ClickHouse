@@ -3614,7 +3614,7 @@ SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_
 Result:
 
 ```text
-Exception:  Total regexp lengths too large.
+Exception: Total regexp lengths too large.
 ```
 
 **See Also**
