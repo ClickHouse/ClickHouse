@@ -758,13 +758,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     Block block = materializeBlock(source_block);
     size_t rows = block.rows();
 
-    ColumnRawPtrMap all_key_columns;
-    {
-        Names all_key_names_right;
-        for (const auto & clause : table_join->getClauses())
-            all_key_names_right.insert(all_key_names_right.end(), clause.key_names_right.begin(), clause.key_names_right.end());
-        all_key_columns = JoinCommon::materializeColumnsInplaceMap(block, all_key_names_right);
-    }
+    ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(block, table_join->getAllNames(JoinTableSide::Right));
 
     Block structured_block = structureRightBlock(block);
     size_t total_rows = 0;
