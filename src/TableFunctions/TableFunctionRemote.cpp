@@ -104,10 +104,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 std::swap(qualified_name.database, qualified_name.table);
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+                qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }
+
+        remote_database = std::move(qualified_name.database);
+        remote_table = std::move(qualified_name.table);
     }
 
     /// Cluster function may have sharding key for insert
