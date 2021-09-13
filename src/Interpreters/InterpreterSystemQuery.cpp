@@ -338,7 +338,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if defined(__ELF__) && !defined(__FreeBSD__)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            (void)SymbolIndex::instance(true);
+            SymbolIndex::reload();
             break;
 #else
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
@@ -428,7 +428,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
-            throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
