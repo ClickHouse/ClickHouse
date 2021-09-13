@@ -5,7 +5,7 @@ toc_title: OpenSky
 
 # Crowdsourced air traffic data from The OpenSky Network 2020
 
-> The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
+"The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
 
 Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 
@@ -84,7 +84,9 @@ SELECT count() FROM opensky;
 Result:
 
 ```text
-66010819
+┌──count()─┐
+│ 66010819 │
+└──────────┘
 ```
 
 The size of dataset in ClickHouse is just 2.66 GiB, check it.
@@ -98,7 +100,9 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
 Result:
 
 ```text
-2.66 GiB
+┌─formatReadableSize(total_bytes)─┐
+│ 2.66 GiB                        │
+└─────────────────────────────────┘
 ```
 
 ## Run Some Queries
