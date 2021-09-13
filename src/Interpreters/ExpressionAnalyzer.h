@@ -92,7 +92,7 @@ private:
         const SizeLimits size_limits_for_set;
         const UInt64 distributed_group_by_no_merge;
 
-        ExtractedSettings(const Settings & settings_);
+        explicit ExtractedSettings(const Settings & settings_);
     };
 
 public:
@@ -188,12 +188,15 @@ protected:
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
-    void analyzeAggregation();
-    bool makeAggregateDescriptions(ActionsDAGPtr & actions);
+    void analyzeAggregation(ActionsDAGPtr & temp_actions);
+    void makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const { return syntax->is_remote_storage; }
+
+    NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+    NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
 };
 
 class SelectQueryExpressionAnalyzer;
@@ -338,7 +341,8 @@ private:
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
-        const ColumnsWithTypeAndName & left_sample_columns);
+        const ColumnsWithTypeAndName & left_columns,
+        ActionsDAGPtr & left_convert_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -359,7 +363,8 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns);
+
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);

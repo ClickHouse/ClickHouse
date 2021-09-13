@@ -506,8 +506,9 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
-        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
-                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
+            x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
