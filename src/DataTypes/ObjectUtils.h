@@ -16,7 +16,7 @@ DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
 DataTypePtr getDataTypeByColumn(const IColumn & column);
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 void checkObjectHasNoAmbiguosPaths(const Strings & key_names);
-DataTypePtr getLeastCommonTypeForObject(const DataTypes & types);
+DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths = false);
 NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
 

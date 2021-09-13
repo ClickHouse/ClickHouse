@@ -143,7 +143,7 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
             if (it == storage_columns_map.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
 
-            getLeastCommonTypeForObject({type_tuple, it->second});
+            getLeastCommonTypeForObject({type_tuple, it->second}, true);
 
             name_type.type = type_tuple;
             column.type = type_tuple;
@@ -165,26 +165,25 @@ static bool isPrefix(const Strings & prefix, const Strings & strings)
 
 void checkObjectHasNoAmbiguosPaths(const Strings & key_names)
 {
-    for (const auto & name : key_names)
+    size_t size = key_names.size();
+    std::vector<Strings> names_parts(size);
+
+    for (size_t i = 0; i < size; ++i)
+        boost::split(names_parts[i], key_names[i], boost::is_any_of("."));
+
+    for (size_t i = 0; i < size; ++i)
     {
-        Strings name_parts;
-        boost::split(name_parts, name, boost::is_any_of("."));
-
-        for (const auto & other_name : key_names)
+        for (size_t j = 0; j < i; ++j)
         {
-            if (other_name.size() > name.size())
-            {
-                Strings other_name_parts;
-                boost::split(other_name_parts, other_name, boost::is_any_of("."));
-
-                if (isPrefix(name_parts, other_name_parts))
-                    throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, other_name);
-            }
+            if (isPrefix(names_parts[i], names_parts[j]) || isPrefix(names_parts[j], names_parts[i]))
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                    "Data in Object has ambiguous paths: '{}' and '{}",
+                    key_names[i], key_names[j]);
         }
     }
 }
 
-DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
+DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths)
 {
     std::unordered_map<String, DataTypes> subcolumns_types;
     for (const auto & type : types)
@@ -228,7 +227,8 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
     auto tuple_names = extractVector<0>(tuple_elements);
     auto tuple_types = extractVector<1>(tuple_elements);
 
-    checkObjectHasNoAmbiguosPaths(tuple_names);
+    if (check_ambiguos_paths)
+        checkObjectHasNoAmbiguosPaths(tuple_names);
 
     return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }
