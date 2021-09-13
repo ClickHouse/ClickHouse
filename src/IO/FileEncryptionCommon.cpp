@@ -253,8 +253,8 @@ InitVector InitVector::random()
     std::mt19937 gen{rd()};
     std::uniform_int_distribution<UInt128::base_type> dis;
     UInt128 counter;
-    for (size_t i = 0; i != std::size(counter.items); ++i)
-        counter.items[i] = dis(gen);
+    for (auto & i : counter.items)
+        i = dis(gen);
     return InitVector{counter};
 }
 
