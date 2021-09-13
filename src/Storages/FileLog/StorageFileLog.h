@@ -59,7 +59,7 @@ protected:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        const String & path_,
+        const String & relative_path_,
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings);
 
