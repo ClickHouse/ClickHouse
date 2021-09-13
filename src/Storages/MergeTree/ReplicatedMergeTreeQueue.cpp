@@ -1254,6 +1254,37 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.typeToString(), entry.new_part_name);
             return false;
         }
+
+        if (entry.isDropPart(format_version))
+        {
+            /// We should avoid reordering of REPLACE_RANGE and DROP PART (DROP_RANGE),
+            /// because if replace_range_entry->new_part_names contains drop_range_entry->new_part_name
+            /// and we execute DROP PART before REPLACE_RANGE, then DROP PART will be no-op
+            /// (because part is not created yet, so there is nothing to drop;
+            /// DROP_RANGE does not cover all parts of REPLACE_RANGE, so removePartProducingOpsInRange(...) will not remove anything too)
+            /// and part will never be removed. Replicas may diverge due to such reordering.
+            /// We don't need to do anything for other entry types, because removePartProducingOpsInRange(...) will remove them as expected.
+
+            auto drop_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+            for (const auto & replace_entry : queue)
+            {
+                if (replace_entry->type != LogEntry::REPLACE_RANGE)
+                    continue;
+
+                for (const auto & new_part_name : replace_entry->replace_range_entry->new_part_names)
+                {
+                    auto new_part_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+                    if (!new_part_info.isDisjoint(drop_part_info))
+                    {
+                        const char * format_str = "Not executing log entry {} of type {} for part {} "
+                                                  "because it probably depends on {} (REPLACE_RANGE).";
+                        LOG_TRACE(log, format_str, entry.znode_name, entry.typeToString(), entry.new_part_name, replace_entry->znode_name);
+                        out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.typeToString(), entry.new_part_name, replace_entry->znode_name);
+                        return false;
+                    }
+                }
+            }
+        }
     }
 
     return true;
