@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     pulling_format = std::make_shared<PullingOutputFormat>(pipeline.getHeader(), has_data_flag);
