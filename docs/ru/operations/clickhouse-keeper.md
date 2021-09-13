@@ -8,7 +8,7 @@ toc_title: ClickHouse Keeper
 Сервер ClickHouse использует сервис координации [ZooKeeper](https://zookeeper.apache.org/) для [репликации](../engines/table-engines/mergetree-family/replication.md) данных и выполнения [распределенных DDL запросов](../sql-reference/distributed-ddl.md). ClickHouse Keeper — это альтернативный сервис координации, совместимый с ZooKeeper.
 
 !!! warning "Предупреждение"
-    Эта функция находится в стадии пре-продакшн и тестируется в непрерывной интеграции (CI) на нескольких внутренних установках.
+    ClickHouse Keeper находится в стадии пре-продакшн и тестируется в CI ClickHouse и на нескольких внутренних инсталляциях.
 
 ## Детали реализации
 
