@@ -575,7 +575,7 @@ class FunctionBinaryArithmetic : public IFunction
     ContextPtr context;
     bool check_decimal_overflow = true;
 
-    static bool (const IDataType * type, auto && f)
+    static bool castType(const IDataType * type, auto && f)
     {
         using Types = TypeList<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
