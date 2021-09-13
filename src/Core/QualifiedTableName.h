@@ -58,7 +58,7 @@ struct QualifiedTableName
         {
             name.table = std::move(maybe_qualified_name);
         }
-        else if (maybe_qualified_name.find('.', pos + 1))
+        else if (maybe_qualified_name.find('.', pos + 1) != std::string::npos)
         {
             /// Do not allow multiple dots
             return {};
