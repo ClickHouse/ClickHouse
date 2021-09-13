@@ -469,7 +469,7 @@ public:
                 attribute_names,
                 {key_column},
                 {std::make_shared<DataTypeUInt64>()},
-                result_type,
+                attribute_type,
                 default_cols);
         }
         else if (dictionary_key_type == DictionaryKeyType::complex)
@@ -492,7 +492,7 @@ public:
                 attribute_names,
                 key_columns,
                 key_types,
-                result_type,
+                attribute_type,
                 default_cols);
         }
         else if (dictionary_key_type == DictionaryKeyType::range)
@@ -509,7 +509,7 @@ public:
                 attribute_names,
                 {key_column, range_col},
                 {std::make_shared<DataTypeUInt64>(), range_col_type},
-                result_type,
+                attribute_type,
                 default_cols);
         }
         else
