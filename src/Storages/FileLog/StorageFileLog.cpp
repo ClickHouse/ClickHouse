@@ -61,7 +61,7 @@ StorageFileLog::StorageFileLog(
 
     if (std::filesystem::is_regular_file(path))
     {
-        file_status[path].reader = std::ifstream(path);
+        file_status[path] = FileContext{};
         file_names.push_back(path);
     }
     else if (std::filesystem::is_directory(path))
@@ -72,7 +72,7 @@ StorageFileLog::StorageFileLog(
         {
             if (dir_entry.is_regular_file())
             {
-                file_status[dir_entry.path()].reader = std::ifstream(dir_entry.path());
+                file_status[dir_entry.path()] = FileContext{};
                 file_names.push_back(dir_entry.path());
             }
         }
@@ -141,11 +141,6 @@ void StorageFileLog::shutdown()
 
     LOG_TRACE(log, "Waiting for cleanup");
     task->holder->deactivate();
-
-    for (auto & file : file_status)
-    {
-        file.second.reader.close();
-    }
 }
 
 size_t StorageFileLog::getMaxBlockSize() const
@@ -374,6 +369,8 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileStatus()
 {
+    /// Do not need to hold file_status lock, since it will be holded
+    /// by caller when call this function
     auto error = directory_watch->hasError();
     if (error)
         LOG_INFO(log, "Error happened during watching directory {}.", directory_watch->getPath());
@@ -385,18 +382,18 @@ bool StorageFileLog::updateFileStatus()
         switch (event.type)
         {
             case Poco::DirectoryWatcher::DW_ITEM_ADDED:
-                LOG_TRACE(log, "New event {} watched.", event.callback);
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
                 if (std::filesystem::is_regular_file(event.path))
                 {
-                    file_status[event.path].reader = std::ifstream(event.path);
+                    file_status[event.path] = FileContext{};
                     file_names.push_back(event.path);
                 }
                 break;
 
             case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
-                LOG_TRACE(log, "New event {} watched.", event.callback);
-                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
-                {
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+				if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+				{
                     file_status[event.path].status = FileStatus::UPDATED;
                 }
                 break;
@@ -404,15 +401,13 @@ bool StorageFileLog::updateFileStatus()
             case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
-                LOG_TRACE(log, "New event {} watched.", event.callback);
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
                 if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
                 {
                     file_status[event.path].status = FileStatus::REMOVED;
                 }
         }
     }
-    /// Do not need to hold file_status lock, since it will be holded
-    /// by caller when call this function
     std::vector<String> valid_files;
     for (const auto & file_name : file_names)
     {

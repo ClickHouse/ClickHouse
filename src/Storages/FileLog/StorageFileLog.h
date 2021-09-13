@@ -74,7 +74,7 @@ private:
     struct FileContext
     {
         FileStatus status = FileStatus::BEGIN;
-        std::ifstream reader;
+        size_t last_read_position = 0;
     };
 
     using NameToFile = std::unordered_map<String, FileContext>;
