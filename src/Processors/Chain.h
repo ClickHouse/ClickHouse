@@ -46,11 +46,12 @@ public:
     void reset();
 
 private:
+    PipelineResourcesHolder holder;
+
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^
     ///  input port                               output port
     std::list<ProcessorPtr> processors;
-    PipelineResourcesHolder holder;
     size_t num_threads = 0;
 };
 
