@@ -45,13 +45,13 @@ StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
     const ColumnsDescription & columns_,
-    const String & path_,
+    const String & relative_path_,
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
-    , path(path_)
+    , path(getContext()->getUserFilesPath() + "/" + relative_path_)
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
 {
@@ -254,7 +254,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto max_streams_number = std::min(filelog_settings->filelog_max_threads.value, file_names.size());
+    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads.value, file_names.size());
     /// No files to parse
     if (max_streams_number == 0)
     {
