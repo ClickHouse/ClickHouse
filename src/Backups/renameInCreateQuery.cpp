@@ -171,7 +171,7 @@ namespace
             else
                 qualified_name = QualifiedTableName::parseFromString(name);
 
-            if(qualified_name.database.empty())
+            if (qualified_name.database.empty())
             {
                 std::swap(qualified_name.database, qualified_name.table);
                 table_name_index = 2;
