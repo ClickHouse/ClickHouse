@@ -245,10 +245,16 @@ void ColumnObject::Subcolumn::checkTypes() const
 
 void ColumnObject::Subcolumn::insert(Field field)
 {
-    auto value_dim = applyVisitor(FieldVisitorToNumberOfDimensions(), field);
     auto column_dim = getNumberOfDimensions(*least_common_type);
+    auto value_dim = applyVisitor(FieldVisitorToNumberOfDimensions(), field);
 
-    if (!isNothing(least_common_type) && value_dim != column_dim)
+    if (isNothing(least_common_type))
+        column_dim = value_dim;
+
+    if (field.isNull())
+        value_dim = column_dim;
+
+    if (value_dim != column_dim)
         throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
             "Dimension of types mismatched beetwen inserted value and column."
             "Dimension of value: {}. Dimension of column: {}",
