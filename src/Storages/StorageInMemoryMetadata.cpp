@@ -507,7 +507,10 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
+
+        if (!isObject(*available_type)
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
@@ -554,7 +557,9 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->equals(*available_column_type) && !isCompatibleEnumTypes(available_column_type, provided_column_type))
+        if (!isObject(*provided_column_type)
+            && !provided_column_type->equals(*available_column_type)
+            && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
@@ -596,7 +601,9 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
+        if (!isObject(*available_type)
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
