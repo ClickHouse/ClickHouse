@@ -1,7 +1,9 @@
 #pragma once
 
+#include <unordered_set>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
+#include <base/types.h>
 #include <Common/Stopwatch.h>
 
 
@@ -41,6 +43,10 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return watch.elapsedSeconds(); }
 
+    void addThreadIdToList(UInt64 thread_id);
+
+    size_t getUsedThreadsCount() const { return thread_ids.size(); }
+
 private:
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
@@ -58,6 +64,8 @@ private:
     Stopwatch watch;
 
     bool write_progress_on_update = false;
+
+    std::unordered_set<UInt64> thread_ids;
 };
 
 }
