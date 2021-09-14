@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
@@ -97,8 +97,8 @@ void SerializationObject<Parser>::deserializeTextCSV(IColumn & column, ReadBuffe
 }
 
 template <typename Parser>
-template <typename Settings, typename StatePtr>
-void SerializationObject<Parser>::checkSerializationIsSupported(Settings & settings, StatePtr & state) const
+template <typename TSettings, typename TStatePtr>
+void SerializationObject<Parser>::checkSerializationIsSupported(TSettings & settings, TStatePtr & state) const
 {
     if (settings.position_independent_encoding)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

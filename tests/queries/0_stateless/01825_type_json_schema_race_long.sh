@@ -28,7 +28,7 @@ function test_case()
     done
 }
 
-for i in {1..30}; do test_case; done
+for _ in {1..30}; do test_case; done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_race"
 echo OK

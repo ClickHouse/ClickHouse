@@ -22,10 +22,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
