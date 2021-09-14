@@ -144,7 +144,10 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
             updated = true;
         }
 
-        zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+        {  /// Mutation pointer is a part of "state" and must be updated with state mutex
+            std::lock_guard lock(state_mutex);
+            zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+        }
     }
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
@@ -624,7 +627,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             }
         }
 
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
     }
 
     return stat.version;
@@ -713,7 +716,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     }
 
     if (some_active_mutations_were_killed)
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
 
     if (!entries_to_load.empty())
     {
@@ -847,7 +850,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     }
 
     if (mutation_was_active)
-        storage.background_executor.triggerTask();
+        storage.background_operations_assignee.trigger();
 
     return entry;
 }
@@ -1250,6 +1253,37 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             LOG_TRACE(log, format_str, entry.znode_name, entry.typeToString(), entry.new_part_name);
             out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.typeToString(), entry.new_part_name);
             return false;
+        }
+
+        if (entry.isDropPart(format_version))
+        {
+            /// We should avoid reordering of REPLACE_RANGE and DROP PART (DROP_RANGE),
+            /// because if replace_range_entry->new_part_names contains drop_range_entry->new_part_name
+            /// and we execute DROP PART before REPLACE_RANGE, then DROP PART will be no-op
+            /// (because part is not created yet, so there is nothing to drop;
+            /// DROP_RANGE does not cover all parts of REPLACE_RANGE, so removePartProducingOpsInRange(...) will not remove anything too)
+            /// and part will never be removed. Replicas may diverge due to such reordering.
+            /// We don't need to do anything for other entry types, because removePartProducingOpsInRange(...) will remove them as expected.
+
+            auto drop_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+            for (const auto & replace_entry : queue)
+            {
+                if (replace_entry->type != LogEntry::REPLACE_RANGE)
+                    continue;
+
+                for (const auto & new_part_name : replace_entry->replace_range_entry->new_part_names)
+                {
+                    auto new_part_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+                    if (!new_part_info.isDisjoint(drop_part_info))
+                    {
+                        const char * format_str = "Not executing log entry {} of type {} for part {} "
+                                                  "because it probably depends on {} (REPLACE_RANGE).";
+                        LOG_TRACE(log, format_str, entry.znode_name, entry.typeToString(), entry.new_part_name, replace_entry->znode_name);
+                        out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.typeToString(), entry.new_part_name, replace_entry->znode_name);
+                        return false;
+                    }
+                }
+            }
         }
     }
 
