@@ -777,7 +777,7 @@ void Pipe::setOutputFormat(ProcessorPtr output)
     auto * format = dynamic_cast<IOutputFormat * >(output.get());
 
     if (!format)
-        throw Exception("IOutputFormat processor expected for QueryPipeline::setOutputFormat.",
+        throw Exception("IOutputFormat processor expected for QueryPipelineBuilder::setOutputFormat.",
                         ErrorCodes::LOGICAL_ERROR);
 
     auto & main = format->getPort(IOutputFormat::PortKind::Main);

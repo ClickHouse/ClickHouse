@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/PartialSortingStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <IO/Operators.h>
@@ -47,11 +47,11 @@ void PartialSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void PartialSortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
         return std::make_shared<PartialSortingTransform>(header, sort_description, limit);
@@ -61,9 +61,9 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const Build
     limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
     limits.size_limits = size_limits;
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
         auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);

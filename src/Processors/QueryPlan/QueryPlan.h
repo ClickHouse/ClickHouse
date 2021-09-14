@@ -17,8 +17,8 @@ class DataStream;
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class WriteBuffer;
 
@@ -56,7 +56,7 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelinePtr buildQueryPipeline(
+    QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings);
 

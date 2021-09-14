@@ -29,15 +29,15 @@ struct ExpressionActionsSettings;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-class QueryPipeline
+class QueryPipelineBuilder
 {
 public:
-    QueryPipeline() = default;
-    ~QueryPipeline() = default;
-    QueryPipeline(QueryPipeline &&) = default;
-    QueryPipeline(const QueryPipeline &) = delete;
-    QueryPipeline & operator= (QueryPipeline && rhs) = default;
-    QueryPipeline & operator= (const QueryPipeline & rhs) = delete;
+    QueryPipelineBuilder() = default;
+    ~QueryPipelineBuilder() = default;
+    QueryPipelineBuilder(QueryPipelineBuilder &&) = default;
+    QueryPipelineBuilder(const QueryPipelineBuilder &) = delete;
+    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default;
+    QueryPipelineBuilder & operator= (const QueryPipelineBuilder & rhs) = delete;
 
     /// All pipes must have same header.
     void init(Pipe pipe);
@@ -91,16 +91,16 @@ public:
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
-    static QueryPipeline unitePipelines(
-            std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+    static QueryPipelineBuilder unitePipelines(
+            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
     /// Join two pipelines together using JoinPtr.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
-    static std::unique_ptr<QueryPipeline> joinPipelines(
-        std::unique_ptr<QueryPipeline> left,
-        std::unique_ptr<QueryPipeline> right,
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelines(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
         size_t max_block_size,
         Processors * collected_processors = nullptr);
@@ -108,7 +108,7 @@ public:
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.
-    void addPipelineBefore(QueryPipeline pipeline);
+    void addPipelineBefore(QueryPipelineBuilder pipeline);
 
     void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
 
@@ -154,7 +154,7 @@ public:
     }
 
     /// Convert query pipeline to pipe.
-    static Pipe getPipe(QueryPipeline pipeline) { return std::move(pipeline.pipe); }
+    static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
 
 private:
 
@@ -182,13 +182,13 @@ private:
 class QueryPipelineProcessorsCollector
 {
 public:
-    explicit QueryPipelineProcessorsCollector(QueryPipeline & pipeline_, IQueryPlanStep * step_ = nullptr);
+    explicit QueryPipelineProcessorsCollector(QueryPipelineBuilder & pipeline_, IQueryPlanStep * step_ = nullptr);
     ~QueryPipelineProcessorsCollector();
 
     Processors detachProcessors(size_t group = 0);
 
 private:
-    QueryPipeline & pipeline;
+    QueryPipelineBuilder & pipeline;
     IQueryPlanStep * step;
     Processors processors;
 };

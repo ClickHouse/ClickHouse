@@ -1,12 +1,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 namespace DB
 {
 
-PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+PullingPipelineExecutor::PullingPipelineExecutor(QueryPipelineBuilder & pipeline_) : pipeline(pipeline_)
 {
     pulling_format = std::make_shared<PullingOutputFormat>(pipeline.getHeader(), has_data_flag);
     pipeline.setOutputFormat(pulling_format);

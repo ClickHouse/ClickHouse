@@ -380,7 +380,7 @@ Pipe StorageMerge::createSources(
 
     if (!storage)
     {
-        pipe = QueryPipeline::getPipe(InterpreterSelectQuery(
+        pipe = QueryPipelineBuilder::getPipe(InterpreterSelectQuery(
             modified_query_info.query, modified_context,
             std::make_shared<OneBlockInputStream>(header),
             SelectQueryOptions(processed_stage).analyze()).execute().pipeline);

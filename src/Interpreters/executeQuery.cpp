@@ -587,7 +587,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res = interpreter->execute();
         }
 
-        QueryPipeline & pipeline = res.pipeline;
+        QueryPipelineBuilder & pipeline = res.pipeline;
         bool use_processors = pipeline.initialized();
 
         if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
@@ -759,7 +759,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
                  status_info_to_query_log
             ]
-                (IBlockInputStream * stream_in, QueryPipeline * query_pipeline) mutable
+                (IBlockInputStream * stream_in, QueryPipelineBuilder * query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 

@@ -2,7 +2,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 #include <Common/setThreadName.h>
 #include <common/scope_guard_safe.h>
@@ -36,7 +36,7 @@ struct PullingAsyncPipelineExecutor::Data
     }
 };
 
-PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipelineBuilder & pipeline_) : pipeline(pipeline_)
 {
     if (!pipeline.isCompleted())
     {

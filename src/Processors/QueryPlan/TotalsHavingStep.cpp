@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -49,7 +49,7 @@ TotalsHavingStep::TotalsHavingStep(
 {
 }
 
-void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
 

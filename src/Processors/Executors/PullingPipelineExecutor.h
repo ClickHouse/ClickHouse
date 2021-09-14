@@ -7,7 +7,7 @@ namespace DB
 
 class Block;
 class Chunk;
-class QueryPipeline;
+class QueryPipelineBuilder;
 class PipelineExecutor;
 class PullingOutputFormat;
 struct BlockStreamProfileInfo;
@@ -23,7 +23,7 @@ using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 class PullingPipelineExecutor
 {
 public:
-    explicit PullingPipelineExecutor(QueryPipeline & pipeline_);
+    explicit PullingPipelineExecutor(QueryPipelineBuilder & pipeline_);
     ~PullingPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -50,7 +50,7 @@ public:
 
 private:
     std::atomic_bool has_data_flag = false;
-    QueryPipeline & pipeline;
+    QueryPipelineBuilder & pipeline;
     std::shared_ptr<PullingOutputFormat> pulling_format;
     PipelineExecutorPtr executor;
 };
