@@ -1098,6 +1098,40 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: `5`.
 
+## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для синхронизации между [репликами](../../engines/table-engines/mergetree-family/replication.md). Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
@@ -3307,6 +3341,30 @@ SETTINGS index_granularity = 8192 │
 -   1 — Проекции обязательно используются.
 
 Значение по умолчанию: `0`.
+
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
+
+Возможные значения:
+
+-   0 — не ждать.
+-   1 — ждать выполнения действий на своей реплике.
+-   2 — ждать выполнения действий на всех репликах.
+
+Значение по умолчанию: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Указывает время ожидания (в секундах) выполнения запросов [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md) для неактивных реплик.
+
+Возможные значения:
+
+-   0 — не ждать.
+-   Отрицательное целое число — ждать неограниченное время.
+-   Положительное целое число — установить соответствующее количество секунд ожидания.
+
+Значение по умолчанию: `120` секунд.
 
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
