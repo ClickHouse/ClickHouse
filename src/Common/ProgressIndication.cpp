@@ -29,6 +29,7 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
+    thread_ids.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -41,6 +42,11 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
         if (write_progress_on_update)
             writeProgress();
     });
+}
+
+void ProgressIndication::addThreadIdToList(UInt64 thread_id)
+{
+    thread_ids.insert(thread_id);
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -57,6 +63,9 @@ void ProgressIndication::writeFinalProgress()
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
         std::cout << ". ";
+    size_t used_threads = getUsedThreadsCount();
+    if (used_threads != 0)
+        std::cout << "\nUsed threads to process: " << used_threads << ".";
 }
 
 void ProgressIndication::writeProgress()

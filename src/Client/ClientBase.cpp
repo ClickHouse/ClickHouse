@@ -9,6 +9,8 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
 #include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
@@ -613,7 +615,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             return false;
 
         case Protocol::Server::ProfileEvents:
-            onProfileEvents();
+            onProfileEvents(packet.block);
             return true;
 
         default:
@@ -656,8 +658,16 @@ void ClientBase::onEndOfStream()
 }
 
 
-void ClientBase::onProfileEvents()
-{}
+void ClientBase::onProfileEvents(Block & block)
+{
+    if (block.rows() == 0)
+        return;
+    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    for (size_t i = 0; i < block.rows(); ++i)
+    {
+        progress_indication.addThreadIdToList(array_thread_id[i]);
+    }
+}
 
 
 /// Flush all buffers.
