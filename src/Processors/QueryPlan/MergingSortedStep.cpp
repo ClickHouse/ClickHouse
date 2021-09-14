@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -47,7 +47,7 @@ void MergingSortedStep::updateLimit(size_t limit_)
     }
 }
 
-void MergingSortedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void MergingSortedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)

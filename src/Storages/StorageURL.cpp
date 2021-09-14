@@ -20,7 +20,7 @@
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <common/logger_useful.h>
 #include <algorithm>
@@ -105,7 +105,7 @@ namespace
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            pipeline = std::make_unique<QueryPipeline>();
+            pipeline = std::make_unique<QueryPipelineBuilder>();
             pipeline->init(Pipe(input_format));
 
             pipeline->addSimpleTransform([&](const Block & cur_header)
@@ -139,7 +139,7 @@ namespace
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<QueryPipelineBuilder> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 }

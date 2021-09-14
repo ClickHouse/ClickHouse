@@ -4,7 +4,7 @@
 
 #include <functional>
 
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Chain.h>
 
 
@@ -29,10 +29,10 @@ struct BlockIO
     Chain out;
     BlockInputStreamPtr in;
 
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
 
     /// Callbacks for query logging could be set here.
-    std::function<void(IBlockInputStream *, QueryPipeline *)>    finish_callback;
+    std::function<void(IBlockInputStream *, QueryPipelineBuilder *)>    finish_callback;
     std::function<void()>                                        exception_callback;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
@@ -43,7 +43,7 @@ struct BlockIO
     {
         if (finish_callback)
         {
-            QueryPipeline * pipeline_ptr = nullptr;
+            QueryPipelineBuilder * pipeline_ptr = nullptr;
             if (pipeline.initialized())
                 pipeline_ptr = &pipeline;
 

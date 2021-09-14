@@ -1,4 +1,4 @@
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/LimitTransform.h>
@@ -30,18 +30,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void QueryPipeline::addQueryPlan(std::unique_ptr<QueryPlan> plan)
+void QueryPipelineBuilder::addQueryPlan(std::unique_ptr<QueryPlan> plan)
 {
     pipe.addQueryPlan(std::move(plan));
 }
 
-void QueryPipeline::checkInitialized()
+void QueryPipelineBuilder::checkInitialized()
 {
     if (!initialized())
         throw Exception("QueryPipeline wasn't initialized.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void QueryPipeline::checkInitializedAndNotCompleted()
+void QueryPipelineBuilder::checkInitializedAndNotCompleted()
 {
     checkInitialized();
 
@@ -68,7 +68,7 @@ static void checkSource(const ProcessorPtr & source, bool can_have_totals)
                         toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void QueryPipeline::init(Pipe pipe_)
+void QueryPipelineBuilder::init(Pipe pipe_)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
@@ -79,43 +79,43 @@ void QueryPipeline::init(Pipe pipe_)
     pipe = std::move(pipe_);
 }
 
-void QueryPipeline::reset()
+void QueryPipelineBuilder::reset()
 {
     Pipe pipe_to_destroy(std::move(pipe));
-    *this = QueryPipeline();
+    *this = QueryPipelineBuilder();
 }
 
-void QueryPipeline::addSimpleTransform(const Pipe::ProcessorGetter & getter)
+void QueryPipelineBuilder::addSimpleTransform(const Pipe::ProcessorGetter & getter)
 {
     checkInitializedAndNotCompleted();
     pipe.addSimpleTransform(getter);
 }
 
-void QueryPipeline::addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter)
+void QueryPipelineBuilder::addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();
     pipe.addSimpleTransform(getter);
 }
 
-void QueryPipeline::addTransform(ProcessorPtr transform)
+void QueryPipelineBuilder::addTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
     pipe.addTransform(std::move(transform));
 }
 
-void QueryPipeline::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
+void QueryPipelineBuilder::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
 {
     checkInitializedAndNotCompleted();
     pipe.addTransform(std::move(transform), totals, extremes);
 }
 
-void QueryPipeline::addChains(std::vector<Chain> chains)
+void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
 {
     checkInitializedAndNotCompleted();
     pipe.addChains(std::move(chains));
 }
 
-void QueryPipeline::addChain(Chain chain)
+void QueryPipelineBuilder::addChain(Chain chain)
 {
     checkInitializedAndNotCompleted();
     std::vector<Chain> chains;
@@ -124,19 +124,19 @@ void QueryPipeline::addChain(Chain chain)
     pipe.addChains(std::move(chains));
 }
 
-void QueryPipeline::transform(const Transformer & transformer)
+void QueryPipelineBuilder::transform(const Transformer & transformer)
 {
     checkInitializedAndNotCompleted();
     pipe.transform(transformer);
 }
 
-void QueryPipeline::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
+void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();
     pipe.setSinks(getter);
 }
 
-void QueryPipeline::addDelayedStream(ProcessorPtr source)
+void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
 {
     checkInitializedAndNotCompleted();
 
@@ -150,18 +150,18 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
     addTransform(std::move(processor));
 }
 
-void QueryPipeline::addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors)
+void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors)
 {
     DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
 }
 
-void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
+void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
     pipe.resize(num_streams, force, strict);
 }
 
-void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
+void QueryPipelineBuilder::addTotalsHavingTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
 
@@ -178,7 +178,7 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform), totals_port, nullptr);
 }
 
-void QueryPipeline::addDefaultTotals()
+void QueryPipelineBuilder::addDefaultTotals()
 {
     checkInitializedAndNotCompleted();
 
@@ -200,13 +200,13 @@ void QueryPipeline::addDefaultTotals()
     pipe.addTotalsSource(std::move(source));
 }
 
-void QueryPipeline::dropTotalsAndExtremes()
+void QueryPipelineBuilder::dropTotalsAndExtremes()
 {
     pipe.dropTotals();
     pipe.dropExtremes();
 }
 
-void QueryPipeline::addExtremesTransform()
+void QueryPipelineBuilder::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();
 
@@ -222,7 +222,7 @@ void QueryPipeline::addExtremesTransform()
     pipe.addTransform(std::move(transform), nullptr, port);
 }
 
-void QueryPipeline::setOutputFormat(ProcessorPtr output)
+void QueryPipelineBuilder::setOutputFormat(ProcessorPtr output)
 {
     checkInitializedAndNotCompleted();
 
@@ -237,8 +237,8 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
     initRowsBeforeLimit();
 }
 
-QueryPipeline QueryPipeline::unitePipelines(
-    std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -271,7 +271,7 @@ QueryPipeline QueryPipeline::unitePipelines(
             max_threads_limit = pipeline.max_threads;
     }
 
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
 
     if (will_limit_max_threads)
@@ -283,9 +283,9 @@ QueryPipeline QueryPipeline::unitePipelines(
     return pipeline;
 }
 
-std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
-    std::unique_ptr<QueryPipeline> left,
-    std::unique_ptr<QueryPipeline> right,
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
+    std::unique_ptr<QueryPipelineBuilder> left,
+    std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     size_t max_block_size,
     Processors * collected_processors)
@@ -375,7 +375,7 @@ std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
     return left;
 }
 
-void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipelineBuilder::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
 {
     resize(1);
 
@@ -394,7 +394,7 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
     pipe.addTransform(std::move(transform), totals_port, nullptr);
 }
 
-void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
+void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
 {
     checkInitializedAndNotCompleted();
     if (pipeline.getHeader())
@@ -409,14 +409,14 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
 
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
-    pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
+    pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline)));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));
 }
 
-void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
+void QueryPipelineBuilder::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & processor : pipe.processors)
     {
@@ -425,7 +425,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     }
 }
 
-void QueryPipeline::setProcessListElement(QueryStatus * elem)
+void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
 
@@ -436,7 +436,7 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     }
 }
 
-void QueryPipeline::initRowsBeforeLimit()
+void QueryPipelineBuilder::initRowsBeforeLimit()
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
@@ -530,7 +530,7 @@ void QueryPipeline::initRowsBeforeLimit()
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 }
 
-PipelineExecutorPtr QueryPipeline::execute()
+PipelineExecutorPtr QueryPipelineBuilder::execute()
 {
     if (!isCompleted())
         throw Exception("Cannot execute pipeline because it is not completed.", ErrorCodes::LOGICAL_ERROR);
@@ -538,13 +538,13 @@ PipelineExecutorPtr QueryPipeline::execute()
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
-void QueryPipeline::setCollectedProcessors(Processors * processors)
+void QueryPipelineBuilder::setCollectedProcessors(Processors * processors)
 {
     pipe.collected_processors = processors;
 }
 
 
-QueryPipelineProcessorsCollector::QueryPipelineProcessorsCollector(QueryPipeline & pipeline_, IQueryPlanStep * step_)
+QueryPipelineProcessorsCollector::QueryPipelineProcessorsCollector(QueryPipelineBuilder & pipeline_, IQueryPlanStep * step_)
     : pipeline(pipeline_), step(step_)
 {
     pipeline.setCollectedProcessors(&processors);
