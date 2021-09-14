@@ -632,7 +632,7 @@ public:
             auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
                 ctx->metadata_snapshot,
-                *ctx->mutate_entry,
+                ctx->mutate_entry,
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,

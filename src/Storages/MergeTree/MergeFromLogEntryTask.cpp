@@ -200,7 +200,7 @@ bool MergeFromLogEntryTask::prepare()
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
-            *merge_mutate_entry,
+            merge_mutate_entry.get(),
             table_lock_holder,
             entry.create_time,
             storage.getContext(),

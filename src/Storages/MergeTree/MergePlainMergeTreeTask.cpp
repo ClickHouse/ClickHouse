@@ -94,7 +94,7 @@ void MergePlainMergeTreeTask::prepare()
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
-            *(merge_list_entry),
+            merge_list_entry.get(),
             table_lock_holder,
             time(nullptr),
             storage.getContext(),

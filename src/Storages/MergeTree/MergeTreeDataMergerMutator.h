@@ -98,7 +98,7 @@ public:
     MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
-        MergeListEntry & merge_entry,
+        MergeListEntry * merge_entry,
         TableLockHolder table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
