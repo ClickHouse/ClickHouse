@@ -3389,7 +3389,7 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
-Задает максимальную общую длину всех регулярных выражений в каждой [hyperscan-функции поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) множественных совпадений в строке.
+Задает максимальную общую длину всех регулярных выражений в каждой [hyperscan-функции](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке.
 
 Возможные значения:
 
