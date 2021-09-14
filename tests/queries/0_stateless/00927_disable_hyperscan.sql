@@ -1,3 +1,5 @@
+-- Tags: no-debug
+
 SET allow_hyperscan = 1;
 SELECT multiMatchAny(arrayJoin(['hello', 'world', 'hellllllllo', 'wororld', 'abc']), ['hel+o', 'w(or)*ld']);
 SET allow_hyperscan = 0;
