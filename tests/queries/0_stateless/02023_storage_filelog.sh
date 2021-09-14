@@ -42,13 +42,13 @@ ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/c.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
 
-sleep 10
+sleep 5
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
 echo  111, 111 >> ${user_files_path}/logs/a.txt
 
-sleep 10
+sleep 5
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 

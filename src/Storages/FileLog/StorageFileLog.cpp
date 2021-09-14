@@ -392,8 +392,8 @@ bool StorageFileLog::updateFileStatus()
 
             case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-				if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
-				{
+                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+                {
                     file_status[event.path].status = FileStatus::UPDATED;
                 }
                 break;
