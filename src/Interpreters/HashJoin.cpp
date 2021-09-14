@@ -296,7 +296,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         const auto & key_names_right = clause.key_names_right;
         ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
-        if (table_join->dictionary_reader)
+        if (table_join->getDictionaryReader())
         {
             assert(disjuncts_num == 1);
             LOG_DEBUG(log, "Performing join over dict");

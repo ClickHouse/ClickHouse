@@ -116,10 +116,6 @@ void TableJoin::resetCollected()
     renames.clear();
     left_type_map.clear();
     right_type_map.clear();
-    key_names_left.resize(1);
-    key_names_right.resize(1);
-    on_filter_condition_asts_left.resize(1);
-    on_filter_condition_asts_right.resize(1);
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
@@ -141,7 +137,7 @@ void TableJoin::addDisjunct(const ASTPtr & ast)
             clauses.emplace_back();
         }
     }
-    if (joined_storage && clauses.size() > 1)
+    if (getStorageJoin() && clauses.size() > 1)
         throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
@@ -464,29 +460,31 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
     return true;
 }
 
+
+static void tryRename(String & name, const NameToNameMap & renames)
+{
+    if (const auto it = renames.find(name); it != renames.end())
+        name = it->second;
+}
+
 std::pair<ActionsDAGPtr, ActionsDAGPtr>
 TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
     inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
 
-    if (need_convert)
-    {
-        NameToNameMap left_key_column_rename;
-        NameToNameMap right_key_column_rename;
-        left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, left_key_column_rename);
-        right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, right_key_column_rename);
-        forAllKeys(clauses, [&](auto & left_key, auto & right_key)
-        {
-            if (const auto it = left_key_column_rename.find(left_key); it != left_key_column_rename.end())
-                left_key = it->second;
-            if (const auto it = right_key_column_rename.find(left_key); it != right_key_column_rename.end())
-                right_key = it->second;
-            return true;
-        });
-    }
+    NameToNameMap left_key_column_rename;
+    NameToNameMap right_key_column_rename;
+    auto left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, left_key_column_rename);
+    auto right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, right_key_column_rename);
 
-    return {left_converting_actions, right_converting_actions};
-}
+    forAllKeys(clauses, [&](auto & left_key, auto & right_key)
+    {
+        tryRename(left_key, left_key_column_rename);
+        tryRename(right_key, right_key_column_rename);
+        return true;
+    });
+
+    return {left_converting_actions, right_converting_actions};}
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
 bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
@@ -518,10 +516,11 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             return true; /// continue;
 
-        DataTypePtr supertype;
+        DataTypePtr common_type;
         try
         {
-            supertype = DB::getLeastSupertype({ltype->second, rtype->second});
+            /// TODO(vdimir): use getMostSubtype if possible
+            common_type = DB::getLeastSupertype({ltype->second, rtype->second});
         }
         catch (DB::Exception & ex)
         {
@@ -532,7 +531,13 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
                 "Can't get supertype: " + ex.message(),
                 ErrorCodes::TYPE_MISMATCH);
         }
-        left_type_map[left_key_name] = right_type_map[right_key_name] = supertype;
+        if (!allow_right && !common_type->equals(*rtype->second))
+        {
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't change type for right table: {}: {} -> {}.",
+                right_key_name, rtype->second->getName(), common_type->getName());
+        }
+        left_type_map[left_key_name] = right_type_map[right_key_name] = common_type;
 
         return true;
     });
