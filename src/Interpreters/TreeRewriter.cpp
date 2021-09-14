@@ -951,12 +951,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     setJoinStrictness(
         *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
 
-    if (const auto * join_ast = select_query->join(); join_ast && tables_with_columns.size() >= 2)
-    {
-        auto & table_join_ast = join_ast->table_join->as<ASTTableJoin &>();
-
-        collectJoinedColumns(*result.analyzed_join, table_join_ast, tables_with_columns, result.aliases);
-    }
+    auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
+    if (table_join_ast && tables_with_columns.size() >= 2)
+        collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases);
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
@@ -967,8 +964,19 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
     if (settings.optimize_respect_aliases && result.metadata_snapshot && is_initiator)
     {
+        std::unordered_set<IAST *> excluded_nodes;
+        {
+            /// Do not replace ALIASed columns in JOIN ON/USING sections
+            if (table_join_ast && table_join_ast->on_expression)
+                excluded_nodes.insert(table_join_ast->on_expression.get());
+            if (table_join_ast && table_join_ast->using_expression_list)
+                excluded_nodes.insert(table_join_ast->using_expression_list.get());
+        }
+
+        bool is_changed = replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(),
+                                                     result.array_join_result_to_source, getContext(), excluded_nodes);
         /// If query is changed, we need to redo some work to correct name resolution.
-        if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
+        if (is_changed)
         {
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
