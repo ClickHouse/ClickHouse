@@ -551,6 +551,8 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             else
                 needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
+        else if (!got_alias)
+            throw Exception("Unknown column name '" + ident->name() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     return needed_columns;

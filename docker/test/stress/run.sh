@@ -1,30 +1,6 @@
 #!/bin/bash
-# shellcheck disable=SC2094
-# shellcheck disable=SC2086
 
 set -x
-
-# Thread Fuzzer allows to check more permutations of possible thread scheduling
-# and find more potential issues.
-
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US=100000
-
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
-
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
-
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
@@ -61,36 +37,24 @@ function stop()
 
 function start()
 {
-    # Rename existing log file - it will be more convenient to read separate files for separate server runs.
-    if [ -f '/var/log/clickhouse-server/clickhouse-server.log' ]
-    then
-        log_file_counter=1
-        while [ -f "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}" ]
-        do
-            log_file_counter=$((log_file_counter + 1))
-        done
-        mv '/var/log/clickhouse-server/clickhouse-server.log' "/var/log/clickhouse-server/clickhouse-server.log.${log_file_counter}"
-    fi
-
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 240 ]
+        if [ "$counter" -gt 120 ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
         # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
 
     echo "
-set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -140,35 +104,35 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
 
 # Print Fatal log messages to stdout
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
 zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
+zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp
 
 # OOM
-zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Logical errors
-zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
 # Crash
-zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
 # It also checks for crash without stacktrace (printed by watchdog)
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Fatal message in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
@@ -176,11 +140,7 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
 # Put logs into /test_output/
-for log_file in /var/log/clickhouse-server/clickhouse-server.log*
-do
-    pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
-done
-
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:

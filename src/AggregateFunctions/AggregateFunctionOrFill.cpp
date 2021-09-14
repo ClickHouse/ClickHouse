@@ -23,9 +23,6 @@ private:
 public:
     explicit AggregateFunctionCombinatorOrFill(Kind kind_) : kind(kind_) {}
 
-    /// Due to aggregate_functions_null_for_empty
-    bool supportsNesting() const override { return true; }
-
     String getName() const override
     {
         return kind == Kind::OrNull ? "OrNull" : "OrDefault";

@@ -2897,7 +2897,6 @@ version: 1.0
 * processes
 * query_log
 * query_thread_log
-* query_views_log
 * clusters
 * events
 * graphite_retentions

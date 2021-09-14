@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 DROP TABLE IF EXISTS test_collation;
 
 CREATE TABLE test_collation

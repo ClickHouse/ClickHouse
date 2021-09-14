@@ -27,7 +27,6 @@ namespace Aws::S3
 namespace DB
 {
 
-class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class StorageS3Source : public SourceWithProgress, WithContext
 {
@@ -54,7 +53,6 @@ public:
         String name_,
         const Block & sample_block,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
@@ -78,12 +76,10 @@ private:
     String compression_hint;
     std::shared_ptr<Aws::S3::S3Client> client;
     Block sample_block;
-    std::optional<FormatSettings> format_settings;
 
 
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    BlockInputStreamPtr reader;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
@@ -115,7 +111,6 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
         const String & compression_method_ = "",
         bool distributed_processing_ = false);
 
@@ -133,20 +128,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    bool supportsPartitionBy() const override;
 
 private:
 
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    struct ClientAuthentication
+    struct ClientAuthentificaiton
     {
         const S3::URI uri;
         const String access_key_id;
@@ -156,7 +147,7 @@ private:
         S3AuthSettings auth_settings;
     };
 
-    ClientAuthentication client_auth;
+    ClientAuthentificaiton client_auth;
 
     String format_name;
     UInt64 max_single_read_retries;
@@ -165,9 +156,8 @@ private:
     String compression_method;
     String name;
     const bool distributed_processing;
-    std::optional<FormatSettings> format_settings;
 
-    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
+    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
 
 }

@@ -13,8 +13,8 @@ Creates a [row policy](../../../operations/access-rights.md#row-policy-managemen
 Syntax:
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...]
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...] 
     [FOR SELECT] USING condition
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
@@ -32,11 +32,11 @@ Keyword `ALL` means all the ClickHouse users including current user. Keyword `AL
 
 !!! note "Note"
     If there are no row policies defined for a table then any user can `SELECT` all the row from the table. Defining one or more row policies for the table makes the access to the table depending on the row policies no matter if those row policies are defined for the current user or not. For example, the following policy
-
+    
     `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
 
     forbids the users `mira` and `peter` to see the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
-
+    
     If that's not desirable it can't be fixed by adding one more row policy, like the following:
 
     `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`

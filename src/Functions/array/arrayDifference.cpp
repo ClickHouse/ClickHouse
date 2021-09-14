@@ -20,6 +20,7 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
+    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -64,7 +65,7 @@ struct ArrayDifferenceImpl
             {
                 Element curr = src[pos];
 
-                if constexpr (is_decimal<Element>)
+                if constexpr (IsDecimalNumber<Element>)
                 {
                     using ResultNativeType = typename Result::NativeType;
 
@@ -92,8 +93,8 @@ struct ArrayDifferenceImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = ColumnVectorOrDecimal<Element>;
-        using ColVecResult = ColumnVectorOrDecimal<Result>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -104,7 +105,7 @@ struct ArrayDifferenceImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (is_decimal<Element>)
+        if constexpr (IsDecimalNumber<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();
@@ -128,7 +129,6 @@ struct ArrayDifferenceImpl
     {
         ColumnPtr res;
 
-        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
             executeType< UInt16,  Int32>(mapped, array, res) ||
             executeType< UInt32,  Int64>(mapped, array, res) ||
