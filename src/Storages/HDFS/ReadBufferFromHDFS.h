@@ -18,6 +18,8 @@
 namespace DB
 {
 
+struct HDFSFileInfo;
+
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
@@ -36,6 +38,8 @@ public:
     off_t seek(off_t offset_, int whence) override;
 
     off_t getPosition() override;
+
+    std::unique_ptr<HDFSFileInfo> fstat() const;
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;

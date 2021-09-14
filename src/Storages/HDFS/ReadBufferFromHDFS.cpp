@@ -3,6 +3,7 @@
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
+#include <memory>
 #include <mutex>
 
 
@@ -111,6 +112,21 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     {
         return offset;
     }
+
+    std::unique_ptr<HDFSFileInfo> fstat() const
+    {
+        auto result = std::make_unique<HDFSFileInfo>();
+        result->file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
+        if (!result->file_info)
+            throw Exception(
+                ErrorCodes::NETWORK_ERROR,
+                "Fail to get path info from HDFS: {}, file path: {}. Error: {}",
+                hdfs_uri,
+                hdfs_file_path,
+                std::string(hdfsGetLastError()));
+        result->length = 1;
+        return result;
+    }
 };
 
 
@@ -151,6 +167,11 @@ off_t ReadBufferFromHDFS::seek(off_t off, int whence)
 off_t ReadBufferFromHDFS::getPosition()
 {
     return impl->getPosition() - available();
+}
+
+std::unique_ptr<HDFSFileInfo> ReadBufferFromHDFS::fstat() const
+{
+    return impl->fstat();
 }
 
 }

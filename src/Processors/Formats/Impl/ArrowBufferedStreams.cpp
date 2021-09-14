@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
@@ -130,6 +131,13 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
         // if fd is a regular file i.e. not stdin
         if (res == 0 && S_ISREG(stat.st_mode))
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
+    }
+
+    if (auto * hdfs_in = dynamic_cast<ReadBufferFromHDFS*>(&in))
+    {
+        auto stat = hdfs_in->fstat();
+        if (stat)
+            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*hdfs_in, stat->mSize);
     }
 
     // fallback to loading the entire file in memory
