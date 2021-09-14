@@ -167,7 +167,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
     /// Complete query using input streams from mergeable blocks
-    QueryPipeline completeQuery(Pipes pipes);
+    QueryPipelineBuilder completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }

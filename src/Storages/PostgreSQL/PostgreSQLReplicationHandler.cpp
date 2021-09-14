@@ -1,7 +1,7 @@
 #include "PostgreSQLReplicationHandler.h"
 
 #include <DataStreams/PostgreSQLSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -251,7 +251,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name
     auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(Pipe(std::move(input)));
     assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out.getInputHeader(), "postgresql replica load from snapshot");
     pipeline.addChain(std::move(block_io.out));

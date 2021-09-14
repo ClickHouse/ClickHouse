@@ -9,7 +9,7 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
-#    include <Processors/QueryPipeline.h>
+#    include <Processors/QueryPipelineBuilder.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Sinks/ExceptionHandlingSink.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
@@ -114,7 +114,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin_use_v1_row_events", "OFF"}
     };
 
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(Pipe(std::move(variables_input)));
 
     PullingPipelineExecutor executor(pipeline);
@@ -343,7 +343,7 @@ static inline void dumpDataForTables(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
                 chain.getInputHeader(), mysql_input_stream_settings);
 
-            QueryPipeline pipeline;
+            QueryPipelineBuilder pipeline;
             pipeline.init(Pipe(std::move(input)));
             pipeline.addChain(std::move(chain));
             pipeline.setSinks([&](const Block & header, Pipe::StreamType)
@@ -808,7 +808,7 @@ void MaterializedMySQLSyncThread::Buffers::commit(ContextPtr context)
             auto query_context = createQueryContext(context);
             auto input = std::make_shared<SourceFromSingleChunk>(table_name_and_buffer.second->first);
             auto out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
-            QueryPipeline pipeline;
+            QueryPipelineBuilder pipeline;
             pipeline.init(Pipe(std::move(input)));
             pipeline.addChain(std::move(out));
             pipeline.setSinks([&](const Block & header, Pipe::StreamType)

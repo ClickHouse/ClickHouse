@@ -1,5 +1,5 @@
 #include "readInvalidateQuery.h"
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 std::string readInvalidateQuery(Pipe pipe)
 {
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);

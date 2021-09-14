@@ -367,7 +367,7 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
+        QueryPipelineBuilder pipeline;
         pipeline.init(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
@@ -561,7 +561,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     {
         std::atomic<size_t> new_size = 0;
 
-        QueryPipeline pipeline;
+        QueryPipelineBuilder pipeline;
         if (configuration.preallocate)
             pipeline.init(source_ptr->loadAllWithSizeHint(&new_size));
         else

@@ -27,7 +27,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
@@ -589,7 +589,7 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<QueryPipelineBuilder> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
@@ -896,7 +896,7 @@ namespace
         });
 
         assert(!pipeline);
-        pipeline = std::make_unique<QueryPipeline>();
+        pipeline = std::make_unique<QueryPipelineBuilder>();
         auto source = FormatFactory::instance().getInput(
             input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
         pipeline->init(Pipe(source));
@@ -986,7 +986,7 @@ namespace
                         format, data, metadata_snapshot->getSampleBlock(),
                         external_table_context, external_table_context->getSettings().max_insert_block_size);
 
-                    QueryPipeline cur_pipeline;
+                    QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
                     cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
