@@ -33,11 +33,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
 }
 
-static const IDataType * getTypeObject(const DataTypePtr & type)
-{
-    return typeid_cast<const DataTypeObject *>(type.get());
-}
-
 size_t getNumberOfDimensions(const IDataType & type)
 {
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
@@ -107,11 +102,11 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
 
     for (auto & name_type : columns_list)
     {
-        if (const auto * type_object = getTypeObject(name_type.type))
+        if (isObject(name_type.type))
         {
             auto & column = block.getByName(name_type.name);
 
-            if (!getTypeObject(column.type))
+            if (!isObject(column.type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
                     name_type.name, name_type.type->getName(), column.type->getName());
@@ -131,7 +126,7 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
                     subcolumn.getFinalizedColumnPtr());
 
             std::sort(tuple_elements.begin(), tuple_elements.end(),
-                [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );
+                [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
             auto tuple_names = extractVector<0>(tuple_elements);
             auto tuple_types = extractVector<1>(tuple_elements);
@@ -222,7 +217,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
         tuple_elements.emplace_back(ColumnObject::COLUMN_NAME_DUMMY, std::make_shared<DataTypeUInt8>());
 
     std::sort(tuple_elements.begin(), tuple_elements.end(),
-        [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );
+        [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
     auto tuple_names = extractVector<0>(tuple_elements);
     auto tuple_types = extractVector<1>(tuple_elements);

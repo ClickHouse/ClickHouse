@@ -81,7 +81,7 @@ protected:
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
-      * Otherwide, result column is converted to full.
+      * Otherwise, result column is converted to full.
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
@@ -367,7 +367,7 @@ protected:
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
-      * Otherwide, result column is converted to full.
+      * Otherwise, result column is converted to full.
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
@@ -425,7 +425,7 @@ public:
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
-      * Otherwide, result column is converted to full.
+      * Otherwise, result column is converted to full.
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 

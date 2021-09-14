@@ -25,8 +25,6 @@ public:
         Subcolumn() = default;
         Subcolumn(size_t size_, bool is_nullable);
         Subcolumn(MutableColumnPtr && data_);
-        Subcolumn(const Subcolumn & other);
-        Subcolumn & operator=(Subcolumn && other) = default;
 
         size_t size() const;
         size_t byteSize() const;

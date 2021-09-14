@@ -32,6 +32,7 @@ SRCS(
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
+    DataTypeObject.cpp
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
@@ -41,6 +42,7 @@ SRCS(
     FieldToDataType.cpp
     IDataType.cpp
     NestedUtils.cpp
+    ObjectUtils.cpp
     Serializations/ISerialization.cpp
     Serializations/SerializationAggregateFunction.cpp
     Serializations/SerializationArray.cpp
@@ -60,6 +62,7 @@ SRCS(
     Serializations/SerializationNothing.cpp
     Serializations/SerializationNullable.cpp
     Serializations/SerializationNumber.cpp
+    Serializations/SerializationObject.cpp
     Serializations/SerializationSparse.cpp
     Serializations/SerializationString.cpp
     Serializations/SerializationTuple.cpp

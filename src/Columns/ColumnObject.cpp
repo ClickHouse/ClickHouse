@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -181,14 +182,6 @@ private:
 
 }
 
-ColumnObject::Subcolumn::Subcolumn(const Subcolumn & other)
-    : least_common_type(other.least_common_type)
-    , is_nullable(other.is_nullable)
-    , data(other.data)
-    , num_of_defaults_in_prefix(other.num_of_defaults_in_prefix)
-{
-}
-
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_)
     : least_common_type(getDataTypeByColumn(*data_))
     , is_nullable(least_common_type->isNullable())
@@ -238,7 +231,7 @@ void ColumnObject::Subcolumn::checkTypes() const
         auto prefix_common_type = getLeastSupertype(prefix_types);
         if (!prefix_common_type->equals(*current_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Data type {} of column at postion {} cannot represent all columns from i-th prefix",
+                "Data type {} of column at position {} cannot represent all columns from i-th prefix",
                 current_type->getName(), i);
     }
 }
@@ -256,7 +249,7 @@ void ColumnObject::Subcolumn::insert(Field field)
 
     if (value_dim != column_dim)
         throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
-            "Dimension of types mismatched beetwen inserted value and column."
+            "Dimension of types mismatched between inserted value and column."
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
 
@@ -273,7 +266,7 @@ void ColumnObject::Subcolumn::insert(Field field)
     if (is_nullable && !base_type->isNullable())
         base_type = makeNullable(base_type);
 
-    auto value_type = createArrayOfType(base_type, value_dim);
+    DataTypePtr value_type;
     if (!is_nullable && base_type->isNullable())
     {
         base_type = removeNullable(base_type);
@@ -287,6 +280,8 @@ void ColumnObject::Subcolumn::insert(Field field)
         auto default_value = value_type->getDefault();
         field = applyVisitor(FieldVisitorReplaceNull(default_value, value_dim), std::move(field));
     }
+    else
+        value_type = createArrayOfType(base_type, value_dim);
 
     bool type_changed = false;
 
@@ -496,7 +491,7 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 
 void ColumnObject::insert(const Field & field)
 {
-    const auto & object = field.get<Object>();
+    const auto & object = field.get<const Object &>();
 
     HashSet<StringRef, StringRefHash> inserted;
     size_t old_size = size();

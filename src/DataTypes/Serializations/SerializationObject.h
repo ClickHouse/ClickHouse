@@ -53,8 +53,8 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
 private:
-    template <typename Settings, typename StatePtr>
-    void checkSerializationIsSupported(Settings & settings, StatePtr & state) const;
+    template <typename TSettings, typename TStatePtr>
+    void checkSerializationIsSupported(TSettings & settings, TStatePtr & state) const;
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, Reader && reader) const;

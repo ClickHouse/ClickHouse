@@ -4,7 +4,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
-#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
