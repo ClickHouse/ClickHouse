@@ -5,7 +5,7 @@ toc_title: studentTTest
 
 # studentTTest {#studentttest}
 
-Applies Student's t-test to samples from two populations.
+Applies Student's t-test to samples from two populations. 
 
 **Syntax**
 
@@ -18,8 +18,8 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 **Arguments**
 
--   `sample_data` — Sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — Sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 

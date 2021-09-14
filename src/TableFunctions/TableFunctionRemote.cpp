@@ -12,10 +12,9 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -29,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -157,16 +156,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
-        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name_expanded);
+            cluster = context.getCluster(cluster_name);
         else
-            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
+            cluster = context.getCluster(cluster_name)->getClusterWithReplicasAsShards(context.getSettings());
     }
     else
     {
         /// Create new cluster from the scratch
-        size_t max_addresses = context->getSettingsRef().table_function_remote_max_addresses;
+        size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
@@ -177,7 +175,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-        auto maybe_secure_port = context->getTCPPortSecure();
+        auto maybe_secure_port = context.getTCPPortSecure();
 
         /// Check host and port on affiliation allowed hosts.
         for (const auto & hosts : names)
@@ -186,24 +184,21 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context->getRemoteHostFilter().checkHostAndPort(
+                    context.getRemoteHostFilter().checkHostAndPort(
                         host,
-                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort())));
+                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
                 else
-                    context->getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+                    context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
-        bool treat_local_as_remote = false;
-        bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
         cluster = std::make_shared<Cluster>(
-            context->getSettings(),
+            context.getSettings(),
             names,
             username,
             password,
-            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
-            treat_local_as_remote,
-            treat_local_port_as_remote,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
+            false,
             secure);
     }
 
@@ -214,7 +209,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id.table_name = remote_table;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const
 {
     /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
     /// without additional conversion in StorageTableFunctionProxy
@@ -240,7 +235,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
-            String{},
             remote_table_id.database_name,
             remote_table_id.table_name,
             String{},
@@ -256,7 +250,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(const Context & context) const
 {
     assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);

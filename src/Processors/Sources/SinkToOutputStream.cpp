@@ -6,7 +6,7 @@ namespace DB
 {
 
 SinkToOutputStream::SinkToOutputStream(BlockOutputStreamPtr stream_)
-    : SinkToStorage(stream_->getHeader())
+    : ISink(stream_->getHeader())
     , stream(std::move(stream_))
 {
     stream->writePrefix();

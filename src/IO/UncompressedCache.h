@@ -2,8 +2,8 @@
 
 #include <Common/LRUCache.h>
 #include <Common/SipHash.h>
+#include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
-#include <Common/HashTable/Hash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -53,22 +53,21 @@ public:
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(offset);
-        hash.get128(key);
+        hash.get128(key.low, key.high);
 
         return key;
     }
 
-    template <typename LoadFunc>
-    MappedPtr getOrSet(const Key & key, LoadFunc && load)
+    MappedPtr get(const Key & key)
     {
-        auto result = Base::getOrSet(key, std::forward<LoadFunc>(load));
+        MappedPtr res = Base::get(key);
 
-        if (result.second)
-            ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
-        else
+        if (res)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
 
-        return result.first;
+        return res;
     }
 
 private:

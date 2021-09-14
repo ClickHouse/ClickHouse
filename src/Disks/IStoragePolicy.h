@@ -1,7 +1,4 @@
 #pragma once
-
-#include <Disks/DiskType.h>
-
 #include <memory>
 #include <vector>
 #include <common/types.h>
@@ -60,7 +57,6 @@ public:
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;
-    /// Returns disks by type ordered by volumes priority
 };
 
 }

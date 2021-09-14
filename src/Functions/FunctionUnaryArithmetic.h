@@ -7,7 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
@@ -38,8 +38,8 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
-    using ColVecA = ColumnVectorOrDecimal<A>;
-    using ColVecC = ColumnVectorOrDecimal<ResultType>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecC = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
@@ -91,7 +91,6 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
-            DataTypeUInt128,
             DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
@@ -111,7 +110,7 @@ class FunctionUnaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
     String getName() const override
     {
@@ -120,7 +119,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -245,7 +243,7 @@ public:
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
         assert(1 == types.size() && 1 == values.size());
 
@@ -262,7 +260,7 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<T1>>());
+                    auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
                     result = Op<T0>::compile(b, v, is_signed_v<T1>);
                     return true;
                 }
