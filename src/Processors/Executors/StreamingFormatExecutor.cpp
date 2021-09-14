@@ -20,9 +20,9 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , on_error(std::move(on_error_))
     , adding_defaults_transform(std::move(adding_defaults_transform_))
     , port(format->getPort().getHeader(), format.get())
+    , result_columns(header.cloneEmptyColumns())
 {
     connect(format->getPort(), port);
-    result_columns = header.cloneEmptyColumns();
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
