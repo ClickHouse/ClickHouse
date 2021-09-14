@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
@@ -14,6 +15,11 @@
 #include <optional>
 #include <unordered_map>
 
+
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -175,12 +181,20 @@ private:
 
     std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats;
 
+    Stopwatch block_devices_rescan_delay;
+
+    void openSensors();
+    void openBlockDevices();
+    void openSensorsChips();
+    void openEDAC();
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
     void update(std::chrono::system_clock::time_point update_time);
+
+    Poco::Logger * log;
 };
 
 }

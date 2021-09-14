@@ -7,7 +7,7 @@ Columns:
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Setting profile ID.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of setting profiles. Configured in the `access_control_path` parameter. 
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of setting profiles. Configured in the `access_control_path` parameter.
 
 -    `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of elements for this profile in the `system.settings_profile_elements` table.
 

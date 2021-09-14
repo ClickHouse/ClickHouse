@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -12,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
+
 
 namespace DB
 {

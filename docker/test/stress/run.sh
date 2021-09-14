@@ -4,6 +4,28 @@
 
 set -x
 
+# Thread Fuzzer allows to check more permutations of possible thread scheduling
+# and find more potential issues.
+
+export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+export THREAD_FUZZER_SLEEP_TIME_US=100000
+
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+
+
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
@@ -53,16 +75,16 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 120 ]
+        if [ "$counter" -gt 240 ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
             break
         fi
         # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
@@ -125,7 +147,7 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
 # Sanitizer asserts
 zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" > /dev/null \
+zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp

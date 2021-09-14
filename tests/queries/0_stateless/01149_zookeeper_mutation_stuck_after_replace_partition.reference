@@ -4,8 +4,8 @@
 4	4
 mt	0	0_1_1_0	2
 rmt	0	0_0_0_0	2
-1	1
-2	2
+1	s1
+2	s2
 mt	0	0_1_1_0	2
 rmt	0	0_3_3_0	2
 0000000000	UPDATE s = concat(\'s\', toString(n)) WHERE 1	[]	0	1

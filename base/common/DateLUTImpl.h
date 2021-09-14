@@ -18,6 +18,8 @@
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
+/// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
+#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 16436)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
@@ -191,6 +193,7 @@ private:
     /// UTC offset at the beginning of the first supported year.
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
+    bool offset_is_whole_number_of_minutes_during_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -249,18 +252,23 @@ private:
     }
 
     template <typename T, typename Divisor>
-    static inline T roundDown(T x, Divisor divisor)
+    inline T roundDown(T x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(x >= 0))
-            return x / divisor * divisor;
+        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        {
+            if (likely(x >= 0))
+                return x / divisor * divisor;
 
-        /// Integer division for negative numbers rounds them towards zero (up).
-        /// We will shift the number so it will be rounded towards -inf (down).
+            /// Integer division for negative numbers rounds them towards zero (up).
+            /// We will shift the number so it will be rounded towards -inf (down).
+            return (x + 1 - divisor) / divisor * divisor;
+        }
 
-        return (x + 1 - divisor) / divisor * divisor;
+        Time date = find(x).date;
+        return date + (x - date) / divisor * divisor;
     }
 
 public:
@@ -269,6 +277,8 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    auto getDayNumOffsetEpoch() const { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
@@ -455,10 +465,21 @@ public:
 
     inline unsigned toSecond(Time t) const
     {
-        auto res = t % 60;
-        if (likely(res >= 0))
-            return res;
-        return res + 60;
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        {
+            Time res = t % 60;
+            if (likely(res >= 0))
+                return res;
+            return res + 60;
+        }
+
+        LUTIndex index = findIndex(t);
+        Time time = t - lut[index].date;
+
+        if (time >= lut[index].time_at_offset_change())
+            time += lut[index].amount_of_offset_change();
+
+        return time % 60;
     }
 
     inline unsigned toMinute(Time t) const
@@ -479,29 +500,11 @@ public:
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline Time toStartOfMinute(Time t) const { return roundDown(t, 60); }
-    inline Time toStartOfFiveMinute(Time t) const { return roundDown(t, 300); }
-    inline Time toStartOfFifteenMinutes(Time t) const { return roundDown(t, 900); }
-
-    inline Time toStartOfTenMinutes(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 600 * 600;
-
-        /// More complex logic is for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
-        Time date = find(t).date;
-        return date + (t - date) / 600 * 600;
-    }
-
-    /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
-    inline Time toStartOfHour(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 3600 * 3600;
-
-        Time date = find(t).date;
-        return date + (t - date) / 3600 * 3600;
-    }
+    inline Time toStartOfMinute(Time t) const { return toStartOfMinuteInterval(t, 1); }
+    inline Time toStartOfFiveMinute(Time t) const { return toStartOfMinuteInterval(t, 5); }
+    inline Time toStartOfFifteenMinutes(Time t) const { return toStartOfMinuteInterval(t, 15); }
+    inline Time toStartOfTenMinutes(Time t) const { return toStartOfMinuteInterval(t, 10); }
+    inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
@@ -899,25 +902,24 @@ public:
 
     inline Time toStartOfMinuteInterval(Time t, UInt64 minutes) const
     {
-        if (minutes == 1)
-            return toStartOfMinute(t);
+        UInt64 divisor = 60 * minutes;
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        {
+            if (likely(t >= 0))
+                return t / divisor * divisor;
+            return (t + 1 - divisor) / divisor * divisor;
+        }
 
-        /** In contrast to "toStartOfHourInterval" function above,
-          * the minute intervals are not aligned to the midnight.
-          * You will get unexpected results if for example, you round down to 60 minute interval
-          * and there was a time shift to 30 minutes.
-          *
-          * But this is not specified in docs and can be changed in future.
-          */
-
-        UInt64 seconds = 60 * minutes;
-        return roundDown(t, seconds);
+        Time date = find(t).date;
+        return date + (t - date) / divisor * divisor;
     }
 
     inline Time toStartOfSecondInterval(Time t, UInt64 seconds) const
     {
         if (seconds == 1)
             return t;
+        if (seconds % 60 == 0)
+            return toStartOfMinuteInterval(t, seconds / 60);
 
         return roundDown(t, seconds);
     }
@@ -926,15 +928,17 @@ public:
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return LUTIndex(0);
-
-        return LUTIndex{years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1};
+        auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
+        UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
+        /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2283-11-11)
+        return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
     /// Create DayNum from year, month, day of month.
-    inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
+    inline ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return ExtendedDayNum(0);
+            return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
     }
@@ -949,7 +953,7 @@ public:
     inline Time makeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeLUTIndex(year, month, day_of_month);
-        UInt32 time_offset = hour * 3600 + minute * 60 + second;
+        Time time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change())
             time_offset -= lut[index].amount_of_offset_change();
@@ -1091,9 +1095,9 @@ public:
         return lut[new_index].date + time;
     }
 
-    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int32 delta) const
     {
-        return addDays(t, delta * 7);
+        return addDays(t, static_cast<Int64>(delta) * 7);
     }
 
     inline UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1158,14 +1162,14 @@ public:
         return toDayNum(addMonthsIndex(d, delta));
     }
 
-    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int64 delta) const
+    inline Time NO_SANITIZE_UNDEFINED addQuarters(Time t, Int32 delta) const
     {
-        return addMonths(t, delta * 3);
+        return addMonths(t, static_cast<Int64>(delta) * 3);
     }
 
-    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int64 delta) const
+    inline ExtendedDayNum addQuarters(ExtendedDayNum d, Int32 delta) const
     {
-        return addMonths(d, delta * 3);
+        return addMonths(d, static_cast<Int64>(delta) * 3);
     }
 
     template <typename DateOrTime>

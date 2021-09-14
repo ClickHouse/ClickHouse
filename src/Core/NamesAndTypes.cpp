@@ -1,4 +1,5 @@
 #include <Core/NamesAndTypes.h>
+#include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -161,18 +162,20 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
+    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
+    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
 
     for (const auto & column : *this)
-        self_columns[column.name] = &column;
+        types[column.name] = &column.type;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = self_columns.find(name);
-        if (it == self_columns.end())
-            throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(*it->second);
+        const auto * it = types.find(name);
+        if (it == types.end())
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
+
+        res.emplace_back(name, *it->getMapped());
     }
 
     return res;

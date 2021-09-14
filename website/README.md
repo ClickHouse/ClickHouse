@@ -23,7 +23,7 @@ virtualenv build
 ./build.py --skip-multi-page --skip-single-page --skip-amp --skip-pdf --skip-git-log --skip-docs --livereload 8080
 ```
 
-# How to quickly test the ugly annoying broken links in docs
+# How to quickly test the broken links in docs
 
 ```
 ./build.py --skip-multi-page --skip-amp --skip-pdf --skip-blog --skip-git-log --lang en --livereload 8080

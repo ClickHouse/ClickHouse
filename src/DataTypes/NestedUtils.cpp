@@ -141,7 +141,7 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!nested_types.count(splitName(name_type.name).first))
+        if (!isArray(name_type.type) || !nested_types.count(splitName(name_type.name).first))
             res.push_back(name_type);
 
     for (const auto & name_type : nested_types)
@@ -157,6 +157,9 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 
     for (auto & name_type : res)
     {
+        if (!isArray(name_type.type))
+            continue;
+
         auto split = splitName(name_type.name);
         if (name_type.isSubcolumn() || split.second.empty())
             continue;
@@ -206,6 +209,18 @@ void validateArraySizes(const Block & block)
             }
         }
     }
+}
+
+std::unordered_set<String> getAllTableNames(const Block & block)
+{
+    std::unordered_set<String> nested_table_names;
+    for (auto & name : block.getNames())
+    {
+        auto nested_table_name = Nested::extractTableName(name);
+        if (!nested_table_name.empty())
+            nested_table_names.insert(nested_table_name);
+    }
+    return nested_table_names;
 }
 
 }
