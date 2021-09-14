@@ -1,5 +1,8 @@
 #include "ProgressIndication.h"
+#include <numeric>
+#include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <base/types.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
@@ -29,7 +32,7 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
-    thread_ids.clear();
+    thread_times.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -46,7 +49,28 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
 
 void ProgressIndication::addThreadIdToList(UInt64 thread_id)
 {
-    thread_ids.insert(thread_id);
+    if (thread_times.contains(thread_id))
+        return;
+    thread_times[thread_id] = {};
+}
+
+void ProgressIndication::updateThreadUserTime(UInt64 thread_id, UInt64 value)
+{
+    thread_times[thread_id].user_ms = value;
+}
+
+void ProgressIndication::updateThreadSystemTime(UInt64 thread_id, UInt64 value)
+{
+    thread_times[thread_id].system_ms = value;
+}
+
+UInt64 ProgressIndication::getAccumulatedThreadTime() const
+{
+    return std::accumulate(thread_times.cbegin(), thread_times.cend(), static_cast<UInt64>(0),
+        [](UInt64 acc, auto const & elem)
+        {
+            return acc + elem.second.user_ms + elem.second.system_ms;
+        });
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -63,9 +87,20 @@ void ProgressIndication::writeFinalProgress()
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
         std::cout << ". ";
+
     size_t used_threads = getUsedThreadsCount();
     if (used_threads != 0)
-        std::cout << "\nUsed threads to process: " << used_threads << ".";
+    {
+        std::cout << "\nUsed threads to process: " << used_threads;
+
+        auto elapsed_ms = watch.elapsedMicroseconds();
+        auto accumulated_thread_times = getAccumulatedThreadTime();
+        auto approximate_core_number = (accumulated_thread_times + elapsed_ms - 1) / elapsed_ms;
+        if (approximate_core_number != 0)
+            std::cout << " and cores: " << approximate_core_number << ".";
+        else
+            std::cout << ".";
+    }
 }
 
 void ProgressIndication::writeProgress()
