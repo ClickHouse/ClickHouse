@@ -434,7 +434,28 @@ SELECT
 FROM numbers(5)
 WINDOW w AS (ORDER BY number ASC)
 ;
-    
+
+-- nth_value UBsan
+SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+SELECT nth_value(1, 1) OVER ();
+
+-- lagInFrame UBsan
+SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT lagInFrame(1, 0) OVER ();
+SELECT lagInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT lagInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+SELECT lagInFrame(1, 1) OVER ();
+
+-- leadInFrame UBsan
+SELECT leadInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT leadInFrame(1, 0) OVER ();
+SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
+SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
+SELECT leadInFrame(1, 1) OVER ();
+
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
