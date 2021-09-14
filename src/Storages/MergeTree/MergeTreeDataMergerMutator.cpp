@@ -924,7 +924,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
     }
 
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
     pipeline.addTransform(std::move(merged_transform));
     pipeline.setMaxThreads(1);
@@ -1049,7 +1049,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
-                QueryPipeline column_part_pipeline;
+                QueryPipelineBuilder column_part_pipeline;
                 column_part_pipeline.init(Pipe(std::move(column_part_source)));
                 column_part_pipeline.setMaxThreads(1);
 

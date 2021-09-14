@@ -216,7 +216,7 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     io.pipeline.init(Pipe{processor});
 
     if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
-        io.pipeline.setSinks([](const Block & header, QueryPipeline::StreamType){ return std::make_shared<EmptySink>(header); });
+        io.pipeline.setSinks([](const Block & header, QueryPipelineBuilder::StreamType){ return std::make_shared<EmptySink>(header); });
 
     return io;
 }

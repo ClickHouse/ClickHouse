@@ -409,7 +409,7 @@ Chain buildPushingToViewsDrain(
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, false, false, false, view_runtime_data);
             BlockIO io = interpreter.execute();
-            io.out.attachResources(QueryPipeline::getPipe(std::move(io.pipeline)).detachResources());
+            io.out.attachResources(QueryPipelineBuilder::getPipe(std::move(io.pipeline)).detachResources());
             out = std::move(io.out);
         }
         else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))

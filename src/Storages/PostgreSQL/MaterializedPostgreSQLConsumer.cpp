@@ -490,7 +490,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
                 assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.out.getInputHeader(), "postgresql replica table sync");
-                QueryPipeline pipeline;
+                QueryPipelineBuilder pipeline;
                 pipeline.init(Pipe(std::move(input)));
                 pipeline.addChain(std::move(block_io.out));
                 pipeline.setSinks([&](const Block & header, Pipe::StreamType)

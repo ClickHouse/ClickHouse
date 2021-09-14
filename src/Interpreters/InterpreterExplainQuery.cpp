@@ -318,7 +318,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             if (settings.graph)
             {
                 /// Pipe holds QueryPlan, should not go out-of-scope
-                auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
+                auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
                 const auto & processors = pipe.getProcessors();
 
                 if (settings.compact)
@@ -337,7 +337,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             auto io = insert.execute();
             if (io.pipeline.initialized())
             {
-                auto pipe = QueryPipeline::getPipe(std::move(io.pipeline));
+                auto pipe = QueryPipelineBuilder::getPipe(std::move(io.pipeline));
                 const auto & processors = pipe.getProcessors();
                 printPipeline(processors, buf);
             }
