@@ -271,7 +271,9 @@ public:
 
     void consume(Chunk chunk) override
     {
+        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
         StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+        CurrentThread::updateProgressIn(local_progress);
     }
 
 private:
