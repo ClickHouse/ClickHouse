@@ -579,8 +579,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context->resetInputCallbacks();
 
         auto * queue = context->getAsynchronousInsertQueue();
-        const bool async_insert
-            = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
+        const bool async_insert = queue
+            && insert_query && !insert_query->select
+            && insert_query->hasInlinedData() && settings.async_insert_mode;
 
         if (async_insert)
         {
