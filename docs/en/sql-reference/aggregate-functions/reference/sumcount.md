@@ -43,4 +43,4 @@ Result:
 
 **See also**
 
-- [optimize_syntax_fuse_aggregate](../../../operations/settings/settings.md#optimize_syntax_fuse_aggregate) setting.
+- [optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.

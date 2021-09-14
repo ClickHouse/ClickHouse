@@ -776,7 +776,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings.optimize_syntax_fuse_aggregate)
+    if (settings.optimize_syntax_fuse_functions)
         optimizeFuseQuantileFunctions(query);
 }
 
