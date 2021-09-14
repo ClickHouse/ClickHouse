@@ -11,9 +11,11 @@ Source: http://menus.nypl.org/data
 The data is in public domain.
 
 The data is from library's archive and it may be incomplete and difficult for statistical analysis. Nevertheless it is also very yummy.
-The size is just 1.3 million records about dishes in the menus (a very small data volume for ClickHouse, but it's still a good example).
+The size is just 1.3 million records about dishes in the menus — it's a very small data volume for ClickHouse, but it's still a good example.
 
 ## Download the Dataset
+
+Run the command:
 
 ```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
