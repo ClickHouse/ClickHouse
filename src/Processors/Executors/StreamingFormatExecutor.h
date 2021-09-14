@@ -13,10 +13,10 @@ using SimpleTransformPtr = std::shared_ptr<ISimpleTransform>;
 class StreamingFormatExecutor
 {
 public:
-    /// Callback is called, when got exception, while executing format.
-    /// It provides currently accumulated columns to make a roolback, for example,
-    /// and exception to rethrow or add context to it.
-    /// Should return number of rows, which are added to callback
+    /// Callback is called, when exception is thrown in `execute` method.
+    /// It provides currently accumulated columns to make a rollback, for example,
+    /// and exception to rethrow it or add context to it.
+    /// Should return number of new rows, which are added in callback
     /// to result columns in comparison to previous call of `execute`.
     using ErrorCallback = std::function<size_t(const MutableColumns &, Exception &)>;
 
@@ -26,7 +26,7 @@ public:
         ErrorCallback on_error_ = [](const MutableColumns &, Exception &) -> size_t { throw; },
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
-    /// Returns numbers of newly read rows.
+    /// Returns numbers of new read rows.
     size_t execute();
 
     /// Releases currently accumulated columns.

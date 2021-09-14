@@ -134,6 +134,9 @@ private:
     void staleCheck();
     void cleanup();
 
+    /// Should be called with shared or exclusively locked 'rwlock'.
+    void pushImpl(InsertData::EntryPtr entry, QueueIterator it);
+
     void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 

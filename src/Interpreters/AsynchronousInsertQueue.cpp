@@ -165,43 +165,42 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     auto table = interpreter.getTable(insert_query);
     auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
 
-    query_context->checkAccess(AccessFlags(AccessType::INSERT), insert_query.table_id, sample_block.getNames());
+    query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
     String bytes;
-    auto read_buf = getReadBufferFromASTInsertQuery(query);
-
     {
+        auto read_buf = getReadBufferFromASTInsertQuery(query);
         WriteBufferFromString write_buf(bytes);
         copyData(*read_buf, write_buf);
     }
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
-
     InsertQuery key{query, settings};
-    Queue::iterator it;
-    bool found = false;
 
     {
         /// Firstly try to get entry from queue without exclusive lock.
         std::shared_lock read_lock(rwlock);
-        it = queue.find(key);
-        if (it != queue.end())
-            found = true;
+        if (auto it = queue.find(key); it != queue.end())
+        {
+            pushImpl(std::move(entry), it);
+            return;
+        }
     }
 
-    if (!found)
-    {
-        std::unique_lock write_lock(rwlock);
-        it = queue.emplace(key, std::make_shared<Container>()).first;
-    }
+    std::unique_lock write_lock(rwlock);
+    auto it = queue.emplace(key, std::make_shared<Container>()).first;
+    pushImpl(std::move(entry), it);
+}
 
+void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator it)
+{
     auto & [data_mutex, data] = *it->second;
     std::lock_guard data_lock(data_mutex);
 
     if (!data)
         data = std::make_unique<InsertData>();
 
-    data->size += read_buf->count();
+    data->size += entry->bytes.size();
     data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
@@ -210,11 +209,11 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         currently_processing_queries.emplace(entry->query_id, entry);
     }
 
-    LOG_INFO(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
-        data->entries.size(), data->size, queryToString(*query));
+    LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
+        data->entries.size(), data->size, queryToString(it->first.query));
 
     if (data->size > max_data_size)
-        scheduleProcessDataJob(key, std::move(data), getContext());
+        scheduleProcessDataJob(it->first, std::move(data), getContext());
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -288,6 +287,8 @@ void AsynchronousInsertQueue::staleCheck()
 
 void AsynchronousInsertQueue::cleanup()
 {
+    /// Do not run cleanup too often,
+    /// because it holds exclusive lock.
     auto timeout = busy_timeout * 5;
 
     while (!shutdown)
@@ -338,7 +339,7 @@ void AsynchronousInsertQueue::cleanup()
                 for (const auto & id : ids_to_remove)
                     currently_processing_queries.erase(id);
 
-                LOG_TRACE(log, "Removed {} finished entries", ids_to_remove.size());
+                LOG_TRACE(log, "Removed {} finished entries from asynchronous insertion queue", ids_to_remove.size());
             }
         }
     }
