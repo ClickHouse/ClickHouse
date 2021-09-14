@@ -85,58 +85,65 @@ public:
 
     bool execute();
 
-    void prepare();
-
 private:
-    void createMergedStream();
+    struct IStage;
+    using StagePtr = std::shared_ptr<IStage>;
 
-    MergeAlgorithm chooseMergeAlgorithm() const;
+    struct IStageRuntimeData {};
+    using StageRuntimeDataPtr = std::shared_ptr<IStageRuntimeData>;
 
+    struct IStage
+    {
+        virtual void setData();
+        virtual StageRuntimeDataPtr getData();
+        virtual bool execute() = 0;
+        virtual ~IStage() = default;
+
+        StageRuntimeDataPtr data{nullptr};
+    };
+
+    class PrepareStage
+    {
+    public:
+        bool execute();
+    };
+
+    bool prepare();
     bool executeHorizontalForBlock();
-    void finalizeHorizontalPartOfTheMerge();
-    void prepareVertical();
+    bool finalizeHorizontalPartOfTheMerge();
+    bool prepareVertical();
     bool executeVerticalMergeForAllColumns();
+    bool finalizeVerticalMergeForAllColumns();
+    bool mergeMinMaxIndex();
+    bool prepareProjections();
+    bool executeProjections();
+    bool finalizeProjections();
+    bool finalize();
+
+    using SubTask = std::function<bool()>;
+    using SubTasks = std::array<SubTask, 11>;
+
+    SubTasks subtasks{
+        [this] () -> bool { return prepare(); },
+        [this] () -> bool { return executeHorizontalForBlock(); },
+        [this] () -> bool { return finalizeHorizontalPartOfTheMerge(); },
+        [this] () -> bool { return prepareVertical(); },
+        [this] () -> bool { return executeVerticalMergeForAllColumns(); },
+        [this] () -> bool { return finalizeVerticalMergeForAllColumns(); },
+        [this] () -> bool { return mergeMinMaxIndex(); },
+        [this] () -> bool { return prepareProjections(); },
+        [this] () -> bool { return executeProjections(); },
+        [this] () -> bool { return finalizeProjections(); },
+        [this] () -> bool { return finalize(); }
+    };
+
+    size_t task_pointer{0};
+
+    std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     void prepareVerticalMergeForOneColumn();
     bool executeVerticalMergeForOneColumn();
     void finalizeVerticalMergeForOneColumn();
-
-    void finalizeVerticalMergeForAllColumns();
-
-    void mergeMinMaxIndex();
-
-    void prepareProjections();
-    bool executeProjections();
-    void finalizeProjections();
-
-    void finalize();
-
-
-    std::promise<MergeTreeData::MutableDataPartPtr> promise;
-
-    /**
-     * States of MergeTask state machine.
-     * Transitions are from up to down.
-     * But for vertical merge there are horizontal part of the merge and vertical part.
-     * For horizontal there is horizontal part only.
-     */
-    enum class MergeTaskState
-    {
-        NEED_PREPARE,
-        NEED_EXECUTE_HORIZONTAL,
-        NEED_FINALIZE_HORIZONTAL,
-        NEED_PREPARE_VERTICAL,
-        NEED_EXECUTE_VERTICAL,
-        NEED_FINISH_VERTICAL,
-        NEED_MERGE_MIN_MAX_INDEX,
-
-        NEED_PREPARE_PROJECTIONS,
-        NEED_EXECUTE_PROJECTIONS,
-        NEED_FINISH_PROJECTIONS,
-
-        NEED_FINISH
-    };
-    MergeTaskState state{MergeTaskState::NEED_PREPARE};
 
     enum class VecticalMergeOneColumnState
     {
@@ -145,6 +152,9 @@ private:
         NEED_FINISH
     };
     VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};
+
+    void createMergedStream();
+    MergeAlgorithm chooseMergeAlgorithm() const;
 
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;

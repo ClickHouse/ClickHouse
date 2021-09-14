@@ -89,7 +89,7 @@ static void extractMergingAndGatheringColumns(
 }
 
 
-void MergeTask::prepare()
+bool MergeTask::prepare()
 {
     const String tmp_prefix = parent_part ? prefix : "tmp_merge_";
 
@@ -249,6 +249,7 @@ void MergeTask::prepare()
     };
 
     /// This is the end of preparation. Execution will be per block.
+    return false;
 }
 
 
@@ -284,7 +285,7 @@ bool MergeTask::executeHorizontalForBlock()
 }
 
 
-void MergeTask::finalizeHorizontalPartOfTheMerge()
+bool MergeTask::finalizeHorizontalPartOfTheMerge()
 {
     merged_stream->readSuffix();
     merged_stream.reset();
@@ -298,14 +299,16 @@ void MergeTask::finalizeHorizontalPartOfTheMerge()
     const auto data_settings = data.getSettings();
     const size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
     need_sync = needSyncPart(sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
+
+    return false;
 }
 
 
-void MergeTask::prepareVertical()
+bool MergeTask::prepareVertical()
 {
      /// No need to execute this part if it is horizontal merge.
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        return;
+        return false;
 
     size_t sum_input_rows_exact = merge_entry->rows_read;
     merge_entry->columns_written = merging_column_names.size();
@@ -333,6 +336,8 @@ void MergeTask::prepareVertical()
     gathering_column_names_size = gathering_column_names.size();
     column_num_for_vertical_merge = 0;
     it_name_and_type = gathering_columns.cbegin();
+
+    return false;
 }
 
 
@@ -426,15 +431,17 @@ void MergeTask::finalizeVerticalMergeForOneColumn()
 }
 
 
-void MergeTask::finalizeVerticalMergeForAllColumns()
+bool MergeTask::finalizeVerticalMergeForAllColumns()
 {
     /// No need to execute this part if it is horizontal merge.
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        return;
+        return false;
+
+    return false;
 }
 
 
-void MergeTask::mergeMinMaxIndex()
+bool MergeTask::mergeMinMaxIndex()
 {
     for (const auto & part : future_part->parts)
         new_data_part->minmax_idx->merge(*part->minmax_idx);
@@ -452,10 +459,12 @@ void MergeTask::mergeMinMaxIndex()
             merge_entry->rows_read / elapsed_seconds,
             ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
+
+    return false;
 }
 
 
-void MergeTask::prepareProjections()
+bool MergeTask::prepareProjections()
 {
     const auto & projections = metadata_snapshot->getProjections();
     // tasks_for_projections.reserve(projections.size());
@@ -514,6 +523,8 @@ void MergeTask::prepareProjections()
 
     /// We will iterate through projections and execute them
     projections_iterator = tasks_for_projections.begin();
+
+    return false;
 }
 
 
@@ -528,7 +539,7 @@ bool MergeTask::executeProjections()
 }
 
 
-void MergeTask::finalizeProjections()
+bool MergeTask::finalizeProjections()
 {
     const auto & projections = metadata_snapshot->getProjections();
 
@@ -540,10 +551,12 @@ void MergeTask::finalizeProjections()
         ++iter;
         new_data_part->addProjectionPart(projection.name, future.get());
     }
+
+    return false;
 }
 
 
-void MergeTask::finalize()
+bool MergeTask::finalize()
 {
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
         to->writeSuffixAndFinalizePart(new_data_part, need_sync);
@@ -551,6 +564,8 @@ void MergeTask::finalize()
         to->writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
 
     promise.set_value(new_data_part);
+
+    return false;
 }
 
 
@@ -593,89 +608,15 @@ bool MergeTask::executeVerticalMergeForAllColumns()
 
 bool MergeTask::execute()
 {
-    switch (state)
-    {
-        case MergeTaskState::NEED_PREPARE:
-        {
-            prepare();
+    if (subtasks[task_pointer]())
+        return true;
 
-            state = MergeTaskState::NEED_EXECUTE_HORIZONTAL;
-            return true;
-        }
-        case MergeTaskState::NEED_EXECUTE_HORIZONTAL:
-        {
-            if (executeHorizontalForBlock())
-                return true;
+    /// Move to the next stage in an array of stages
+    ++task_pointer;
+    if (task_pointer == subtasks.size())
+        return false;
 
-            state = MergeTaskState::NEED_FINALIZE_HORIZONTAL;
-            return true;
-        }
-        case MergeTaskState::NEED_FINALIZE_HORIZONTAL:
-        {
-            finalizeHorizontalPartOfTheMerge();
-
-            state = MergeTaskState::NEED_PREPARE_VERTICAL;
-            return true;
-        }
-        case MergeTaskState::NEED_PREPARE_VERTICAL:
-        {
-            prepareVertical();
-
-            state = MergeTaskState::NEED_EXECUTE_VERTICAL;
-            return true;
-        }
-        case MergeTaskState::NEED_EXECUTE_VERTICAL:
-        {
-            if (executeVerticalMergeForAllColumns())
-                return true;
-
-            state = MergeTaskState::NEED_FINISH_VERTICAL;
-            return true;
-        }
-        case MergeTaskState::NEED_FINISH_VERTICAL:
-        {
-            finalizeVerticalMergeForAllColumns();
-
-            state = MergeTaskState::NEED_MERGE_MIN_MAX_INDEX;
-            return true;
-        }
-        case MergeTaskState::NEED_MERGE_MIN_MAX_INDEX:
-        {
-            mergeMinMaxIndex();
-
-            state = MergeTaskState::NEED_PREPARE_PROJECTIONS;
-            return true;
-        }
-        case MergeTaskState::NEED_PREPARE_PROJECTIONS:
-        {
-            prepareProjections();
-
-            state = MergeTaskState::NEED_EXECUTE_PROJECTIONS;
-            return true;
-        }
-        case MergeTaskState::NEED_EXECUTE_PROJECTIONS:
-        {
-            if (executeProjections())
-                return true;
-
-            state = MergeTaskState::NEED_FINISH_PROJECTIONS;
-            return true;
-        }
-        case MergeTaskState::NEED_FINISH_PROJECTIONS:
-        {
-            finalizeProjections();
-
-            state = MergeTaskState::NEED_FINISH;
-            return true;
-        }
-        case MergeTaskState::NEED_FINISH:
-        {
-            finalize();
-
-            return false;
-        }
-    }
-    return false;
+    return true;
 }
 
 
