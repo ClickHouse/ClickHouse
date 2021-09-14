@@ -3,7 +3,6 @@
 #include <common/DateLUT.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -17,13 +16,9 @@ class FunctionTimezone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionTimezone>(context->isDistributed());
-    }
-
-    explicit FunctionTimezone(bool is_distributed_) : is_distributed(is_distributed_)
-    {
+        return std::make_shared<FunctionTimezone>();
     }
 
     String getName() const override
@@ -41,17 +36,11 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return !is_distributed; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, DateLUT::instance().getTimeZone());
     }
-private:
-    bool is_distributed;
 };
 
 }

@@ -1,17 +1,17 @@
 #include <Databases/DatabaseFactory.h>
 
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <filesystem>
 
@@ -23,8 +23,8 @@
 #    include <Core/MySQL/MySQLClient.h>
 #    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
-#    include <Databases/MySQL/MaterializedMySQLSettings.h>
-#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#    include <Databases/MySQL/MaterializeMySQLSettings.h>
+#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
 
@@ -38,10 +38,6 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
-#endif
-
-#if USE_SQLITE
-#include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -103,11 +99,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
-
-    bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
-
+    bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "Lazy" ||
+                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL";
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
@@ -115,7 +108,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                                   engine_define->primary_key || engine_define->order_by ||
                                   engine_define->sample_by;
     bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializedPostgreSQL";
-
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -131,7 +123,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
 #if USE_MYSQL
 
-    else if (engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL")
+    else if (engine_name == "MySQL" || engine_name == "MaterializeMySQL")
     {
         const ASTFunction * engine = engine_define->engine;
         if (!engine->arguments || engine->arguments->children.size() != 4)
@@ -169,17 +161,17 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
 
-            auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
+            auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
             if (engine_define->settings)
                 materialize_mode_settings->loadFromQuery(*engine_define);
 
             if (create.uuid == UUIDHelpers::Nil)
-                return std::make_shared<DatabaseMaterializedMySQL<DatabaseOrdinary>>(
+                return std::make_shared<DatabaseMaterializeMySQL<DatabaseOrdinary>>(
                     context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
                     , std::move(materialize_mode_settings));
             else
-                return std::make_shared<DatabaseMaterializedMySQL<DatabaseAtomic>>(
+                return std::make_shared<DatabaseMaterializeMySQL<DatabaseAtomic>>(
                     context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
                     , std::move(materialize_mode_settings));
         }
@@ -236,10 +228,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 6)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "{} Database require `host:port`, `database_name`, `username`, `password` [, `schema` = "", `use_table_cache` = 0].",
-                            engine_name);
+        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 5)
+            throw Exception(fmt::format(
+                        "{} Database require host:port, database_name, username, password arguments "
+                        "[, use_table_cache = 0].", engine_name),
+                ErrorCodes::BAD_ARGUMENTS);
 
         ASTs & engine_args = engine->arguments->children;
 
@@ -251,13 +244,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
         const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
-        String schema;
-        if (engine->arguments->children.size() >= 5)
-            schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
-
         auto use_table_cache = 0;
-        if (engine->arguments->children.size() >= 6)
-            use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+        if (engine->arguments->children.size() == 5)
+            use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
         /// Split into replicas if needed.
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
@@ -272,7 +261,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, schema, connection_pool, use_table_cache);
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
     }
     else if (engine_name == "MaterializedPostgreSQL")
     {
@@ -280,9 +269,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (!engine->arguments || engine->arguments->children.size() != 4)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "{} Database require `host:port`, `database_name`, `username`, `password`.",
-                            engine_name);
+            throw Exception(
+                    fmt::format("{} Database require host:port, database_name, username, password arguments ", engine_name),
+                    ErrorCodes::BAD_ARGUMENTS);
         }
 
         ASTs & engine_args = engine->arguments->children;
@@ -310,22 +299,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 
 
-#endif
-
-#if USE_SQLITE
-    else if (engine_name == "SQLite")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
-
-        const auto & arguments = engine->arguments->children;
-
-        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
-
-        return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
-    }
 #endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);

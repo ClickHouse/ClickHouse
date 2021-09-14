@@ -20,6 +20,7 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <Core/Block.h>
 
@@ -163,7 +164,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -336,7 +337,7 @@ public:
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
-    friend class NotJoinedHash;
+    friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
@@ -375,10 +376,6 @@ private:
     Block required_right_keys;
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
-
-    /// Additional conditions for rows to join from JOIN ON section
-    String condition_mask_column_name_left;
-    String condition_mask_column_name_right;
 
     Poco::Logger * log;
 
