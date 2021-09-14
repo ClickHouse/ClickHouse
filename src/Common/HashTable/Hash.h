@@ -197,12 +197,8 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
     __builtin_unreachable();
 }
 
-
-template <typename T, typename Enable = void>
-struct DefaultHash;
-
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
+struct DefaultHash
 {
     size_t operator() (T key) const
     {
@@ -210,8 +206,8 @@ struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
     }
 };
 
-template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
+template <DB::is_decimal T>
+struct DefaultHash<T>
 {
     size_t operator() (T key) const
     {

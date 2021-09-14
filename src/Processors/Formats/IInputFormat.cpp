@@ -1,8 +1,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 
-#include <iostream>
-
 
 namespace DB
 {
