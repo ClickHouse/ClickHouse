@@ -45,12 +45,20 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
@@ -81,8 +89,12 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
+    bool has_dictionary = has(dictionary_name);
+    if (has_dictionary)
+        return dictionary_name;
+
     std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
-    bool has_dictionary = has(resolved_name);
+    has_dictionary = has(resolved_name);
 
     if (!has_dictionary)
     {

@@ -62,8 +62,6 @@ public:
         END
     };
 
-    static const char * typeToString(Type type);
-
     Type type = Type::UNKNOWN;
 
     String target_model;
@@ -85,6 +83,8 @@ public:
     {
         return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
+
+    const char * getQueryKindString() const override { return "System"; }
 
 protected:
 

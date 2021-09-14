@@ -56,6 +56,10 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        bool is_lazy_executed;
+
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
     };
@@ -68,7 +72,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -122,7 +125,7 @@ public:
 private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 

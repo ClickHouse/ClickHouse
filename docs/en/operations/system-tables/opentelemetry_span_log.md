@@ -4,7 +4,7 @@ Contains information about [trace spans](https://opentracing.io/docs/overview/sp
 
 Columns:
 
--   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md) — ID of the trace for executed query.
+-   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md)) — ID of the trace for executed query.
 
 -   `span_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — ID of the `trace span`.
 

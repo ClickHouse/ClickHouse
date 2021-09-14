@@ -36,5 +36,5 @@ expect {
 }
 
 # Finish test
-send -- "\4"
+send -- "q\r"
 expect eof

@@ -5,7 +5,8 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
-    contrib/restricted/fast_float
+    contrib/libs/lz4
+    contrib/restricted/fast_float/include
 )
 
 PEERDIR(
@@ -14,15 +15,18 @@ PEERDIR(
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/zstd
+    contrib/libs/lz4
     contrib/restricted/fast_float
 )
 
-
 SRCS(
     AIO.cpp
-    AIOContextPool.cpp
+    AsynchronousReadBufferFromFile.cpp
+    AsynchronousReadBufferFromFileDescriptor.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
+    Bzip2ReadBuffer.cpp
+    Bzip2WriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
@@ -33,6 +37,8 @@ SRCS(
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
+    Lz4DeflatingWriteBuffer.cpp
+    Lz4InflatingReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
     MMapReadBufferFromFileWithCache.cpp
@@ -43,6 +49,7 @@ SRCS(
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
+    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferFromEncryptedFile.cpp
@@ -55,6 +62,8 @@ SRCS(
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
+    SynchronousReader.cpp
+    ThreadPoolReader.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
     WriteBufferFromEncryptedFile.cpp

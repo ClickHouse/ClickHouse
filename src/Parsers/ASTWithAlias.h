@@ -21,10 +21,8 @@ public:
     using IAST::IAST;
 
     void appendColumnName(WriteBuffer & ostr) const final;
-    void appendColumnName(WriteBuffer & ostr, const Settings & settings) const final;
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const final;
     String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
-    String getAliasOrColumnName(const Settings & settings) const override { return alias.empty() ? getColumnName(settings) : alias; }
     String tryGetAlias() const override { return alias; }
     void setAlias(const String & to) override { alias = to; }
 
@@ -35,7 +33,6 @@ public:
 
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
-    virtual void appendColumnNameImpl(WriteBuffer & ostr, const Settings &) const { appendColumnNameImpl(ostr); }
 };
 
 /// helper for setting aliases and chaining result to other functions

@@ -57,11 +57,13 @@ void RabbitMQHandler::iterateLoop()
 /// initial RabbitMQ setup - at this point there is no background loop thread.
 void RabbitMQHandler::startBlockingLoop()
 {
+    LOG_DEBUG(log, "Started blocking loop.");
     uv_run(loop, UV_RUN_DEFAULT);
 }
 
 void RabbitMQHandler::stopLoop()
 {
+    LOG_DEBUG(log, "Implicit loop stop.");
     uv_stop(loop);
 }
 

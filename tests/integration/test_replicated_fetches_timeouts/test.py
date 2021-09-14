@@ -78,7 +78,7 @@ def test_no_stall(started_cluster):
                 """
                 SELECT count()
                 FROM system.replication_queue
-                WHERE last_exception LIKE '%e.displayText() = Timeout%'
+                WHERE last_exception LIKE '%Timeout%'
                     AND last_exception NOT LIKE '%connect timed out%'
                 """).strip())
 

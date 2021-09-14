@@ -20,7 +20,7 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 -   `table` — имя таблицы на удалённом сервере.
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
--   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент.
 
 **Возвращаемое значение**
 
@@ -43,7 +43,7 @@ PostgreSQL массивы конвертируются в массивы ClickHo
 
 !!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
-	
+
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
 
 ```sql
@@ -56,7 +56,7 @@ SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgr
 SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
 ```
 
-При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.
 
 **Примеры**
 
@@ -86,7 +86,7 @@ postgresql> SELECT * FROM test;
 Получение данных в ClickHouse:
 
 ```sql
-SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test'); 
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
 ``` text

@@ -35,6 +35,7 @@ struct MutationCommand
         DROP_PROJECTION,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
+        MATERIALIZE_COLUMN,
     };
 
     Type type = EMPTY;

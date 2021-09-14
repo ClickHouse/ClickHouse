@@ -14,7 +14,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Установка Xcode и инструментов командной строки {#install-xcode-and-command-line-tools}
 
-  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12). 
+  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12).
 
   2. Запустите ее, чтобы принять лицензионное соглашение. Необходимые компоненты установятся автоматически.
 
@@ -74,7 +74,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
   $ rm -rf build
   $ mkdir build
   $ cd build
-  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
+  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
   $ cmake --build . --config RelWithDebInfo
   $ cd ..
   ```

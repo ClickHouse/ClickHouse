@@ -11,6 +11,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=[
     'configs/no_system_log.xml',
     'configs/asynchronous_metrics_update_period_s.xml',
+], user_configs=[
+    'configs/users.d/overrides.xml',
 ])
 
 @pytest.fixture(scope='module', autouse=True)
@@ -23,8 +25,6 @@ def start_cluster():
 
 query_settings = {
     'max_threads': 1,
-    'query_profiler_real_time_period_ns': 0,
-    'query_profiler_cpu_time_period_ns': 0,
     'log_queries': 0,
 }
 sample_query = "SELECT groupArray(repeat('a', 1000)) FROM numbers(10000) GROUP BY number%10 FORMAT JSON"

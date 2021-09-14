@@ -39,6 +39,9 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
+    FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
     FunctionFile.cpp
@@ -46,7 +49,10 @@ SRCS(
     FunctionJoinGet.cpp
     FunctionSQLJSON.cpp
     FunctionsAES.cpp
-    FunctionsCoding.cpp
+    FunctionsBinaryRepr.cpp
+    FunctionsBitToArray.cpp
+    FunctionsCodingIP.cpp
+    FunctionsCodingUUID.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
@@ -209,7 +215,6 @@ SRCS(
     bitTestAny.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    bitmaskToList.cpp
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
@@ -229,6 +234,8 @@ SRCS(
     countSubstringsCaseInsensitive.cpp
     countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
+    currentProfiles.cpp
+    currentRoles.cpp
     currentUser.cpp
     dateDiff.cpp
     dateName.cpp
@@ -283,6 +290,7 @@ SRCS(
     geohashesInBox.cpp
     getMacro.cpp
     getScalar.cpp
+    getServerPort.cpp
     getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
@@ -307,6 +315,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -316,6 +325,7 @@ SRCS(
     ilike.cpp
     in.cpp
     indexHint.cpp
+    initialQueryID.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -334,6 +344,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    lemmatize.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -409,6 +420,7 @@ SRCS(
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    queryID.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
@@ -433,6 +445,7 @@ SRCS(
     registerFunctionsNull.cpp
     registerFunctionsRandom.cpp
     registerFunctionsReinterpret.cpp
+    registerFunctionsSnowflake.cpp
     registerFunctionsString.cpp
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
@@ -466,14 +479,18 @@ SRCS(
     s2RectIntersection.cpp
     s2RectUnion.cpp
     s2ToGeo.cpp
+    serverUUID.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
+    snowflake.cpp
     sqrt.cpp
     startsWith.cpp
+    stem.cpp
+    stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp
@@ -485,6 +502,7 @@ SRCS(
     subtractWeeks.cpp
     subtractYears.cpp
     svg.cpp
+    synonyms.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp
@@ -553,6 +571,7 @@ SRCS(
     tuple.cpp
     tupleElement.cpp
     tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

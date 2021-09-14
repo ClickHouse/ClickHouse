@@ -8,8 +8,7 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+class NotJoinedBlocks;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -76,7 +75,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    BlockInputStreamPtr non_joined_stream;
+    std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);

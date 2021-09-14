@@ -19,6 +19,7 @@ public:
     virtual ~ProxyConfiguration() = default;
     /// Returns proxy configuration on each HTTP request.
     virtual Aws::Client::ClientConfigurationPerRequest getConfiguration(const Aws::Http::HttpRequest & request) = 0;
+    virtual void errorReport(const Aws::Client::ClientConfigurationPerRequest & config) = 0;
 };
 
 }
