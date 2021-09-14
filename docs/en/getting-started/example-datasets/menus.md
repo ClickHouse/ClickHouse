@@ -15,7 +15,7 @@ The size is just 1.3 million records about dishes in the menus (a very small dat
 
 ## Download the Dataset
 
-```
+```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
 ```
 
@@ -24,21 +24,21 @@ Download size is about 35 MB.
 
 ## Unpack the Dataset
 
-```
+```bash
 tar xvf 2021_08_01_07_01_17_data.tgz
 ```
 
 Uncompressed size is about 150 MB.
 
 The data is normalized consisted of four tables:
-- Menu: information about menus: the name of the restaurant, the date when menu was seen, etc;
-- Dish: information about dishes: the name of the dish along with some characteristic;
-- MenuPage: information about the pages in the menus; every page belongs to some menu;
-- MenuItem: an item of the menu - a dish along with its price on some menu page: links to dish and menu page.
+- Menu — information about menus: the name of the restaurant, the date when menu was seen, etc.
+- Dish — information about dishes: the name of the dish along with some characteristic.
+- MenuPage — information about the pages in the menus, because every page belongs to some menu.
+- MenuItem — an item of the menu. A dish along with its price on some menu page: links to dish and menu page.
 
 ## Create the Tables
 
-```
+```sql
 CREATE TABLE dish
 (
     id UInt32,
@@ -101,26 +101,26 @@ CREATE TABLE menu_item
 ) ENGINE = MergeTree ORDER BY id;
 ```
 
-We use `Decimal` data type to store prices. Everything else is quite straightforward.
+We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices. Everything else is quite straightforward.
 
 ## Import Data
 
 Upload data into ClickHouse:
 
-```
+```bash
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu FORMAT CSVWithNames" < Menu.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu_page FORMAT CSVWithNames" < MenuPage.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-We use `CSVWithNames` format as the data is represented by CSV with header.
+We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the data is represented by CSV with header.
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
 We disable `input_format_null_as_default` as our data does not have NULLs. Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
+The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed [DateTime](../../sql-reference/data-types/datetime.md) format is allowed.
 
 ## Denormalize the Data
 
@@ -129,7 +129,7 @@ For typical analytical tasks it is way more efficient to deal with pre-JOINed da
 
 We will create a table that will contain all the data JOINed together:
 
-```
+```sql
 CREATE TABLE menu_item_denorm
 ENGINE = MergeTree ORDER BY (dish_name, created_at)
 AS SELECT
@@ -171,21 +171,32 @@ AS SELECT
 FROM menu_item
     JOIN dish ON menu_item.dish_id = dish.id
     JOIN menu_page ON menu_item.menu_page_id = menu_page.id
-    JOIN menu ON menu_page.menu_id = menu.id
+    JOIN menu ON menu_page.menu_id = menu.id;
 ```
 
 ## Validate the Data
 
+Query:
+
+```sql
+SELECT count() FROM menu_item_denorm;
 ```
-SELECT count() FROM menu_item_denorm
-1329175
+
+Result:
+
+```text
+┌─count()─┐
+│ 1329175 │
+└─────────┘
 ```
 
 ## Run Some Queries
 
-Averaged historical prices of dishes:
+### Averaged historical prices of dishes
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -194,8 +205,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022)
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 100, 100)─┐
 │ 1850 │     618 │                  1.5 │ █▍                           │
 │ 1860 │    1634 │                 1.29 │ █▎                           │
@@ -215,15 +230,15 @@ ORDER BY d ASC
 │ 2000 │    2467 │                11.85 │ ███████████▋                 │
 │ 2010 │     597 │                25.66 │ █████████████████████████▋   │
 └──────┴─────────┴──────────────────────┴──────────────────────────────┘
-
-17 rows in set. Elapsed: 0.044 sec. Processed 1.33 million rows, 54.62 MB (30.00 million rows/s., 1.23 GB/s.)
 ```
 
 Take it with a grain of salt.
 
-### Burger Prices:
+### Burger Prices
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -232,8 +247,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%burger%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)───────────┐
 │ 1880 │       2 │                 0.42 │ ▋                                     │
 │ 1890 │       7 │                 0.85 │ █▋                                    │
@@ -250,13 +269,13 @@ ORDER BY d ASC
 │ 2000 │      21 │                 7.14 │ ██████████████▎                       │
 │ 2010 │       6 │                18.42 │ ████████████████████████████████████▋ │
 └──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
-
-14 rows in set. Elapsed: 0.052 sec. Processed 1.33 million rows, 94.15 MB (25.48 million rows/s., 1.80 GB/s.)
 ```
 
-### Vodka:
+### Vodka
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -265,8 +284,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%vodka%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)─┐
 │ 1910 │       2 │                    0 │                             │
 │ 1920 │       1 │                  0.3 │ ▌                           │
@@ -282,11 +305,13 @@ ORDER BY d ASC
 
 To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
 
-### Caviar:
+### Caviar
 
 Let's print caviar prices. Also let's print a name of any dish with caviar.
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -296,8 +321,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%caviar%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)──────┬─any(dish_name)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1090 │       1 │                    0 │                                  │ Caviar                                                                                                                              │
 │ 1880 │       3 │                    0 │                                  │ Caviar                                                                                                                              │
