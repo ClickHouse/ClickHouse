@@ -83,9 +83,8 @@ namespace
     /// Replaces elements of types TEMPORARY_TABLE or ALL_TEMPORARY_TABLES with elements of type TABLE or DATABASE.
     void replaceTemporaryTablesWithTemporaryDatabase(Elements & elements)
     {
-        for (size_t i = 0; i != elements.size(); ++i)
+        for (auto & element : elements)
         {
-            auto & element = elements[i];
             switch (element.type)
             {
                 case ElementType::TEMPORARY_TABLE:
