@@ -9,7 +9,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Chain.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -1527,7 +1527,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             context_insert->setSettings(task_cluster->settings_push);
 
             /// Custom INSERT SELECT implementation
-            QueryPipeline input;
+            QueryPipelineBuilder input;
             Chain output;
             {
                 BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();

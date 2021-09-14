@@ -355,7 +355,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.pipeline.addChains(std::move(out_chains));
 
-        res.pipeline.setSinks([&](const Block & cur_header, QueryPipeline::StreamType) -> ProcessorPtr
+        res.pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
             return std::make_shared<ExceptionHandlingSink>(cur_header);
         });
@@ -396,7 +396,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     if (!res.out.empty())
-        res.out.attachResources(QueryPipeline::getPipe(std::move(res.pipeline)).detachResources());
+        res.out.attachResources(QueryPipelineBuilder::getPipe(std::move(res.pipeline)).detachResources());
 
     return res;
 }

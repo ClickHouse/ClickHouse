@@ -162,7 +162,7 @@ std::string ClickHouseDictionarySource::toString() const
 
 Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
@@ -194,7 +194,7 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
         });
     }
 
-    return QueryPipeline::getPipe(std::move(pipeline));
+    return QueryPipelineBuilder::getPipe(std::move(pipeline));
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -203,7 +203,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (configuration.is_local)
     {
         auto query_context = Context::createCopy(context);
-        auto pipe = QueryPipeline::getPipe(executeQuery(request, query_context, true).pipeline);
+        auto pipe = QueryPipelineBuilder::getPipe(executeQuery(request, query_context, true).pipeline);
         return readInvalidateQuery(std::move(pipe));
     }
     else

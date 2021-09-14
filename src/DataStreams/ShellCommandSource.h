@@ -13,7 +13,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -175,7 +175,7 @@ private:
 
     std::shared_ptr<ProcessPool> process_pool;
 
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
 
     std::vector<ThreadFromGlobalPool> send_data_threads;

@@ -570,7 +570,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
-            QueryPipeline pipeline;
+            QueryPipelineBuilder pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
                 pipeline.init(current_source_ptr->loadIds(requested_keys_vector));

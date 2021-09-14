@@ -34,7 +34,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -233,7 +233,7 @@ bool StorageS3Source::initialize()
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
         chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size, format_settings);
-    pipeline = std::make_unique<QueryPipeline>();
+    pipeline = std::make_unique<QueryPipelineBuilder>();
     pipeline->init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
