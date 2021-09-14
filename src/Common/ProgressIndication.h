@@ -45,9 +45,16 @@ public:
 
     void addThreadIdToList(UInt64 thread_id);
 
-    size_t getUsedThreadsCount() const { return thread_ids.size(); }
+    void updateThreadUserTime(UInt64 thread_id, UInt64 value);
+
+    void updateThreadSystemTime(UInt64 thread_id, UInt64 value);
 
 private:
+
+    size_t getUsedThreadsCount() const { return thread_times.size(); }
+
+    UInt64 getAccumulatedThreadTime() const;
+
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
     bool show_progress_bar = false;
@@ -65,7 +72,13 @@ private:
 
     bool write_progress_on_update = false;
 
-    std::unordered_set<UInt64> thread_ids;
+    struct ThreadTime
+    {
+        UInt64 user_ms   = 0;
+        UInt64 system_ms = 0;
+    };
+
+    std::unordered_map<UInt64, ThreadTime> thread_times;
 };
 
 }
