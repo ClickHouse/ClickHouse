@@ -113,6 +113,10 @@ void StorageMergeTree::startup()
     time_after_previous_cleanup_parts.restart();
     time_after_previous_cleanup_temporary_directories.restart();
 
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
+        return;
+
     try
     {
         background_operations_assignee.start();
@@ -243,7 +247,7 @@ void StorageMergeTree::drop()
 {
     shutdown();
     /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
-    if (isReadOnly())
+    if (isStaticStorage())
         return;
     dropAllData();
 }
@@ -1007,6 +1011,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 {
     if (shutdown_called)
         return false;
+
+    assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;

@@ -1,7 +1,7 @@
 {
     "build_config": [
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
@@ -22,7 +22,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "gcc-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -32,7 +32,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "address",
             "package-type": "deb",
@@ -42,7 +42,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "undefined",
             "package-type": "deb",
@@ -52,7 +52,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "thread",
             "package-type": "deb",
@@ -62,7 +62,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "memory",
             "package-type": "deb",
@@ -72,7 +72,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "debug",
             "sanitizer": "",
             "package-type": "deb",
@@ -82,7 +82,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "gcc-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -92,7 +92,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -104,7 +104,7 @@
     ],
     "special_build_config": [
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "debug",
             "sanitizer": "",
             "package-type": "deb",
@@ -114,7 +114,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12",
+            "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -124,7 +124,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12-darwin",
+            "compiler": "clang-13-darwin",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -134,7 +134,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12-aarch64",
+            "compiler": "clang-13-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -144,7 +144,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12-freebsd",
+            "compiler": "clang-13-freebsd",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -154,7 +154,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-12-darwin-aarch64",
+            "compiler": "clang-13-darwin-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -167,7 +167,7 @@
     "tests_config": {
         "Functional stateful tests (address)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -179,7 +179,7 @@
         },
         "Functional stateful tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -191,7 +191,7 @@
         },
         "Functional stateful tests (memory)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -203,7 +203,7 @@
         },
         "Functional stateful tests (ubsan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -215,7 +215,7 @@
         },
         "Functional stateful tests (debug)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -227,7 +227,7 @@
         },
         "Functional stateful tests (release)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -239,7 +239,7 @@
         },
         "Functional stateful tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -251,7 +251,7 @@
         },
         "Functional stateful tests (release, DatabaseReplicated)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -263,7 +263,7 @@
         },
         "Functional stateless tests (address)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -275,7 +275,7 @@
         },
         "Functional stateless tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -287,7 +287,7 @@
         },
         "Functional stateless tests (memory)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -299,7 +299,7 @@
         },
         "Functional stateless tests (ubsan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -311,7 +311,7 @@
         },
         "Functional stateless tests (debug)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -323,7 +323,7 @@
         },
         "Functional stateless tests (release)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -335,7 +335,7 @@
         },
         "Functional stateless tests (pytest)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -347,7 +347,7 @@
         },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "gcc-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -359,7 +359,7 @@
         },
         "Functional stateless tests (release, wide parts enabled)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -371,7 +371,7 @@
         },
         "Functional stateless tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -383,7 +383,7 @@
         },
         "Functional stateless tests (release, DatabaseReplicated)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -395,7 +395,7 @@
         },
         "Stress test (address)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -407,7 +407,7 @@
         },
         "Stress test (thread)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -419,7 +419,7 @@
         },
         "Stress test (undefined)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -431,7 +431,7 @@
         },
         "Stress test (memory)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -443,7 +443,7 @@
         },
         "Stress test (debug)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -455,7 +455,7 @@
         },
         "Integration tests (asan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -467,7 +467,7 @@
         },
         "Integration tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -479,7 +479,7 @@
         },
         "Integration tests (release)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -491,7 +491,7 @@
         },
         "Integration tests (memory)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -503,7 +503,7 @@
         },
         "Integration tests flaky check (asan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -515,7 +515,7 @@
         },
         "Compatibility check": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -527,7 +527,7 @@
         },
         "Split build smoke test": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -539,7 +539,7 @@
         },
         "Testflows check": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -551,7 +551,7 @@
         },
         "Unit tests release gcc": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "gcc-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -563,7 +563,7 @@
         },
         "Unit tests release clang": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -575,7 +575,7 @@
         },
         "Unit tests ASAN": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -587,7 +587,7 @@
         },
         "Unit tests MSAN": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -599,7 +599,7 @@
         },
         "Unit tests TSAN": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -611,7 +611,7 @@
         },
         "Unit tests UBSAN": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -623,7 +623,7 @@
         },
         "AST fuzzer (debug)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -635,7 +635,7 @@
         },
         "AST fuzzer (ASan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -647,7 +647,7 @@
         },
         "AST fuzzer (MSan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -659,7 +659,7 @@
         },
         "AST fuzzer (TSan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -671,7 +671,7 @@
         },
         "AST fuzzer (UBSan)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -683,7 +683,7 @@
         },
         "Release": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -695,7 +695,7 @@
         },
         "Functional stateless tests flaky check (address)": {
             "required_build_properties": {
-                "compiler": "clang-12",
+                "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",

@@ -1822,7 +1822,11 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         auto data_parts_lock = lockParts();
         parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
         if (parts_to_remove.empty())
+        {
+            if (!drop_range_info.isFakeDropRangePart())
+                LOG_INFO(log, "Log entry {} tried to drop single part {}, but part does not exist", entry.znode_name, entry.new_part_name);
             return;
+        }
     }
 
     if (entry.detach)
@@ -4739,7 +4743,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    const DataPartsVector all_parts = getDataPartsVector(IMergeTreeDataPart::all_part_states);
+    const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
     /// Why all parts (not only Committed) are moved to detached/:

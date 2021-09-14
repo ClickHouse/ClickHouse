@@ -15,11 +15,11 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <common/scope_guard.h>
-extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
+extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
-        bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \
-        _memory_tracker_always_throw_logical_error_on_allocation = val; \
-        SCOPE_EXIT({ _memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+        bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
+        memory_tracker_always_throw_logical_error_on_allocation = val; \
+        SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
