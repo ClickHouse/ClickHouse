@@ -223,8 +223,9 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
                             "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
 
         if (change.value.getType() != Field::Types::UInt64)
-            throw Exception("Invalid type " + std::string(change.value.getTypeName()) + " for setting \"" + change.name +
-                            "\" only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid type {} for setting \"{}\" only boolean settings are supported",
+                change.value.getTypeName(), change.name);
 
         auto value = change.value.get<UInt64>();
         if (value > 1)
