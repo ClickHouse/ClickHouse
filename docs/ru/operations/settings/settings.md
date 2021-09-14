@@ -3344,7 +3344,7 @@ SETTINGS index_granularity = 8192 │
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях поиска](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn) множественных совпадений в строке. 
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
 
 Возможные значения:
 
