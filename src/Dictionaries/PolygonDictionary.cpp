@@ -165,7 +165,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    QueryPipeline pipeline;
+    QueryPipelineBuilder pipeline;
     pipeline.init(source_ptr->loadAll());
 
     PullingPipelineExecutor executor(pipeline);

@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
 {

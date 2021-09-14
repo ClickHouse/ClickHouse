@@ -14,8 +14,6 @@ struct StreamLocalLimits;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
-class QueryPipeline;
-
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipe is a set of processors which represents the part of pipeline.
@@ -145,7 +143,7 @@ private:
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
     void setOutputFormat(ProcessorPtr output);
 
-    friend class QueryPipeline;
+    friend class QueryPipelineBuilder;
 };
 
 }

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class QueryPipeline;
+class QueryPipelineBuilder;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

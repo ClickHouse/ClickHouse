@@ -1,7 +1,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -11,8 +11,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PipelineExecutingBlockInputStream::PipelineExecutingBlockInputStream(QueryPipeline pipeline_)
-    : pipeline(std::make_unique<QueryPipeline>(std::move(pipeline_)))
+PipelineExecutingBlockInputStream::PipelineExecutingBlockInputStream(QueryPipelineBuilder pipeline_)
+    : pipeline(std::make_unique<QueryPipelineBuilder>(std::move(pipeline_)))
 {
 }
 
