@@ -587,9 +587,9 @@ void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string
         }
     }
 
-    for (auto & log_path : stored_files)
+    for (auto it = stored_files.rbegin(); it != stored_files.rend(); ++it)
     {
-        deserializeLogAndApplyToStorage(storage, log_path, log);
+        deserializeLogAndApplyToStorage(storage, *it, log);
     }
 }
 
