@@ -23,8 +23,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -479,27 +477,20 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
-        ASTPtr query_ptr = std::make_shared<ASTInsertQuery>();
-        query_ptr->as<ASTInsertQuery>()->table_id = table_id;
+        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+        insert->table_id = table_id;
+        ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
-        auto sinks = interpreter.getSinks();
-        assert(sinks.size() == 1);
+        BlockIO io = interpreter.execute();
 
-        auto chunk = Chunk(block.getColumns(), block.rows());
-        auto source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
-
-        QueryPipeline pipeline;
-        pipeline.init(Pipe(source));
-        pipeline.resize(1);
-        pipeline.setSinks([&](const Block &, Pipe::StreamType) { return sinks.at(0); });
-
-        auto executor = pipeline.execute();
-        executor->execute(pipeline.getNumThreads());
+        io.out->writePrefix();
+        io.out->write(block);
+        io.out->writeSuffix();
     }
     catch (...)
     {

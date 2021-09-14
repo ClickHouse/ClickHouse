@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: replica, no-replicated-database
+# Tag no-replicated-database: Fails due to additional replicas or shards
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
