@@ -14,7 +14,7 @@ SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)
 
 
 SELECT '---------After fuse result-----------';
-set optimize_fuse_quantile=true;
+SET optimize_syntax_fuse_aggregate = true;
 SELECT 'quantile:';
 EXPLAIN SYNTAX SELECT quantile(0.2)(d), quantile(0.3)(d) FROM datetime;
 SELECT quantile(0.2)(d), quantile(0.3)(d) FROM datetime;
