@@ -15,7 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -150,7 +150,7 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                PullingPipelineExecutor executor(io.pipeline);
+                PullingAsyncPipelineExecutor executor(io.pipeline);
 
                 table_out->writePrefix();
                 Block block;
