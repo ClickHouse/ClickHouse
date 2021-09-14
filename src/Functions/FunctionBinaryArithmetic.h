@@ -245,7 +245,7 @@ struct StringIntegerOperationImpl
         }
     }
 
-    /// if is_fixed_string n_or_in_offsets is n, otherwise n_or_in_offsets is in_offsets
+
     template <OpCase op_case>
     static void NO_INLINE processString(const UInt8 * __restrict in_vec, const UInt64 * __restrict in_offsets, const B * __restrict b, ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets, size_t size)
     {
