@@ -9,6 +9,7 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 #include "Core/Block.h"
 #include "Core/Protocol.h"
@@ -73,6 +74,12 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
 }
 
 namespace DB
@@ -663,9 +670,26 @@ void ClientBase::onProfileEvents(Block & block)
     if (block.rows() == 0)
         return;
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+    auto const * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    auto const * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        progress_indication.addThreadIdToList(array_thread_id[i]);
+        auto thread_id = array_thread_id[i];
+        progress_indication.addThreadIdToList(thread_id);
+        auto event_name = names.getDataAt(i);
+        auto value = array_values[i];
+        if (event_name == user_time_name)
+        {
+            progress_indication.updateThreadUserTime(thread_id, value);
+        }
+        else if (event_name == system_time_name)
+        {
+            progress_indication.updateThreadSystemTime(thread_id, value);
+        }
     }
 }
 
