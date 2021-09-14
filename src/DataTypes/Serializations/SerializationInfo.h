@@ -85,6 +85,7 @@ public:
     SerializationInfoPtr buildFrom(const SerializationInfo & other) &&;
 
     double getRatioForSparseSerialization() const { return ratio_for_sparse_serialization; }
+    bool canHaveSparseSerialization() const { return ratio_for_sparse_serialization < 1.0; }
 
 private:
     double ratio_for_sparse_serialization;
