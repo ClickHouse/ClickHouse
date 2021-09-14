@@ -75,6 +75,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
+#include <common/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -128,6 +129,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 
@@ -2799,7 +2801,12 @@ ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
 
-    res.local_fs_method = parseReadMethod(settings.local_filesystem_read_method.value);
+    std::string_view read_method_str = settings.local_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<ReadMethod>(read_method_str))
+        res.local_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", read_method_str);
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;

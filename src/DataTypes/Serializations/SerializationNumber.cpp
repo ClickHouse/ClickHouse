@@ -25,7 +25,7 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 {
     T x;
 
-    if constexpr (is_integer_v<T> && is_arithmetic_v<T>)
+    if constexpr (is_integer<T> && is_arithmetic_v<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
