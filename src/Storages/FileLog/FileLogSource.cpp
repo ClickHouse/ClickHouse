@@ -41,7 +41,7 @@ FileLogSource::FileLogSource(
 
 Chunk FileLogSource::generate()
 {
-    if (!buffer)
+    if (!buffer || buffer->noRecords())
         return {};
 
     MutableColumns read_columns = non_virtual_header.cloneEmptyColumns();
@@ -110,10 +110,19 @@ Chunk FileLogSource::generate()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+        else
+        {
+            /// No records polled, should break out early, since
+            /// file status can not be updated during streamToViews
+            break;
+        }
+
         if (new_rows)
         {
             total_rows = total_rows + new_rows;
         }
+
+        /// poll succeed, but parse failed
         else
         {
             ++failed_poll_attempts;

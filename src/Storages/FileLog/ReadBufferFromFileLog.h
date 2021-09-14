@@ -40,15 +40,18 @@ public:
 private:
     enum class BufferStatus
     {
+        INIT,
         NO_RECORD_RETURNED,
         POLLED_OK,
     };
 
-    BufferStatus buffer_status;
+    BufferStatus buffer_status = BufferStatus::INIT;
 
     Poco::Logger * log;
 
     StorageFileLog & storage;
+
+    bool stream_out = false;
 
     size_t batch_size;
     size_t poll_timeout;

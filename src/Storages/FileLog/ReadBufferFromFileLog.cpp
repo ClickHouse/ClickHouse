@@ -76,13 +76,17 @@ ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_siz
     new_records.reserve(batch_size_);
 
     readNewRecords(new_records, batch_size);
-    if (new_records.size() == batch_size_)
+    if (new_records.size() == batch_size_ || stream_out)
         return new_records;
 
     Stopwatch watch;
     while (watch.elapsedMilliseconds() < poll_timeout && new_records.size() != batch_size_)
     {
         readNewRecords(new_records, batch_size);
+        /// All ifstrem reach end, no need to wait for timeout,
+        /// since file status can not be updated during a streamToViews
+        if (stream_out)
+            break;
     }
 
     return new_records;
@@ -126,6 +130,11 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         if (reader.tellg() == stream_end)
         {
             file.status = StorageFileLog::FileStatus::NO_CHANGE;
+            /// All ifstream reach end
+            if (i == end - 1)
+            {
+                stream_out = true;
+            }
         }
 
         if (read_records_size == need_records_size)
