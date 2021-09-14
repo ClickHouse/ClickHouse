@@ -32,6 +32,10 @@ void SerializationInfoBuilder::add(const Block & block)
 {
     size_t num_rows = block.rows();
     info->number_of_rows += num_rows;
+
+    if (!canHaveSparseSerialization())
+        return;
+
     for (const auto & elem : block)
     {
         /// Just skip column and always return default serialization.
