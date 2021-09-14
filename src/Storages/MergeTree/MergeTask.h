@@ -61,26 +61,27 @@ public:
         MergeTreeData & data_,
         ActionBlocker & merges_blocker_,
         ActionBlocker & ttl_merges_blocker_)
-        : future_part(future_part_)
-        , metadata_snapshot(metadata_snapshot_)
-        , merge_entry(merge_entry_)
-        , holder(holder_)
-        , time_of_merge(time_of_merge_)
-        , context(context_)
-        , space_reservation(std::move(space_reservation_))
-        , deduplicate(deduplicate_)
-        , deduplicate_by_columns(std::move(deduplicate_by_columns_))
-        , merging_params(merging_params_)
-        , parent_part(parent_part_)
-        , prefix(prefix_)
-        , data(data_)
-        , merges_blocker(merges_blocker_)
-        , ttl_merges_blocker(ttl_merges_blocker_)
-        {}
+        {
+            (void)future_part_;
+            (void)metadata_snapshot_;
+            (void)merge_entry_;
+            (void)holder_;
+            (void)time_of_merge_;
+            (void)context_;
+            (void)space_reservation_;
+            (void)deduplicate_;
+            (void)deduplicate_by_columns_;
+            (void)merging_params_;
+            (void)parent_part_;
+            (void)prefix_;
+            (void)data_;
+            (void)merges_blocker_;
+            (void)ttl_merges_blocker_;
+        }
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
-        return promise.get_future();
+        return global_ctx->promise.get_future();
     }
 
     bool execute();
@@ -89,168 +90,236 @@ private:
     struct IStage;
     using StagePtr = std::shared_ptr<IStage>;
 
-    struct IStageRuntimeData {};
-    using StageRuntimeDataPtr = std::shared_ptr<IStageRuntimeData>;
+    struct IStageRuntimeContext {};
+    using StageRuntimeContextPtr = std::shared_ptr<IStageRuntimeContext>;
 
     struct IStage
     {
-        virtual void setData();
-        virtual StageRuntimeDataPtr getData();
+        virtual void setRuntimeContext() = 0;
+        virtual StageRuntimeContextPtr getContextForNextStage() = 0;
         virtual bool execute() = 0;
         virtual ~IStage() = default;
-
-        StageRuntimeDataPtr data{nullptr};
     };
 
-    class PrepareStage
+    struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-    public:
-        bool execute();
+        MergeList::Entry * merge_entry;
+        MergeTreeData * data;
+        ActionBlocker * merges_blocker;
+        ActionBlocker * ttl_merges_blocker;
+        StorageMetadataPtr metadata_snapshot;
+        FutureMergedMutatedPartPtr future_part;
+        MergeTreeDataPartPtr parent_part;
+        ContextPtr context;
+        time_t time_of_merge;
+        TableLockHolder & holder;
+        ReservationSharedPtr space_reservation;
+        bool deduplicate;
+        Names deduplicate_by_columns;
+
+        NamesAndTypesList gathering_columns;
+        NamesAndTypesList merging_columns;
+        Names gathering_column_names;
+        Names merging_column_names;
+        NamesAndTypesList storage_columns;
+        Names all_column_names;
+        MergeTreeData::DataPart::Checksums checksums_gathered_columns;
+
+        MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
+        bool need_sync{false};
+        size_t gathering_column_names_size{0};
+
+        std::shared_ptr<MergedBlockOutputStream> to;
+        BlockInputStreamPtr merged_stream;
+
+        SyncGuardPtr sync_guard{nullptr};
+        MergeTreeData::MutableDataPartPtr new_data_part;
+
+        std::promise<MergeTreeData::MutableDataPartPtr> promise;
+
+        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
     };
 
-    bool prepare();
-    bool executeHorizontalForBlock();
-    bool finalizeHorizontalPartOfTheMerge();
-    bool prepareVertical();
-    bool executeVerticalMergeForAllColumns();
-    bool finalizeVerticalMergeForAllColumns();
-    bool mergeMinMaxIndex();
-    bool prepareProjections();
-    bool executeProjections();
-    bool finalizeProjections();
-    bool finalize();
+    using GlobalRuntineContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    using SubTask = std::function<bool()>;
-    using SubTasks = std::array<SubTask, 11>;
-
-    SubTasks subtasks{
-        [this] () -> bool { return prepare(); },
-        [this] () -> bool { return executeHorizontalForBlock(); },
-        [this] () -> bool { return finalizeHorizontalPartOfTheMerge(); },
-        [this] () -> bool { return prepareVertical(); },
-        [this] () -> bool { return executeVerticalMergeForAllColumns(); },
-        [this] () -> bool { return finalizeVerticalMergeForAllColumns(); },
-        [this] () -> bool { return mergeMinMaxIndex(); },
-        [this] () -> bool { return prepareProjections(); },
-        [this] () -> bool { return executeProjections(); },
-        [this] () -> bool { return finalizeProjections(); },
-        [this] () -> bool { return finalize(); }
-    };
-
-    size_t task_pointer{0};
-
-    std::promise<MergeTreeData::MutableDataPartPtr> promise;
-
-    void prepareVerticalMergeForOneColumn();
-    bool executeVerticalMergeForOneColumn();
-    void finalizeVerticalMergeForOneColumn();
-
-    enum class VecticalMergeOneColumnState
+    struct PrepareStageRuntimeContext : public IStageRuntimeContext
     {
-        NEED_PREPARE,
-        NEED_EXECUTE,
-        NEED_FINISH
+        String prefix;
+
+        DiskPtr tmp_disk{nullptr};
+        DiskPtr disk{nullptr};
+
+        MergeTreeData * data;
+        StorageMetadataPtr metadata_snapshot;
+
+        MergeTreeData::MergingParams merging_params;
+        bool need_remove_expired_values{false};
+        bool force_ttl{false};
+        MergeTreeData::MutableDataPartPtr new_data_part;
+        CompressionCodecPtr compression_codec;
+        size_t sum_input_rows_upper_bound{0};
+        size_t sum_compressed_bytes_upper_bound{0};
+
+        std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
+        std::unique_ptr<MergeStageProgress> column_progress{nullptr};
+
+        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::optional<ColumnSizeEstimator> column_sizes;
+
+        SyncGuardPtr sync_guard{nullptr};
+        bool blocks_are_granules_size{false};
+
+        std::shared_ptr<MergedBlockOutputStream> to;
+        BlockInputStreamPtr merged_stream;
+
+        size_t rows_written{0};
+        size_t initial_reservation{0};
+        bool read_with_direct_io{false};
+        UInt64 watch_prev_elapsed{0};
+
+        std::function<bool()> is_cancelled;
+
+
+        Poco::Logger * log{&Poco::Logger::get("MergeTask::PrepareStage")};
     };
-    VecticalMergeOneColumnState vertical_merge_one_column_state{VecticalMergeOneColumnState::NEED_PREPARE};
 
-    void createMergedStream();
-    MergeAlgorithm chooseMergeAlgorithm() const;
+    using PrepareStageRuntimeContextPtr = std::shared_ptr<PrepareStageRuntimeContext>;
 
-    FutureMergedMutatedPartPtr future_part;
-    StorageMetadataPtr metadata_snapshot;
-    MergeList::Entry & merge_entry;
-    TableLockHolder & holder;
-    time_t time_of_merge;
-    ContextPtr context;
-    /// It is necessary, because of projections presence
-    ReservationSharedPtr space_reservation;
-    bool deduplicate;
-    Names deduplicate_by_columns;
-    MergeTreeData::MergingParams merging_params;
-    MergeTreeDataPartPtr parent_part;
-    String prefix;
-
-    /// From MergeTreeDataMergerMutator
-
-    MergeTreeData & data;
-    Poco::Logger * log{&Poco::Logger::get("MergeTask")};
-
-    ActionBlocker & merges_blocker;
-    ActionBlocker & ttl_merges_blocker;
+    struct PrepareStage : public IStage
+    {
+        bool execute() override;
+        StageRuntimeContextPtr getContextForNextStage() override;
 
 
-    /// Previously stack located variables
+        MergeAlgorithm chooseMergeAlgorithm() const;
+        void createMergedStream();
 
-    NamesAndTypesList gathering_columns;
-    NamesAndTypesList merging_columns;
-    Names gathering_column_names;
-    Names merging_column_names;
+        PrepareStageRuntimeContextPtr ctx;
+        GlobalRuntineContextPtr global_ctx;
+    };
 
-    NamesAndTypesList storage_columns;
-    Names all_column_names;
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
+    {
+        /// Dependencies from previous stages
+        std::function<bool()> is_cancelled;
+        std::shared_ptr<MergedBlockOutputStream> to;
+        BlockInputStreamPtr merged_stream;
+        MergeTreeData * data;
+        MergeList::Entry * merge_entry;
+        ActionBlocker * merges_blocker;
+        ActionBlocker * ttl_merges_blocker;
+        bool need_remove_expired_values{false};
+        size_t sum_input_rows_upper_bound{0};
+        size_t rows_written{0};
+        size_t initial_reservation{0};
 
-    String new_part_tmp_path;
+        std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
+        size_t gathering_column_names_size{0};
 
-    size_t sum_input_rows_upper_bound{0};
+        /// Dependencies for next stages
+        bool need_sync{false};
+    };
 
-    bool need_remove_expired_values{false};
-    bool force_ttl{false};
-
-    DiskPtr tmp_disk{nullptr};
-    DiskPtr disk{nullptr};
-
-    std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
-    std::unique_ptr<MergeStageProgress> column_progress{nullptr};
-
-    std::unique_ptr<TemporaryFile> rows_sources_file;
-    std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-    std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
-    std::optional<ColumnSizeEstimator> column_sizes;
-
-    SyncGuardPtr sync_guard{nullptr};
-    MergeTreeData::MutableDataPartPtr new_data_part;
-    CompressionCodecPtr compression_codec;
-
-    MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
-
-    std::shared_ptr<MergedBlockOutputStream> to;
-    BlockInputStreamPtr merged_stream;
-
-    bool blocks_are_granules_size{false};
-
-    /// Variables that are needed for horizontal merge execution
-
-    size_t rows_written{0};
-    size_t initial_reservation{0};
-    UInt64 watch_prev_elapsed{0};
-
-    std::function<bool()> is_cancelled;
-
-    bool need_sync{false};
-    bool read_with_direct_io{false};
+    using ExecuteAndFinalizeHorizontalPartRuntimeContextPtr = std::shared_ptr<ExecuteAndFinalizeHorizontalPartRuntimeContext>;
 
 
-    MergeTreeData::DataPart::Checksums checksums_gathered_columns;
+    struct ExecuteAndFinalizeHorizontalPart : public IStage
+    {
+        bool execute() override;
 
-    std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
-    size_t column_num_for_vertical_merge{0};
-    size_t gathering_column_names_size{0};
-
-    /// This class has no default constructor, so we wrap it with unique_ptr
-    std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
-    IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
-    std::unique_ptr<MergedColumnOnlyOutputStream> column_to;
-
-    BlockInputStreams column_part_streams;
-    std::unique_ptr<ColumnGathererStream> column_gathered_stream;
-
-    size_t column_elems_written = 0;
-    Float64 progress_before = 0;
+        ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
+        GlobalRuntineContextPtr global_ctx;
+    };
 
 
-    using MergeTasks = std::deque<MergeTaskPtr>;
-    MergeTasks tasks_for_projections;
-    MergeTasks::iterator projections_iterator;
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
+    {
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
+        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::optional<ColumnSizeEstimator> column_sizes;
+        FutureMergedMutatedPartPtr future_part;
+        MergeTreeData::MutableDataPartPtr new_data_part;
+        CompressionCodecPtr compression_codec;
+        DiskPtr tmp_disk{nullptr};
+        std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
+
+        bool read_with_direct_io{false};
+        UInt64 watch_prev_elapsed{0};
+        std::shared_ptr<MergedBlockOutputStream> to;
+        bool need_sync{false};
+        size_t rows_written{0};
+
+        enum class State
+        {
+            NEED_PREPARE,
+            NEED_EXECUTE,
+            NEED_FINISH
+        };
+        State vertical_merge_one_column_state{State::NEED_PREPARE};
+
+        Float64 progress_before = 0;
+        std::unique_ptr<MergeStageProgress> column_progress{nullptr};
+        std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
+        size_t column_elems_written{0};
+
+        /// Dependencies for next stages
+        BlockInputStreams column_part_streams;
+        std::unique_ptr<ColumnGathererStream> column_gathered_stream;
+        std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
+    };
+
+    using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
+
+
+    struct VerticalMergeStage : public IStage
+    {
+        bool execute() override;
+
+        bool prepareVerticalMergeForAllColumns();
+        bool executeVerticalMergeForAllColumns();
+        bool finalizeVerticalMergeForAllColumns();
+
+        void prepareVerticalMergeForOneColumn();
+        bool executeVerticalMergeForOneColumn();
+        void finalizeVerticalMergeForOneColumn();
+
+        VerticalMergeRuntimeContextPtr ctx;
+        GlobalRuntineContextPtr global_ctx;
+    };
+
+
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
+    {
+        using MergeTasks = std::deque<MergeTaskPtr>;
+        MergeTasks tasks_for_projections;
+        MergeTasks::iterator projections_iterator;
+
+        Poco::Logger * log{&Poco::Logger::get("MergeTask::MergeProjectionsStage")};
+    };
+
+    using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
+
+
+    struct MergeProjectionsStage : public IStage
+    {
+        bool execute() override;
+
+        bool mergeMinMaxIndexAndPrepareProjections();
+        bool executeProjections();
+        bool finalizeProjectionsAndWholeMerge();
+
+        MergeProjectionsRuntimeContextPtr ctx;
+        GlobalRuntineContextPtr global_ctx;
+    };
+
+
+    GlobalRuntimeContext global_ctx;
+
 };
 
 /// FIXME
