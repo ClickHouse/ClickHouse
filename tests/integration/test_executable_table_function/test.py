@@ -68,3 +68,15 @@ def test_executable_storage_argument(started_cluster):
     node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_argument.sh 1', 'TabSeparated')")
     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
     node.query("DROP TABLE test_table")
+
+def test_executable_pool_storage(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_process_pool.sh', 'TabSeparated', (SELECT 1))")
+    assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    node.query("DROP TABLE test_table")
+
+def test_executable_pool_storage_multiple_pipes(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_process_pool_multiple_pipes.sh', 'TabSeparated', (SELECT 1), (SELECT 2), (SELECT 3))")
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
+    node.query("DROP TABLE test_table")
