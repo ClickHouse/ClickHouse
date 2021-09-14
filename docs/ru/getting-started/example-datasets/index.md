@@ -15,6 +15,7 @@ toc_title: "Введение"
 -   [Терабайт логов кликов от Criteo](criteo.md)
 -   [AMPLab Big Data Benchmark](amplab-benchmark.md)
 -   [Данные о такси в Нью-Йорке](nyc-taxi.md)
+-   [What's on the Menu?](menus.md)
 -   [OnTime](ontime.md)
--   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
+-   [Вышки сотовой связи](cell-towers.md)
 
