@@ -20,6 +20,7 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -96,7 +97,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
 
         if (data_type_function)
         {
-            String type_name_upper = Poco::toUpper(data_type_function->name);
+            String type_name_upper = toUpper(data_type_function->name);
 
             if (is_unsigned)
             {

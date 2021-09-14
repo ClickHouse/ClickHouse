@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <common/find_symbols.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <type_traits>
 
@@ -93,7 +94,7 @@ public:
         if (!unit_column)
             throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        String unit = Poco::toLower(unit_column->getValue<String>());
+        String unit = toLower(unit_column->getValue<String>());
 
         const IColumn & x = *arguments[1].column;
         const IColumn & y = *arguments[2].column;

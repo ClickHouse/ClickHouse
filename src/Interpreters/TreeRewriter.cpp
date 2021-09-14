@@ -35,6 +35,7 @@
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -69,7 +70,7 @@ struct CustomizeFunctionsData
 
     void visit(ASTFunction & func, ASTPtr &) const
     {
-        if (Poco::toLower(func.name) == func_name)
+        if (toLower(func.name) == func_name)
         {
             func.name = customized_func_name;
         }
@@ -103,7 +104,7 @@ struct CustomizeFunctionsSuffixData
 
     void visit(ASTFunction & func, ASTPtr &) const
     {
-        if (endsWith(Poco::toLower(func.name), func_suffix))
+        if (endsWith(toLower(func.name), func_suffix))
         {
             size_t prefix_len = func.name.length() - strlen(func_suffix);
             func.name = func.name.substr(0, prefix_len) + customized_func_suffix;

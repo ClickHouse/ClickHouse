@@ -46,7 +46,7 @@ static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, con
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
 
     for (const auto & iterator : tokenizer)
-        methods.emplace_back(Poco::toUpper(Poco::trim(iterator)));
+        methods.emplace_back(toUpper(Poco::trim(iterator)));
 
     return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
 }

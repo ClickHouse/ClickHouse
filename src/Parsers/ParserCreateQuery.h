@@ -9,7 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -179,7 +179,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
-        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
+        default_specifier = toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))

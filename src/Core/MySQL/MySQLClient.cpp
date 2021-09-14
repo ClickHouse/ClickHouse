@@ -7,7 +7,7 @@
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <Common/DNSResolver.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -139,7 +139,7 @@ void MySQLClient::ping()
 
 void MySQLClient::setBinlogChecksum(const String & binlog_checksum)
 {
-    replication.setChecksumSignatureLength(Poco::toUpper(binlog_checksum) == "NONE" ? 0 : 4);
+    replication.setChecksumSignatureLength(toUpper(binlog_checksum) == "NONE" ? 0 : 4);
 }
 
 void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str, const String & binlog_checksum)

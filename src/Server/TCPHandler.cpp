@@ -7,6 +7,7 @@
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -1420,7 +1421,7 @@ void TCPHandler::initBlockOutput(const Block & block)
         const Settings & query_settings = query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_settings.network_compression_method.toString());
+            std::string method = toUpper(query_settings.network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
                 level = query_settings.network_zstd_compression_level;

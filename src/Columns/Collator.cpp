@@ -17,7 +17,7 @@
 #endif
 
 #include <Common/Exception.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <algorithm>
 
 
@@ -57,7 +57,7 @@ AvailableCollationLocales::AvailableCollationLocales()
             lang.emplace(std::string(normal_buf, lang_length));
         }
 
-        locales_map.emplace(Poco::toLower(locale_name), LocaleAndLanguage{locale_name, lang});
+        locales_map.emplace(toLower(locale_name), LocaleAndLanguage{locale_name, lang});
     }
 
 #endif
@@ -87,11 +87,11 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
 bool AvailableCollationLocales::isCollationSupported(const std::string & locale_name) const
 {
     /// We support locale names in any case, so we have to convert all to lower case
-    return locales_map.count(Poco::toLower(locale_name));
+    return locales_map.count(toLower(locale_name));
 }
 
 Collator::Collator(const std::string & locale_)
-    : locale(Poco::toLower(locale_))
+    : locale(toLower(locale_))
 {
 #if USE_ICU
     /// We check it here, because ucol_open will fallback to default locale for

@@ -962,7 +962,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
-    pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
+    pair->first = toLower(identifier->as<ASTIdentifier>()->name());
     pair->set(pair->second, value);
     node = pair;
     return true;

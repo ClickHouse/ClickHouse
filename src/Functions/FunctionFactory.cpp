@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -35,7 +35,7 @@ void FunctionFactory::registerFunction(
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 
-    String function_name_lowercase = Poco::toLower(name);
+    String function_name_lowercase = toLower(name);
     if (isAlias(name) || isAlias(function_name_lowercase))
         throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
                         ErrorCodes::LOGICAL_ERROR);
@@ -99,7 +99,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         res = it->second(context);
     else
     {
-        name = Poco::toLower(name);
+        name = toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
             res = it->second(context);

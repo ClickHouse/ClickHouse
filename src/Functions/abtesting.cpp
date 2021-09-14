@@ -12,6 +12,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #define STATS_ENABLE_STDVEC_WRAPPERS
 #include <stats.hpp>
@@ -227,7 +228,7 @@ public:
         if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
         {
             dist = col_dist->getDataAt(0).data;
-            dist = Poco::toLower(dist);
+            dist = toLower(dist);
             if (dist != BETA && dist != GAMMA)
                 throw Exception("First argument for function " + getName() + " cannot be " + dist, ErrorCodes::BAD_ARGUMENTS);
         }

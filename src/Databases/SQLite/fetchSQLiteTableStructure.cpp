@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace ErrorCodes
 static DataTypePtr convertSQLiteDataType(String type)
 {
     DataTypePtr res;
-    type = Poco::toLower(type);
+    type = toLower(type);
 
     if (type == "tinyint")
         res = std::make_shared<DataTypeInt8>();

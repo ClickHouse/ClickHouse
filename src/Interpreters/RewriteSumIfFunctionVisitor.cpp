@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     if (!func.arguments || func.arguments->children.empty())
         return;
 
-    auto lower_name = Poco::toLower(func.name);
+    auto lower_name = toLower(func.name);
 
     if (lower_name != "sum" && lower_name != "sumif")
         return;
@@ -44,7 +45,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     {
         const auto * nested_func = func_arguments[0]->as<ASTFunction>();
 
-        if (!nested_func || Poco::toLower(nested_func->name) != "if" || nested_func->arguments->children.size() != 3)
+        if (!nested_func || toLower(nested_func->name) != "if" || nested_func->arguments->children.size() != 3)
             return;
 
         const auto & if_arguments = nested_func->arguments->children;

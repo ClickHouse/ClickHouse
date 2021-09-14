@@ -1,5 +1,3 @@
-#include <Poco/String.h>
-
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 
@@ -128,7 +126,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 
     if (!func_arguments) return;
 
-    String func_name_lowercase = Poco::toLower(node.name);
+    String func_name_lowercase = toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
         func_arguments->children[0]->as<ASTAsterisk>())

@@ -303,3 +303,47 @@ inline void trim(std::string & str, char c = ' ')
     trimRight(str, c);
     trimLeft(str, c);
 }
+
+inline std::string toUpper(const std::string& str) {
+   std::string result(str);
+   auto it = result.begin();
+   auto end = result.end();
+
+#ifdef __clang__
+#pragma unroll
+#elif defined( _MSC_VER )
+#pragma loop( hint_parallel( 0 ) )
+#endif
+   while (it != end) {
+      int ch = static_cast<unsigned char>(*it);
+      if (ch >= 'a' && ch <= 'z')
+         *it &= ~0x20;
+      else if (ch > 127) // to handle locale specific letters
+         *it = static_cast<std::string::value_type>(std::toupper(ch));
+      ++it;
+   }
+
+   return result;
+}
+
+inline std::string toLower(const std::string& str) {
+   std::string result(str);
+   auto it = result.begin();
+   auto end = result.end();
+
+#ifdef __clang__
+#pragma unroll
+#elif defined( _MSC_VER )
+#pragma loop( hint_parallel( 0 ) )
+#endif
+   while (it != end) {
+      int ch = static_cast<unsigned char>(*it);
+      if (ch >= 'A' && ch <= 'Z')
+         *it |= 0x20;
+      else if (ch > 127) // to handle locale specific letters
+         *it = static_cast<std::string::value_type>(std::tolower(ch));
+      ++it;
+   }
+
+   return result;
+}

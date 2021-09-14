@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -57,7 +58,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
 
-    String type_name_upper = Poco::toUpper(type_name);
+    String type_name_upper = toUpper(type_name);
     String type_name_suffix;
 
     /// Special cases for compatibility with SQL standard. We can parse several words as type name
