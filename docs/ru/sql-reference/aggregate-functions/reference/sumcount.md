@@ -12,7 +12,7 @@ toc_priority: 144
 sumCount(x)
 ```
 
-**Аргументы** 
+**Аргументы**
 
 -   `x` — Входное значение типа [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), или [Decimal](../../../sql-reference/data-types/decimal.md).
 

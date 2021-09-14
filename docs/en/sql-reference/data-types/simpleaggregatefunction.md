@@ -24,7 +24,7 @@ The following aggregate functions are supported:
 
 !!! note "Note"
     Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes.
-    
+
     `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 
 **Parameters**

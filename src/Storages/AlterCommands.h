@@ -168,9 +168,6 @@ struct AlterCommand
     std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
-/// Return string representation of AlterCommand::Type
-String alterTypeToString(const AlterCommand::Type type);
-
 class Context;
 
 /// Vector of AlterCommand with several additional functions
@@ -195,9 +192,12 @@ public:
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// At least one command modify settings.
+    bool hasSettingsAlterCommand() const;
+
+    /// All commands modify settings only.
     bool isSettingsAlter() const;
 
-    /// At least one command modify comments.
+    /// All commands modify comments only.
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of

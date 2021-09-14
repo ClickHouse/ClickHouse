@@ -24,24 +24,25 @@ class RemoteBlockInputStream : public IBlockInputStream
 public:
     /// Takes already set connection.
     RemoteBlockInputStream(
-            Connection & connection,
-            const String & query_, const Block & header_, ContextPtr context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        Connection & connection,
+        const String & query_, const Block & header_, ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteBlockInputStream(
-            std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, ContextPtr context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        const ConnectionPoolWithFailoverPtr & pool,
+        std::vector<IConnectionPool::Entry> && connections,
+        const String & query_, const Block & header_, ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteBlockInputStream(
-            const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, ContextPtr context_,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        const ConnectionPoolWithFailoverPtr & pool,
+        const String & query_, const Block & header_, ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -51,9 +52,6 @@ public:
     void setPoolMode(PoolMode pool_mode) { query_executor.setPoolMode(pool_mode); }
 
     void setMainTable(StorageID main_table_) { query_executor.setMainTable(std::move(main_table_)); }
-
-    /// Sends query (initiates calculation) before read()
-    void readPrefix() override;
 
     /// Prevent default progress notification because progress' callback is called by its own.
     void progress(const Progress & /*value*/) override {}

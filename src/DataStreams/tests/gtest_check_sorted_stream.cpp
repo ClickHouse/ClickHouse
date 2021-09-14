@@ -2,8 +2,10 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
-#include <DataStreams/CheckSortedBlockInputStream.h>
+#include <Processors/Sources/BlocksListSource.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -89,14 +91,22 @@ TEST(CheckSortedBlockInputStream, CheckGoodCase)
     for (size_t i = 0; i < 3; ++i)
         blocks.push_back(getSortedBlockWithSize(key_columns, 10, 1, i * 10));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_EQ(sorted.read(), Block());
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_FALSE(executor.pull(chunk));
 }
 
 TEST(CheckSortedBlockInputStream, CheckBadLastRow)
@@ -109,14 +119,21 @@ TEST(CheckSortedBlockInputStream, CheckBadLastRow)
     blocks.push_back(getSortedBlockWithSize(key_columns, 100, 1, 0));
     blocks.push_back(getSortedBlockWithSize(key_columns, 100, 1, 300));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
+    PullingPipelineExecutor executor(pipeline);
 
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_THROW(sorted.read(), DB::Exception);
+    Chunk chunk;
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_THROW(executor.pull(chunk), DB::Exception);
 }
 
 
@@ -127,11 +144,19 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock1)
     BlocksList blocks;
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 5, 1, 77));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    EXPECT_THROW(sorted.read(), DB::Exception);
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    EXPECT_THROW(executor.pull(chunk), DB::Exception);
 }
 
 TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
@@ -141,11 +166,19 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
     BlocksList blocks;
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 99, 2, 77));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    EXPECT_THROW(sorted.read(), DB::Exception);
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    EXPECT_THROW(executor.pull(chunk), DB::Exception);
 }
 
 TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
@@ -155,11 +188,19 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
     BlocksList blocks;
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 50, 0, 77));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    EXPECT_THROW(sorted.read(), DB::Exception);
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    EXPECT_THROW(executor.pull(chunk), DB::Exception);
 }
 
 TEST(CheckSortedBlockInputStream, CheckEqualBlock)
@@ -171,11 +212,19 @@ TEST(CheckSortedBlockInputStream, CheckEqualBlock)
     blocks.push_back(getEqualValuesBlockWithSize(key_columns, 10));
     blocks.push_back(getEqualValuesBlockWithSize(key_columns, 1));
 
-    BlockInputStreamPtr stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
 
-    CheckSortedBlockInputStream sorted(stream, sort_description);
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_NO_THROW(sorted.read());
-    EXPECT_NO_THROW(sorted.read());
+    PullingPipelineExecutor executor(pipeline);
+
+    Chunk chunk;
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_NO_THROW(executor.pull(chunk));
+    EXPECT_NO_THROW(executor.pull(chunk));
 }

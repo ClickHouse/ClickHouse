@@ -16,6 +16,14 @@
 namespace DB
 {
 
+bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage)
+{
+    const StorageMetadataPtr & metadata = storage->getInMemoryMetadataPtr();
+    Block header = metadata->getSampleBlock();
+    ColumnWithTypeAndName & version_column = header.getByPosition(header.columns() - 1);
+    return std::find(column_names.begin(), column_names.end(), version_column.name) == column_names.end();
+}
+
 Pipe readFinalFromNestedStorage(
     StoragePtr nested_storage,
     const Names & column_names,
@@ -32,20 +40,6 @@ Pipe readFinalFromNestedStorage(
 
     Block nested_header = nested_metadata->getSampleBlock();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
-    ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
-
-    if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>(); select_query && !column_names_set.count(version_column.name))
-    {
-        auto & tables_in_select_query = select_query->tables()->as<ASTTablesInSelectQuery &>();
-
-        if (!tables_in_select_query.children.empty())
-        {
-            auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
-
-            if (tables_element.table_expression)
-                tables_element.table_expression->as<ASTTableExpression &>().final = true;
-        }
-    }
 
     String filter_column_name;
     Names require_columns_name = column_names;
@@ -59,9 +53,6 @@ Pipe readFinalFromNestedStorage(
 
         expressions->children.emplace_back(makeASTFunction("equals", sign_column_name, fetch_sign_value));
         filter_column_name = expressions->children.back()->getColumnName();
-
-        for (const auto & column_name : column_names)
-            expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
     }
 
     Pipe pipe = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);

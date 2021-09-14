@@ -70,7 +70,7 @@ private:
     /// They are added or not added to the current_totals, depending on the totals_mode.
     Chunk overflow_aggregates;
 
-    /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
+    /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;
 };
 

@@ -35,6 +35,44 @@ public:
         SETTINGS
     };
 
+    static String expressionToString(Expression expr)
+    {
+        switch (expr)
+        {
+            case Expression::WITH:
+                return "WITH";
+            case Expression::SELECT:
+                return "SELECT";
+            case Expression::TABLES:
+                return "TABLES";
+            case Expression::PREWHERE:
+                return "PREWHERE";
+            case Expression::WHERE:
+                return "WHERE";
+            case Expression::GROUP_BY:
+                return "GROUP BY";
+            case Expression::HAVING:
+                return "HAVING";
+            case Expression::WINDOW:
+                return "WINDOW";
+            case Expression::ORDER_BY:
+                return "ORDER BY";
+            case Expression::LIMIT_BY_OFFSET:
+                return "LIMIT BY OFFSET";
+            case Expression::LIMIT_BY_LENGTH:
+                return "LIMIT BY LENGTH";
+            case Expression::LIMIT_BY:
+                return "LIMIT BY";
+            case Expression::LIMIT_OFFSET:
+                return "LIMIT OFFSET";
+            case Expression::LIMIT_LENGTH:
+                return "LIMIT LENGTH";
+            case Expression::SETTINGS:
+                return "SETTINGS";
+        }
+        return "";
+    }
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "SelectQuery"; }
 
@@ -69,6 +107,8 @@ public:
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
 
+    bool hasFiltration() const { return where() || prewhere() || having(); }
+
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
 
@@ -83,8 +123,8 @@ public:
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr sampleSize() const;
     ASTPtr sampleOffset() const;
-    ASTPtr arrayJoinExpressionList(bool & is_left) const;
-    ASTPtr arrayJoinExpressionList() const;
+    std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
+
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;
@@ -92,6 +132,10 @@ public:
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    void setFinal();
+
+    const char * getQueryKindString() const override { return "Select"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

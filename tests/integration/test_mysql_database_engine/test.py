@@ -232,7 +232,7 @@ uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
 # string_values = ["'ClickHouse'", 'NULL']
-string_values = ["'ClickHouse'"] 
+string_values = ["'ClickHouse'"]
 
 
 decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
@@ -319,7 +319,8 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
     )
 
     clickhouse_query_settings = dict(
-        mysql_datatypes_support_level=setting_mysql_datatypes_support_level
+        mysql_datatypes_support_level=setting_mysql_datatypes_support_level,
+        output_format_decimal_trailing_zeros=1
     )
 
     def execute_query(node, query, **kwargs):

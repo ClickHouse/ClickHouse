@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -55,7 +56,8 @@ namespace ErrorCodes
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
-    return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
+    size_t file_size = disk->getFileSize(path);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)
@@ -77,6 +79,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
         serialization->deserializeBinary(min_val, *file);
         Field max_val;
         serialization->deserializeBinary(max_val, *file);
+
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = POSITIVE_INFINITY;
+        if (max_val.isNull())
+            max_val = POSITIVE_INFINITY;
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -132,14 +140,19 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
-        column.column->getExtremes(min_value, max_value);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value);
+        else
+            column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, min_value);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, max_value);
+            hyperrectangle[i].left
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
+            hyperrectangle[i].right
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
     }
 
@@ -467,39 +480,16 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
-String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
-{
-    switch (state)
-    {
-        case State::Temporary:
-            return "Temporary";
-        case State::PreCommitted:
-            return "PreCommitted";
-        case State::Committed:
-            return "Committed";
-        case State::Outdated:
-            return "Outdated";
-        case State::Deleting:
-            return "Deleting";
-        case State::DeleteOnDestroy:
-            return "DeleteOnDestroy";
-    }
-
-    __builtin_unreachable();
-}
-
-String IMergeTreeDataPart::stateString() const
-{
-    return stateToString(state);
-}
-
 void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
 {
     if (!checkState(affordable_states))
     {
         String states_str;
         for (auto affordable_state : affordable_states)
-            states_str += stateToString(affordable_state) + " ";
+        {
+            states_str += stateString(affordable_state);
+            states_str += ' ';
+        }
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
@@ -1310,6 +1300,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 {
     /// Do not allow underscores in the prefix because they are used as separators.
     assert(prefix.find_first_of('_') == String::npos);
+    assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
+                                       DetachedPartInfo::DETACH_REASONS.end(),
+                                       prefix) != DetachedPartInfo::DETACH_REASONS.end());
     return "detached/" + getRelativePathForPrefix(prefix);
 }
 
