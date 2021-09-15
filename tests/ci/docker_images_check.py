@@ -180,7 +180,7 @@ if __name__ == "__main__":
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
         event = json.load(event_file)
 
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(event, False, True)
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join(changed_images))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
