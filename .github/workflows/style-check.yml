@@ -32,10 +32,20 @@ jobs:
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_ROBOT_PASSWORD: ${{ secrets.DOCKER_ROBOT_PASSWORD }}
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/changed_images.json
   Style-Check:
     needs: DockerHubPush
     runs-on: [self-hosted]
     steps:
+      - name: Download math result for job 1
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/changed_images.json
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
