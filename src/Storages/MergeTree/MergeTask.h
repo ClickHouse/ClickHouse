@@ -106,28 +106,31 @@ private:
         virtual ~IStage() = default;
     };
 
-    struct GlobalRuntimeContext : public IStageRuntimeContext
+    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// some variables are used in a process of execution
+    /// Proper initialization is responsibility of the author
+    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
     {
-        MergeList::Entry * merge_entry;
-        MergeTreeData * data;
-        ActionBlocker * merges_blocker;
-        ActionBlocker * ttl_merges_blocker;
-        StorageMetadataPtr metadata_snapshot;
-        FutureMergedMutatedPartPtr future_part;
-        MergeTreeDataPartPtr parent_part;
-        ContextPtr context;
-        time_t time_of_merge;
-        ReservationSharedPtr space_reservation;
-        bool deduplicate;
-        Names deduplicate_by_columns;
+        MergeList::Entry * merge_entry{nullptr};
+        MergeTreeData * data{nullptr};
+        ActionBlocker * merges_blocker{nullptr};
+        ActionBlocker * ttl_merges_blocker{nullptr};
+        StorageMetadataPtr metadata_snapshot{nullptr};
+        FutureMergedMutatedPartPtr future_part{nullptr};
+        MergeTreeDataPartPtr parent_part{nullptr};
+        ContextPtr context{nullptr};
+        time_t time_of_merge{0};
+        ReservationSharedPtr space_reservation{nullptr};
+        bool deduplicate{false};
+        Names deduplicate_by_columns{};
 
-        NamesAndTypesList gathering_columns;
-        NamesAndTypesList merging_columns;
-        Names gathering_column_names;
-        Names merging_column_names;
-        NamesAndTypesList storage_columns;
-        Names all_column_names;
-        MergeTreeData::DataPart::Checksums checksums_gathered_columns;
+        NamesAndTypesList gathering_columns{};
+        NamesAndTypesList merging_columns{};
+        Names gathering_column_names{};
+        Names merging_column_names{};
+        NamesAndTypesList storage_columns{};
+        Names all_column_names{};
+        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
         size_t gathering_column_names_size{0};
@@ -135,43 +138,46 @@ private:
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
-        std::shared_ptr<MergedBlockOutputStream> to;
-        BlockInputStreamPtr merged_stream;
+        std::shared_ptr<MergedBlockOutputStream> to{nullptr};
+        BlockInputStreamPtr merged_stream{nullptr};
 
         SyncGuardPtr sync_guard{nullptr};
-        MergeTreeData::MutableDataPartPtr new_data_part;
+        MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
 
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
-        std::promise<MergeTreeData::MutableDataPartPtr> promise;
+        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
-        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
+        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
+    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// some variables are used in a process of execution
+    /// Proper initialization is responsibility of the author
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Dependencies
         String prefix;
-        MergeTreeData::MergingParams merging_params;
+        MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};
         DiskPtr disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
-        CompressionCodecPtr compression_codec;
+        CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<TemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
-        std::optional<ColumnSizeEstimator> column_sizes;
+        std::optional<ColumnSizeEstimator> column_sizes{};
 
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled;
+        std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
         size_t sum_compressed_bytes_upper_bound{0};
@@ -210,8 +216,10 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
+    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// some variables are used in a process of execution
+    /// Proper initialization is responsibility of the author
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Begin dependencies from previous stage
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
@@ -256,7 +264,7 @@ private:
         StageRuntimeContextPtr getContextForNextStage() override;
 
         bool prepareVerticalMergeForAllColumns() const;
-        bool executeVerticalMergeForAllColumns();
+        bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
         void prepareVerticalMergeForOneColumn() const;
@@ -267,8 +275,10 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
+    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// some variables are used in a process of execution
+    /// Proper initialization is responsibility of the author
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Only one dependency
         bool need_sync{false};

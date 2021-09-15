@@ -72,7 +72,7 @@ private:
         SUCCESS
     };
 
-    std::function<void(const ExecutionStatus &)> write_part_log;
+    PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
 };

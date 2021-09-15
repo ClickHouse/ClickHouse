@@ -616,7 +616,7 @@ bool MergeTask::MergeProjectionsStage::execute()
 }
 
 
-bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns()
+bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 {
     /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)

@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_REPLICA_HAS_PART;
+    extern const int LOGICAL_ERROR;
     extern const int ABORTED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
@@ -160,7 +161,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             }
 
             bool res = false;
-            std::tie(res, write_part_log) = prepare();
+            std::tie(res, part_log_writer) = prepare();
 
             /// Avoid resheduling, execute fetch here, in the same thread.
             if (!res)
@@ -181,8 +182,8 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             }
             catch (...)
             {
-                if (write_part_log)
-                    write_part_log(ExecutionStatus::fromCurrentException());
+                if (part_log_writer)
+                    part_log_writer(ExecutionStatus::fromCurrentException());
                 throw;
             }
 
@@ -192,13 +193,13 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         {
             try
             {
-                if (!finalize(write_part_log))
+                if (!finalize(part_log_writer))
                     return execute_fetch();
             }
             catch (...)
             {
-                if (write_part_log)
-                    write_part_log(ExecutionStatus::fromCurrentException());
+                if (part_log_writer)
+                    part_log_writer(ExecutionStatus::fromCurrentException());
                 throw;
             }
 
