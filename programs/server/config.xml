@@ -331,7 +331,7 @@
     <mmap_cache_size>1000</mmap_cache_size>
 
     <!-- Cache size for compiled expressions.-->
-    <compiled_expression_cache_size>1073741824</compiled_expression_cache_size>
+    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -1026,10 +1026,28 @@
          defined, or encryption codecs will be disabled otherwise. The
          command is executed through /bin/sh and is expected to write
          a Base64-encoded key to the stdout. -->
-    <encryption>
-        <!-- <key_command>/usr/bin/systemd-ask-password &#45;&#45;id="clickhouse-server" &#45;&#45;timeout=0 "Enter the ClickHouse encryption passphrase:" | base64</key_command> -->
-        <!-- <key_command><![CDATA[IFS=; echo -n >/dev/tty "Enter the ClickHouse encryption passphrase: "; stty=`stty -F /dev/tty -g`; stty -F /dev/tty -echo; read k </dev/tty; stty -F /dev/tty "$stty"; echo -n $k | base64]]></key_command> -->
-    </encryption>
+    <encryption_codecs>
+        <!-- aes_128_gcm_siv -->
+            <!-- Example of getting hex key from env -->
+            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
+            <!--key_hex from_env="..."></key_hex -->
+
+            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
+            <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
+            <!-- key_hex id="0">...</key_hex -->
+            <!-- key_hex id="1" from_env=".."></key_hex -->
+            <!-- key_hex id="2">...</key_hex -->
+            <!-- current_key_id>2</current_key_id -->
+
+            <!-- Example of getting hex key from config -->
+            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
+            <!-- key>...</key -->
+
+            <!-- example of adding nonce -->
+            <!-- nonce>...</nonce -->
+
+        <!-- /aes_128_gcm_siv -->
+    </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
