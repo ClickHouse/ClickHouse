@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
@@ -399,9 +400,8 @@ try
     for (const auto & entry : data->entries)
     {
         buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
-        format->setReadBuffer(*buffer);
         current_entry = entry;
-        total_rows += executor.execute();
+        total_rows += executor.execute(*buffer);
     }
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
@@ -425,13 +425,34 @@ try
         if (!entry->isFinished())
             entry->finish();
 }
+catch (const Exception & e)
+{
+    finishWithException(key.query, data->entries, e);
+}
+catch (const std::exception & e)
+{
+    finishWithException(key.query, data->entries, e);
+}
 catch (...)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", __PRETTY_FUNCTION__);
+    finishWithException(key.query, data->entries, Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+}
 
-    for (const auto & entry : data->entries)
+template <typename E>
+void AsynchronousInsertQueue::finishWithException(
+    const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
+{
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
+
+    for (const auto & entry : entries)
+    {
         if (!entry->isFinished())
-            entry->finish(std::current_exception());
+        {
+            /// Make a copy of exception to avoid concurrent usage of
+            /// one exception object from several threads.
+            entry->finish(std::make_exception_ptr(exception));
+        }
+    }
 }
 
 }
