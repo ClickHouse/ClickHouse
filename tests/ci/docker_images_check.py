@@ -95,7 +95,7 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
     with open('push_log_' + str(image_name).replace('/', '_') + "_" + version_string, 'w') as pl:
         cmd = "docker push {im}:{ver}".format(im=image_name, ver=version_string)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
-        push_log = str(pl.stdout.path)
+        push_log = str(pl.name)
         if retcode != 0:
             return False, build_log, push_log
 
