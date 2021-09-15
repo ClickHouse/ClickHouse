@@ -79,7 +79,7 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
     with open('build_log_' + str(image_name).replace('/', '_') + "_" + version_string, 'w') as pl:
         cmd = "docker build --network=host -t {im}:{ver} {path}".format(im=image_name, ver=version_string, path=path_to_dockerfile_folder)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
-        build_log = str(c.name)
+        build_log = str(pl.name)
         if retcode != 0:
             return False, build_log, None
 
