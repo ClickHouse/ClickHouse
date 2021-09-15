@@ -140,6 +140,9 @@ private:
     void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
+    template <typename E>
+    static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & e);
+
 public:
     Queue getQueue() const
     {

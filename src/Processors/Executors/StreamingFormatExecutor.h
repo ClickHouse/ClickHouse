@@ -29,6 +29,9 @@ public:
     /// Returns numbers of new read rows.
     size_t execute();
 
+    /// Execute with provided read buffer.
+    size_t execute(ReadBuffer & buffer);
+
     /// Releases currently accumulated columns.
     MutableColumns getResultColumns();
 
