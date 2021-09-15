@@ -398,7 +398,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
                 configuration.on_conflict = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected argument name for key-value defined argument."
+                        "Unexpected key-value argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, schema, on_conflict.", arg_name);
         }
@@ -442,7 +442,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             args.getContext()->getSettingsRef().postgresql_connection_pool_size,
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);

@@ -233,7 +233,7 @@ getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
             else if (key == "headers")
             {
                 Poco::Util::AbstractConfiguration::Keys header_keys;
-                config.keys(config_prefix + '.' + "headers", header_keys);
+                config.keys(config_prefix + ".headers", header_keys);
                 for (const auto & header : header_keys)
                 {
                     const auto header_prefix = config_prefix + ".headers." + header;
