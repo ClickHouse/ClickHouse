@@ -34,6 +34,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     ContextPtr context,
     const ASTPtr & input_function)
 {
+    /// get ast query
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
@@ -51,7 +52,6 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
-
     auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
@@ -59,6 +59,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         ? getReadBufferFromASTInsertQuery(ast)
         : std::make_unique<EmptyReadBuffer>();
 
+    /// Create a source from input buffer using format from query
     auto source = FormatFactory::instance().getInput(format, *input_buffer, header, context, context->getSettings().max_insert_block_size);
     source->addBuffer(std::move(input_buffer));
     return source;
@@ -104,8 +105,17 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         const auto & in_file_node = insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
 
-        return wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+        /// It can be compressed and compression method maybe specified in query
+        std::string compression_method;
+        if (insert_query->compression)
+        {
+            const auto & compression_method_node = insert_query->compression->as<ASTLiteral &>();
+            compression_method = compression_method_node.value.safeGet<std::string>();
+        }
+
+        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+        /// Buffer for reading from file is created and wrapped with appropriate compression method
+        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
 
     std::vector<std::unique_ptr<ReadBuffer>> buffers;
