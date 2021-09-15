@@ -532,7 +532,7 @@ class ClickHouseCluster:
             binary_path = binary_path[:-len('-server')]
 
         env_variables['keeper_binary'] = binary_path
-        env_variables['image'] = "yandex/clickhouse-integration-test:" + self.docker_base_tag
+        env_variables['image'] = "clickhouse/integration-test:" + self.docker_base_tag
         env_variables['user'] = str(os.getuid())
         env_variables['keeper_fs'] = 'bind'
         for i in range(1, 4):
@@ -757,7 +757,7 @@ class ClickHouseCluster:
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
-                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
+                     hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
                      main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True):
@@ -1801,7 +1801,7 @@ class ClickHouseInstance:
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
-            image="yandex/clickhouse-integration-test", tag="latest",
+            image="clickhouse/integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name

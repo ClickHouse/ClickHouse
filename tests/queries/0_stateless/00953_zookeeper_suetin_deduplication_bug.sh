@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database
+# Tag no-replicated-database: Requires investigation
 
 set -e
 

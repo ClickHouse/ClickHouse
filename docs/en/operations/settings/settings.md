@@ -260,6 +260,39 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
+## input_format_parquet_import_nested {#input_format_parquet_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_arrow_import_nested {#input_format_arrow_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_orc_import_nested {#input_format_orc_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md#data-format-orc) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../sql-reference/syntax.md) section.
@@ -1106,6 +1139,40 @@ Possible values:
 -   0 — Unlimited depth.
 
 Default value: `5`.
+
+## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches for the server. Only has meaning at server startup. You can also limit the speed for a particular table with [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth) setting.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating the data to add or replace new nodes.
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -3466,6 +3533,30 @@ Possible values:
 
 Default value: `0`.
 
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   1 — Wait for own execution.
+-   2 — Wait for everyone.
+
+Default value: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   Negative integer — Wait for unlimited time.
+-   Positive integer — The number of seconds to wait.
+
+Default value: `120` seconds.
+
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.
@@ -3487,3 +3578,89 @@ Possible values:
 - `disable` — Disables short-circuit function evaluation.
 
 Default value: `enable`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
+```
+
+Result:
+
+```text
+Exception: Regexp length too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+Exception: Total regexp lengths too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
