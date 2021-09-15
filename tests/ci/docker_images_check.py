@@ -5,6 +5,8 @@ from report import create_test_html_report
 from s3_helper import S3Helper
 import json
 import os
+from pr_info import PRInfo
+from github import Github
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -204,5 +206,6 @@ if __name__ == "__main__":
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
 
+    gh = Github(os.getenv("GITHUB_TOKEN"))
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=url)
