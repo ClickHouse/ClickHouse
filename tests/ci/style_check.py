@@ -86,7 +86,7 @@ def get_pr_url_from_ref(ref):
 def get_check(gh, commit_sha):
     repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
     commit = repo.get_commit(commit_sha)
-    check = list(commit.get_check_runs(NAME))[0]
+    check = list(commit.get_check_runs(check_name=NAME))[0]
     return check
 
 if __name__ == "__main__":
