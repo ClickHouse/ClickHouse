@@ -3,6 +3,7 @@ import requests
 import json
 import os
 import subprocess
+import urllib
 from unidiff import PatchSet
 
 
