@@ -92,7 +92,6 @@ def update_check_with_curl(check_id):
            "--header 'content-type: application/json' "
            "-d '{{\"name\" : \"hello-world-name\"}}'")
     cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
-    print("CMD {}", cmd)
     subprocess.check_call(cmd, shell=True)
 
 if __name__ == "__main__":
