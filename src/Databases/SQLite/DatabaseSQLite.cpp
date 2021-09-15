@@ -160,7 +160,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
 ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = std::make_shared<ASTIdentifier>(getDatabaseName());
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
     return create_query;
 }
