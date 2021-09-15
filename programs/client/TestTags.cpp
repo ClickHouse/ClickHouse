@@ -1,5 +1,6 @@
 #include "TestTags.h"
 
+#include <cstring>
 
 namespace DB
 {
