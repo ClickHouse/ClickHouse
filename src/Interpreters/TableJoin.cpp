@@ -141,6 +141,74 @@ void TableJoin::addDisjunct(const ASTPtr & ast)
         throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+namespace
+{
+
+bool operator==(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+{
+    return l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right;
+}
+
+bool operator!=(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+{
+    return !(l == r);
+}
+
+TableJoin::JoinOnClause & operator+=(TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+{
+    for (auto & cp :
+             {std::pair(&l.on_filter_condition_left, &r.on_filter_condition_left),
+                     std::pair(&l.on_filter_condition_right, &r.on_filter_condition_right) })
+    {
+        if (*cp.first == nullptr)
+            *cp.first = *cp.second;
+        else if (const auto * func = (*cp.first)->as<ASTFunction>(); func && func->name == "or")
+            /// already have `or` in condition, just add new argument
+            func->arguments->children.push_back(*cp.second);
+        else
+            /// already have some conditions, unite it with `or`
+            *cp.first = makeASTFunction("or", *cp.first, *cp.second);
+    }
+
+    return l;
+}
+}
+
+void TableJoin::optimizeDisjuncts()
+{
+    if (clauses.size() > 1)
+    {
+        std::sort(clauses.begin(), clauses.end(), [](const JoinOnClause & a, const JoinOnClause & b) {
+            return a.key_names_left < b.key_names_left || (a.key_names_left == b.key_names_left && a.key_names_left < b.key_names_left); });
+
+        auto to_it = clauses.begin();
+        auto from_it = to_it + 1;
+
+        for (; from_it != clauses.end(); ++from_it)
+        {
+            if (*from_it != *to_it)
+            {
+                if (++to_it != from_it)
+                {
+                    *to_it = std::move(*from_it);
+                }
+            }
+            else
+            {
+                /// ORing filter conditions
+                *to_it += *from_it;
+            }
+        }
+        const Clauses::size_type new_size = std::distance(clauses.begin(), to_it) + 1;
+        if (clauses.size() != new_size)
+        {
+            LOG_TRACE(
+                &Poco::Logger::get("TableJoin"), "optimizeDisjuncts trim clauses, new size is {}", new_size);
+            clauses.resize(new_size);
+        }
+    }
+}
+
 /// remember OR's children
 void TableJoin::setDisjuncts(Disjuncts&& disjuncts_)
 {

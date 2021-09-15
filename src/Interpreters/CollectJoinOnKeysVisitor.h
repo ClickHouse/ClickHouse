@@ -53,6 +53,7 @@ public:
                              const ASOF::Inequality & asof_inequality);
         void setDisjuncts(const ASTPtr & or_func_ast);
         void asofToJoinKeys();
+        void optimize();
     };
 
     static void visit(const ASTPtr & ast, Data & data)
