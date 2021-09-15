@@ -1,4 +1,5 @@
 #include "ProgressIndication.h"
+#include <cstddef>
 #include <numeric>
 #include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -7,6 +8,11 @@
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
 
+
+namespace
+{
+    constexpr UInt64 ZERO = 0;
+}
 
 namespace DB
 {
@@ -47,29 +53,53 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
     });
 }
 
-void ProgressIndication::addThreadIdToList(UInt64 thread_id)
+void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
 {
-    if (thread_times.contains(thread_id))
+    auto & thread_to_times = thread_times[host];
+    if (thread_to_times.contains(thread_id))
         return;
-    thread_times[thread_id] = {};
+    thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadUserTime(UInt64 thread_id, UInt64 value)
+void ProgressIndication::updateThreadUserTime(String const & host, UInt64 thread_id, UInt64 value)
 {
-    thread_times[thread_id].user_ms = value;
+    thread_times[host][thread_id].user_ms = value;
 }
 
-void ProgressIndication::updateThreadSystemTime(UInt64 thread_id, UInt64 value)
+void ProgressIndication::updateThreadSystemTime(String const & host, UInt64 thread_id, UInt64 value)
 {
-    thread_times[thread_id].system_ms = value;
+    thread_times[host][thread_id].system_ms = value;
 }
 
-UInt64 ProgressIndication::getAccumulatedThreadTime() const
+size_t ProgressIndication::getUsedThreadsCount() const
 {
-    return std::accumulate(thread_times.cbegin(), thread_times.cend(), static_cast<UInt64>(0),
-        [](UInt64 acc, auto const & elem)
+    return std::accumulate(thread_times.cbegin(), thread_times.cend(), 0,
+        [] (size_t acc, auto const & threads)
         {
-            return acc + elem.second.user_ms + elem.second.system_ms;
+            return acc + threads.second.size();
+        });
+}
+
+UInt64 ProgressIndication::getApproximateCoresNumber() const
+{
+    return std::accumulate(thread_times.cbegin(), thread_times.cend(), ZERO,
+        [](UInt64 acc, auto const & threads)
+        {
+            auto total_time = std::accumulate(threads.second.cbegin(), threads.second.cend(), ZERO,
+                [] (UInt64 temp, auto const & elem)
+                {
+                    if (elem.first == 0)
+                        return temp;
+                    return temp + elem.second.user_ms + elem.second.system_ms;
+                });
+            // Zero thread_id represents thread group which execute query
+            // (including thread of TCPHandler).
+            auto const & accumulated_time = threads.second.find(ZERO)->second;
+            // Performance events of TCPHandler thread are not transmitted, but
+            // we can calculate it's working time which shows how long the query
+            // is being processed.
+            auto io_time = accumulated_time.user_ms + accumulated_time.system_ms - total_time;
+            return acc + (total_time + io_time - 1) / io_time;
         });
 }
 
@@ -93,9 +123,7 @@ void ProgressIndication::writeFinalProgress()
     {
         std::cout << "\nUsed threads to process: " << used_threads;
 
-        auto elapsed_ms = watch.elapsedMicroseconds();
-        auto accumulated_thread_times = getAccumulatedThreadTime();
-        auto approximate_core_number = (accumulated_thread_times + elapsed_ms - 1) / elapsed_ms;
+        auto approximate_core_number = getApproximateCoresNumber();
         if (approximate_core_number != 0)
             std::cout << " and cores: " << approximate_core_number << ".";
         else

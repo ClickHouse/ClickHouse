@@ -671,6 +671,7 @@ void ClientBase::onProfileEvents(Block & block)
         return;
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
     const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
 
     auto const * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
@@ -679,16 +680,18 @@ void ClientBase::onProfileEvents(Block & block)
     for (size_t i = 0; i < block.rows(); ++i)
     {
         auto thread_id = array_thread_id[i];
-        progress_indication.addThreadIdToList(thread_id);
+        auto host_name = host_names.getDataAt(i).toString();
+        if (thread_id != 0)
+            progress_indication.addThreadIdToList(host_name, thread_id);
         auto event_name = names.getDataAt(i);
         auto value = array_values[i];
         if (event_name == user_time_name)
         {
-            progress_indication.updateThreadUserTime(thread_id, value);
+            progress_indication.updateThreadUserTime(host_name, thread_id, value);
         }
         else if (event_name == system_time_name)
         {
-            progress_indication.updateThreadSystemTime(thread_id, value);
+            progress_indication.updateThreadSystemTime(host_name, thread_id, value);
         }
     }
 }
