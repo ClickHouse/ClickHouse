@@ -50,7 +50,7 @@ CREATE TABLE opensky
 
 ## Импортируйте данные в ClickHouse
 
-Загрузите параллельными потоками данные в ClickHouse:
+Загрузите данные в ClickHouse параллельными потоками:
 
 ```bash
 ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
