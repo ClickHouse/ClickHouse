@@ -340,7 +340,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 }
 
 
-bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns()
+bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
      /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -377,7 +377,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns()
 }
 
 
-void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn()
+void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
     Names column_names{column_name};
@@ -424,7 +424,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn()
 }
 
 
-bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn()
+bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
     Block block;
     if (!global_ctx->merges_blocker->isCancelled() && (block = ctx->column_gathered_stream->read()))
@@ -439,7 +439,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn()
 }
 
 
-void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn()
+void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
     if (global_ctx->merges_blocker->isCancelled())
@@ -467,7 +467,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn()
 }
 
 
-bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns()
+bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 {
     /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -477,7 +477,7 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns()
 }
 
 
-bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections()
+bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
 {
     for (const auto & part : global_ctx->future_part->parts)
         global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
@@ -558,7 +558,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections()
 }
 
 
-bool MergeTask::MergeProjectionsStage::executeProjections()
+bool MergeTask::MergeProjectionsStage::executeProjections() const
 {
     if (ctx->projections_iterator == ctx->tasks_for_projections.end())
         return false;
@@ -571,7 +571,7 @@ bool MergeTask::MergeProjectionsStage::executeProjections()
 }
 
 
-bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge()
+bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 

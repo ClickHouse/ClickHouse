@@ -255,13 +255,13 @@ private:
         }
         StageRuntimeContextPtr getContextForNextStage() override;
 
-        bool prepareVerticalMergeForAllColumns();
+        bool prepareVerticalMergeForAllColumns() const;
         bool executeVerticalMergeForAllColumns();
-        bool finalizeVerticalMergeForAllColumns();
+        bool finalizeVerticalMergeForAllColumns() const;
 
-        void prepareVerticalMergeForOneColumn();
-        bool executeVerticalMergeForOneColumn();
-        void finalizeVerticalMergeForOneColumn();
+        void prepareVerticalMergeForOneColumn() const;
+        bool executeVerticalMergeForOneColumn() const;
+        void finalizeVerticalMergeForOneColumn() const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -292,9 +292,9 @@ private:
         }
         StageRuntimeContextPtr getContextForNextStage() override { return nullptr; }
 
-        bool mergeMinMaxIndexAndPrepareProjections();
-        bool executeProjections();
-        bool finalizeProjectionsAndWholeMerge();
+        bool mergeMinMaxIndexAndPrepareProjections() const;
+        bool executeProjections() const;
+        bool finalizeProjectionsAndWholeMerge() const;
 
         MergeProjectionsRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

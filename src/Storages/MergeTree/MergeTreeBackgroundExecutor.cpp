@@ -126,11 +126,6 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
         erase_from_active();
         has_tasks.notify_one();
 
-        /// We have to call reset() under a lock, otherwise a race is possible.
-        /// Imagine, that task is finally completed (last execution returned false),
-        /// we removed the task from both queues, but still have pointer.
-        /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
-        /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         try
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -138,12 +133,19 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
             /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
             /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
             item->task->onCompleted();
-            item->task.reset();
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+
+        /// We have to call reset() under a lock, otherwise a race is possible.
+        /// Imagine, that task is finally completed (last execution returned false),
+        /// we removed the task from both queues, but still have pointer.
+        /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
+        /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
+        item->task.reset();
     }
 }
 
