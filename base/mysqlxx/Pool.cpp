@@ -174,11 +174,9 @@ Pool::Entry Pool::tryGet()
         /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
         {
-            {
-                Entry res(connection_ptr, this);
-                if (res.tryForceConnected())  /// Tries to reestablish connection as well
-                    return res;
-            }
+            Entry res(connection_ptr, this);
+            if (res.tryForceConnected())  /// Tries to reestablish connection as well
+                return res;
 
             logger.debug("(%s): Idle connection to MySQL server cannot be recovered, dropping it.", getDescription());
 
@@ -296,7 +294,7 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    std::unique_ptr conn_ptr = std::make_unique<Connection>();
+    std::unique_ptr<Connection> conn_ptr{new Connection};
 
     try
     {

@@ -67,3 +67,4 @@ thread_id:                   54
 
 -   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system/#query-language-system-replicated)
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/operations/system_tables/replicated_fetches) <!--hide-->

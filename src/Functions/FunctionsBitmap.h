@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -93,13 +93,11 @@ class FunctionBitmapBuildImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapBuildImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapBuildImpl>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -223,13 +221,11 @@ class FunctionBitmapToArrayImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -315,13 +311,11 @@ class FunctionBitmapSubset : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -466,37 +460,20 @@ public:
     }
 };
 
-struct BitmapSubsetOffsetLimitImpl
-{
-public:
-    static constexpr auto name = "subBitmap";
-    template <typename T>
-    static void apply(
-        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
-        UInt64 range_start,
-        UInt64 range_end,
-        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
-        {
-        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
-        }
-};
-
 using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl>;
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
-using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
+
 
 class FunctionBitmapTransform : public IFunction
 {
 public:
     static constexpr auto name = "bitmapTransform";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapTransform>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapTransform>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -658,13 +635,11 @@ class FunctionBitmapSelfCardinalityImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -832,13 +807,11 @@ class FunctionBitmapContains : public IFunction
 public:
     static constexpr auto name = "bitmapContains";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapContains>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapContains>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -938,13 +911,11 @@ class FunctionBitmapCardinality : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapCardinality>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapCardinality>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1083,13 +1054,11 @@ class FunctionBitmap : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmap>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmap>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -16,17 +16,16 @@ namespace DB
 {
 
 IBackgroundJobExecutor::IBackgroundJobExecutor(
-        ContextPtr global_context_,
+        Context & global_context_,
         const BackgroundTaskSchedulingSettings & sleep_settings_,
         const std::vector<PoolConfig> & pools_configs_)
-    : WithContext(global_context_)
+    : global_context(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
 {
     for (const auto & pool_config : pools_configs_)
     {
-        const auto max_pool_size = pool_config.get_max_pool_size();
-        pools.try_emplace(pool_config.pool_type, max_pool_size, 0, max_pool_size, false);
+        pools.try_emplace(pool_config.pool_type, pool_config.max_pool_size, 0, pool_config.max_pool_size, false);
         pools_configs.emplace(pool_config.pool_type, pool_config);
     }
 }
@@ -84,71 +83,97 @@ bool incrementMetricIfLessThanMax(std::atomic<Int64> & atomic_value, Int64 max_v
 
 }
 
-void IBackgroundJobExecutor::execute(JobAndPool job_and_pool)
+/// This is a RAII class which only decrements metric.
+/// It is added because after all other fixes a bug non-executing merges was occurred again.
+/// Last hypothesis: task was successfully added to pool, however, was not executed because of internal exception in it.
+class ParanoidMetricDecrementor
+{
+public:
+    explicit ParanoidMetricDecrementor(CurrentMetrics::Metric metric_) : metric(metric_) {}
+    void alarm() { is_alarmed = true; }
+    void decrement()
+    {
+        if (is_alarmed.exchange(false))
+        {
+            CurrentMetrics::values[metric]--;
+        }
+    }
+
+    ~ParanoidMetricDecrementor() { decrement(); }
+
+private:
+
+    CurrentMetrics::Metric metric;
+    std::atomic_bool is_alarmed = false;
+};
+
+void IBackgroundJobExecutor::jobExecutingTask()
 try
 {
-    auto & pool_config = pools_configs[job_and_pool.pool_type];
-    const auto max_pool_size = pool_config.get_max_pool_size();
-
-    /// If corresponding pool is not full increment metric and assign new job
-    if (incrementMetricIfLessThanMax(CurrentMetrics::values[pool_config.tasks_metric], max_pool_size))
+    auto job_and_pool = getBackgroundJob();
+    if (job_and_pool) /// If we have job, then try to assign into background pool
     {
-        try /// this try required because we have to manually decrement metric
+        auto & pool_config = pools_configs[job_and_pool->pool_type];
+        auto metric_decrementor = std::make_shared<ParanoidMetricDecrementor>(pool_config.tasks_metric);
+        /// If corresponding pool is not full increment metric and assign new job
+        if (incrementMetricIfLessThanMax(CurrentMetrics::values[pool_config.tasks_metric], pool_config.max_pool_size))
         {
-            /// Synchronize pool size, because config could be reloaded
-            pools[job_and_pool.pool_type].setMaxThreads(max_pool_size);
-            pools[job_and_pool.pool_type].setQueueSize(max_pool_size);
-
-            pools[job_and_pool.pool_type].scheduleOrThrowOnError([this, pool_config, job{std::move(job_and_pool.job)}] ()
+            metric_decrementor->alarm();
+            try /// this try required because we have to manually decrement metric
             {
-                try /// We don't want exceptions in background pool
+                pools[job_and_pool->pool_type].scheduleOrThrowOnError([this, metric_decrementor, job{std::move(job_and_pool->job)}] ()
                 {
-                    bool job_success = job();
-                    /// Job done, decrement metric and reset no_work counter
-                    CurrentMetrics::values[pool_config.tasks_metric]--;
+                    try /// We don't want exceptions in background pool
+                    {
+                        bool job_success = job();
+                        /// Job done, decrement metric and reset no_work counter
+                        metric_decrementor->decrement();
 
-                    if (job_success)
-                    {
-                        /// Job done, new empty space in pool, schedule background task
-                        runTaskWithoutDelay();
+                        if (job_success)
+                        {
+                            /// Job done, new empty space in pool, schedule background task
+                            runTaskWithoutDelay();
+                        }
+                        else
+                        {
+                            /// Job done, but failed, schedule with backoff
+                            scheduleTask(/* with_backoff = */ true);
+                        }
+
                     }
-                    else
+                    catch (...)
                     {
-                        /// Job done, but failed, schedule with backoff
+                        metric_decrementor->decrement();
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                         scheduleTask(/* with_backoff = */ true);
                     }
-
-                }
-                catch (...)
-                {
-                    CurrentMetrics::values[pool_config.tasks_metric]--;
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    scheduleTask(/* with_backoff = */ true);
-                }
-            });
-            /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
-            /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
-            runTaskWithoutDelay();
+                });
+                /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
+                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
+                runTaskWithoutDelay();
+            }
+            catch (...)
+            {
+                /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
+                metric_decrementor->decrement();
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                scheduleTask(/* with_backoff = */ true);
+            }
         }
-        catch (...)
+        else /// Pool is full and we have some work to do
         {
-            /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
-            CurrentMetrics::values[pool_config.tasks_metric]--;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            scheduleTask(/* with_backoff = */ true);
+            scheduleTask(/* with_backoff = */ false);
         }
     }
-    else /// Pool is full and we have some work to do
+    else /// Nothing to do, no jobs
     {
-        scheduleTask(/* with_backoff = */ false);
+        scheduleTask(/* with_backoff = */ true);
     }
+
 }
 catch (...) /// Exception while we looking for a task, reschedule
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
-
-    /// Why do we scheduleTask again?
-    /// To retry on exception, since it may be some temporary exception.
     scheduleTask(/* with_backoff = */ true);
 }
 
@@ -157,8 +182,8 @@ void IBackgroundJobExecutor::start()
     std::lock_guard lock(scheduling_task_mutex);
     if (!scheduling_task)
     {
-        scheduling_task = getContext()->getSchedulePool().createTask(
-            getBackgroundTaskName(), [this]{ backgroundTaskFunction(); });
+        scheduling_task = global_context.getSchedulePool().createTask(
+            getBackgroundTaskName(), [this]{ jobExecutingTask(); });
     }
 
     scheduling_task->activateAndSchedule();
@@ -182,18 +207,6 @@ void IBackgroundJobExecutor::triggerTask()
         runTaskWithoutDelay();
 }
 
-void IBackgroundJobExecutor::backgroundTaskFunction()
-try
-{
-    if (!scheduleJob())
-        scheduleTask(/* with_backoff = */ true);
-}
-catch (...) /// Catch any exception to avoid thread termination.
-{
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-    scheduleTask(/* with_backoff = */ true);
-}
-
 IBackgroundJobExecutor::~IBackgroundJobExecutor()
 {
     finish();
@@ -201,23 +214,12 @@ IBackgroundJobExecutor::~IBackgroundJobExecutor()
 
 BackgroundJobsExecutor::BackgroundJobsExecutor(
        MergeTreeData & data_,
-       ContextPtr global_context_)
+       Context & global_context_)
     : IBackgroundJobExecutor(
         global_context_,
-        global_context_->getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig
-            {
-                .pool_type = PoolType::MERGE_MUTATE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundPoolTask
-            },
-        PoolConfig
-            {
-                .pool_type = PoolType::FETCH,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_fetches_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundFetchesPoolTask
-            }
-        })
+        global_context_.getBackgroundProcessingTaskSchedulingSettings(),
+        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
+         PoolConfig{PoolType::FETCH, global_context_.getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
     , data(data_)
 {
 }
@@ -227,24 +229,18 @@ String BackgroundJobsExecutor::getBackgroundTaskName() const
     return data.getStorageID().getFullTableName() + " (dataProcessingTask)";
 }
 
-bool BackgroundJobsExecutor::scheduleJob()
+std::optional<JobAndPool> BackgroundJobsExecutor::getBackgroundJob()
 {
-    return data.scheduleDataProcessingJob(*this);
+    return data.getDataProcessingJob();
 }
 
 BackgroundMovesExecutor::BackgroundMovesExecutor(
        MergeTreeData & data_,
-       ContextPtr global_context_)
+       Context & global_context_)
     : IBackgroundJobExecutor(
         global_context_,
-        global_context_->getBackgroundMoveTaskSchedulingSettings(),
-        {PoolConfig
-            {
-                .pool_type = PoolType::MOVE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_move_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundMovePoolTask
-            }
-        })
+        global_context_.getBackgroundMoveTaskSchedulingSettings(),
+      {PoolConfig{PoolType::MOVE, global_context_.getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
     , data(data_)
 {
 }
@@ -254,9 +250,9 @@ String BackgroundMovesExecutor::getBackgroundTaskName() const
     return data.getStorageID().getFullTableName() + " (dataMovingTask)";
 }
 
-bool BackgroundMovesExecutor::scheduleJob()
+std::optional<JobAndPool> BackgroundMovesExecutor::getBackgroundJob()
 {
-    return data.scheduleDataMovingJob(*this);
+    return data.getDataMovingJob();
 }
 
 }

@@ -1,5 +1,4 @@
 #include <Interpreters/FillingRow.h>
-#include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 
 

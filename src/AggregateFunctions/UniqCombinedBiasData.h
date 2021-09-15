@@ -4,7 +4,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /** Data for HyperLogLogBiasEstimator in the uniqCombined function.
   * The development plan is as follows:

@@ -79,7 +79,7 @@ WriteBufferFromFile::~WriteBufferFromFile()
         return;
 
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock;
 
     next();
 

@@ -34,7 +34,7 @@ public:
     FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
 
 private:
-    Row row;
+    std::vector<Field> row;
     SortDescription description;
 };
 
