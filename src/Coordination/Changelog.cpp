@@ -317,11 +317,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
             }
 
-            started = true;
-
             ChangelogReader reader(changelog_description.path);
             last_log_read_result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
-
             /// Otherwise we have already initialized it
             if (min_log_id == 0)
                 min_log_id = last_log_read_result->first_read_index;

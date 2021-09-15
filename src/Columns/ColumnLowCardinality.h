@@ -266,7 +266,6 @@ public:
         static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
         size_t getSizeOfIndexType() const { return size_of_type; }
 
-        void check(size_t max_dictionary_size);
         void checkSizeOfType();
 
         ColumnPtr detachPositions() { return std::move(positions); }
