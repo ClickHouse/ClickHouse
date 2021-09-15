@@ -96,11 +96,6 @@ def should_run_checks_for_pr(pr_info):
     if 'can be tested' not in pr_info.labels and not pr_is_by_trusted_user(pr_info.user_login, pr_info.user_orgs):
         return False, "Needs 'can be tested' label"
 
-    # Stop processing any checks for a PR when Fast Test fails.
-    fast_test_status = pr_info.statuses.get("Fast Test")
-    if fast_test_status and fast_test_status.state == 'failure':
-        return False, "Fast Test has failed"
-
     return True, "No special conditions apply"
 
 def get_commit(gh, commit_sha):
