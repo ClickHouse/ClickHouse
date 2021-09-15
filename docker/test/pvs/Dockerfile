@@ -1,6 +1,6 @@
-# docker build -t yandex/clickhouse-pvs-test .
+# docker build -t clickhouse/pvs-test .
 
-FROM yandex/clickhouse-binary-builder
+FROM clickhouse/binary-builder
 
 RUN apt-get update --yes \
     && apt-get install \
@@ -38,7 +38,7 @@ RUN set -x \
     && dpkg -i "${PKG_VERSION}.deb"
 
 CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF -DCMAKE_C_COMPILER=clang-12 -DCMAKE_CXX_COMPILER=clang\+\+-12 \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF -DCMAKE_C_COMPILER=clang-13 -DCMAKE_CXX_COMPILER=clang\+\+-13 \
     && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
     cp /repo_folder/pvs-studio.log /test_output; \
