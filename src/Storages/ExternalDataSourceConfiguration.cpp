@@ -38,7 +38,19 @@ String ExternalDataSourceConfiguration::toString() const
 }
 
 
-std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
+void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration & conf)
+{
+    host = conf.host;
+    port = conf.port;
+    username = conf.username;
+    password = conf.username;
+    database = conf.database;
+    table = conf.table;
+    schema = conf.schema;
+}
+
+
+std::optional<std::tuple<ExternalDataSourceConfiguration, EngineArgs>>
 getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine)
 {
     if (args.empty())
@@ -106,9 +118,9 @@ getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool i
             }
         }
 
-        return std::make_tuple(configuration, non_common_args, true);
+        return std::make_tuple(configuration, non_common_args);
     }
-    return std::make_tuple(configuration, non_common_args, false);
+    return std::nullopt;
 }
 
 
@@ -205,7 +217,16 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
 }
 
 
-std::tuple<URLBasedDataSourceConfiguration, EngineArgs, bool>
+void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration & conf)
+{
+    url = conf.url;
+    format = conf.format;
+    compression_method = conf.compression_method;
+    structure = conf.structure;
+}
+
+
+std::optional<std::tuple<URLBasedDataSourceConfiguration, EngineArgs>>
 getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
 {
     if (args.empty())
@@ -277,9 +298,9 @@ getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Storage requires {}", configuration.url.empty() ? "url" : "format");
 
-        return std::make_tuple(configuration, non_common_args, true);
+        return std::make_tuple(configuration, non_common_args);
     }
-    return std::make_tuple(configuration, non_common_args, false);
+    return std::nullopt;
 }
 
 }

@@ -385,11 +385,13 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 
 URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
 {
-    auto [common_configuration, storage_specific_args, with_named_collection] = getURLBasedDataSourceConfiguration(args, local_context);
-    URLBasedDataSourceConfiguration configuration(common_configuration);
+    URLBasedDataSourceConfiguration configuration;
 
-    if (with_named_collection)
+    if (auto named_collection = getURLBasedDataSourceConfiguration(args, local_context))
     {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
         if (!storage_specific_args.empty())
         {
             String illegal_args;

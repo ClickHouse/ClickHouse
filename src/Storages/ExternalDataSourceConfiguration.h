@@ -21,6 +21,8 @@ struct ExternalDataSourceConfiguration
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 
     String toString() const;
+
+    void set(const ExternalDataSourceConfiguration & conf);
 };
 
 using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceConfiguration>;
@@ -28,27 +30,18 @@ using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceCon
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StoragePostgreSQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
-        : ExternalDataSourceConfiguration(common_configuration) {}
-
     String on_conflict;
 };
 
 
 struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StorageMySQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
-        : ExternalDataSourceConfiguration(common_configuration) {}
-
     bool replace_query = false;
     String on_duplicate_clause;
 };
 
 struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StorageMongoDBConfiguration(const ExternalDataSourceConfiguration & common_configuration)
-        : ExternalDataSourceConfiguration(common_configuration) {}
-
     String collection;
     String options;
 };
@@ -66,7 +59,7 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
  * If there are key-value arguments apart from common: `host`, `port`, `username`, `password`, `database`,
  * i.e. storage-specific arguments, then return them back in a set: ExternalDataSource::EngineArgs.
  */
-std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
+std::optional<std::tuple<ExternalDataSourceConfiguration, EngineArgs>>
 getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
 
 ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
@@ -96,18 +89,17 @@ struct URLBasedDataSourceConfiguration
     String structure;
 
     std::vector<std::pair<String, Field>> headers;
+
+    void set(const URLBasedDataSourceConfiguration & conf);
 };
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    explicit StorageS3Configuration(const URLBasedDataSourceConfiguration & common_configuration)
-        : URLBasedDataSourceConfiguration(common_configuration) {}
-
     String access_key_id;
     String secret_access_key;
 };
 
-std::tuple<URLBasedDataSourceConfiguration, EngineArgs, bool>
+std::optional<std::tuple<URLBasedDataSourceConfiguration, EngineArgs>>
 getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
 
 }

@@ -237,12 +237,14 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 
 StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_)
 {
-    auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context_);
-    StorageMySQLConfiguration configuration(common_configuration);
+    StorageMySQLConfiguration configuration;
 
-    if (with_named_collection)
+    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context_))
     {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "replace_query")

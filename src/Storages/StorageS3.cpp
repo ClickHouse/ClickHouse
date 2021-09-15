@@ -735,11 +735,13 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
 
 StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
 {
-    auto [common_configuration, storage_specific_args, with_named_collection] = getURLBasedDataSourceConfiguration(engine_args, local_context);
-    StorageS3Configuration configuration(common_configuration);
+    StorageS3Configuration configuration;
 
-    if (with_named_collection)
+    if (auto named_collection = getURLBasedDataSourceConfiguration(engine_args, local_context))
     {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "access_key_id")
