@@ -52,7 +52,6 @@ class TableJoin
 
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
-    using Disjuncts = ASTs;
 
     /// Corresponds to one disjunct
     struct JoinOnClause
@@ -119,8 +118,6 @@ private:
 
     ASTs key_asts_left;
     ASTs key_asts_right;
-
-    Disjuncts disjuncts;
 
     Clauses clauses;
 
@@ -223,8 +220,8 @@ public:
 
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
-    void setDisjuncts(Disjuncts &&);
-    void addDisjunct(const ASTPtr &);
+    void newClauseIfPopulated();
+
     /// if several disjuncts have exactly the same table columns
     ///    we can eliminate redundant disjuncts ORing filter conditions
     ///    This is vital for queries like t1.key = t2.key AND (t1.a = 1 OR t2.bb > 2)
@@ -232,7 +229,7 @@ public:
     ///    because after DNFing it is (t1.key = t2.key AND t1.a = 1) OR (t1.key = t2.key AND t2.bb > 2)
     ///    and we unable to proceed with mergejoin and have to do deal with extra hashmap for hashjoin.
     ///    Practically we revert DNFing in this case.
-    void optimizeDisjuncts();
+    void optimizeClauses();
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     /* Conditions for left/right table from JOIN ON section.

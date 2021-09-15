@@ -1,6 +1,5 @@
 #include <Interpreters/TableJoin.h>
 
-
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Block.h>
@@ -23,6 +22,7 @@
 #include <Storages/StorageJoin.h>
 
 #include <common/logger_useful.h>
+#include <algorithm>
 
 
 namespace DB
@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -123,19 +124,13 @@ void TableJoin::addUsingKey(const ASTPtr & ast)
     addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast);
 }
 
-/// create new disjunct when see a direct child of a previously discovered OR
-void TableJoin::addDisjunct(const ASTPtr & ast)
+void TableJoin::newClauseIfPopulated()
 {
-    const IAST * addr = ast.get();
-
-    if (std::find_if(disjuncts.begin(), disjuncts.end(), [addr](const ASTPtr & ast_){return ast_.get() == addr;}) != disjuncts.end())
+    const auto & clause = clauses.back();
+    if (!clause.key_names_left.empty() || !clause.key_names_right.empty() ||
+        clause.on_filter_condition_left || clause.on_filter_condition_right)
     {
-        const auto & clause = clauses.back();
-        if (!clause.key_names_left.empty() || !clause.key_names_right.empty() ||
-            clause.on_filter_condition_left || clause.on_filter_condition_right)
-        {
-            clauses.emplace_back();
-        }
+        clauses.emplace_back();
     }
     if (getStorageJoin() && clauses.size() > 1)
         throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -149,11 +144,6 @@ bool operator==(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause
     return l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right;
 }
 
-bool operator!=(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
-{
-    return !(l == r);
-}
-
 TableJoin::JoinOnClause & operator+=(TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
 {
     for (auto & cp :
@@ -163,23 +153,33 @@ TableJoin::JoinOnClause & operator+=(TableJoin::JoinOnClause & l, const TableJoi
         if (*cp.first == nullptr)
             *cp.first = *cp.second;
         else if (const auto * func = (*cp.first)->as<ASTFunction>(); func && func->name == "or")
+        {
             /// already have `or` in condition, just add new argument
-            func->arguments->children.push_back(*cp.second);
+            if (*cp.second != nullptr)
+                func->arguments->children.push_back(*cp.second);
+        }
         else
+        {
             /// already have some conditions, unite it with `or`
-            *cp.first = makeASTFunction("or", *cp.first, *cp.second);
+            if (*cp.second != nullptr)
+                *cp.first = makeASTFunction("or", *cp.first, *cp.second);
+        }
     }
 
     return l;
 }
 }
 
-void TableJoin::optimizeDisjuncts()
+bool operator<(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+{
+    return l.key_names_left < r.key_names_left || (l.key_names_left == r.key_names_left && l.key_names_right < r.key_names_right);
+}
+
+void TableJoin::optimizeClauses()
 {
     if (clauses.size() > 1)
     {
-        std::sort(clauses.begin(), clauses.end(), [](const JoinOnClause & a, const JoinOnClause & b) {
-            return a.key_names_left < b.key_names_left || (a.key_names_left == b.key_names_left && a.key_names_left < b.key_names_left); });
+        std::sort(std::begin(clauses), std::end(clauses));
 
         auto to_it = clauses.begin();
         auto from_it = to_it + 1;
@@ -203,16 +203,10 @@ void TableJoin::optimizeDisjuncts()
         if (clauses.size() != new_size)
         {
             LOG_TRACE(
-                &Poco::Logger::get("TableJoin"), "optimizeDisjuncts trim clauses, new size is {}", new_size);
+                &Poco::Logger::get("TableJoin"), "optimizeClauses trim clauses, size {} => {}", clauses.size(), new_size);
             clauses.resize(new_size);
         }
     }
-}
-
-/// remember OR's children
-void TableJoin::setDisjuncts(Disjuncts&& disjuncts_)
-{
-    disjuncts = std::move(disjuncts_);
 }
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
