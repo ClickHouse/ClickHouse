@@ -810,7 +810,7 @@ If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
@@ -820,7 +820,7 @@ Default value: 2013265920.
 
 Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
@@ -830,7 +830,7 @@ Default value: `60` seconds.
 
 Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
