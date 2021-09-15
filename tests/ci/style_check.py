@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from github import Github
 from report import create_test_html_report
 import shutil
 import logging
@@ -6,6 +7,8 @@ import subprocess
 import os
 import csv
 from s3_helper import S3Helper
+
+NAME = "Style Check"
 
 
 def process_logs(s3_client, additional_logs, s3_path_prefix):
@@ -71,6 +74,7 @@ def upload_results(s3_client, pr_number, commit_sha, state, description, test_re
 
     url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
     logging.info("Search result in url %s", url)
+    return url
 
 
 def get_pr_url_from_ref(ref):
@@ -78,6 +82,12 @@ def get_pr_url_from_ref(ref):
         return ref.split("/")[2]
     except:
         return "master"
+
+def get_check(gh, commit_sha):
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
+    commit = repo.get_commit(commit_sha)
+    check = list(commit.get_check_runs(NAME))[0]
+    return check
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -88,6 +98,10 @@ if __name__ == "__main__":
     ref = os.getenv("GITHUB_REF", "")
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
+
+    gh = Github(os.getenv("GITHUB_TOKEN"))
+    check = get_check(gh, commit_sha)
+    check.edit(name="Test style check")
 
     docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
     if not aws_secret_key_id  or not aws_secret_key:
@@ -104,4 +118,5 @@ if __name__ == "__main__":
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
 
     state, description, test_results, additional_files = process_result(temp_path)
-    upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
+    report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
+    check.edit(details_url=report_url)
