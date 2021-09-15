@@ -218,8 +218,8 @@ public:
 #endif
     }
 
-    auto moveRowNumber(const RowNumber & _x, int offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {
