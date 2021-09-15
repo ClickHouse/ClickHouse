@@ -15,8 +15,6 @@
 namespace DB
 {
 
-static const auto CONNECT_SLEEP = 200;
-static const auto RETRIES_MAX = 20;
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
 
@@ -79,14 +77,6 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     writing_task->deactivate();
     connection.disconnect();
-
-    size_t cnt_retries = 0;
-    while (!connection.closed() && cnt_retries++ != RETRIES_MAX)
-    {
-        connection.getHandler().iterateLoop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
-    }
-
     assert(rows == 0);
 }
 
@@ -275,7 +265,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
-        else if ((!producer_channel->usable() && connection.isConnected()) || connection.reconnect())
+        else if (!producer_channel->usable())
             setupChannel();
     }
 
