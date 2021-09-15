@@ -637,40 +637,45 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
 ///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
 void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
 {
-    for (const auto & candidate : fuse_quantile)
+    for (auto & candidate : fuse_quantile)
     {
         String func_name = candidate.first;
-        GatherFunctionQuantileData::FuseQuantileAggregatesData args_to_functions = candidate.second;
+        auto & args_to_functions = candidate.second;
 
         // Try to fuse multiply `quantile*` Function to plural
         for (auto it : args_to_functions.arg_map_function)
         {
             std::vector<ASTPtr *> & functions = it.second;
-            size_t count = functions.size();
-            if (count > 1)
-            {
-                auto param_exp_list = std::make_shared<ASTExpressionList>();
-                for (auto * ast : functions)
-                {
-                    const ASTs & parameters = (*ast)->as<ASTFunction>()->parameters->as<ASTExpressionList &>().children;
-                    if (parameters.size() > 1)
-                        throw Exception("Aggregate function " + func_name + "require one parameter or less.", ErrorCodes::LOGICAL_ERROR);
-                    param_exp_list->children.push_back(parameters[0]);
-                }
-                auto func_base = makeASTFunction(quantile_fuse_name_mapping.find(func_name)->second, (*functions[0])->as<ASTFunction>()->arguments->children);
-                func_base->parameters = param_exp_list;
+            if (functions.size() < 2)
+                continue;
 
-                size_t idx = 0;
-                for (auto & ast : functions)
-                {
-                    auto ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(UInt64(++idx)));
-                    ast_new->setAlias((*ast)->tryGetAlias());
-                    *ast = ast_new;
-                }
+            const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
+            auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
+            func_base->arguments->children = common_arguments;
+            func_base->parameters = std::make_shared<ASTExpressionList>();
+
+            for (const auto * ast : functions)
+            {
+                assert(ast && *ast);
+                const auto * func = (*ast)->as<ASTFunction>();
+                assert(func && func->parameters->as<ASTExpressionList>());
+                const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+                if (parameters.size() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function '{}' requires one parameter", func_name);
+                func_base->parameters->children.push_back(parameters[0]);
+            }
+
+            for (size_t i = 0; i < functions.size(); ++i)
+            {
+                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
+                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
+                    ast_new->setAlias(alias);
+                *functions[i] = ast_new;
             }
         }
     }
 }
+
 void optimizeFuseQuantileFunctions(ASTPtr & query)
 {
     GatherFunctionQuantileVisitor::Data data{};
