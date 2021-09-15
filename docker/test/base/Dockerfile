@@ -1,7 +1,7 @@
-# docker build -t yandex/clickhouse-test-base .
+# docker build -t clickhouse/test-base .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 # shellcheck disable=SC2031
 # shellcheck disable=SC2030
