@@ -3488,4 +3488,4 @@ Possible values:
 
 Default value: `enable`.
 
-This is necessary to optimize the execution of complex expressions in these functions and to prevent possible exceptions (such as division by zero, when it is not expected).
+This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
