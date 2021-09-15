@@ -21,3 +21,14 @@ class PRInfo:
             self.user_orgs = set(org['id'] for org in response_json)
         else:
             self.user_orgs = set([])
+
+        print(self.get_dict())
+
+    def get_dict(self):
+        return {
+            'sha': self.sha,
+            'number': self.number,
+            'labels': self.labels,
+            'user_login': self.user_login,
+            'user_orgs': self.user_orgs,
+        }
