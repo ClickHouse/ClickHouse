@@ -177,9 +177,6 @@ if __name__ == "__main__":
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'docker_images_check')
     dockerhub_password = os.getenv('DOCKER_ROBOT_PASSWORD')
 
-    if os.path.exists(temp_path):
-        shutil.rmtree(temp_path)
-
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 

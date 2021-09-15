@@ -102,6 +102,9 @@ if __name__ == "__main__":
         event = json.load(event_file)
     pr_info = PRInfo(event)
 
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
+
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
 
@@ -123,12 +126,6 @@ if __name__ == "__main__":
         logging.info("No secrets, will not upload anything to S3")
 
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
-
-    if os.path.exists(temp_path):
-        shutil.rmtree(temp_path)
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
 
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
