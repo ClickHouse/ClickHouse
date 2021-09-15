@@ -115,7 +115,7 @@ if __name__ == "__main__":
     if os.path.exists(images_path):
         logging.info("Images file exists")
         with open(images_path, 'r') as images_fd:
-            images = json.loads(images_fd)
+            images = json.load(images_fd)
             logging.info("Got images %s", images)
             if 'clickhouse/style-check' in images:
                 docker_image += ':' + images['clickhouse/style-check']
