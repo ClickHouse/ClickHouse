@@ -18,7 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
-    ExecutablePoolSettings.cpp
+    ExecutableSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -28,7 +28,7 @@ SRCS(
     MemorySettings.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
-    MergeTree/BackgroundJobsExecutor.cpp
+    MergeTree/BackgroundJobsAssignee.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
     MergeTree/DropPartsRanges.cpp
@@ -41,6 +41,7 @@ SRCS(
     MergeTree/LevelMergeSelector.cpp
     MergeTree/MergeAlgorithm.cpp
     MergeTree/MergeList.cpp
+    MergeTree/MergeTreeBackgroundExecutor.cpp
     MergeTree/MergeTreeBaseSelectProcessor.cpp
     MergeTree/MergeTreeBlockReadUtils.cpp
     MergeTree/MergeTreeData.cpp
@@ -217,6 +218,7 @@ SRCS(
     System/StorageSystemWarnings.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
+    System/attachInformationSchemaTables.cpp
     System/attachSystemTables.cpp
     TTLDescription.cpp
     VirtualColumnUtils.cpp

@@ -423,7 +423,7 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const
 {
     RowNumber x = _x;
 
@@ -461,9 +461,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
-            // abs(offset) is less than INT_MAX, as checked in the parser, so
+            // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
-            assert(offset >= -INT_MAX);
+            assert(offset >= -INT64_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -493,7 +493,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
     return std::tuple{x, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
 {
     auto [x, o] = moveRowNumberNoCheck(_x, offset);
 
@@ -617,8 +617,8 @@ void WindowTransform::advanceFrameStart()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame start type '{}' for frame '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.begin_type),
-                        WindowFrame::toString(window_description.frame.type));
+                        window_description.frame.begin_type,
+                        window_description.frame.type);
             }
             break;
     }
@@ -849,7 +849,7 @@ void WindowTransform::advanceFrameEnd()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The frame end type '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.end_type));
+                        window_description.frame.end_type);
             }
             break;
     }
@@ -1614,17 +1614,13 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
                         transform->current_row.row].get<Int64>();
+
+            /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be nonnegative, {} given",
-                    getName(), offset);
-            }
-            if (offset > INT_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be less than {}, {} given",
-                    getName(), INT_MAX, offset);
+                    "The offset for function {} must be in (0, {}], {} given",
+                    getName(), INT64_MAX, offset);
             }
         }
 
@@ -1696,22 +1692,17 @@ struct WindowFunctionNthValue final : public WindowFunction
 
         int64_t offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>() - 1;
+            transform->current_row.row].get<Int64>();
 
-        if (offset < 0)
+        /// Either overflow or really negative value, both is not acceptable.
+        if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be non-negative, {} given",
-                getName(), offset);
+                "The offset for function {} must be in (0, {}], {} given",
+                getName(), INT64_MAX, offset);
         }
 
-        if (offset > INT_MAX)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be less than {}, {} given",
-                getName(), INT_MAX, offset);
-        }
-
+        --offset;
         const auto [target_row, offset_left] = transform->moveRowNumber(transform->frame_start, offset);
         if (offset_left != 0
             || target_row < transform->frame_start
