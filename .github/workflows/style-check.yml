@@ -11,7 +11,7 @@ jobs:
     runs-on: [self-hosted]
     steps:
       - name: Labels check
-        run: echo "Hello lables"
+        run: python3 run_check.py
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted]
