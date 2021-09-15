@@ -9,8 +9,9 @@ import csv
 from s3_helper import S3Helper
 import time
 import json
+from pr_info import PRInfo
 
-NAME = "Style-Check"
+NAME = "Style Check (actions)"
 
 
 def process_logs(s3_client, additional_logs, s3_path_prefix):
@@ -65,7 +66,7 @@ def upload_results(s3_client, pr_number, commit_sha, state, description, test_re
         branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
     commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
 
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{run_id}"
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
 
     raw_log_url = additional_urls[0]
     additional_urls.pop(0)
@@ -79,17 +80,10 @@ def upload_results(s3_client, pr_number, commit_sha, state, description, test_re
     return url
 
 
-def get_pr_url_from_ref(ref):
-    try:
-        return ref.split("/")[2]
-    except:
-        return "master"
-
-def get_parent_commit(gh, commit_sha):
+def get_commit(gh, commit_sha):
     repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
     commit = repo.get_commit(commit_sha)
-    parent = commit.parents[1]
-    return parent
+    return commit
 
 def update_check_with_curl(check_id):
     cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
@@ -105,9 +99,11 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
-    run_id = os.getenv("GITHUB_RUN_ID", 0)
-    commit_sha = os.getenv("GITHUB_SHA", 0)
-    ref = os.getenv("GITHUB_REF", "")
+
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
+    pr_info = PRInfo(event)
+
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
 
@@ -125,12 +121,9 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        print("Dumping event file")
-        print(json.load(event_file))
-
-    parent = get_parent_commit(gh, commit_sha)
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
-    report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), parent.sha, state, description, test_results, additional_files)
-    parent.create_status(context=NAME, description=description, state=state, target_url=report_url)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, state, description, test_results, additional_files)
+
+    commit = get_commit(gh, pr_info.sha)
+    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
