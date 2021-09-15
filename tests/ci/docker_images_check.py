@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
-    s3_path_prefix = str(pull_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
+    s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
     status, test_results = process_test_results(s3_client, images_processing_result, s3_path_prefix)
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
