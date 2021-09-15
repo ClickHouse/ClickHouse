@@ -251,7 +251,7 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
                 configuration.on_duplicate_clause = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected argument name for key-value defined argument."
+                        "Unexpected key-value argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, replace_query, on_duplicate_clause.", arg_name);
         }
@@ -293,7 +293,7 @@ void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getContext());
+        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext());
 
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
         if (args.storage_def->settings)

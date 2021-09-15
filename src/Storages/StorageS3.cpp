@@ -793,7 +793,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-        auto configuration = StorageS3::getConfiguration(engine_args, args.getContext());
+        auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.

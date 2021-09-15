@@ -136,8 +136,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     else if (engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL")
     {
         const ASTFunction * engine = engine_define->engine;
-        ASTs & engine_args = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+        ASTs & arguments = engine->arguments->children;
+        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(arguments, context, true);
         StorageMySQLConfiguration configuration(common_configuration);
 
         if (with_named_collection)
@@ -149,11 +151,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         }
         else
         {
-            if (!engine->arguments || engine->arguments->children.size() != 4)
+            if (arguments.size() != 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
-            ASTs & arguments = engine->arguments->children;
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
             const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
@@ -258,31 +259,34 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     else if (engine_name == "PostgreSQL")
     {
         const ASTFunction * engine = engine_define->engine;
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
         auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
         StoragePostgreSQLConfiguration configuration(common_configuration);
+        auto use_table_cache = false;
 
         if (with_named_collection)
         {
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             for (const auto & [arg_name, arg_value] : storage_specific_args)
             {
-                if (arg_name == "on_conflict")
-                    configuration.on_conflict = arg_value.safeGet<String>();
+                if (arg_name == "use_table_cache")
+                    use_table_cache = true;
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unexpected argument name for key-value defined argument."
+                            "Unexpected key-value argument."
                             "Got: {}, but expected one of:"
-                            "host, port, username, password, database, schema, on_conflict, use_table_cache.", arg_name);
+                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
             }
         }
         else
         {
-            if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 7)
+            if (engine_args.size() < 4 || engine_args.size() > 6)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
-                                "[, `schema` = "", `use_table_cache` = 0, on_conflict='ON CONFLICT TO NOTHING'");
+                                "[, `schema` = "", `use_table_cache` = 0");
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
@@ -299,7 +303,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
         }
 
-        auto use_table_cache = 0;
         if (engine_args.size() >= 6)
             use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
 
@@ -313,6 +316,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     else if (engine_name == "MaterializedPostgreSQL")
     {
         const ASTFunction * engine = engine_define->engine;
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
         auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
@@ -321,18 +326,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (with_named_collection)
         {
             if (!storage_specific_args.empty())
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
-            }
         }
         else
         {
-            if (!engine->arguments || engine->arguments->children.size() != 4)
-            {
+            if (engine_args.size() != 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
-            }
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
