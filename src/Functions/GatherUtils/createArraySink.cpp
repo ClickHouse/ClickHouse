@@ -18,7 +18,7 @@ struct ArraySinkCreator<Type, Types...>
 {
     static std::unique_ptr<IArraySink> create(IColumn & values, ColumnArray::Offsets & offsets, size_t column_size)
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
+        using ColVecType = ColumnVectorOrDecimal<Type>;
 
         IColumn * not_null_values = &values;
         bool is_nullable = false;

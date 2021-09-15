@@ -480,39 +480,16 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
-String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
-{
-    switch (state)
-    {
-        case State::Temporary:
-            return "Temporary";
-        case State::PreCommitted:
-            return "PreCommitted";
-        case State::Committed:
-            return "Committed";
-        case State::Outdated:
-            return "Outdated";
-        case State::Deleting:
-            return "Deleting";
-        case State::DeleteOnDestroy:
-            return "DeleteOnDestroy";
-    }
-
-    __builtin_unreachable();
-}
-
-String IMergeTreeDataPart::stateString() const
-{
-    return stateToString(state);
-}
-
 void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
 {
     if (!checkState(affordable_states))
     {
         String states_str;
         for (auto affordable_state : affordable_states)
-            states_str += stateToString(affordable_state) + " ";
+        {
+            states_str += stateString(affordable_state);
+            states_str += ' ';
+        }
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }

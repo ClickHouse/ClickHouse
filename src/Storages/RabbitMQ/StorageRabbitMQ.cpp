@@ -75,16 +75,16 @@ StorageRabbitMQ::StorageRabbitMQ(
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
-        , exchange_name(rabbitmq_settings->rabbitmq_exchange_name.value)
-        , format_name(rabbitmq_settings->rabbitmq_format.value)
-        , exchange_type(defineExchangeType(rabbitmq_settings->rabbitmq_exchange_type.value))
-        , routing_keys(parseSettings(rabbitmq_settings->rabbitmq_routing_key_list.value))
+        , exchange_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name))
+        , format_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_format))
+        , exchange_type(defineExchangeType(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_type)))
+        , routing_keys(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list)))
         , row_delimiter(rabbitmq_settings->rabbitmq_row_delimiter.value)
-        , schema_name(rabbitmq_settings->rabbitmq_schema.value)
+        , schema_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_schema))
         , num_consumers(rabbitmq_settings->rabbitmq_num_consumers.value)
         , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
-        , queue_base(rabbitmq_settings->rabbitmq_queue_base.value)
-        , queue_settings_list(parseSettings(rabbitmq_settings->rabbitmq_queue_settings_list.value))
+        , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
+        , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -94,16 +94,16 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(RESCHEDULE_MS)
 {
-    auto parsed_address = parseAddress(rabbitmq_settings->rabbitmq_host_port.value, 5672);
+    auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
     configuration =
     {
         .host = parsed_address.first,
         .port = parsed_address.second,
         .username = getContext()->getConfigRef().getString("rabbitmq.username"),
         .password = getContext()->getConfigRef().getString("rabbitmq.password"),
-        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value),
+        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
         .secure = rabbitmq_settings->rabbitmq_secure.value,
-        .connection_string = rabbitmq_settings->rabbitmq_address
+        .connection_string = getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_address)
     };
 
     if (configuration.secure)
