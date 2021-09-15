@@ -76,14 +76,14 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
     logging.info("Building docker image %s with version %s from path %s", image_name, version_string, path_to_dockerfile_folder)
     build_log = None
     push_log = None
-    with open('build_log_' + str(image_name) + "_" + version_string, 'w') as pl:
+    with open('build_log_' + str(image_name).replace('/', '_') + "_" + version_string, 'w') as pl:
         cmd = "docker build --network=host -t {im}:{ver} {path}".format(im=image_name, ver=version_string, path=path_to_dockerfile_folder)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
         build_log = str(c.name)
         if retcode != 0:
             return False, build_log, None
 
-    with open('tag_log_' + str(image_name) + "_" + version_string, 'w') as pl:
+    with open('tag_log_' + str(image_name).replace('/', '_') + "_" + version_string, 'w') as pl:
         cmd = "docker build --network=host -t {im} {path}".format(im=image_name, path=path_to_dockerfile_folder)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
         build_log = str(pl.name)
@@ -92,7 +92,7 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
 
     logging.info("Pushing image %s to dockerhub", image_name)
 
-    with open('push_log_' + str(image_name) + "_" + version_string, 'w') as pl:
+    with open('push_log_' + str(image_name).replace('/', '_') + "_" + version_string, 'w') as pl:
         cmd = "docker push {im}:{ver}".format(im=image_name, ver=version_string)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
         push_log = str(pl.stdout.path)
