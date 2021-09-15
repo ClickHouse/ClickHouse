@@ -135,10 +135,11 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 
                 String offsets_name = Nested::extractTableName(name);
                 auto offset_it = offset_columns.find(offsets_name);
-                if (offset_it != offset_columns.end())
+                const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+                if (offset_it != offset_columns.end() && array_type)
                 {
+                    const auto & nested_type = array_type->getNestedType();
                     ColumnPtr offsets_column = offset_it->second;
-                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
                     size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
                     ColumnPtr nested_column =

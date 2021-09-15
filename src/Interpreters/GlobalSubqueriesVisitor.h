@@ -164,7 +164,7 @@ public:
                     return table_out;
                 });
                 auto executor = io.pipeline.execute();
-                executor->execute(io.pipeline.getNumStreams());
+                executor->execute(io.pipeline.getNumThreads());
             }
             else
             {
