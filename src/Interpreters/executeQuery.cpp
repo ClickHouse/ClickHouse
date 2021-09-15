@@ -352,6 +352,22 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
+static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
+{
+    const ASTs & children = select_with_union.list_of_selects->children;
+    if (children.empty())
+        return;
+
+    // We might have an arbitrarily complex UNION tree, so just give
+    // up if the last first-order child is not a plain SELECT.
+    // It is flattened later, when we process UNION ALL/DISTINCT.
+    const auto * last_select = children.back()->as<ASTSelectQuery>();
+    if (last_select && last_select->settings())
+    {
+        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+    }
+}
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -408,17 +424,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
         {
-            if (!select_with_union_query->list_of_selects->children.empty())
-            {
-                // We might have an arbitrarily complex UNION tree, so just give
-                // up if the last first-order child is not a plain SELECT.
-                // It is flattened later, when we process UNION ALL/DISTINCT.
-                const auto * last_select = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-                }
-            }
+            applySettingsFromSelectWithUnion(*select_with_union_query, context);
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
         {
@@ -430,6 +436,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             query_database = query_with_table_output->database;
             query_table = query_with_table_output->table;
+        }
+
+        if (auto * create_query = ast->as<ASTCreateQuery>())
+        {
+            if (create_query->select)
+            {
+                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
+            }
         }
 
         auto * insert_query = ast->as<ASTInsertQuery>();

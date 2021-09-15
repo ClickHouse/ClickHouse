@@ -16,12 +16,10 @@ public:
 
     BlockIO execute() override;
 
-    static Block getSampleBlock();
+    static Block getSampleBlock(bool include_subcolumns);
 
 private:
     ASTPtr query_ptr;
-
-    BlockInputStreamPtr executeImpl();
 };
 
 
