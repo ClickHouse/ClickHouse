@@ -378,7 +378,7 @@ end:
         {
             if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
             {
-                if (common::mulOverflow<UnsignedT, int, T>(res, -1, x))
+                if (common::mulOverflow<UnsignedT, Int8, T>(res, -1, x))
                     return ReturnType(false);
             }
             else
