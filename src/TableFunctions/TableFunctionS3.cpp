@@ -38,11 +38,13 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = args_func.at(0)->children;
-    auto [common_configuration, storage_specific_args, with_named_collection] = getURLBasedDataSourceConfiguration(args, context);
-    StorageS3Configuration configuration(common_configuration);
+    StorageS3Configuration configuration;
 
-    if (with_named_collection)
+    if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
     {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "access_key_id")

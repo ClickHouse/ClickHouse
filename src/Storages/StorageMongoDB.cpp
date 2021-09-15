@@ -106,11 +106,12 @@ Pipe StorageMongoDB::read(
 
 StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context);
-    StorageMongoDBConfiguration configuration(common_configuration);
-
-    if (with_named_collection)
+    StorageMongoDBConfiguration configuration;
+    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "collection")

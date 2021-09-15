@@ -24,11 +24,13 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
         throw Exception("Table function 'URL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
-    auto [common_configuration, storage_specific_args, with_named_collection] = getURLBasedDataSourceConfiguration(func_args.arguments->children, context);
-    URLBasedDataSourceConfiguration configuration(common_configuration);
 
-    if (with_named_collection)
+    URLBasedDataSourceConfiguration configuration;
+    if (auto with_named_collection = getURLBasedDataSourceConfiguration(func_args.arguments->children, context))
     {
+        auto [common_configuration, storage_specific_args] = with_named_collection.value();
+        configuration.set(common_configuration);
+
         if (!storage_specific_args.empty())
         {
             String illegal_args;

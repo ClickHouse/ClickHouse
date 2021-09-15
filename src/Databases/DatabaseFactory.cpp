@@ -138,13 +138,17 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
-        ASTs & arguments = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(arguments, context, true);
-        StorageMySQLConfiguration configuration(common_configuration);
 
-        if (with_named_collection)
+        StorageMySQLConfiguration configuration;
+        ASTs & arguments = engine->arguments->children;
+
+        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true))
         {
+            auto [common_configuration, storage_specific_args] = named_collection.value();
+
+            configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+
             if (!storage_specific_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
@@ -155,8 +159,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
-            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
+            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
             const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
 
             if (engine_name == "MySQL")
@@ -263,13 +267,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
-        StoragePostgreSQLConfiguration configuration(common_configuration);
         auto use_table_cache = false;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (with_named_collection)
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
+            auto [common_configuration, storage_specific_args] = named_collection.value();
+
+            configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+
             for (const auto & [arg_name, arg_value] : storage_specific_args)
             {
                 if (arg_name == "use_table_cache")
@@ -320,11 +327,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
-        StoragePostgreSQLConfiguration configuration(common_configuration);
+        StoragePostgreSQLConfiguration configuration;
 
-        if (with_named_collection)
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
+            auto [common_configuration, storage_specific_args] = named_collection.value();
+            configuration.set(common_configuration);
+
             if (!storage_specific_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
