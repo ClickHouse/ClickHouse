@@ -10,7 +10,7 @@
 
 namespace DB
 {
-
+static constexpr size_t max_array_size_as_field = 1000000;
 /** A column of array values.
   * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
   *  and as an array of offsets in it, which allows you to get each element.

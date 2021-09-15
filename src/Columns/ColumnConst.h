@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -253,7 +254,22 @@ public:
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
 
-    Field getField() const { return getDataColumn()[0]; }
+    Field getField() const 
+    { 
+        auto & col = getDataColumn();
+        auto * array_col = typeid_cast<ColumnArray *>(const_cast<IColumn*>(&col));
+        //if it can successfully down-convert to ColumnArray 
+        if (array_col)
+        {
+            auto field_size = array_col->getOffsets()[0];
+            if (field_size > max_array_size_as_field)
+            {
+                Field zero = 0;
+                return zero;
+            }
+        }
+        return col[0];
+    }
 
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
