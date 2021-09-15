@@ -8,6 +8,7 @@ import os
 import csv
 from s3_helper import S3Helper
 import time
+import json
 
 NAME = "Style-Check"
 
@@ -123,6 +124,10 @@ if __name__ == "__main__":
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
+
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        print("Dumping event file")
+        print(json.load(event_file))
 
     parent = get_parent_commit(gh, commit_sha)
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
