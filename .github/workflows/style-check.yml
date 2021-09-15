@@ -45,7 +45,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/style_check/changed_images.json
+          path: ${{ runner.temp }}/style_check
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
