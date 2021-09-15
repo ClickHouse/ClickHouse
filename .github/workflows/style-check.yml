@@ -10,6 +10,8 @@ jobs:
   CheckLabels:
     runs-on: [self-hosted]
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
       - name: Labels check
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
   DockerHubPush:
