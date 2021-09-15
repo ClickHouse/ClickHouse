@@ -47,12 +47,17 @@ public:
         const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
+        ASTs disjuncts{};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
                              const ASOF::Inequality & asof_inequality);
-        void setDisjuncts(const ASTPtr & or_func_ast);
         void asofToJoinKeys();
+
+        /// remember OR's children
+        void setDisjuncts(const ASTPtr & or_func_ast);
+        /// create new disjunct when see a direct child of a previously discovered OR
+        void addDisjunct(const ASTPtr & ast);
         void optimize();
     };
 
