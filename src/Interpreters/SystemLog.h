@@ -489,7 +489,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        PushingPipelineExecutor executor(io.out);
+        PushingPipelineExecutor executor(io.pipeline);
 
         executor.start();
         executor.push(block);

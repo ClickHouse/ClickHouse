@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -73,7 +73,7 @@ namespace
 BlockIO InterpreterExplainQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
@@ -240,7 +240,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 }
 
-BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
+QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
 
@@ -335,17 +335,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         {
             InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
             auto io = insert.execute();
-            if (io.pipeline.initialized())
-            {
-                auto pipe = QueryPipelineBuilder::getPipe(std::move(io.pipeline));
-                const auto & processors = pipe.getProcessors();
-                printPipeline(processors, buf);
-            }
-            else
-            {
-                const auto & processors = io.out.getProcessors();
-                printPipeline(processors, buf);
-            }
+            printPipeline(io.pipeline.getProcessors(), buf);
         }
         else
             throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
@@ -377,7 +367,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
 }
 
 }

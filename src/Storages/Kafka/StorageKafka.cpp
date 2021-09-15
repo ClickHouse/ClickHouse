@@ -617,7 +617,7 @@ bool StorageKafka::streamToViews()
     streams.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out.getInputHeader().getNames(), log, block_size, false);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -642,7 +642,7 @@ bool StorageKafka::streamToViews()
     // It will be cancelled on underlying layer (kafka buffer)
 
     size_t rows = 0;
-    PushingPipelineExecutor executor(block_io.out);
+    PushingPipelineExecutor executor(block_io.pipeline);
 
     in->readPrefix();
     executor.start();

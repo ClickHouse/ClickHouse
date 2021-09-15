@@ -1,5 +1,5 @@
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataStreams/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
@@ -60,7 +60,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
 }
 
 
-BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
+QueryPipeline InterpreterDescribeQuery::executeImpl()
 {
     ColumnsDescription columns;
 
@@ -119,7 +119,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             res_columns[6]->insertDefault();
     }
 
-    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
 }
 
 }

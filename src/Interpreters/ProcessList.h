@@ -105,11 +105,6 @@ protected:
 
     mutable std::mutex query_streams_mutex;
 
-    /// Streams with query results, point to BlockIO from executeQuery()
-    /// This declaration is compatible with notes about BlockIO::process_list_entry:
-    ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
-    BlockInputStreamPtr query_stream_in;
-
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
     std::vector<PipelineExecutor *> executors;
 
@@ -180,9 +175,6 @@ public:
 
     /// It means that ProcessListEntry still exists, but stream was already destroyed
     bool streamsAreReleased();
-
-    /// Get query in/out pointers from BlockIO
-    bool tryGetQueryStreams(BlockInputStreamPtr & in) const;
 
     CancellationCode cancelQuery(bool kill);
 

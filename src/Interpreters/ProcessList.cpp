@@ -332,17 +332,6 @@ bool QueryStatus::streamsAreReleased()
     return query_streams_status == QueryStreamsStatus::Released;
 }
 
-bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in) const
-{
-    std::lock_guard lock(query_streams_mutex);
-
-    if (query_streams_status != QueryStreamsStatus::Initialized)
-        return false;
-
-    in = query_stream_in;
-    return true;
-}
-
 CancellationCode QueryStatus::cancelQuery(bool kill)
 {
     /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit

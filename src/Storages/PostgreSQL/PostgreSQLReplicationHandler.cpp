@@ -1,8 +1,8 @@
 #include "PostgreSQLReplicationHandler.h"
 
 #include <DataStreams/PostgreSQLSource.h>
-#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -239,29 +239,21 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
 
-    auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = nested_storage->getStorageID();
-
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(insert, insert_context);
-    auto block_io = interpreter.execute();
+    InterpreterInsertQuery interpreter(nullptr, insert_context);
+    auto chain = interpreter.buildChain(nested_storage, nested_storage->getInMemoryMetadataPtr(), {});
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
     auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
-    QueryPipelineBuilder pipeline;
-    pipeline.init(Pipe(std::move(input)));
-    assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out.getInputHeader(), "postgresql replica load from snapshot");
-    pipeline.addChain(std::move(block_io.out));
-    pipeline.setSinks([&](const Block & header, Pipe::StreamType)
-    {
-        return std::make_shared<ExceptionHandlingSink>(header);
-    });
+    assertBlocksHaveEqualStructure(input->getPort().getHeader(), chain.getInputHeader(), "postgresql replica load from snapshot");
+    QueryPipeline pipeline(std::move(chain));
+    pipeline.complete(Pipe(std::move(input)));
 
-    auto executor = pipeline.execute();
-    executor->execute(1);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
 
     nested_storage = materialized_storage->prepare();
     auto nested_table_id = nested_storage->getStorageID();

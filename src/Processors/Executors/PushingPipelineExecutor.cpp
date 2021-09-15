@@ -1,8 +1,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/Chain.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/QueryPipeline.h>
 #include <iostream>
 
 
@@ -52,19 +51,14 @@ private:
 };
 
 
-PushingPipelineExecutor::PushingPipelineExecutor(Chain & chain_) : chain(chain_)
+PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    pushing_source = std::make_shared<PushingSource>(chain.getInputHeader(), need_data_flag);
-    auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputHeader());
-    connect(pushing_source->getPort(), chain.getInputPort());
-    connect(chain.getOutputPort(), sink->getPort());
+    if (!pipeline.pushing())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    processors = std::make_unique<Processors>();
-    processors->reserve(chain.getProcessors().size() + 2);
-    for (const auto & processor : chain.getProcessors())
-        processors->push_back(processor);
-    processors->push_back(pushing_source);
-    processors->push_back(std::move(sink));
+    pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), need_data_flag);
+    connect(pushing_source->getPort(), *pipeline.input);
+    pipeline.processors.emplace_back(pushing_source);
 }
 
 PushingPipelineExecutor::~PushingPipelineExecutor()
@@ -91,7 +85,7 @@ void PushingPipelineExecutor::start()
         return;
 
     started = true;
-    executor = std::make_shared<PipelineExecutor>(*processors);
+    executor = std::make_shared<PipelineExecutor>(pipeline.processors);
 
     if (!executor->executeStep(&need_data_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR,

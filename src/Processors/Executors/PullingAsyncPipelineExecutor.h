@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class QueryPipelineBuilder;
+class QueryPipeline;
 class Block;
 class Chunk;
 class LazyOutputFormat;
@@ -20,7 +20,7 @@ struct BlockStreamProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipelineBuilder & pipeline_);
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -50,7 +50,7 @@ public:
     struct Data;
 
 private:
-    QueryPipelineBuilder & pipeline;
+    QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;
 };
