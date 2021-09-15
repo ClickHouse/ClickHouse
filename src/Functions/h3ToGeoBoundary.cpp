@@ -16,9 +16,9 @@
 #include <h3api.h>
 
 
-namespace DB 
+namespace DB
 {
-namespace ErrorCodes 
+namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
@@ -29,16 +29,17 @@ class FunctionH3ToGeoBoundary : public IFunction
 public:
     static constexpr auto name = "h3ToGeoBoundary";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeoBoundary>(); }    
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeoBoundary>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; } 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }    
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arg = arguments[0];
-        if(!isUInt64(arg)) {
+        if (!isUInt64(arg))
+        {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
@@ -47,12 +48,10 @@ public:
 
         return std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}
-            )
-        );
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override 
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = arguments[0].column.get();
 
@@ -62,7 +61,7 @@ public:
         offsets->reserve(input_rows_count);
         IColumn::Offset current_offset = 0;
 
-        for (size_t row = 0; row < input_rows_count; ++row) 
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             H3Index h3index = col_hindex->getUInt(row);
             CellBoundary boundary{};
@@ -70,8 +69,8 @@ public:
             auto err = cellToBoundary(h3index, &boundary);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
-            
-            for (int vert = 0; vert < boundary.numVerts; ++vert) 
+
+            for (int vert = 0; vert < boundary.numVerts; ++vert)
             {
                 latitude->insert(radsToDegs(boundary.verts[vert].lat));
                 longitude->insert(radsToDegs(boundary.verts[vert].lng));
@@ -83,8 +82,7 @@ public:
 
         return ColumnArray::create(
             ColumnTuple::create(Columns{std::move(latitude), std::move(longitude)}),
-            std::move(offsets)
-        );
+            std::move(offsets));
     }
 };
 
@@ -92,7 +90,6 @@ void registerFunctionH3ToGeoBoundary(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3ToGeoBoundary>();
 }
-
 
 }
 
