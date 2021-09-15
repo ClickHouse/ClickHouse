@@ -144,6 +144,7 @@ private:
     void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipelineBuilder;
+    friend class QueryPipeline;
 };
 
 }

@@ -10,22 +10,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BlockInputStreamPtr BlockIO::getInputStream()
-{
-    if (!out.empty())
-        throw Exception("Cannot get input stream from BlockIO because output stream is not empty",
-                        ErrorCodes::LOGICAL_ERROR);
-
-    if (in)
-        return in;
-
-    if (pipeline.initialized())
-        return std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
-
-    throw Exception("Cannot get input stream from BlockIO because query pipeline was not initialized",
-                    ErrorCodes::LOGICAL_ERROR);
-}
-
 void BlockIO::reset()
 {
     /** process_list_entry should be destroyed after in, after out and after pipeline,
@@ -38,8 +22,6 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    out.reset();
-    in.reset();
     if (process_list_entry)
         process_list_entry->get().releaseQueryStreams();
     pipeline.reset();
@@ -57,8 +39,6 @@ BlockIO & BlockIO::operator= (BlockIO && rhs)
     reset();
 
     process_list_entry      = std::move(rhs.process_list_entry);
-    in                      = std::move(rhs.in);
-    out                     = std::move(rhs.out);
     pipeline                = std::move(rhs.pipeline);
 
     finish_callback         = std::move(rhs.finish_callback);

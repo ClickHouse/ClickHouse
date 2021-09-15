@@ -85,7 +85,7 @@ BlockIO InterpreterWatchQuery::execute()
         pipe.setQuota(getContext()->getQuota());
     }
 
-    res.pipeline.init(std::move(pipe));
+    res.pipeline = QueryPipeline(std::move(pipe));
 
     return res;
 }

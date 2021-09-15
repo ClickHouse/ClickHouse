@@ -27,7 +27,7 @@ public:
     bool ignoreLimits() const override { return true; }
 
 private:
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
     ASTs getGrantQueries() const;
     std::vector<AccessEntityPtr> getEntities() const;
 

@@ -1,7 +1,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/Chain.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <iostream>
 
@@ -127,19 +127,14 @@ static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGrou
 }
 
 
-PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(Chain & chain_) : chain(chain_)
+PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    pushing_source = std::make_shared<PushingAsyncSource>(chain.getInputHeader());
-    auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputHeader());
-    connect(pushing_source->getPort(), chain.getInputPort());
-    connect(chain.getOutputPort(), sink->getPort());
+    if (!pipeline.pushing())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    processors = std::make_unique<Processors>();
-    processors->reserve(chain.getProcessors().size() + 2);
-    for (const auto & processor : chain.getProcessors())
-        processors->push_back(processor);
-    processors->push_back(pushing_source);
-    processors->push_back(std::move(sink));
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
+    connect(pushing_source->getPort(), *pipeline.input);
+    pipeline.processors.emplace_back(pushing_source);
 }
 
 PushingAsyncPipelineExecutor::~PushingAsyncPipelineExecutor()
@@ -168,12 +163,12 @@ void PushingAsyncPipelineExecutor::start()
     started = true;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(*processors);
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors);
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
     {
-        threadFunction(*data, thread_group, chain.getNumThreads());
+        threadFunction(*data, thread_group, pipeline.getNumThreads());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));

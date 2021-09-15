@@ -2034,8 +2034,7 @@ private:
             });
         }
 
-        QueryPipelineBuilder pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;

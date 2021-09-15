@@ -4,6 +4,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
@@ -155,6 +156,7 @@ public:
 
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
+    static QueryPipeline getPipeline(QueryPipelineBuilder builder);
 
 private:
 

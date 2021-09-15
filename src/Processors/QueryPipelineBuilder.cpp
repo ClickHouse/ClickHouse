@@ -538,6 +538,13 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
+QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
+{
+    QueryPipeline res(std::move(builder.pipe));
+    res.setNumThreads(builder.getNumThreads());
+    return res;
+}
+
 void QueryPipelineBuilder::setCollectedProcessors(Processors * processors)
 {
     pipe.collected_processors = processors;
