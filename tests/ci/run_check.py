@@ -108,7 +108,7 @@ if __name__ == "__main__":
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
         event = json.load(event_file)
 
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(event, need_orgs=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(os.getenv("GITHUB_TOKEN"))
     commit = get_commit(gh, pr_info.sha)
