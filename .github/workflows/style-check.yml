@@ -7,7 +7,21 @@ on: # yamllint disable-line rule:truthy
     branches:
       - master
 jobs:
+  CheckLabels:
+    runs-on: [self-hosted]
+    steps:
+      - name: Labels check
+        run: echo "Hello lables"
+  DockerHubPush:
+    needs: CheckLabels
+    runs-on: [self-hosted]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: echo "Hello world"
   Style-Check:
+    needs: DockerHubPush
     runs-on: [self-hosted]
     steps:
       - name: Check out repository code
