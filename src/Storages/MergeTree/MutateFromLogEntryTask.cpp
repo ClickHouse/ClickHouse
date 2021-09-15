@@ -13,7 +13,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-bool MutateFromLogEntryTask::prepare()
+std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = storage.getSettings();
@@ -23,7 +23,7 @@ bool MutateFromLogEntryTask::prepare()
     if (!source_part)
     {
         LOG_DEBUG(log, "Source part {} for {} is not ready; will try to fetch it instead", source_part_name, entry.new_part_name);
-        return false;
+        return {false, {}};
     }
 
     if (source_part->name != source_part_name)
@@ -31,7 +31,7 @@ bool MutateFromLogEntryTask::prepare()
         LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
                     + " but should be mutated to " + entry.new_part_name + ". "
                     + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
-        return false;
+        return {false, {}};
     }
 
     /// TODO - some better heuristic?
@@ -46,7 +46,7 @@ bool MutateFromLogEntryTask::prepare()
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-            return false;
+            return {false, {}};
         }
     }
 
@@ -75,22 +75,20 @@ bool MutateFromLogEntryTask::prepare()
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    write_part_log = [this] (const ExecutionStatus & execution_status)
-    {
-        storage.writePartLog(
-            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get());
-    };
-
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
 
-    return true;
+    return {true, [this] (const ExecutionStatus & execution_status)
+    {
+        storage.writePartLog(
+            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get());
+    }};
 }
 
 
-bool MutateFromLogEntryTask::finalize()
+bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
 

@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-bool MergeFromLogEntryTask::prepare()
+std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
@@ -30,7 +30,7 @@ bool MergeFromLogEntryTask::prepare()
     if (storage_settings_ptr->always_fetch_merged_part)
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry.new_part_name);
-        return false;
+        return {false, {}};
     }
 
     if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
@@ -40,7 +40,7 @@ bool MergeFromLogEntryTask::prepare()
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
             DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
-        return false;
+        return {false, {}};
     }
 
     /// In some use cases merging can be more expensive than fetching
@@ -60,7 +60,7 @@ bool MergeFromLogEntryTask::prepare()
                 "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
                 entry.new_part_name, replica_to_execute_merge.value());
 
-            return false;
+            return {false, {}};
         }
     }
 
@@ -73,7 +73,7 @@ bool MergeFromLogEntryTask::prepare()
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
             LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
-            return false;
+            return {false, {}};
         }
 
         if (source_part_or_covering->name != source_part_name)
@@ -87,7 +87,7 @@ bool MergeFromLogEntryTask::prepare()
             LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            return false;
+            return {false, {}};
         }
 
         parts.push_back(source_part_or_covering);
@@ -110,7 +110,7 @@ bool MergeFromLogEntryTask::prepare()
             if (!replica.empty())
             {
                 LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-                return false;
+                return {false, {}};
             }
         }
     }
@@ -172,7 +172,7 @@ bool MergeFromLogEntryTask::prepare()
                     LOG_DEBUG(log,
                         "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
                         entry.new_part_name, replica_to_execute_merge.value());
-                    return false;
+                    return {false, {}};
                 }
             }
         }
@@ -190,13 +190,6 @@ bool MergeFromLogEntryTask::prepare()
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    write_part_log = [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
-    {
-        storage.writePartLog(
-            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get());
-    };
-
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
@@ -209,11 +202,16 @@ bool MergeFromLogEntryTask::prepare()
             entry.deduplicate_by_columns,
             storage.merging_params);
 
-    return true;
+    return {true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
+    {
+        storage.writePartLog(
+            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
+            entry.new_part_name, part, parts, merge_mutate_entry.get());
+    }};
 }
 
 
-bool MergeFromLogEntryTask::finalize()
+bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
 

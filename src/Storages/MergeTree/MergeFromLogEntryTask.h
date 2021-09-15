@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -21,8 +22,8 @@ public:
 
 protected:
     /// Both return false if we can't execute merge.
-    bool prepare() override;
-    bool finalize() override;
+    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
     {

@@ -21,8 +21,8 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID()
 
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
-    bool delay = state == State::SUCCESS;
-    task_result_callback(delay);
+    bool successfully_executed = state == State::SUCCESS;
+    task_result_callback(successfully_executed);
 }
 
 
@@ -123,21 +123,48 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
     if (merge_mutate_entry)
         switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_mutate_entry)->memory_tracker);
 
+    auto remove_processed_entry = [&] () -> bool
+    {
+        try
+        {
+            storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
+            state = State::SUCCESS;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        return false;
+    };
+
+
+    auto execute_fetch = [&] () -> bool
+    {
+        if (storage.executeFetch(entry))
+            return remove_processed_entry();
+
+        return false;
+    };
+
+
     switch (state)
     {
         case State::NEED_PREPARE :
         {
-            prepareCommon();
-
-            /// Depending on condition there is no need to execute a merge
-            if (state == State::SUCCESS)
-                return true;
-
-            if (!prepare())
             {
-                state = State::CANT_MERGE_NEED_FETCH;
-                return true;
+                auto res = checkExistingPart();
+                /// Depending on condition there is no need to execute a merge
+                if (res == CheckExistingPartResult::PART_EXISTS)
+                    return remove_processed_entry();
             }
+
+            bool res = false;
+            std::tie(res, write_part_log) = prepare();
+
+            /// Avoid resheduling, execute fetch here, in the same thread.
+            if (!res)
+                return execute_fetch();
 
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
@@ -148,59 +175,45 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             {
                 if (!executeInnerTask())
                 {
-                    state = State::NEED_COMMIT;
+                    state = State::NEED_FINALIZE;
                     return true;
                 }
             }
             catch (...)
             {
-                /// Maybe part is nullptr here?
-                write_part_log(ExecutionStatus::fromCurrentException());
+                if (write_part_log)
+                    write_part_log(ExecutionStatus::fromCurrentException());
                 throw;
             }
 
             return true;
         }
-        case State::NEED_COMMIT :
+        case State::NEED_FINALIZE :
         {
             try
             {
-                if (!finalize())
-                {
-                    state = State::CANT_MERGE_NEED_FETCH;
-                    return true;
-                }
+                if (!finalize(write_part_log))
+                    return execute_fetch();
             }
             catch (...)
             {
-                write_part_log(ExecutionStatus::fromCurrentException());
+                if (write_part_log)
+                    write_part_log(ExecutionStatus::fromCurrentException());
                 throw;
             }
 
-            state = State::SUCCESS;
-            return true;
-        }
-        case State::CANT_MERGE_NEED_FETCH :
-        {
-            if (storage.executeFetch(entry))
-            {
-                state = State::SUCCESS;
-                return true;
-            }
-
-            return false;
+            return remove_processed_entry();
         }
         case State::SUCCESS :
         {
-            storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
-            return false;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Do not call execute on previously succeeded task");
         }
     }
     return false;
 }
 
 
-void ReplicatedMergeMutateTaskBase::prepareCommon()
+ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTaskBase::checkExistingPart()
 {
     /// If we already have this part or a part covering it, we do not need to do anything.
     /// The part may be still in the PreCommitted -> Committed transition so we first search
@@ -215,10 +228,12 @@ void ReplicatedMergeMutateTaskBase::prepareCommon()
     {
         LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 
-
-        /// We have to exit from all the execution process
-        state = State::SUCCESS;
+        /// We will exit from all the execution process
+        return CheckExistingPartResult::PART_EXISTS;
     }
+
+
+    return CheckExistingPartResult::OK;
 }
 
 

@@ -111,6 +111,9 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
         if (item->is_currently_deleting)
         {
             erase_from_active();
+
+            /// This is significant to order the destructors.
+            item->task.reset();
             return;
         }
 

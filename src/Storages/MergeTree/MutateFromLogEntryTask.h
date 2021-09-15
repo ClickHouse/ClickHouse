@@ -14,7 +14,6 @@ namespace DB
 class MutateFromLogEntryTask : public shared_ptr_helper<MutateFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
 {
 public:
-
     template <typename Callback>
     MutateFromLogEntryTask(
         ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
@@ -22,16 +21,14 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
-
 private:
-    bool prepare() override;
+    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
     {
         return mutate_task->execute();
     }
-
-    bool finalize() override;
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};
