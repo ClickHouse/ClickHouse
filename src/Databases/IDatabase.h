@@ -282,7 +282,7 @@ public:
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 
-    virtual void applyNewSettings(const SettingsChanges &, ContextPtr)
+    virtual void applySettingsChanges(const SettingsChanges &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Database engine {} either does not support settings, or does not support altering settings",

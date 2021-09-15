@@ -61,7 +61,7 @@ public:
 
     void stopReplication();
 
-    void applyNewSettings(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     void shutdown() override;
 
