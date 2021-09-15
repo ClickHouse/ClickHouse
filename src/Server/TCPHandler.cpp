@@ -675,10 +675,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
+                sendProfileEvents();
             }
 
             sendLogs();
-            sendProfileEvents();
 
             if (block)
             {
@@ -701,7 +701,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
-            // sendProfileEvents();
+            sendProfileEvents();
         }
 
         if (state.is_connection_closed)
