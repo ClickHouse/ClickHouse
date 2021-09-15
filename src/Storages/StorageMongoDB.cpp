@@ -119,7 +119,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
                 configuration.options = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected argument name for key-value defined argument."
+                        "Unexpected key-value argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, options.", arg_name);
         }
@@ -157,7 +157,7 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getContext());
+        auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
         return StorageMongoDB::create(
             args.table_id,
