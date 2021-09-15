@@ -110,12 +110,11 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(event)
     can_run, description = should_run_checks_for_pr(pr_info)
+    gh = Github(os.getenv("GITHUB_TOKEN"))
+    commit = get_commit(gh, pr_info.sha)
+    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if not can_run:
-        task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-        print("Commit sha", pr_info.sha)
-        print("PR number", pr_info.number)
-        gh = Github(os.getenv("GITHUB_TOKEN"))
-        commit = get_commit(gh, pr_info.sha)
-        url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)
         sys.exit(1)
+    else:
+        commit.create_status(context=NAME, description=description, state="pending", target_url=url)
