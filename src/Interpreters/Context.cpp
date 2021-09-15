@@ -191,7 +191,7 @@ struct ContextSharedPart
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
-    scope_guard user_defined_functions_xmls;
+    scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -345,6 +345,7 @@ struct ContextSharedPart
             /// But they cannot be created before storages since they may required table as a source,
             /// but at least they can be preserved for storage termination.
             dictionaries_xmls.reset();
+            user_defined_executable_functions_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
             embedded_dictionaries.reset();
@@ -1410,14 +1411,9 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
 
 void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
-    // if (!config.getBool("dictionaries_lazy_load", true))
-    // {
-    //     tryCreateEmbeddedDictionaries();
-    //     getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-    // }
     getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
-    auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config");
-    shared->user_defined_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(std::move(config_repository));
+    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
 }
 
 #if USE_NLP
