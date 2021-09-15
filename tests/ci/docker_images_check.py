@@ -166,6 +166,11 @@ def upload_results(s3_client, pr_number, commit_sha, test_results):
     logging.info("Search result in url %s", url)
     return url
 
+def get_commit(gh, commit_sha):
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
+    commit = repo.get_commit(commit_sha)
+    return commit
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
