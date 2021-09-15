@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/named_collections.xml'], with_postgres=True)
-node2 = cluster.add_instance('node2', with_postgres_cluster=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/named_collections.xml'], with_postgres_cluster=True)
 
 
 @pytest.fixture(scope="module")
@@ -272,6 +272,14 @@ def test_postgres_distributed(started_cluster):
 
     # Check only one replica in each shard is used
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert(result == 'host1\nhost3\n')
+
+    node2.query('''
+        CREATE TABLE test_shards2
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, description='postgres{1|2}:5432,postgres{3|4}:5432'); ''')
+
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")
     assert(result == 'host1\nhost3\n')
 
     # Check all replicas are traversed

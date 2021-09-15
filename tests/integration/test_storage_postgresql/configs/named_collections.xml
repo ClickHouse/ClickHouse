@@ -21,5 +21,13 @@
             <database>postgres</database>
             <table>test_table</table>
         </postgres3>
+        <postgres4>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>postgres</database>
+            <table>test_replicas</table>
+        </postgres4>
     </named_collections>
 </yandex>
