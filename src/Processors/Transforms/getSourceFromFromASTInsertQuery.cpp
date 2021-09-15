@@ -34,6 +34,7 @@ Pipe getSourceFromFromASTInsertQuery(
     ContextPtr context,
     const ASTPtr & input_function)
 {
+    /// get ast query
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
@@ -51,10 +52,10 @@ Pipe getSourceFromFromASTInsertQuery(
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
-
     auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
+    /// Input buffer will be defined by reading from file buffer or by ConcatReadBuffer (concatenation of data and tail)
     std::unique_ptr<ReadBuffer> input_buffer;
 
     if (ast_insert_query->infile)
@@ -63,10 +64,21 @@ Pipe getSourceFromFromASTInsertQuery(
         const auto & in_file_node = ast_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
 
-        input_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+        /// It can be compressed and compression method maybe specified in query
+        std::string compression_method;
+        if (ast_insert_query->compression)
+        {
+            const auto & compression_method_node = ast_insert_query->compression->as<ASTLiteral &>();
+            compression_method = compression_method_node.value.safeGet<std::string>();
+        }
+
+        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+        /// Buffer for reading from file is created and wrapped with appropriate compression method
+        input_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
     else
     {
+        /// concatenation of data and tail
         ConcatReadBuffer::ReadBuffers buffers;
         if (ast_insert_query->data)
             buffers.push_back(input_buffer_ast_part.get());
@@ -81,6 +93,7 @@ Pipe getSourceFromFromASTInsertQuery(
         input_buffer = std::make_unique<ConcatReadBuffer>(buffers);
     }
 
+    /// Create a source from input buffer using format from query
     auto source = FormatFactory::instance().getInput(format, *input_buffer, header, context, context->getSettings().max_insert_block_size);
     Pipe pipe(source);
 
