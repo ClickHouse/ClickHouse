@@ -1474,14 +1474,14 @@ if (ThreadFuzzer::instance().isEffective())
             throw;
         }
 
-        /// try to load user defined functions, throw on error and die
+        /// try to load user defined executable functions, throw on error and die
         try
         {
             global_context->loadUserDefinedExecutableFunctions(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading user defined functions.");
+            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 

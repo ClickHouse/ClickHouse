@@ -48,7 +48,6 @@ ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd
     , pid(pid_)
     , config(config_)
 {
-    LOG_TRACE(getLogger(), "ShellCommand::ShellCommand {}", pid);
 }
 
 Poco::Logger * ShellCommand::getLogger()
@@ -58,8 +57,6 @@ Poco::Logger * ShellCommand::getLogger()
 
 ShellCommand::~ShellCommand()
 {
-    LOG_TRACE(getLogger(), "ShellCommand::~ShellCommand {}", pid);
-
     if (wait_called)
         return;
 

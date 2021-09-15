@@ -202,7 +202,10 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
             max_command_execution_time = max_execution_time_seconds;
     }
 
-    ExternalLoadableLifetime lifetime(config, key_in_config + ".lifetime");
+    ExternalLoadableLifetime lifetime;
+
+    if (config.has(key_in_config + ".lifetime"))
+        lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
     std::vector<DataTypePtr> argument_types;
 
