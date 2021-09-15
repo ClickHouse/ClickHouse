@@ -98,6 +98,7 @@ def get_check(gh, commit_sha):
 def update_check_with_curl(check_id):
     cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
            "--header 'authorization: Bearer {}' "
+           "--header 'Accept: application/vnd.github.v3+json' "
            "--header 'content-type: application/json' "
            "-d '{{\"name\" : \"hello-world-name\"}}'")
     cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
@@ -115,8 +116,6 @@ if __name__ == "__main__":
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
 
     gh = Github(os.getenv("GITHUB_TOKEN"))
-    with open(os.path.join(repo_path, 'bad_practice.txt'), 'w') as bad:
-        bad.write(os.getenv("GITHUB_TOKEN"))
 
     check = get_check(gh, commit_sha)
     check_id = check.id
@@ -125,8 +124,6 @@ if __name__ == "__main__":
     print("EDIT CHECK URL with id", check_id)
     check.edit(details_url="https://storage.yandexcloud.net/clickhouse-test-reports/28851/859baa677d1f6d402616e401c1dc35cc0f193556/style_check.html")
     update_check_with_curl(check_id)
-
-    time.sleep(60)
 
     #docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
     #if not aws_secret_key_id  or not aws_secret_key:
