@@ -103,7 +103,7 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
     return True, build_log, push_log
 
 def process_single_image(versions, path_to_dockerfile_folder, image_name):
-    logging.info("Image will be pushed with versions %s", ', '.join(all_for_this_image))
+    logging.info("Image will be pushed with versions %s", ', '.join(versions))
     result = []
     for ver in versions:
         for i in range(5):
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(event, False, True)
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
-    logging.info("Has changed images %s", ', '.join(changed_images))
+    logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
     versions = [str(pr_info.number), pr_commit_version]
 
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     images_processing_result = []
     for rel_path, image_name in changed_images:
         full_path = os.path.join(repo_path, rel_path)
-        images_processing_result += process_single_image(versions, full_path, image)
+        images_processing_result += process_single_image(versions, full_path, image_name)
 
     if len(changed_images):
         description = "Updated " + ','.join([im[1] for im in images])
