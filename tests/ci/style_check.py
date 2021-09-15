@@ -112,28 +112,20 @@ if __name__ == "__main__":
 
     gh = Github(os.getenv("GITHUB_TOKEN"))
 
+    docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
+    if not aws_secret_key_id  or not aws_secret_key:
+        logging.info("No secrets, will not upload anything to S3")
+
+    s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
+
+    if os.path.exists(temp_path):
+        shutil.rmtree(temp_path)
+
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
+
+    subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
+    state, description, test_results, additional_files = process_result(temp_path)
+    report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
     parent = get_parent_commit(gh, commit_sha)
-    parent.create_status(context="Trying actions", state="success", target_url="https://storage.yandexcloud.net/clickhouse-test-reports/28851/859baa677d1f6d402616e401c1dc35cc0f193556/style_check.html")
-    #check_id = check.id
-    #print("EDIT CHECK NAME with id", check_id)
-    #check.edit(name="Test style check")
-    #print("EDIT CHECK URL with id", check_id)
-    #check.edit(details_url="https://storage.yandexcloud.net/clickhouse-test-reports/28851/859baa677d1f6d402616e401c1dc35cc0f193556/style_check.html")
-    #update_check_with_curl(check_id)
-
-    #docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
-    #if not aws_secret_key_id  or not aws_secret_key:
-    #    logging.info("No secrets, will not upload anything to S3")
-
-    #s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
-
-    #if os.path.exists(temp_path):
-    #    shutil.rmtree(temp_path)
-
-    #if not os.path.exists(temp_path):
-    #    os.makedirs(temp_path)
-
-    #subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
-
-    #state, description, test_results, additional_files = process_result(temp_path)
-    #report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
+    parent.create_status(context=description, state=state, target_url=report_url)
