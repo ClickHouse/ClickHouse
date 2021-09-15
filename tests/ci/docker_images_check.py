@@ -69,7 +69,7 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
             no_dups_reversed.append(x)
 
     result = [(x, images_dict[x]['name']) for x in reversed(no_dups_reversed)]
-    logging.info("Changed docker images for PR %s @ %s: '%s'", pull_request.number, commit.sha, result)
+    logging.info("Changed docker images for PR %s @ %s: '%s'", pr_info.number, pr_info.sha, result)
     return result, dockerhub_repo_name
 
 def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_string):
