@@ -44,7 +44,7 @@ th {{ cursor: pointer; }}
 <a href="{raw_log_url}">{raw_log_name}</a>
 <a href="{commit_url}">Commit</a>
 {additional_urls}
-<a href="{task_url}">Task (private network)</a>
+<a href="{task_url}">Task (github actions)</a>
 </p>
 {test_part}
 </body>
