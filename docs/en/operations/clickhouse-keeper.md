@@ -52,7 +52,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 
 Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description. The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The main parameters for each `<server>` are:
 
--    `id` — Server_id in a quorum.
+-    `id` — server identifier in a quorum.
 -    `hostname` — Hostname where this server is placed.
 -    `port` — Port where this server listens for connections.
 
