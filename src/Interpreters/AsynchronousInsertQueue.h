@@ -12,9 +12,6 @@
 namespace DB
 {
 
-class ASTInsertQuery;
-struct BlockIO;
-
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
 class AsynchronousInsertQueue : public WithContext
@@ -141,7 +138,7 @@ private:
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
     template <typename E>
-    static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & e);
+    static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
 public:
     Queue getQueue() const
