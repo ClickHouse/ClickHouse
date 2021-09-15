@@ -119,6 +119,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///    Data older than this is not available anymore.
     String snapshot_name, start_lsn;
 
+    /// Also lets have a separate non-replication connection, because we need two parallel transactions and
+    /// one connection can have one transaction at a time.
+    auto tmp_connection = std::make_shared<postgres::Connection>(connection_info);
+
     auto initial_sync = [&]()
     {
         LOG_TRACE(log, "Starting tables sync load");
@@ -136,15 +140,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
-        /// Loading tables from snapshot requires a certain transaction type, so we need to open a new transactin.
-        /// But we cannot have more than one open transaciton on the same connection. Therefore we have
-        /// a separate connection to load tables.
-        postgres::Connection tmp_connection(connection_info);
         for (const auto & [table_name, storage] : materialized_storages)
         {
             try
             {
-                nested_storages[table_name] = loadFromSnapshot(tmp_connection, snapshot_name, table_name, storage->as <StorageMaterializedPostgreSQL>());
+                nested_storages[table_name] = loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>());
             }
             catch (Exception & e)
             {
@@ -211,7 +211,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
     consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
             context,
-            std::make_shared<postgres::Connection>(connection_info),
+            std::move(tmp_connection),
             replication_slot,
             publication_name,
             start_lsn,
