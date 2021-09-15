@@ -19,7 +19,7 @@ Calculates the result of the logical conjunction between two or more values. Cor
 and(val1, val2...)
 ```
 
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `and` function according to a short scheme. So `vali` will be evaluated only on rows where `(val1 AND val2 AND ... AND val{i-1})` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number != 0 AND intDiv(1, number) == 0 AND number != 2 AND intDiv(1, number - 2) == 0 FROM numbers(10)`.
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `and` function according to a short scheme. If this setting is enabled, `vali` is evaluated only on rows where `(val1 AND val2 AND ... AND val{i-1})` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number != 0 AND intDiv(1, number) = 0 AND number != 2 AND intDiv(1, number - 2) = 0 FROM numbers(10)`.
 
 **Arguments**
 
