@@ -111,14 +111,14 @@ if __name__ == "__main__":
     gh = Github(os.getenv("GITHUB_TOKEN"))
 
     images_path = os.path.join(temp_path, 'changed_images.json')
-    docker_image = 'clickhouse/style-check'
+    docker_image = 'clickhouse/style-test'
     if os.path.exists(images_path):
         logging.info("Images file exists")
         with open(images_path, 'r') as images_fd:
             images = json.load(images_fd)
             logging.info("Got images %s", images)
-            if 'clickhouse/style-check' in images:
-                docker_image += ':' + images['clickhouse/style-check']
+            if 'clickhouse/style-test' in images:
+                docker_image += ':' + images['clickhouse/style-test']
 
     logging.info("Got docker image %s", docker_image)
 
