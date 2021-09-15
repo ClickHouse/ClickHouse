@@ -13,13 +13,14 @@ namespace DB
 class ParserKeyword : public IParserBase
 {
 private:
-    const char * s;
+    std::string_view s;
 
 public:
-    ParserKeyword(const char * s_);
+    //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
+    constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
 
 protected:
-    const char * getName() const override;
+    constexpr const char * getName() const override { return s.data(); }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
