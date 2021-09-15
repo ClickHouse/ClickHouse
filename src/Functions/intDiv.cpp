@@ -23,6 +23,7 @@ struct DivideIntegralByConstantImpl
     using Op = DivideIntegralImpl<A, B>;
     using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)

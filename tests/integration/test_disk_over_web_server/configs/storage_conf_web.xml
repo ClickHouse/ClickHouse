@@ -5,7 +5,6 @@
             <web>
                 <type>web</type>
                 <endpoint>http://nginx:80/test1/</endpoint>
-                <files_prefix>data</files_prefix>
             </web>
         </disks>
         <policies>
