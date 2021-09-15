@@ -3,6 +3,7 @@ import requests
 
 class PRInfo:
     def __init__(self, github_event):
+        print(json.dumps(github_event, indent=4, sort_keys=True))
         self.number = github_event['number']
         self.sha = github_event['after']
         self.labels = set([l['name'] for l in github_event['pull_request']['labels']])
