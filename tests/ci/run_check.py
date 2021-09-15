@@ -103,6 +103,10 @@ def should_run_checks_for_pr(pr_info):
 
     return True, "No special conditions apply"
 
+def get_commit(gh, commit_sha):
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
+    commit = repo.get_commit(commit_sha)
+    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
