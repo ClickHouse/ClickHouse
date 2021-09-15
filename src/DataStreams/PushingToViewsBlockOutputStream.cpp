@@ -387,30 +387,22 @@ Chain buildPushingToViewsDrain(
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
             target_name = inner_table_id.getFullTableName();
 
-            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->table_id = inner_table_id;
-
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
                 .getSampleBlock();
 
             /// Insert only columns returned by select.
-            auto list = std::make_shared<ASTExpressionList>();
+            Names insert_columns;
             const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
                 if (inner_table_columns.hasPhysical(column.name))
-                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                    insert_columns.emplace_back(column.name);
             }
 
-            insert->columns = std::move(list);
-
-            ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, false, false, false, view_runtime_data);
-            BlockIO io = interpreter.execute();
-            io.out.attachResources(QueryPipelineBuilder::getPipe(std::move(io.pipeline)).detachResources());
-            out = std::move(io.out);
+            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
+            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, view_runtime_data);
         }
         else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
         {
@@ -547,34 +539,35 @@ static void process(Block & block, ViewRuntimeData & view, const StorageID & sou
     /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
 
-    auto io = select.execute();
-    io.pipeline.resize(1);
+    auto pipeline = select.buildQueryPipeline();
+    pipeline.resize(1);
 
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    io.pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
-        io.pipeline.getHeader(),
+    pipeline.addTransform(std::make_shared<SquashingChunksTransform>(
+        pipeline.getHeader(),
         context->getSettingsRef().min_insert_block_size_rows,
         context->getSettingsRef().min_insert_block_size_bytes));
 
     auto converting = ActionsDAG::makeConvertingActions(
-        io.pipeline.getHeader().getColumnsWithTypeAndName(),
+        pipeline.getHeader().getColumnsWithTypeAndName(),
         view.sample_block.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
-    io.pipeline.addTransform(std::make_shared<ExpressionTransform>(
-        io.pipeline.getHeader(),
+    pipeline.addTransform(std::make_shared<ExpressionTransform>(
+        pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    io.pipeline.setProgressCallback([context](const Progress & progress)
+    pipeline.setProgressCallback([context](const Progress & progress)
     {
         CurrentThread::updateProgressIn(progress);
         if (auto callback = context->getProgressCallback())
             callback(progress);
     });
 
-    PullingPipelineExecutor executor(io.pipeline);
+    auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+    PullingPipelineExecutor executor(query_pipeline);
     if (!executor.pull(block))
     {
         block.clear();

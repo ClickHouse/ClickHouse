@@ -1,11 +1,7 @@
 #pragma once
 
-#include <DataStreams/IBlockStream_fwd.h>
-
 #include <functional>
-
-#include <Processors/QueryPipelineBuilder.h>
-#include <Processors/Chain.h>
+#include <Processors/QueryPipeline.h>
 
 
 namespace DB
@@ -26,14 +22,11 @@ struct BlockIO
 
     std::shared_ptr<ProcessListEntry> process_list_entry;
 
-    Chain out;
-    BlockInputStreamPtr in;
-
-    QueryPipelineBuilder pipeline;
+    QueryPipeline pipeline;
 
     /// Callbacks for query logging could be set here.
-    std::function<void(IBlockInputStream *, QueryPipelineBuilder *)>    finish_callback;
-    std::function<void()>                                        exception_callback;
+    std::function<void(QueryPipeline &)> finish_callback;
+    std::function<void()> exception_callback;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
@@ -43,11 +36,7 @@ struct BlockIO
     {
         if (finish_callback)
         {
-            QueryPipelineBuilder * pipeline_ptr = nullptr;
-            if (pipeline.initialized())
-                pipeline_ptr = &pipeline;
-
-            finish_callback(in.get(), pipeline_ptr);
+            finish_callback(pipeline);
         }
     }
 
@@ -56,9 +45,6 @@ struct BlockIO
         if (exception_callback)
             exception_callback();
     }
-
-    /// Returns in or converts pipeline to stream. Throws if out is not empty.
-    BlockInputStreamPtr getInputStream();
 
 private:
     void reset();

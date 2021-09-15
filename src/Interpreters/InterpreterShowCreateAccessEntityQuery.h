@@ -30,7 +30,7 @@ public:
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
 private:
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
     std::vector<AccessEntityPtr> getEntities() const;
     ASTs getCreateQueries() const;
     AccessRightsElements getRequiredAccess() const;

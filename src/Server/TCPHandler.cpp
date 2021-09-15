@@ -38,6 +38,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
@@ -295,7 +296,7 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (!state.io.out.empty())
+            if (state.io.pipeline.pushing())
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
@@ -303,13 +304,13 @@ void TCPHandler::runImpl()
             else if (state.need_receive_data_for_input) // It implies pipeline execution
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                auto executor = state.io.pipeline.execute();
-                executor->execute(state.io.pipeline.getNumThreads());
+                CompletedPipelineExecutor executor(state.io.pipeline);
+                executor.execute();
             }
-            else if (state.io.pipeline.initialized())
+            else if (state.io.pipeline.pulling())
                 processOrdinaryQueryWithProcessors();
-            else if (state.io.in)
-                processOrdinaryQuery();
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected QueryPipeline state.");
 
             state.io.onFinish();
 
@@ -544,7 +545,7 @@ void TCPHandler::skipData()
 
 void TCPHandler::processInsertQuery()
 {
-    size_t num_threads = state.io.out.getNumThreads();
+    size_t num_threads = state.io.pipeline.getNumThreads();
 
     auto send_table_columns = [&]()
     {
@@ -565,7 +566,7 @@ void TCPHandler::processInsertQuery()
 
     if (num_threads > 1)
     {
-        PushingAsyncPipelineExecutor executor(state.io.out);
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
         /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
         *  client receive exception before sending data.
         */
@@ -585,7 +586,7 @@ void TCPHandler::processInsertQuery()
     }
     else
     {
-        PushingPipelineExecutor executor(state.io.out);
+        PushingPipelineExecutor executor(state.io.pipeline);
         executor.start();
 
         send_table_columns();
@@ -599,77 +600,6 @@ void TCPHandler::processInsertQuery()
 
         executor.finish();
     }
-}
-
-
-void TCPHandler::processOrdinaryQuery()
-{
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
-    /// Pull query execution result, if exists, and send it to network.
-    if (state.io.in)
-    {
-
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-            sendPartUUIDs();
-
-        /// This allows the client to prepare output format
-        if (Block header = state.io.in->getHeader())
-            sendData(header);
-
-        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
-        AsynchronousBlockInputStream async_in(state.io.in);
-
-        async_in.readPrefix();
-        while (true)
-        {
-            if (isQueryCancelled())
-            {
-                async_in.cancel(false);
-                break;
-            }
-
-            if (after_send_progress.elapsed() / 1000 >= interactive_delay)
-            {
-                /// Some time passed.
-                after_send_progress.restart();
-                sendProgress();
-            }
-
-            sendLogs();
-
-            if (async_in.poll(interactive_delay / 1000))
-            {
-                const auto block = async_in.read();
-                if (!block)
-                    break;
-
-                if (!state.io.null_format)
-                    sendData(block);
-            }
-        }
-        async_in.readSuffix();
-
-        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
-          * so that this information can be used in the suffix output of stream.
-          * If the request has been interrupted, then sendTotals and other methods should not be called,
-          * because we have not read all the data.
-          */
-        if (!isQueryCancelled())
-        {
-            sendTotals(state.io.in->getTotals());
-            sendExtremes(state.io.in->getExtremes());
-            sendProfileInfo(state.io.in->getProfileInfo());
-            sendProgress();
-        }
-
-        if (state.is_connection_closed)
-            return;
-
-        sendData({});
-    }
-
-    sendProgress();
 }
 
 

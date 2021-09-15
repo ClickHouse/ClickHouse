@@ -7,7 +7,7 @@ namespace DB
 
 class Block;
 class Chunk;
-class Chain;
+class QueryPipeline;
 class PushingSource;
 
 class PipelineExecutor;
@@ -28,7 +28,7 @@ using Processors = std::vector<ProcessorPtr>;
 class PushingPipelineExecutor
 {
 public:
-    explicit PushingPipelineExecutor(Chain & chain);
+    explicit PushingPipelineExecutor(QueryPipeline & pipeline_);
     ~PushingPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -45,11 +45,10 @@ public:
     void cancel();
 
 private:
-    Chain & chain;
+    QueryPipeline & pipeline;
     std::atomic_bool need_data_flag = false;
     std::shared_ptr<PushingSource> pushing_source;
 
-    std::unique_ptr<Processors> processors;
     PipelineExecutorPtr executor;
     bool started = false;
     bool finished = false;

@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 
 namespace DB
 {
@@ -485,21 +486,15 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 insert->columns = buffer.columnsAST;
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
-                auto block_io = interpreter.execute();
+                auto io = interpreter.execute();
                 auto input = std::make_shared<SourceFromSingleChunk>(
                     result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.out.getInputHeader(), "postgresql replica table sync");
-                QueryPipelineBuilder pipeline;
-                pipeline.init(Pipe(std::move(input)));
-                pipeline.addChain(std::move(block_io.out));
-                pipeline.setSinks([&](const Block & header, Pipe::StreamType)
-                {
-                    return std::make_shared<ExceptionHandlingSink>(header);
-                });
+                assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
+                io.pipeline.complete(Pipe(std::move(input)));
 
-                auto executor = pipeline.execute();
-                executor->execute(1);
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
 
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }

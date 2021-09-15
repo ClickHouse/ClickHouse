@@ -12,6 +12,8 @@ namespace DB
 struct ExceptionKeepingTransformRuntimeData;
 using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeepingTransformRuntimeData>;
 
+class Chain;
+
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithContext
@@ -22,8 +24,7 @@ public:
         ContextPtr context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,
-        bool no_destination_ = false,
-        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
+        bool no_destination_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -31,20 +32,33 @@ public:
       * Or nothing if the request INSERT SELECT (self-sufficient query - does not accept the input data, does not return the result).
       */
     BlockIO execute() override;
+    Chain buildChain();
 
     StorageID getDatabaseTable() const;
+
+    Chain buildChain(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & columns,
+        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
 private:
     StoragePtr getTable(ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     ASTPtr query_ptr;
     const bool allow_materialized;
     const bool no_squash;
     const bool no_destination;
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data;
+
+    Chain buildChainImpl(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block,
+        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
 };
 
 

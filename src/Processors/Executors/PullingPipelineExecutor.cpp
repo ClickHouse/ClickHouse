@@ -1,15 +1,25 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Sources/NullSource.h>
 
 namespace DB
 {
 
-PullingPipelineExecutor::PullingPipelineExecutor(QueryPipelineBuilder & pipeline_) : pipeline(pipeline_)
+namespace ErrorCodes
 {
-    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.getHeader(), has_data_flag);
-    pipeline.setOutputFormat(pulling_format);
+    extern const int LOGICAL_ERROR;
+}
+
+PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+{
+    if (!pipeline.pulling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingPipelineExecutor must be pulling");
+
+    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.output->getHeader(), has_data_flag);
+    pipeline.complete(pulling_format);
 }
 
 PullingPipelineExecutor::~PullingPipelineExecutor()
@@ -26,13 +36,13 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
 
 const Block & PullingPipelineExecutor::getHeader() const
 {
-    return pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader();
+    return pipeline.output->getHeader();
 }
 
 bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
-        executor = pipeline.execute();
+        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
 
     if (!executor->executeStep(&has_data_flag))
         return false;
