@@ -5,6 +5,7 @@ import requests
 from pr_info import PRInfo
 import sys
 import logging
+from github import Github
 
 NAME = 'Run Check (actions)'
 
