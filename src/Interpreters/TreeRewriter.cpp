@@ -506,6 +506,8 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     out_table_join = table_join;
 }
 
+/// Convert to Disjunctive Normal Form https://en.wikipedia.org/wiki/Disjunctive_normal_form
+///    based on sample https://github.com/ilejn/ndf
 class DNF
 {
     bool node_added = false;
@@ -711,6 +713,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
             }
         }
+        data.optimize();
 
         if (is_asof)
         {
