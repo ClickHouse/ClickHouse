@@ -28,9 +28,6 @@ endforeach()
 
 project(ClickHouse)
 
-# Check if needed compiler flags are supported
-include (cmake/check_flags.cmake)
-
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
@@ -155,6 +152,7 @@ if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
 
+include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
@@ -169,8 +167,8 @@ if (COMPILER_CLANG)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
-    message(STATUS "HAS_USE_CTOR_HOMING: ${HAS_USE_CTOR_HOMING}")
-    if (HAS_USE_CTOR_HOMING AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0.0)
+    if (HAS_USE_CTOR_HOMING)
+        # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
 		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
