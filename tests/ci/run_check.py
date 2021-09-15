@@ -4,6 +4,7 @@ import json
 import requests
 from pr_info import PRInfo
 import sys
+import logging
 
 NAME = 'Run Check (actions)'
 
