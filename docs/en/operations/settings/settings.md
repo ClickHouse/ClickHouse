@@ -3573,9 +3573,9 @@ Allows calculating the [if](../../sql-reference/functions/conditional-functions.
 
 Possible values:
 
-- `enable` — Enables short-circuit function evaluation for functions that are suitable for it (can throw an exception or computationally heavy).
-- `force_enable` — Enables short-circuit function evaluation for all functions.
-- `disable` — Disables short-circuit function evaluation.
+-   `enable` — Enables short-circuit function evaluation for functions that are suitable for it (can throw an exception or computationally heavy).
+-   `force_enable` — Enables short-circuit function evaluation for all functions.
+-   `disable` — Disables short-circuit function evaluation.
 
 Default value: `enable`.
 
