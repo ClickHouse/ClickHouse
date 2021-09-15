@@ -50,6 +50,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
+#include "IO/CompressionMethod.h"
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -1071,9 +1072,17 @@ void executeQuery(
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
                 const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
+
+                std::string compression_method;
+                if (ast_query_with_output->compression)
+                {
+                    const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
+                    compression_method = compression_method_node.value.safeGet<std::string>();
+                }
+
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, ""),
+                    chooseCompressionMethod(out_file, compression_method),
                     /* compression level = */ 3
                 );
             }
@@ -1119,9 +1128,17 @@ void executeQuery(
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+
+                std::string compression_method;
+                if (ast_query_with_output->compression)
+                {
+                    const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
+                    compression_method = compression_method_node.value.safeGet<std::string>();
+                }
+
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, ""),
+                    chooseCompressionMethod(out_file, compression_method),
                     /* compression level = */ 3
                 );
             }
