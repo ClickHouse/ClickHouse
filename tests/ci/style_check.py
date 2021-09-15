@@ -8,7 +8,7 @@ import os
 import csv
 from s3_helper import S3Helper
 
-NAME = "Style Check"
+NAME = "Style-Check"
 
 
 def process_logs(s3_client, additional_logs, s3_path_prefix):
