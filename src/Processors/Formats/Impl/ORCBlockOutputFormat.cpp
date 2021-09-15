@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -20,6 +21,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -48,8 +50,10 @@ void ORCOutputStream::write(const void* buf, size_t length)
 }
 
 ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_), data_types(header_.getDataTypes())
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_)
 {
+    for (const auto & type : header_.getDataTypes())
+        data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
 ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
@@ -482,10 +486,12 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     /// The size of the batch must be no less than total amount of array elements.
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
+    auto columns = chunk.getColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveLowCardinality(column);
+
     for (size_t i = 0; i != columns_num; ++i)
-    {
-        writeColumn(*root.fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
-    }
+        writeColumn(*root.fields[i], *columns[i], data_types[i], nullptr);
     root.numElements = rows_num;
     writer->add(*batch);
 }
@@ -505,7 +511,7 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(orc::CompressionKind::CompressionKind_NONE);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
-        schema->addStructField(header.safeGetByPosition(i).name, getORCType(data_types[i], header.safeGetByPosition(i).name));
+        schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i]), header.safeGetByPosition(i).name));
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
