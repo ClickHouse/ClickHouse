@@ -176,7 +176,7 @@ if __name__ == "__main__":
         event = json.load(event_file)
 
     pr_info = PRInfo(event)
-    changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, image_file_path)
+    changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join(changed_images))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
     versions = [str(pr_info.number), pr_commit_version]
