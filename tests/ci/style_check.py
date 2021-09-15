@@ -99,7 +99,7 @@ def update_check_with_curl(check_id):
     cmd_template = ("curl --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
            "--header 'authorization: Bearer {}' "
            "--header 'content-type: application/json' "
-           "-d '{\"name\" : \"hello-world-name\"}'")
+           "-d '{{\"name\" : \"hello-world-name\"}}'")
     cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
     print("CMD {}", cmd)
     subprocess.check_call(cmd)
