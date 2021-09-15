@@ -26,7 +26,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
-        run: echo "Hello world"
+        run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
+        env:
+          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
+          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_ROBOT_PASSWORD: ${{ secrects.DOCKER_ROBOT_PASSWORD }}
   Style-Check:
     needs: DockerHubPush
     runs-on: [self-hosted]

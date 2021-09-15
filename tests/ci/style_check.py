@@ -54,11 +54,10 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
-def upload_results(s3_client, pr_number, commit_sha, state, description, test_results, additional_files):
+def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
     s3_path_prefix = f"{pr_number}/{commit_sha}/style_check"
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
-     # Add link to help. Anchors in the docs must be adjusted accordingly.
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     branch_name = "master"
     if pr_number != 0:
@@ -122,7 +121,7 @@ if __name__ == "__main__":
 
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, state, description, test_results, additional_files)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
 
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
