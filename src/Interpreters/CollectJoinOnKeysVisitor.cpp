@@ -36,9 +36,17 @@ void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & or_func_ast)
 {
     const auto * func = or_func_ast->as<ASTFunction>();
     const auto * func_args = func->arguments->as<ASTExpressionList>();
-    TableJoin::Disjuncts v = func_args->children;
+    ASTs v = func_args->children;
 
-    analyzed_join.setDisjuncts(std::move(v));
+    disjuncts = std::move(v);
+}
+
+void CollectJoinOnKeysMatcher::Data::addDisjunct(const ASTPtr & ast)
+{
+    const IAST * addr = ast.get();
+
+    if (std::find_if(disjuncts.begin(), disjuncts.end(), [addr](const ASTPtr & ast_){return ast_.get() == addr;}) != disjuncts.end())
+        analyzed_join.newClauseIfPopulated();
 }
 
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)
@@ -87,7 +95,7 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 
 void CollectJoinOnKeysMatcher::Data::optimize()
 {
-    analyzed_join.optimizeDisjuncts();
+    analyzed_join.optimizeClauses();
 }
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
@@ -107,7 +115,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    data.analyzed_join.addDisjunct(ast);
+    data.addDisjunct(ast);
 
     if (func.name == "and")
         return; /// go into children
