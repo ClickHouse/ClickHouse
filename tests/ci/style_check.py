@@ -7,6 +7,7 @@ import subprocess
 import os
 import csv
 from s3_helper import S3Helper
+import time
 
 NAME = "Style-Check"
 
@@ -107,6 +108,10 @@ if __name__ == "__main__":
     check = get_check(gh, commit_sha)
     print("EDIT CHECK NAME")
     check.edit(name="Test style check")
+    print("EDIT CHECK URL")
+    check.edit(details_url="https://storage.yandexcloud.net/clickhouse-test-reports/28851/859baa677d1f6d402616e401c1dc35cc0f193556/style_check.html")
+
+    time.sleep(60)
 
     #docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
     #if not aws_secret_key_id  or not aws_secret_key:
