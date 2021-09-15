@@ -59,7 +59,7 @@ ChannelPtr RabbitMQConnection::createChannel()
     std::lock_guard lock(mutex);
 
     if (!isConnectedImpl())
-        return nullptr;
+        connectImpl();
 
     return std::make_unique<AMQP::TcpChannel>(connection.get());
 }
@@ -102,9 +102,13 @@ void RabbitMQConnection::connectImpl()
     }
 
     auto cnt_retries = 0;
-    while (!connection->ready() && cnt_retries++ != RETRIES_MAX)
+    while (true)
     {
         event_handler.iterateLoop();
+
+        if (connection->ready() || cnt_retries++ == RETRIES_MAX)
+            break;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 }
