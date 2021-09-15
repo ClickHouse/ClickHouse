@@ -158,7 +158,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results):
 
     task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
 
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url)
+    html_report = create_test_html_report(NAME, test_results, "https://hub.docker.com/u/clickhouse", task_url, branch_url, branch_name, commit_url)
     with open('report.html', 'w') as f:
         f.write(html_report)
 
