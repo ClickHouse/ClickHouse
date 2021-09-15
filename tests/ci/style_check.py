@@ -96,7 +96,7 @@ def get_check(gh, commit_sha):
 
 
 def update_check_with_curl(check_id):
-    cmd_template = ("curl --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
+    cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
            "--header 'authorization: Bearer {}' "
            "--header 'content-type: application/json' "
            "-d '{{\"name\" : \"hello-world-name\"}}'")
