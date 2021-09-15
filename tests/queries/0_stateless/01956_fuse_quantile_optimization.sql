@@ -52,7 +52,13 @@ EXPLAIN SYNTAX SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quanti
 SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)(d + 1) FROM datetime;
 
 EXPLAIN SYNTAX SELECT quantile(0.2)(d) as k, quantile(0.3)(d) FROM datetime order by quantile(0.2)(d);
-DROP TABLE datetime;
 
 SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
 EXPLAIN SYNTAX SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
+
+-- fuzzer
+SELECT quantileDeterministic(0.00009999999747378752)(1023) FROM datetime FORMAT Null; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT quantileTiming(0.5)(NULL, NULL, quantileTiming(-inf)(NULL), NULL) FROM datetime FORMAT Null; -- { serverError ILLEGAL_AGGREGATION }
+SELECT quantileTDigest(NULL)(NULL, quantileTDigest(3.4028234663852886e38)(NULL, d + NULL), 2.), NULL FORMAT Null; -- { serverError ILLEGAL_AGGREGATION }
+
+DROP TABLE datetime;
