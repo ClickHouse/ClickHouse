@@ -932,19 +932,28 @@ void TCPHandler::sendProfileEvents()
 
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
+    auto const current_thread_id = CurrentThread::get().thread_id;
     std::vector<ProfileEventsSnapshot> snapshots;
+    ProfileEventsSnapshot group_snapshot;
     {
         std::lock_guard guard(thread_group->mutex);
         for (auto * thread : thread_group->threads)
         {
+            auto const thread_id = thread->thread_id;
+            if (thread_id == current_thread_id)
+                continue;
             auto current_time = time(nullptr);
             auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
             auto metric = thread->memory_tracker.getMetric();
-            auto const thread_id = CurrentThread::get().thread_id;
             snapshots.push_back(ProfileEventsSnapshot{thread_id, std::move(counters), metric, current_time});
         }
+        group_snapshot.counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        group_snapshot.metric = thread_group->memory_tracker.getMetric();
+        group_snapshot.current_time = time(nullptr);
     }
 
+    dumpProfileEvents(group_snapshot.counters, columns, server_display_name, group_snapshot.current_time, 0);
+    dumpMemoryTracker(group_snapshot.metric, columns, server_display_name, 0);
     for (auto & snapshot : snapshots)
     {
         dumpProfileEvents(

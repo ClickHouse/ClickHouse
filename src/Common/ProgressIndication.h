@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <unordered_set>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
@@ -43,17 +44,17 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return watch.elapsedSeconds(); }
 
-    void addThreadIdToList(UInt64 thread_id);
+    void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadUserTime(UInt64 thread_id, UInt64 value);
+    void updateThreadUserTime(String const & host, UInt64 thread_id, UInt64 value);
 
-    void updateThreadSystemTime(UInt64 thread_id, UInt64 value);
+    void updateThreadSystemTime(String const & host, UInt64 thread_id, UInt64 value);
 
 private:
 
-    size_t getUsedThreadsCount() const { return thread_times.size(); }
+    size_t getUsedThreadsCount() const;
 
-    UInt64 getAccumulatedThreadTime() const;
+    UInt64 getApproximateCoresNumber() const;
 
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
@@ -78,7 +79,10 @@ private:
         UInt64 system_ms = 0;
     };
 
-    std::unordered_map<UInt64, ThreadTime> thread_times;
+    using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadTime>;
+    using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
+
+    HostToThreadTimesMap thread_times;
 };
 
 }
