@@ -15,7 +15,6 @@ TRUSTED_ORG_IDS = {
 
 OK_TEST_LABEL = set(["can be tested", "release", "pr-documentation", "pr-doc-fix"])
 DO_NOT_TEST_LABEL = "do not test"
-FakePR = namedtuple("FakePR", "number")
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
