@@ -107,7 +107,18 @@ if __name__ == "__main__":
 
     gh = Github(os.getenv("GITHUB_TOKEN"))
 
-    docker_image_version = os.getenv("DOCKER_IMAGE_VERSION", "latest")
+    images_path = os.path.join(temp_path, 'changed_images.json')
+    docker_image = 'clickhouse/style-check'
+    if os.path.exists(images_path):
+        logging.info("Images file exists")
+        with open(images_path, 'r') as images_fd:
+            images = json.loads(images_fd)
+            logging.info("Got images %s", images)
+            if 'clickhouse/style-check' in images:
+                docker_image += ':' + images['clickhouse/style-check']
+
+    logging.info("Got docker image %s", docker_image)
+
     if not aws_secret_key_id  or not aws_secret_key:
         logging.info("No secrets, will not upload anything to S3")
 
@@ -119,7 +130,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
+    subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
 

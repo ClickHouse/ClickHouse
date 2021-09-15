@@ -184,19 +184,23 @@ if __name__ == "__main__":
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
+
     versions = [str(pr_info.number), pr_commit_version]
 
     subprocess.check_output("docker login --username 'robotclickhouse' --password '{}'".format(dockerhub_password), shell=True)
 
+    result_images = {}
     images_processing_result = []
     for rel_path, image_name in changed_images:
         full_path = os.path.join(repo_path, rel_path)
         images_processing_result += process_single_image(versions, full_path, image_name)
+        result_images[image_name] = pr_commit_version
 
     if len(changed_images):
         description = "Updated " + ','.join([im[1] for im in changed_images])
     else:
         description = "Nothing to update"
+
 
     if len(description) >= 140:
         description = description[:136] + "..."
@@ -214,3 +218,6 @@ if __name__ == "__main__":
     gh = Github(os.getenv("GITHUB_TOKEN"))
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=url)
+
+    with open(os.path.join(temp_path, 'changed_images.json'), 'w') as images_file:
+        json.dump(result_images, images_file)
