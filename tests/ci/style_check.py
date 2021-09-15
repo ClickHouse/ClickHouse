@@ -69,7 +69,7 @@ def upload_results(s3_client, pr_number, commit_sha, state, description, test_re
     raw_log_url = additional_urls[0]
     additional_urls.pop(0)
 
-    html_report = create_test_html_report("Style Check (actions)", test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
     with open('report.html', 'w') as f:
         f.write(html_report)
 
@@ -124,8 +124,8 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
+    parent = get_parent_commit(gh, commit_sha)
     subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output clickhouse/style-test:{docker_image_version}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
-    report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), commit_sha, state, description, test_results, additional_files)
-    parent = get_parent_commit(gh, commit_sha)
-    parent.create_status(context=description, state=state, target_url=report_url)
+    report_url = upload_results(s3_helper, get_pr_url_from_ref(ref), parent.sha, state, description, test_results, additional_files)
+    parent.create_status(context=NAME, description=description, state=state, target_url=report_url)
