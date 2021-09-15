@@ -28,6 +28,9 @@ endforeach()
 
 project(ClickHouse)
 
+# Check if needed compiler flags are supported
+include (cmake/check_flags.cmake)
+
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
@@ -166,6 +169,7 @@ if (COMPILER_CLANG)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
+    message(STATUS "HAS_USE_CTOR_HOMING: ${HAS_USE_CTOR_HOMING}")
     if (HAS_USE_CTOR_HOMING AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0.0)
 		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
@@ -628,9 +632,6 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
-
-# Check if needed compiler flags are supported
-include (cmake/check_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)
