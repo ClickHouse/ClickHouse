@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
-#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -46,7 +45,6 @@ protected:
         return query_ptr;
     }
 
-    // TODO: Change String to ASTPtr in DB::ASTSystemQuery
     template <typename T>
     static ASTPtr removeOnClusterSystem(ASTPtr query_ptr, const std::string & new_database)
     {

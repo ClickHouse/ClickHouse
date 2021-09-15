@@ -244,7 +244,6 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
     return false;
 }
 
-
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)
