@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 CREATE TABLE file (n Int8) ENGINE = File(upper('tsv') || 'WithNames' || 'AndTypes');
 CREATE TABLE buffer (n Int8) ENGINE = Buffer(currentDatabase(), file, 16, 10, 200, 10000, 1000000, 10000000, 1000000000);
 CREATE TABLE merge (n Int8) ENGINE = Merge('', lower('DISTRIBUTED'));

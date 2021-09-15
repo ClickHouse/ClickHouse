@@ -195,7 +195,7 @@ std::string getLexicalErrorMessage(
     out << getErrorTokenDescription(last_token.type);
     if (last_token.size())
     {
-       out << ": '" << StringRef{last_token.begin, last_token.size()} << "'";
+       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
     }
 
     return out.str();

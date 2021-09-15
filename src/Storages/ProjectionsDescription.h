@@ -30,8 +30,6 @@ struct ProjectionDescription
 
     static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
 
-    static const char * typeToString(Type type);
-
     /// Definition AST of projection
     ASTPtr definition_ast;
 

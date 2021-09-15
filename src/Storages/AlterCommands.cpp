@@ -842,53 +842,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-
-String alterTypeToString(const AlterCommand::Type type)
-{
-    switch (type)
-    {
-    case AlterCommand::Type::ADD_COLUMN:
-        return "ADD COLUMN";
-    case AlterCommand::Type::ADD_CONSTRAINT:
-        return "ADD CONSTRAINT";
-    case AlterCommand::Type::ADD_INDEX:
-        return "ADD INDEX";
-    case AlterCommand::Type::ADD_PROJECTION:
-        return "ADD PROJECTION";
-    case AlterCommand::Type::COMMENT_COLUMN:
-        return "COMMENT COLUMN";
-    case AlterCommand::Type::DROP_COLUMN:
-        return "DROP COLUMN";
-    case AlterCommand::Type::DROP_CONSTRAINT:
-        return "DROP CONSTRAINT";
-    case AlterCommand::Type::DROP_INDEX:
-        return "DROP INDEX";
-    case AlterCommand::Type::DROP_PROJECTION:
-        return "DROP PROJECTION";
-    case AlterCommand::Type::MODIFY_COLUMN:
-        return "MODIFY COLUMN";
-    case AlterCommand::Type::MODIFY_ORDER_BY:
-        return "MODIFY ORDER BY";
-    case AlterCommand::Type::MODIFY_SAMPLE_BY:
-        return "MODIFY SAMPLE BY";
-    case AlterCommand::Type::MODIFY_TTL:
-        return "MODIFY TTL";
-    case AlterCommand::Type::MODIFY_SETTING:
-        return "MODIFY SETTING";
-    case AlterCommand::Type::RESET_SETTING:
-        return "RESET SETTING";
-    case AlterCommand::Type::MODIFY_QUERY:
-        return "MODIFY QUERY";
-    case AlterCommand::Type::RENAME_COLUMN:
-        return "RENAME COLUMN";
-    case AlterCommand::Type::REMOVE_TTL:
-        return "REMOVE TTL";
-    default:
-        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
-    }
-
-}
-
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)

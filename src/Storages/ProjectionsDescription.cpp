@@ -27,20 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-const char * ProjectionDescription::typeToString(Type type)
-{
-    switch (type)
-    {
-        case Type::Normal:
-            return "normal";
-        case Type::Aggregate:
-            return "aggregate";
-    }
-
-    __builtin_unreachable();
-}
-
-
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
