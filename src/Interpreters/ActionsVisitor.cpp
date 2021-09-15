@@ -185,9 +185,11 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
                 /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
+
                 if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
-                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type of set. Expected tuple, got {}",
+                        function_result.getTypeName());
 
                 tuple = &function_result.get<Tuple>();
             }
@@ -198,8 +200,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             {
                 /// The literal must be tuple.
                 if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type in set. Expected tuple, got "
-                        + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type in set. Expected tuple, got {}",
+                        literal->value.getTypeName());
 
                 tuple = &literal->value.get<Tuple>();
             }
