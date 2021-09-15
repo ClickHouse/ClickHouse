@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import requests
+import json
 
 class PRInfo:
     def __init__(self, github_event):
