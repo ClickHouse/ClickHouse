@@ -22,24 +22,34 @@ public:
     bool temporary{false};
 
 
-    const String & getDatabase() const
+    String getDatabase() const
     {
-        return getIdentifierNameRef(database);
+        String name;
+        tryGetIdentifierNameInto(database, name);
+        return name;
     }
 
-    const String & getTable() const
+    String getTable() const
     {
-        return getIdentifierNameRef(table);
+        String name;
+        tryGetIdentifierNameInto(table, name);
+        return name;
     }
 
     void setDatabase(const String & name)
     {
-        database = std::make_shared<ASTIdentifier>(name);
+        if (name.empty())
+            database.reset();
+        else
+            database = std::make_shared<ASTIdentifier>(name);
     }
 
     void setTable(const String & name)
     {
-        table = std::make_shared<ASTIdentifier>(name);
+        if (name.empty())
+            table.reset();
+        else
+            table = std::make_shared<ASTIdentifier>(name);
     }
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const
