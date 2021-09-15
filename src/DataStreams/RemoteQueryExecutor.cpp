@@ -396,7 +396,6 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
         case Protocol::Server::ProfileEvents:
             /// Pass profile events from remote server to client
             {
-                LOG_DEBUG(log, "RemoteQueryExecutor received ProfileEvents");
                 auto profile_queue = CurrentThread::getInternalProfileEventsQueue();
                 profile_queue->emplace(std::move(packet.block));
                 break;
