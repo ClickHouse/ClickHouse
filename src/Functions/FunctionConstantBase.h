@@ -7,22 +7,29 @@
 namespace DB
 {
 
-/// Base class for functions which return server-level constant like version() or uptime()
-template<typename T, typename ColumnT, auto func_name>
-class FunctionServerConstantBase : public IFunction
+/// Base class for constant functions
+template<typename Derived, typename T, typename ColumnT>
+class FunctionConstantBase : public IFunction
 {
 public:
-    static constexpr auto name = func_name;
 
-    explicit FunctionServerConstantBase(ContextPtr context, T && value_)
+    /// For server-level constants (uptime(), version(), etc)
+    explicit FunctionConstantBase(ContextPtr context, T && constant_value_)
         : is_distributed(context->isDistributed())
-        , value(std::forward<T>(value_))
+        , constant_value(std::forward<T>(constant_value_))
+    {
+    }
+
+    /// For real constants (pi(), e(), etc)
+    explicit FunctionConstantBase(const T & constant_value_)
+        : is_distributed(false)
+        , constant_value(constant_value_)
     {
     }
 
     String getName() const override
     {
-        return name;
+        return Derived::name;
     }
 
     size_t getNumberOfArguments() const override
@@ -38,19 +45,19 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    /// Function may return different values on different shareds/replicas, so it's not constant for distributed query
+    /// Some functions may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return ColumnT().createColumnConst(input_rows_count, value);
+        return ColumnT().createColumnConst(input_rows_count, constant_value);
     }
 
 private:
     bool is_distributed;
-    T value;
+    const T constant_value;
 };
 
 }
