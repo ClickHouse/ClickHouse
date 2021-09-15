@@ -11,7 +11,7 @@ class PRInfo:
         if 'after' in github_event:
             self.sha = github_event['after']
         else:
-            self.sha = os.getenv('GITHUB_SHA')
+            self.sha = github_event['pull_request']['head']['sha']
 
         self.labels = set([l['name'] for l in github_event['pull_request']['labels']])
         self.user_login = github_event['pull_request']['user']['login']
