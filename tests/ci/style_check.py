@@ -94,6 +94,16 @@ def get_check(gh, commit_sha):
     check = list(parent.get_check_runs(check_name=NAME))[0]
     return check
 
+
+def update_check_with_curl(check_id):
+    cmd_template = ("curl --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
+           "--header 'authorization: Bearer {}' "
+           "--header 'content-type: application/json' "
+           "-d '{\"name\" : \"hello-world-name\"}'")
+    cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
+    print("CMD {}", cmd)
+    subprocess.check_call(cmd)
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
@@ -106,10 +116,12 @@ if __name__ == "__main__":
 
     gh = Github(os.getenv("GITHUB_TOKEN"))
     check = get_check(gh, commit_sha)
-    print("EDIT CHECK NAME")
+    check_id = check.id
+    print("EDIT CHECK NAME with id", check_id)
     check.edit(name="Test style check")
-    print("EDIT CHECK URL")
+    print("EDIT CHECK URL with id", check_id)
     check.edit(details_url="https://storage.yandexcloud.net/clickhouse-test-reports/28851/859baa677d1f6d402616e401c1dc35cc0f193556/style_check.html")
+    update_check_with_curl(check_id)
 
     time.sleep(60)
 
