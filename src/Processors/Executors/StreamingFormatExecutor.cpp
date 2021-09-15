@@ -32,6 +32,12 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
     return ret_columns;
 }
 
+size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
+{
+    format->setReadBuffer(buffer);
+    return execute();
+}
+
 size_t StreamingFormatExecutor::execute()
 {
     try
