@@ -73,7 +73,7 @@ Calculates the result of the logical disjunction between two or more values. Cor
 or(val1, val2...)
 ```
 
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `or` function according to a short scheme. So `vali` will be evaluated only on rows where `((NOT val1) AND (NOT val2) AND ... AND (NOT val{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number == 0 OR intDiv(1, number) != 0 OR number == 2 OR intDiv(1, number - 2) != 0 FROM numbers(10)`.
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `or` function according to a short scheme. If this setting is enabled, `vali` is evaluated only on rows where `((NOT val1) AND (NOT val2) AND ... AND (NOT val{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT number = 0 OR intDiv(1, number) != 0 OR number = 2 OR intDiv(1, number - 2) != 0 FROM numbers(10)`.
 
 **Arguments**
 
