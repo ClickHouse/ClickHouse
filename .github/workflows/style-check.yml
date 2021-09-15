@@ -41,7 +41,7 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted]
     steps:
-      - name: Download math result for job 1
+      - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
