@@ -194,7 +194,7 @@ if __name__ == "__main__":
         images_processing_result += process_single_image(versions, full_path, image_name)
 
     if len(changed_images):
-        description = "Updated " + ','.join([im[1] for im in images])
+        description = "Updated " + ','.join([im[1] for im in changed_images])
     else:
         description = "Nothing to update"
 
