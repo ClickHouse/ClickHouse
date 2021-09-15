@@ -69,14 +69,14 @@ TRUSTED_CONTRIBUTORS = {
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
     if pr_user_login in TRUSTED_CONTRIBUTORS:
-        logging.info("User '{}' is trusted".format(user))
+        logging.info("User '{}' is trusted".format(pr_user_login))
         return True
 
-    logging.info("User '{}' is not trusted".format(user))
+    logging.info("User '{}' is not trusted".format(pr_user_login))
 
     for org_id in pr_user_orgs:
         if org_id in TRUSTED_ORG_IDS:
-            logging.info("Org '{}' is trusted; will mark user {} as trusted".format(org_id, user))
+            logging.info("Org '{}' is trusted; will mark user {} as trusted".format(org_id, pr_user_login))
             return True
         logging.info("Org '{}' is not trusted".format(org_id))
 
