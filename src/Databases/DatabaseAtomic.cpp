@@ -2,7 +2,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>

@@ -127,9 +127,11 @@ void DatabaseMaterializedPostgreSQL::loadStoredObjects(
 }
 
 
-void DatabaseMaterializedPostgreSQL::applyNewSettings(const SettingsChanges & settings_changes, ContextPtr query_context)
+void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     std::lock_guard lock(handler_mutex);
+    bool need_update_on_disk = false;
+
     for (const auto & change : settings_changes)
     {
         if (!settings->has(change.name))
@@ -140,12 +142,12 @@ void DatabaseMaterializedPostgreSQL::applyNewSettings(const SettingsChanges & se
             if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
 
-            DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
+            need_update_on_disk = true;
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
-            DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
             replication_handler->setSetting(change);
+            need_update_on_disk = true;
         }
         else
         {
@@ -154,6 +156,9 @@ void DatabaseMaterializedPostgreSQL::applyNewSettings(const SettingsChanges & se
 
         settings->applyChange(change);
     }
+
+    if (need_update_on_disk)
+        DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
 }
 
 
@@ -185,6 +190,8 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 
 
 /// `except` is not empty in case it is detach and it will contain only one table name - name of detached table.
+/// In case we have a user defined setting `materialized_postgresql_tables_list`, then list of tables is always taken there.
+/// Otherwise we traverse materialized storages to find out the list.
 String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & except) const
 {
     String tables_list;
@@ -334,7 +341,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name
 
         auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
         if (!nested)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Inner table `{}` does not exist", table_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
         replication_handler->removeTableFromReplication(table_name);
