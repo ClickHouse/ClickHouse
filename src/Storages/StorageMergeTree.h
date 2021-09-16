@@ -167,6 +167,17 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    struct PartVersionWithName
+    {
+        Int64 version;
+        String name;
+
+        bool operator <(const PartVersionWithName & s) const
+        {
+            return version < s.version;
+        }
+    };
+
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -190,6 +201,8 @@ private:
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     size_t clearOldMutations(bool truncate = false);
+
+    std::vector<PartVersionWithName> getSortedPartVersionsWithNames(std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
