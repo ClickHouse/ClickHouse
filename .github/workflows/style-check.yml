@@ -11,9 +11,6 @@ on: # yamllint disable-line rule:truthy
       - master
 jobs:
   CheckLabels:
-    branding:
-      icon: 'award'
-      color: 'green'
     runs-on: [self-hosted]
     steps:
       - name: Check out repository code
@@ -26,10 +23,8 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted]
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
       - name: Images check
-        run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
+        uses: .github/workflows
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
