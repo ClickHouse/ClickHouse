@@ -80,7 +80,7 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, false, state->stage, true);
+        state->io = executeQuery(state->query, query_context, false, state->stage);
 
         if (state->io.out)
         {
