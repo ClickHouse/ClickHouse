@@ -11,7 +11,7 @@ import shutil
 import sys
 
 NAME = 'PVS Studio (actions)'
-LICENSE_NAME = 'Free license: ClickHouse, Yandex'
+LICENCE_NAME = 'Free license: ClickHouse, Yandex'
 HTML_REPORT_FOLDER = 'pvs-studio-html-report'
 TXT_REPORT_NAME = 'pvs-studio-task-report.txt'
 
