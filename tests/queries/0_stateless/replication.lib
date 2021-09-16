@@ -84,4 +84,3 @@ function check_replication_consistency()
     fi
 
 }
-
