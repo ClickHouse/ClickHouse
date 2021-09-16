@@ -1,8 +1,8 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/join_common.h>
-#include <DataStreams/IBlockInputStream.h>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -15,7 +15,9 @@ namespace ErrorCodes
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
     ExtraBlockPtr tmp;
+    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->joinBlock(header, tmp);
+    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 

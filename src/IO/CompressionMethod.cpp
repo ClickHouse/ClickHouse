@@ -10,6 +10,8 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
+#include <IO/Lz4DeflatingWriteBuffer.h>
+#include <IO/Lz4InflatingReadBuffer.h>
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 
@@ -42,6 +44,8 @@ std::string toContentEncodingName(CompressionMethod method)
             return "xz";
         case CompressionMethod::Zstd:
             return "zstd";
+        case CompressionMethod::Lz4:
+            return "lz4";
         case CompressionMethod::Bzip2:
             return "bz2";
         case CompressionMethod::None:
@@ -73,13 +77,15 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Xz;
     if (method_str == "zstd" || method_str == "zst")
         return CompressionMethod::Zstd;
+    if (method_str == "lz4")
+        return CompressionMethod::Lz4;
     if (method_str == "bz2")
         return CompressionMethod::Bzip2;
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
     throw Exception(
-        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'bz2' are supported as compression methods",
+        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
 }
 
@@ -97,6 +103,8 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
         return std::make_unique<LZMAInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
     if (method == CompressionMethod::Zstd)
         return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+    if (method == CompressionMethod::Lz4)
+        return std::make_unique<Lz4InflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
@@ -123,6 +131,10 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
 
     if (method == CompressionMethod::Zstd)
         return std::make_unique<ZstdDeflatingWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+
+    if (method == CompressionMethod::Lz4)
+        return std::make_unique<Lz4DeflatingWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
+
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2WriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
