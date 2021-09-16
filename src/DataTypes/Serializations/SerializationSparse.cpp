@@ -66,7 +66,8 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     }
 
     /// Just try to guess number of offsets.
-    offsets.reserve(static_cast<size_t>(limit * ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION));
+    offsets.reserve(offsets.size()
+        + static_cast<size_t>(limit * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
     bool first = true;
     size_t total_rows = state.num_trailing_defaults;
