@@ -79,7 +79,7 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
             virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
     }
 
-    LOG_TRACE(log, "Queue initilized");
+    LOG_TRACE(log, "Queue initialized");
 }
 
 bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
