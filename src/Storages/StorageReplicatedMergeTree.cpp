@@ -5107,6 +5107,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 
     LOG_DEBUG(log, "Waiting for {} to process log entry", replica);
 
+    if (startsWith(entry.znode_name, "log-"))
     {
         /// Take the number from the node name `log-xxxxxxxxxx`.
         UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
@@ -5137,9 +5138,76 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 
         if (!pulled_to_queue)
             return false;
-    }
 
-    LOG_DEBUG(log, "Looking for node corresponding to {} in {} queue", log_node_name, replica);
+        LOG_DEBUG(log, "Looking for node corresponding to {} in {} queue", log_node_name, replica);
+    }
+    else if (!entry.log_entry_id.empty())
+    {
+        /// First pass, check the table log.
+        /// If found in the log, wait for replica to fetch it to the queue.
+        /// If not found in the log, it is already in the queue.
+        LOG_DEBUG(log, "Looking for log entry with id `{}` in the log", entry.log_entry_id);
+
+        String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer");
+
+        Strings log_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "log");
+        UInt64 log_index = 0;
+        bool found = false;
+
+        for (const String & log_entry_name : log_entries)
+        {
+            log_index = parse<UInt64>(log_entry_name.substr(log_entry_name.size() - 10));
+
+            if (!log_pointer.empty() && log_index < parse<UInt64>(log_pointer))
+                continue;
+
+            String log_entry_str;
+            Coordination::Stat log_entry_stat;
+            bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "log" / log_entry_name, log_entry_str, &log_entry_stat);
+            ReplicatedMergeTreeLogEntryData log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, log_entry_stat);
+            if (exists && entry.log_entry_id == log_entry.log_entry_id)
+            {
+                LOG_DEBUG(log, "Found log entry with id `{}` in the log", entry.log_entry_id);
+
+                found = true;
+                log_node_name = log_entry_name;
+                break;
+            }
+        }
+
+        if (found)
+        {
+            LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
+
+            /// Let's wait until entry gets into the replica queue.
+            bool pulled_to_queue = false;
+            do
+            {
+                zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
+                log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
+                if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
+                {
+                    pulled_to_queue = true;
+                    break;
+                }
+
+                /// Wait with timeout because we can be already shut down, but not dropped.
+                /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+                /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+                /// but the query will never finish because the drop already shut down the table.
+                if (!stop_waiting())
+                    event->tryWait(event_wait_timeout_ms);
+            } while (!stop_waiting());
+
+            if (!pulled_to_queue)
+                return false;
+        }
+    }
+    else
+    {
+        throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
+    }
 
     /** Second - find the corresponding entry in the queue of the specified replica.
       * Its number may not match the `log` node. Therefore, we search by comparing the content.
@@ -5151,11 +5219,24 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     for (const String & entry_name : queue_entries)
     {
         String queue_entry_str;
-        bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / entry_name, queue_entry_str);
+        Coordination::Stat queue_entry_stat;
+        bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / entry_name, queue_entry_str, &queue_entry_stat);
         if (exists && queue_entry_str == entry_str)
         {
             queue_entry_to_wait_for = entry_name;
             break;
+        }
+        else if (!entry.log_entry_id.empty())
+        {
+            /// Check if the id matches rather than just contents. This entry
+            /// might have been written by different ClickHouse versions and
+            /// it is hard to guarantee same text representation.
+            ReplicatedMergeTreeLogEntryData queue_entry = *ReplicatedMergeTreeLogEntry::parse(queue_entry_str, queue_entry_stat);
+            if (entry.log_entry_id == queue_entry.log_entry_id)
+            {
+                queue_entry_to_wait_for = entry_name;
+                break;
+            }
         }
     }
 
