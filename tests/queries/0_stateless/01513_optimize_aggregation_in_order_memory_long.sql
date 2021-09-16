@@ -1,3 +1,5 @@
+-- Tags: long
+
 drop table if exists data_01513;
 create table data_01513 (key String) engine=MergeTree() order by key;
 -- 10e3 groups, 1e3 keys each

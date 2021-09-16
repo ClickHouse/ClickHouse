@@ -4,7 +4,7 @@
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -80,6 +80,9 @@ public:
     virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+
+    using SubcolumnCallback = std::function<void(const String &, const DataTypePtr &, const ISerialization::SubstreamPath &)>;
+    void forEachSubcolumn(const SubcolumnCallback & callback) const;
     Names getSubcolumnNames() const;
 
     /// TODO: support more types.
@@ -497,7 +500,7 @@ template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
-template <typename T>
+template <is_decimal T>
 class DataTypeDecimal;
 
 template <typename T>
@@ -508,7 +511,7 @@ class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
-template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

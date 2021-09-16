@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
 }
 
 namespace
@@ -282,7 +283,8 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         String name = elem->children.front()->getColumnName();
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
-        if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+        if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
+            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -425,6 +427,17 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     if (!order_by)
         return;
 
+    for (const auto & child : order_by->children)
+    {
+        auto * order_by_element = child->as<ASTOrderByElement>();
+
+        if (!order_by_element || order_by_element->children.empty())
+            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
+        if (order_by_element->with_fill)
+            return;
+    }
+
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
@@ -440,6 +453,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     for (size_t i = 0; i < order_by->children.size(); ++i)
     {
         auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
+
         auto & ast_func = order_by_element->children[0];
         if (!ast_func->as<ASTFunction>())
             continue;
@@ -474,6 +488,17 @@ void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, Co
     const auto & order_by = select_query->orderBy();
     if (!order_by)
         return;
+
+    for (const auto & child : order_by->children)
+    {
+        auto * order_by_element = child->as<ASTOrderByElement>();
+
+        if (!order_by_element || order_by_element->children.empty())
+            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
+        if (order_by_element->with_fill)
+            return;
+    }
 
     std::unordered_set<String> prev_keys;
     ASTs modified;

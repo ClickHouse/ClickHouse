@@ -78,6 +78,8 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -251,7 +253,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
@@ -455,40 +456,6 @@ void checkForUsersNotInMainConfig(
             users_config_path, config_path);
     }
 }
-
-static void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::Logger * log)
-{
-#if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
-
-    auto process = ShellCommand::execute(key_command);
-
-    std::string b64_key;
-    readStringUntilEOF(b64_key, process->out);
-    process->wait();
-
-    // turbob64 doesn't like whitespace characters in input. Strip
-    // them before decoding.
-    std::erase_if(b64_key, [](char c)
-    {
-        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    });
-
-    std::vector<char> buf(b64_key.size());
-    const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
-                                    reinterpret_cast<unsigned char *>(buf.data()));
-    if (!key_size)
-        throw Exception("Failed to decode encryption key", ErrorCodes::INCORRECT_DATA);
-    else if (key_size < 16)
-        LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
-
-    const std::string_view key = std::string_view(buf.data(), key_size);
-    CompressionCodecEncrypted::setMasterKey(key);
-
-#else
-    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
-#endif
-}
-
 
 [[noreturn]] void forceShutdown()
 {
@@ -904,6 +871,8 @@ if (ThreadFuzzer::instance().isEffective())
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -944,6 +913,13 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
+
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
@@ -962,7 +938,7 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
@@ -976,9 +952,9 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-    /// Set up encryption.
-    if (config().has("encryption.key_command"))
-        loadEncryptionKey(config().getString("encryption.key_command"), log);
+
+    /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
+    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 

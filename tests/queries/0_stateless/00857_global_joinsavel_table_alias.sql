@@ -1,3 +1,5 @@
+-- Tags: global, no-parallel
+
 CREATE DATABASE IF NOT EXISTS test_00857;
 USE test_00857;
 DROP TABLE IF EXISTS local_table;
