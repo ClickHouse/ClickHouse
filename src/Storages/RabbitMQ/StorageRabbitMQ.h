@@ -107,6 +107,8 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
     String vhost;
+    String connection_string;
+    bool secure;
 
     UVLoop loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
@@ -153,7 +155,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    std::shared_ptr<Context> addSettings(ContextPtr context) const;
+    ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
@@ -168,7 +170,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    String getRandomName() const
+    static String getRandomName()
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
