@@ -66,7 +66,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: true
+          submodules: 'recursive'
       - name: PVS Check
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
