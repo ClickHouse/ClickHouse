@@ -288,10 +288,13 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
-    prepare();
-    while (executeImpl()) {}
+    assert(subtasks_iterator != subtasks.end());
+    if ((*subtasks_iterator)())
+        return true;
 
-    return false;
+    /// Move to the next subtask in an array of subtasks
+    ++subtasks_iterator;
+    return subtasks_iterator != subtasks.end();
 }
 
 
@@ -597,22 +600,24 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 
 bool MergeTask::VerticalMergeStage::execute()
 {
-    /// TODO: make it better
-    prepareVerticalMergeForAllColumns();
-    while (executeVerticalMergeForAllColumns()) {}
-    finalizeVerticalMergeForAllColumns();
+    assert(subtasks_iterator != subtasks.end());
+    if ((*subtasks_iterator)())
+        return true;
 
-    return false;
+    /// Move to the next subtask in an array of subtasks
+    ++subtasks_iterator;
+    return subtasks_iterator != subtasks.end();
 }
 
 bool MergeTask::MergeProjectionsStage::execute()
 {
-    /// TODO: make it better
-    mergeMinMaxIndexAndPrepareProjections();
-    while (executeProjections()) {}
-    finalizeProjectionsAndWholeMerge();
+    assert(subtasks_iterator != subtasks.end());
+    if ((*subtasks_iterator)())
+        return true;
 
-    return false;
+    /// Move to the next subtask in an array of subtasks
+    ++subtasks_iterator;
+    return subtasks_iterator != subtasks.end();
 }
 
 

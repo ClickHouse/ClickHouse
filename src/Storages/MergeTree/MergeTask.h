@@ -201,6 +201,16 @@ private:
         bool prepare();
         bool executeImpl();
 
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<std::function<bool()>, 2>;
+
+        ExecuteAndFinalizeHorizontalPartSubtasks subtasks
+        {
+            [this] () { return prepare(); },
+            [this] () { return executeImpl(); }
+        };
+
+        ExecuteAndFinalizeHorizontalPartSubtasks::iterator subtasks_iterator = subtasks.begin();
+
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
@@ -267,6 +277,17 @@ private:
         bool executeVerticalMergeForAllColumns() const;
         bool finalizeVerticalMergeForAllColumns() const;
 
+        using VerticalMergeStageSubtasks = std::array<std::function<bool()>, 3>;
+
+        VerticalMergeStageSubtasks subtasks
+        {
+            [this] () { return prepareVerticalMergeForAllColumns(); },
+            [this] () { return executeVerticalMergeForAllColumns(); },
+            [this] () { return finalizeVerticalMergeForAllColumns(); }
+        };
+
+        VerticalMergeStageSubtasks::iterator subtasks_iterator = subtasks.begin();
+
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
@@ -305,6 +326,17 @@ private:
         bool mergeMinMaxIndexAndPrepareProjections() const;
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
+
+        using MergeProjectionsStageSubtasks = std::array<std::function<bool()>, 3>;
+
+        MergeProjectionsStageSubtasks subtasks
+        {
+            [this] () { return mergeMinMaxIndexAndPrepareProjections(); },
+            [this] () { return executeProjections(); },
+            [this] () { return finalizeProjectionsAndWholeMerge(); }
+        };
+
+        MergeProjectionsStageSubtasks::iterator subtasks_iterator = subtasks.begin();
 
         MergeProjectionsRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
