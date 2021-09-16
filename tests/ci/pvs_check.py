@@ -26,7 +26,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix):
 
     return additional_urls
 
-def _process_txt_report(self, path):
+def _process_txt_report(path):
     warnings = []
     errors = []
     with open(path, 'r') as report_file:
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
-    html_urls = self.s3_client.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
+    html_urls = s3_helper.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
     index_html = None
 
     for url in html_urls:
