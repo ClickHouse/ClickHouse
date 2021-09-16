@@ -230,4 +230,3 @@ if __name__ == "__main__":
 
     print("::notice ::Report url: {}".format(url))
     print("::set-output name=url_output::\"{}\"".format(url))
-)
