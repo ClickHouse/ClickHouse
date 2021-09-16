@@ -78,8 +78,9 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <filesystem>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -911,6 +912,13 @@ if (ThreadFuzzer::instance().isEffective())
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
+
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
