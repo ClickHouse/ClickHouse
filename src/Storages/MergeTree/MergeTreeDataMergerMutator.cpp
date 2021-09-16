@@ -924,10 +924,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
     }
 
-    QueryPipelineBuilder pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-    pipeline.addTransform(std::move(merged_transform));
-    pipeline.setMaxThreads(1);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe::unitePipes(std::move(pipes)));
+    builder.addTransform(std::move(merged_transform));
+    builder.setMaxThreads(1);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
@@ -1053,8 +1054,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 column_part_pipeline.init(Pipe(std::move(column_part_source)));
                 column_part_pipeline.setMaxThreads(1);
 
+                auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(column_part_pipeline));
+
                 column_part_streams[part_num] =
-                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
+                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(cur_pipeline));
             }
 
             rows_sources_read_buf.seek(0, 0);

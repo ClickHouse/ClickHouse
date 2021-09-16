@@ -15,11 +15,8 @@ namespace ErrorCodes
     extern const int RECEIVED_EMPTY_DATA;
 }
 
-std::string readInvalidateQuery(Pipe pipe)
+std::string readInvalidateQuery(QueryPipeline pipeline)
 {
-    QueryPipelineBuilder pipeline;
-    pipeline.init(std::move(pipe));
-
     PullingPipelineExecutor executor(pipeline);
 
     Block block;

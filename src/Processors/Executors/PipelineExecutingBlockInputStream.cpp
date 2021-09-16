@@ -11,8 +11,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PipelineExecutingBlockInputStream::PipelineExecutingBlockInputStream(QueryPipelineBuilder pipeline_)
-    : pipeline(std::make_unique<QueryPipelineBuilder>(std::move(pipeline_)))
+PipelineExecutingBlockInputStream::PipelineExecutingBlockInputStream(QueryPipeline pipeline_)
+    : pipeline(std::make_unique<QueryPipeline>(std::move(pipeline_)))
 {
 }
 

@@ -356,7 +356,7 @@ BlockIO InterpreterInsertQuery::execute()
         else if (query.watch)
         {
             InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
-            pipeline = interpreter_watch.execute();
+            pipeline = interpreter_watch.buildQueryPipeline();
         }
 
         for (size_t i = 0; i < out_streams_size; i++)

@@ -22,8 +22,6 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    if (process_list_entry)
-        process_list_entry->get().releaseQueryStreams();
     pipeline.reset();
     process_list_entry.reset();
 

@@ -23,7 +23,7 @@ namespace DB
 BlockIO InterpreterDescribeQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 

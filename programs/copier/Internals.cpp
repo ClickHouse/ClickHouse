@@ -1,6 +1,8 @@
 #include "Internals.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 
 namespace DB
 {
@@ -63,9 +65,21 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
             std::numeric_limits<size_t>::max());
 }
 
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
+Block getBlockWithAllStreamData(QueryPipeline pipeline)
 {
-    return squashStreamIntoOneBlock(stream)->read();
+    QueryPipelineBuilder builder;
+    builder.init(std::move(pipeline));
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(
+        builder.getHeader(),
+        std::numeric_limits<size_t>::max(),
+        std::numeric_limits<size_t>::max()));
+
+    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    Block block;
+    PullingPipelineExecutor executor(cur_pipeline);
+    executor.pull(block);
+
+    return block;
 }
 
 

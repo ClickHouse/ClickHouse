@@ -969,7 +969,7 @@ private:
     Data data;
 };
 
-ProcessorPtr StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
+std::shared_ptr<ISource> StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
 {
     return std::make_shared<DirectoryMonitorSource>(file_name);
 }

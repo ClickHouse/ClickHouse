@@ -355,9 +355,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.chain.addSource(std::make_shared<RemoteSink>(
+                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
                     *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.chain);
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                 job.executor->start();
             }
 
@@ -384,8 +384,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
-                job.chain = std::move(block_io.out);
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.chain);
+                job.pipeline = std::move(block_io.pipeline);
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                 job.executor->start();
             }
 
@@ -621,7 +621,7 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
-    PushingPipelineExecutor executor(block_io.out);
+    PushingPipelineExecutor executor(block_io.pipeline);
 
     executor.start();
     writeBlockConvert(executor, block, repeats, log);

@@ -301,16 +301,15 @@ void TCPHandler::runImpl()
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
             }
-            else if (state.need_receive_data_for_input) // It implies pipeline execution
+            else if (state.io.pipeline.pulling())
             {
-                /// It is special case for input(), all works for reading data from client will be done in callbacks.
+                processOrdinaryQueryWithProcessors();
+            }
+            else
+            {
                 CompletedPipelineExecutor executor(state.io.pipeline);
                 executor.execute();
             }
-            else if (state.io.pipeline.pulling())
-                processOrdinaryQueryWithProcessors();
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected QueryPipeline state.");
 
             state.io.onFinish();
 
@@ -1299,7 +1298,7 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        Chain temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);
@@ -1355,8 +1354,8 @@ void TCPHandler::initBlockInput()
             state.maybe_compressed_in = in;
 
         Block header;
-        if (!state.io.out.empty())
-            header = state.io.out.getInputHeader();
+        if (state.io.pipeline.pushing())
+            header = state.io.pipeline.getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 

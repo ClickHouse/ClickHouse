@@ -567,8 +567,7 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipelineBuilder pipeline;
-    pipeline.init(std::move(pipe));
+    QueryPipeline pipeline(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
     Block block;

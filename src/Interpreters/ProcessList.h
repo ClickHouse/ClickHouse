@@ -103,7 +103,7 @@ protected:
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    mutable std::mutex query_streams_mutex;
+    mutable std::mutex executors_mutex;
 
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
     std::vector<PipelineExecutor *> executors;
@@ -166,15 +166,6 @@ public:
     }
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
-
-    /// Copies pointers to in/out streams
-    void setQueryStreams(const BlockIO & io);
-
-    /// Frees in/out streams
-    void releaseQueryStreams();
-
-    /// It means that ProcessListEntry still exists, but stream was already destroyed
-    bool streamsAreReleased();
 
     CancellationCode cancelQuery(bool kill);
 
