@@ -113,29 +113,33 @@ if __name__ == "__main__":
         commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
         sys.exit(1)
 
-    s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
-    html_urls = s3_helper.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
-    index_html = None
+    try:
+        s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
+        html_urls = s3_helper.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
+        index_html = None
 
-    for url in html_urls:
-        if 'index.html' in url:
-            index_html = '<a href="{}">HTML report</a>'.format(url)
-            break
+        for url in html_urls:
+            if 'index.html' in url:
+                index_html = '<a href="{}">HTML report</a>'.format(url)
+                break
 
-        if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
-            sys.exit(1)
+            if not index_html:
+                commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+                sys.exit(1)
 
-    txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
-    warnings, errors = _process_txt_report(txt_report)
-    errors = errors + warnings
+        txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
+        warnings, errors = _process_txt_report(txt_report)
+        errors = errors + warnings
 
-    status = 'success'
-    test_results = [(index_html, "Look at the report"), ("Errors count not checked", "OK")]
-    description = "Total errors {}".format(len(errors))
-    additional_logs = [txt_report, os.path.join(temp_path, 'pvs-studio.log')]
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs)
+        status = 'success'
+        test_results = [(index_html, "Look at the report"), ("Errors count not checked", "OK")]
+        description = "Total errors {}".format(len(errors))
+        additional_logs = [txt_report, os.path.join(temp_path, 'pvs-studio.log')]
+        report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs)
 
-    print("::notice ::Report url: {}".format(report_url))
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+        print("::notice ::Report url: {}".format(report_url))
+        commit = get_commit(gh, pr_info.sha)
+        commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+    except Exception as ex:
+        print("Got an exception", ex)
+        sys.exit(1)

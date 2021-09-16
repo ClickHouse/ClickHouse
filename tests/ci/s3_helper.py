@@ -71,7 +71,7 @@ class S3Helper(object):
         if not files:
             return []
 
-        p = Pool(min(len(files), 30))
+        p = Pool(min(len(files), 5))
 
         def task(file_name):
             full_fs_path = os.path.join(folder_path, file_name)
