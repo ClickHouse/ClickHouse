@@ -735,6 +735,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
@@ -787,10 +789,7 @@ public:
             }
         }
 
-        auto divide = FunctionFactory::instance().get("divide", context);
-        ColumnWithTypeAndName one{std::make_shared<DataTypeUInt8>(), {}};
-        auto div_elem = divide->build({one, p_column});
-        ColumnWithTypeAndName inv_p_column{div_elem->getResultType(), {}};
+        ColumnWithTypeAndName inv_p_column{std::make_shared<DataTypeFloat64>(), {}};
         return pow->build({ColumnWithTypeAndName{res_type, {}}, inv_p_column})->getResultType();
     }
 
@@ -805,6 +804,19 @@ public:
             return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
         const auto & p_column = arguments[1];
+
+        const auto * p_column_const = assert_cast<const ColumnConst *>(p_column.column.get());
+        double p;
+        if (isFloat(p_column_const->getDataType()))
+            p = p_column_const->getFloat64(0);
+        else if (isUnsignedInteger(p_column_const->getDataType()))
+            p = p_column_const->getUInt(0);
+        else
+            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (p < 1 || p == HUGE_VAL)
+            throw Exception{"Second argument for function " + getName() + " must be not less than one and not be an infinity", ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
         auto plus = FunctionFactory::instance().get("plus", context);
@@ -835,13 +847,8 @@ public:
             }
         }
 
-        auto divide = FunctionFactory::instance().get("divide", context);
-        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1),
-                                  std::make_shared<DataTypeUInt8>(), {}};
-        auto div_elem = divide->build({one, p_column});
-        ColumnWithTypeAndName inv_p_column;
-        inv_p_column.type = div_elem->getResultType();
-        inv_p_column.column = div_elem->execute({one, p_column}, inv_p_column.type, input_rows_count);
+        ColumnWithTypeAndName inv_p_column{DataTypeFloat64().createColumnConst(input_rows_count, 1 / p),
+                                           std::make_shared<DataTypeFloat64>(), {}};
         auto pow_elem = pow->build({res, inv_p_column});
         return pow_elem->execute({res, inv_p_column}, pow_elem->getResultType(), input_rows_count);
     }
@@ -866,6 +873,14 @@ public:
             return 3;
         else
             return 2;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (FuncLabel::name[0] == 'p')
+            return {2};
+        else
+            return {};
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -930,6 +945,14 @@ public:
             return 2;
         else
             return 1;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (FuncLabel::name[0] == 'p')
+            return {1};
+        else
+            return {};
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
