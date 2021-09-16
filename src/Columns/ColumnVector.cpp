@@ -570,7 +570,7 @@ ColumnPtr ColumnVector<T>::compress() const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -579,7 +579,8 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, s
     auto res = this->create();
     auto & res_data = res->getData();
 
-    res_data.resize_fill(total_rows, data[0]);
+    T default_value = safeGet<T>(default_field);
+    res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];
 
