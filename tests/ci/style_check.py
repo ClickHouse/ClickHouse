@@ -132,4 +132,4 @@ if __name__ == "__main__":
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
     print("::notice ::Report url: {}".format(report_url))
     commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=url)
+    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
