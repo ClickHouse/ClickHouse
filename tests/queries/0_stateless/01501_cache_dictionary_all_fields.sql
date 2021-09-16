@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop database if exists db_01501;
 drop table if exists db_01501.table_cache_dict;
 drop dictionary if exists db_01501.cache_dict;
