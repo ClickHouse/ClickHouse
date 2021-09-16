@@ -52,7 +52,6 @@ std::string formatTypeMap(const TableJoin::NameToTypeMap & target, const TableJo
 
 }
 
-
 namespace
 {
 
@@ -146,9 +145,8 @@ bool operator==(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause
 
 TableJoin::JoinOnClause & operator+=(TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
 {
-    for (auto & cp :
-             {std::pair(&l.on_filter_condition_left, &r.on_filter_condition_left),
-                     std::pair(&l.on_filter_condition_right, &r.on_filter_condition_right) })
+    for (const auto & cp : {std::pair(&l.on_filter_condition_left, &r.on_filter_condition_left),
+                std::pair(&l.on_filter_condition_right, &r.on_filter_condition_right) })
     {
         if (*cp.first == nullptr)
             *cp.first = *cp.second;
@@ -541,7 +539,8 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
         return true;
     });
 
-    return {left_converting_actions, right_converting_actions};}
+    return {left_converting_actions, right_converting_actions};
+}
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
 bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
@@ -581,12 +580,11 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         }
         catch (DB::Exception & ex)
         {
-            throw Exception(
-                "Type mismatch of columns to JOIN by: " +
-                left_key_name + ": " + ltype->second->getName() + " at left, " +
-                right_key_name + ": " + rtype->second->getName() + " at right. " +
-                "Can't get supertype: " + ex.message(),
-                ErrorCodes::TYPE_MISMATCH);
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
+                left_key_name, ltype->second->getName(),
+                right_key_name, rtype->second->getName(),
+                ex.message());
         }
         if (!allow_right && !common_type->equals(*rtype->second))
         {

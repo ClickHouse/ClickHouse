@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <common/logger_useful.h>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -24,14 +26,8 @@
 #include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
-#include <fmt/core.h>
-#include <fmt/format.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "Columns/IColumn.h"
-
-#include <common/logger_useful.h>
-
 namespace DB
 {
 
@@ -232,19 +228,6 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-//static std::string formatKeysDebug(const std::vector<TableJoin::JoinOnClause> & onexprs)
-//{
-//    std::vector<std::string> res;
-//    for (const auto & onexpr : onexprs)
-//    {
-//        std::vector<std::string> current;
-//        for (size_t i = 0; i < onexpr.keysCount(); ++i)
-//            current.emplace_back(fmt::format("{} == {}", onexpr.key_names_left[i], onexpr.key_names_right[i]));
-//        res.emplace_back(fmt::format("{}", fmt::join(current, ", ")));
-//    }
-//    return fmt::format("{}", fmt::join(res, " | "));
-//}
-
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
     : table_join(table_join_)
     , kind(table_join->kind())
@@ -294,7 +277,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
-
 
     size_t disjuncts_num = table_join->getClauses().size();
     data->maps.resize(disjuncts_num);
@@ -1775,7 +1757,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             joinBlockImpl<Kind::Left, Strictness::Semi>(block, sample_block_with_columns_to_add, maps_vector);
 
         else
-            throw throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
     else
     {
@@ -1792,7 +1774,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             /// Joined
         }
         else
-            throw throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
 }
 
