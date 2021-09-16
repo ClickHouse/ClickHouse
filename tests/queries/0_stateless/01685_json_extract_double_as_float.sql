@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 WITH '{ "v":1.1}' AS raw
 SELECT
     JSONExtract(raw, 'v', 'float') AS float32_1,
