@@ -94,6 +94,7 @@ SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normaliz
 
 SELECT LpNorm((1, 2, 3), 2.2);
 SELECT LpNorm((1.5, 2.5, 4), pi());
+SELECT LpNorm((3, 1, 4), 0); -- { serverError 69 }
 SELECT LpNorm((1, 2, 3), 0.5); -- { serverError 69 }
 SELECT LpNorm((1, 2, 3), inf); -- { serverError 69 }
 SELECT LpNorm((1, 2, 3), -1.); -- { serverError 69 }
