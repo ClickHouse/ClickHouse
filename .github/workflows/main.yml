@@ -65,6 +65,8 @@ jobs:
           path: ${{ runner.temp }}/pvs_check
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          submodules: true
       - name: PVS Check
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
