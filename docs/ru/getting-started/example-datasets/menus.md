@@ -3,7 +3,7 @@ toc_priority: 21
 toc_title: Menus
 ---
 
-# New York Public Library "What's on the Menu?" Dataset
+# New York Public Library "What's on the Menu?" Dataset {#menus-dataset}
 
 Набор данных создан Нью-Йоркской публичной библиотекой. Он содержит исторические данные о меню отелей, ресторанов и кафе с блюдами, а также их ценами.
 
@@ -13,7 +13,7 @@ toc_title: Menus
 Данные взяты из архива библиотеки, и они могут быть неполными и сложными для статистического анализа. Тем не менее это тоже очень интересно.
 В наборе всего 1,3 миллиона записей о блюдах в меню — очень небольшой объем данных для ClickHouse, но это все равно хороший пример.
 
-## Загрузите набор данных
+## Загрузите набор данных {#download-dataset}
 
 Выполните команду:
 
@@ -24,7 +24,7 @@ wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.
 Замените ссылку на актуальную ссылку с http://menus.nypl.org/data, если это необходимо.
 Размер загрузки составляет около 35 МБ.
 
-## Распакуйте набор данных
+## Распакуйте набор данных {#unpack-dataset}
 
 ```bash
 tar xvf 2021_08_01_07_01_17_data.tgz
@@ -38,7 +38,7 @@ The data is normalized consisted of four tables:
 - MenuPage — information about the pages in the menus, because every page belongs to some menu.
 - MenuItem — an item of the menu. A dish along with its price on some menu page: links to dish and menu page.
 
-## Создайте таблицы
+## Создайте таблицы {#create-tables}
 
 ```sql
 CREATE TABLE dish
@@ -105,7 +105,7 @@ CREATE TABLE menu_item
 
 We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices. Everything else is quite straightforward.
 
-## Import Data
+## Import Data {#import-data}
 
 Upload data into ClickHouse:
 
@@ -125,7 +125,7 @@ We disable `input_format_null_as_default` as our data does not have NULLs. Other
 The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed [DateTime](../../sql-reference/data-types/datetime.md) format is allowed.
 
 
-## Denormalize the Data
+## Denormalize the Data {#denormalize-data}
 
 Data is presented in multiple tables in normalized form. It means you have to perform JOINs if you want to query, e.g. dish names from menu items.
 For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing JOIN every time. It is called "denormalized" data.
@@ -177,8 +177,7 @@ FROM menu_item
     JOIN menu ON menu_page.menu_id = menu.id;
 ```
 
-
-## Validate the Data
+## Validate the Data {#validate-data}
 
 Запрос:
 
@@ -194,9 +193,9 @@ SELECT count() FROM menu_item_denorm;
 └─────────┘
 ```
 
-## Примеры
+## Примеры запросов {#run-queries}
 
-### Усредненные исторические цены на блюда
+### Усредненные исторические цены на блюда {#query-averaged-historical-prices}
 
 Запрос:
 
@@ -238,7 +237,7 @@ ORDER BY d ASC;
 
 Просто не принимайте это всерьез.
 
-### Цены на бургеры
+### Цены на бургеры {#query-burger-prices}
 
 Запрос:
 
@@ -275,7 +274,7 @@ ORDER BY d ASC;
 └──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
 ```
 
-### Водка
+### Водка {#query-vodka}
 
 Запрос:
 
@@ -309,7 +308,7 @@ ORDER BY d ASC;
 
 To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
 
-### Икра
+### Икра {#query-caviar}
 
 Давайте выведем цены на икру. Также давайте выведем название любого блюда с икрой.
 
@@ -352,6 +351,6 @@ ORDER BY d ASC;
 
 По крайней мере, есть икра с водкой. Очень мило.
 
-### Test it in Playground
+### Test it in Playground {#playground}
 
 The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).

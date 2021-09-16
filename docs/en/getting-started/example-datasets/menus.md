@@ -3,7 +3,7 @@ toc_priority: 21
 toc_title: Menus
 ---
 
-# New York Public Library "What's on the Menu?" Dataset
+# New York Public Library "What's on the Menu?" Dataset {#menus-dataset}
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
 
@@ -13,7 +13,7 @@ The data is in public domain.
 The data is from library's archive and it may be incomplete and difficult for statistical analysis. Nevertheless it is also very yummy.
 The size is just 1.3 million records about dishes in the menus — it's a very small data volume for ClickHouse, but it's still a good example.
 
-## Download the Dataset
+## Download the Dataset {#download-dataset}
 
 Run the command:
 
@@ -24,7 +24,7 @@ wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.
 Replace the link to the up to date link from http://menus.nypl.org/data if needed.
 Download size is about 35 MB.
 
-## Unpack the Dataset
+## Unpack the Dataset {#unpack-dataset}
 
 ```bash
 tar xvf 2021_08_01_07_01_17_data.tgz
@@ -38,7 +38,7 @@ The data is normalized consisted of four tables:
 - MenuPage — information about the pages in the menus, because every page belongs to some menu.
 - MenuItem — an item of the menu. A dish along with its price on some menu page: links to dish and menu page.
 
-## Create the Tables
+## Create the Tables {#create-tables}
 
 ```sql
 CREATE TABLE dish
@@ -105,7 +105,7 @@ CREATE TABLE menu_item
 
 We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices. Everything else is quite straightforward.
 
-## Import Data
+## Import the Data {#import-data}
 
 Upload data into ClickHouse:
 
@@ -120,13 +120,13 @@ We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the da
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable `input_format_null_as_default` as our data does not have NULLs. Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+We disable [input_format_null_as_default](../../operations/settings/settings.mdsettings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed [DateTime](../../sql-reference/data-types/datetime.md) format is allowed.
+The setting [--date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
 
-## Denormalize the Data
+## Denormalize the Data {#denormalize-data}
 
-Data is presented in multiple tables in normalized form. It means you have to perform JOINs if you want to query, e.g. dish names from menu items.
+Data is presented in multiple tables in normalized form. It means you have to perform [JOIN](../../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
 For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing JOIN every time. It is called "denormalized" data.
 
 We will create a table that will contain all the data JOINed together:
@@ -176,7 +176,7 @@ FROM menu_item
     JOIN menu ON menu_page.menu_id = menu.id;
 ```
 
-## Validate the Data
+## Validate the Data {#validate-data}
 
 Query:
 
@@ -192,9 +192,9 @@ Result:
 └─────────┘
 ```
 
-## Run Some Queries
+## Run Some Queries {#run-queries}
 
-### Averaged historical prices of dishes
+### Averaged historical prices of dishes {#query-averaged-historical-prices}
 
 Query:
 
@@ -236,7 +236,7 @@ Result:
 
 Take it with a grain of salt.
 
-### Burger Prices
+### Burger Prices {#query-burger-prices}
 
 Query:
 
@@ -273,7 +273,7 @@ Result:
 └──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
 ```
 
-### Vodka
+### Vodka {#query-vodka}
 
 Query:
 
@@ -307,7 +307,7 @@ Result:
 
 To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
 
-### Caviar
+### Caviar {#query-caviar}
 
 Let's print caviar prices. Also let's print a name of any dish with caviar.
 
@@ -350,6 +350,6 @@ Result:
 
 At least they have caviar with vodka. Very nice.
 
-### Test it in Playground
+### Test it in Playground {#playground}
 
 The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).
