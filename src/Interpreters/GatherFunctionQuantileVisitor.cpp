@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Mapping from quantile functions for single value to plural
 static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
     {NameQuantile::name, NameQuantiles::name},

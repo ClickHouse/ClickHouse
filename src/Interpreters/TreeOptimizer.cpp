@@ -632,39 +632,48 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
+std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
+{
+    if (functions.size() < 2)
+        return nullptr;
+
+    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
+    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
+    func_base->arguments->children = common_arguments;
+    func_base->parameters = std::make_shared<ASTExpressionList>();
+
+    for (const auto * ast : functions)
+    {
+        assert(ast && *ast);
+        const auto * func = (*ast)->as<ASTFunction>();
+        assert(func && func->parameters->as<ASTExpressionList>());
+        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+        if (parameters.size() != 1)
+            return nullptr; /// query is illegal, give up
+        func_base->parameters->children.push_back(parameters[0]);
+    }
+    return func_base;
+}
+
 /// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
 /// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
 ///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
-void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
+void optimizeFuseQuantileFunctions(ASTPtr & query)
 {
-    for (auto & candidate : fuse_quantile)
+    GatherFunctionQuantileVisitor::Data data{};
+    GatherFunctionQuantileVisitor(data).visit(query);
+    for (auto & candidate : data.fuse_quantile)
     {
         String func_name = candidate.first;
         auto & args_to_functions = candidate.second;
 
-        // Try to fuse multiply `quantile*` Function to plural
+        /// Try to fuse multiply `quantile*` Function to plural
         for (auto it : args_to_functions.arg_map_function)
         {
             std::vector<ASTPtr *> & functions = it.second;
-            if (functions.size() < 2)
+            auto func_base = getQuantileFuseCandidate(func_name, functions);
+            if (!func_base)
                 continue;
-
-            const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
-            auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
-            func_base->arguments->children = common_arguments;
-            func_base->parameters = std::make_shared<ASTExpressionList>();
-
-            for (const auto * ast : functions)
-            {
-                assert(ast && *ast);
-                const auto * func = (*ast)->as<ASTFunction>();
-                assert(func && func->parameters->as<ASTExpressionList>());
-                const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
-                if (parameters.size() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function '{}' requires one parameter", func_name);
-                func_base->parameters->children.push_back(parameters[0]);
-            }
-
             for (size_t i = 0; i < functions.size(); ++i)
             {
                 std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
@@ -674,13 +683,6 @@ void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQu
             }
         }
     }
-}
-
-void optimizeFuseQuantileFunctions(ASTPtr & query)
-{
-    GatherFunctionQuantileVisitor::Data data{};
-    GatherFunctionQuantileVisitor(data).visit(query);
-    fuseCandidate(data.fuse_quantile);
 }
 
 }
