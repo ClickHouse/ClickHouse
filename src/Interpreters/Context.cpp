@@ -2744,8 +2744,8 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 {
     using namespace std::chrono;
 
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout) == 0ms)
-        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
 
     shared->async_insert_queue = ptr;
 }
