@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted]
     steps:
       - name: Images check
-        uses: .github/workflows
+        uses: .github/actions
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
