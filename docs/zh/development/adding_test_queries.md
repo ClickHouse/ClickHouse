@@ -1,4 +1,4 @@
-# 如何将测试查询添加到ClickHouse CI
+# 如何将测试查询添加到 ClickHouse CI
 
 ClickHouse有数百个（甚至数千个）功能。 每个提交都由包含数千个测试用例的一组复杂测试进行检查。
 
@@ -60,7 +60,7 @@ git fetch upstream
 git checkout -b name_for_a_branch_with_my_test upstream/master
 ```
 
-#### 安装并运行clickhouse
+#### 安装并运行 clickhouse
 
 1) 安装`clickhouse-server` (参考[离线文档](https://clickhouse.tech/docs/en/getting-started/install/))
 2) 安装测试配置（它将使用Zookeeper模拟实现并调整一些设置）

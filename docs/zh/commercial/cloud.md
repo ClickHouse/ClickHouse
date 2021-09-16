@@ -8,7 +8,7 @@ toc_title: 云
 !!! info "注意"
     如果您已经推出具有托管ClickHouse服务的公共云，请随时[提交一个 pull request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md)将其添加到以下列表。
 
-## Yandex云 {#yandex-cloud}
+## Yandex 云 {#yandex-cloud}
 
 [Yandex ClickHouse托管服务](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3)提供以下主要功能:
 
@@ -49,7 +49,7 @@ toc_title: 云
 -   MRS提供平滑弹性伸缩能力，快速满足集群存储容量或CPU计算资源不足场景下的业务增长需求。当您扩展集群中ClickHouse节点的容量时，MRS提供一键式数据平衡工具，让您主动进行数据平衡。 您可以根据业务特点确定数据均衡方式和时间，保证业务的可用性，实现平滑扩展。
 -   MRS采用弹性负载均衡保障高可用部署架构，自动将用户访问流量分配到多个后端节点，将服务能力扩展到外部系统，提高容错能力。 通过ELB轮询机制，数据写入本地表，从不同节点的分布式表中读取。 这样就保证了数据读写负载和应用访问的高可用。
 
-## 腾讯云{#tencent-cloud}
+## 腾讯云 {#tencent-cloud}
 
 [腾讯云ClickHouse托管服务](https://cloud.tencent.com/product/cdwch)提供以下主要功能：
 
