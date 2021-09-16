@@ -224,3 +224,5 @@ if __name__ == "__main__":
 
     with open(os.path.join(temp_path, 'changed_images.json'), 'w') as images_file:
         json.dump(result_images, images_file)
+
+    print("::notice ::Report url: {}".format(url))
