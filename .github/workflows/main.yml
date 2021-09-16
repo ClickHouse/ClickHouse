@@ -48,6 +48,8 @@ jobs:
           path: ${{ runner.temp }}/style_check
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          path: 'repo_without_submodules'
       - name: Style Check
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}

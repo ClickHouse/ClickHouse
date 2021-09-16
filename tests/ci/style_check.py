@@ -95,7 +95,7 @@ def update_check_with_curl(check_id):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
+    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")), 'repo_without_submodules')
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
