@@ -5,8 +5,9 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/EmptyReadBuffer.h>
 #include <DataStreams/BlockIO.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -26,10 +27,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
-
-Pipe getSourceFromFromASTInsertQuery(
+InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
-    ReadBuffer * input_buffer_tail_part,
+    bool with_buffers,
     const Block & header,
     ContextPtr context,
     const ASTPtr & input_function)
@@ -55,48 +55,27 @@ Pipe getSourceFromFromASTInsertQuery(
     auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
-    /// Input buffer will be defined by reading from file buffer or by ConcatReadBuffer (concatenation of data and tail)
-    std::unique_ptr<ReadBuffer> input_buffer;
-
-    if (ast_insert_query->infile)
-    {
-        /// Data can be from infile
-        const auto & in_file_node = ast_insert_query->infile->as<ASTLiteral &>();
-        const auto in_file = in_file_node.value.safeGet<std::string>();
-
-        /// It can be compressed and compression method maybe specified in query
-        std::string compression_method;
-        if (ast_insert_query->compression)
-        {
-            const auto & compression_method_node = ast_insert_query->compression->as<ASTLiteral &>();
-            compression_method = compression_method_node.value.safeGet<std::string>();
-        }
-
-        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
-        /// Buffer for reading from file is created and wrapped with appropriate compression method
-        input_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
-    }
-    else
-    {
-        /// concatenation of data and tail
-        ConcatReadBuffer::ReadBuffers buffers;
-        if (ast_insert_query->data)
-            buffers.push_back(input_buffer_ast_part.get());
-
-        if (input_buffer_tail_part)
-            buffers.push_back(input_buffer_tail_part);
-
-        /** NOTE Must not read from 'input_buffer_tail_part' before read all between 'ast_insert_query.data' and 'ast_insert_query.end'.
-            * - because 'query.data' could refer to memory piece, used as buffer for 'input_buffer_tail_part'.
-            */
-
-        input_buffer = std::make_unique<ConcatReadBuffer>(buffers);
-    }
+    std::unique_ptr<ReadBuffer> input_buffer = with_buffers
+        ? getReadBufferFromASTInsertQuery(ast)
+        : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
     auto source = FormatFactory::instance().getInput(format, *input_buffer, header, context, context->getSettings().max_insert_block_size);
+    source->addBuffer(std::move(input_buffer));
+    return source;
+}
+
+Pipe getSourceFromASTInsertQuery(
+    const ASTPtr & ast,
+    bool with_buffers,
+    const Block & header,
+    ContextPtr context,
+    const ASTPtr & input_function)
+{
+    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
     Pipe pipe(source);
 
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
@@ -111,10 +90,48 @@ Pipe getSourceFromFromASTInsertQuery(
         }
     }
 
-    source->addBuffer(std::move(input_buffer_ast_part));
-    source->addBuffer(std::move(input_buffer));
-
     return pipe;
+}
+
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+{
+    const auto * insert_query = ast->as<ASTInsertQuery>();
+    if (!insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+
+    if (insert_query->infile)
+    {
+        /// Data can be from infile
+        const auto & in_file_node = insert_query->infile->as<ASTLiteral &>();
+        const auto in_file = in_file_node.value.safeGet<std::string>();
+
+        /// It can be compressed and compression method maybe specified in query
+        std::string compression_method;
+        if (insert_query->compression)
+        {
+            const auto & compression_method_node = insert_query->compression->as<ASTLiteral &>();
+            compression_method = compression_method_node.value.safeGet<std::string>();
+        }
+
+        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+        /// Buffer for reading from file is created and wrapped with appropriate compression method
+        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+    }
+
+    std::vector<std::unique_ptr<ReadBuffer>> buffers;
+    if (insert_query->data)
+    {
+        /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
+        auto ast_buffer = std::make_unique<ReadBufferFromMemory>(
+            insert_query->data, insert_query->end - insert_query->data);
+
+        buffers.emplace_back(std::move(ast_buffer));
+    }
+
+    if (insert_query->tail)
+        buffers.emplace_back(wrapReadBufferReference(*insert_query->tail));
+
+    return std::make_unique<ConcatReadBuffer>(std::move(buffers));
 }
 
 }
