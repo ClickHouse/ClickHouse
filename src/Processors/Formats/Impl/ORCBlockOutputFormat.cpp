@@ -486,7 +486,7 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     /// The size of the batch must be no less than total amount of array elements.
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
-    auto columns = chunk.getColumns();
+    auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveLowCardinality(column);
 
