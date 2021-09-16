@@ -34,23 +34,24 @@ SELECT max2(materialize(1), 1.5);
 SELECT min2(-1, -3);
 SELECT LinfNorm((1, -2.3, 1.7));
 
+SELECT LpNorm(tuple(-1), 3.3);
 SELECT LpNorm(tuple(-1), 3);
 SELECT LpNorm(tuple(-1.1), 3);
 SELECT LpNorm((95800, 217519, 414560), 4);
 SELECT LpNorm((13, -84.4, 91, 63.1), 2) = L2Norm(tuple(13, -84.4, 91, 63.1));
 SELECT LpNorm(materialize((13, -84.4, 91, 63.1)), 1) = L1Norm(tuple(13, -84.4, 91, 63.1));
-SELECT LpNorm((-1, -2), materialize(11));
+SELECT LpNorm((-1, -2), 11.);
 
 SELECT L1Distance((1, 2, 3), (2, 3, 1));
 SELECT L2Distance(materialize((1, 1)), (3, -1));
 SELECT LinfDistance((1, 1), (1, 2));
 SELECT L2Distance((5, 5), (5, 5));
-SELECT LpDistance((1800, 1900), (18, 59), materialize(12)) - LpDistance(tuple(-22), tuple(1900), 12);
+SELECT LpDistance((1800, 1900), (18, 59), 12) - LpDistance(tuple(-22), tuple(1900), 12.);
 
 SELECT L1Normalize(materialize((1, -4)));
 SELECT L2Normalize((3, 4));
 SELECT LinfNormalize((5, -5, 5.0));
-SELECT LpNormalize((1, pow(31, 1 / 5)), 5);
+SELECT LpNormalize((1, pow(31, 1 / 5)), 5.);
 
 SELECT cosineDistance(materialize((1, 1)), (2, 2));
 SELECT cosineDistance((1, 1), materialize((-3, 3.0)));
@@ -80,11 +81,22 @@ SELECT tuple() + tuple(); -- { serverError 42 }
 SELECT LpNorm((1, 2, 3)); -- { serverError 42 }
 SELECT max2(1, 2, -1); -- { serverError 42 }
 
+SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError 44 }
+
 SELECT tuple(*, 1) + tuple(2, *) FROM numbers(3);
-SELECT LpDistance(tuple(*, 1), tuple(2, *), * + 1) FROM numbers(3, 2);
+SELECT LpDistance(tuple(*, 1), tuple(2, *), * + 1.) FROM numbers(3, 2); -- { serverError 44 }
 SELECT cosineDistance(tuple(*, * + 1), tuple(1, 2)) FROM numbers(1, 3);
 SELECT -tuple(NULL, * * 2, *) FROM numbers(2);
 
-SELECT normL1((1, 1)), normL2((1, 1)), normLinf((1, 1)), normLp((1, 1), 1);
-SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1);
-SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normalizeLp((1, 1), 1);
+SELECT normL1((1, 1)), normL2((1, 1)), normLinf((1, 1)), normLp((1, 1), 1.);
+SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.);
+SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normalizeLp((1, 1), 1.);
+
+SELECT LpNorm((1, 2, 3), 2.2);
+SELECT LpNorm((1.5, 2.5, 4), pi());
+SELECT LpNorm((1, 2, 3), 0.5); -- { serverError 69 }
+SELECT LpNorm((1, 2, 3), inf); -- { serverError 69 }
+SELECT LpNorm((1, 2, 3), -1.); -- { serverError 69 }
+SELECT LpNorm((1, 2, 3), -1); -- { serverError 44 }
+SELECT LpNorm((1, 2, 3), 0.); -- { serverError 69 }
+--SELECT cosineDistance(materialize((NULL, -2147483648)), (1048577, 1048575));
