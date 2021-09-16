@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: OpenSky
 ---
 
-# Crowdsourced air traffic data from The OpenSky Network 2020
+# Crowdsourced air traffic data from The OpenSky Network 2020 {#opensky}
 
 "The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
 
@@ -14,7 +14,7 @@ Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent L
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021
 
-## Download the Dataset
+## Download the Dataset {#download-dataset}
 
 Run the command:
 
@@ -24,7 +24,7 @@ wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record
 
 Download will take about 2 minutes with good internet connection. There are 30 files with total size of 4.3 GB.
 
-## Create the Table
+## Create the Table {#create-table}
 
 ```sql
 CREATE TABLE opensky
@@ -48,7 +48,7 @@ CREATE TABLE opensky
 ) ENGINE = MergeTree ORDER BY (origin, destination, callsign);
 ```
 
-## Import Data
+## Import Data {#import-data}
 
 Upload data into ClickHouse in parallel:
 
@@ -72,7 +72,7 @@ If you don't like parallel upload, here is sequential variant:
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
 
-## Validate the Data
+## Validate the Data {#validate-data}
 
 Query:
 
@@ -104,7 +104,7 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## Run Some Queries
+## Run Some Queries {#run-queries}
 
 Total distance travelled is 68 billion kilometers.
 
@@ -138,7 +138,7 @@ Result:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Most busy origin airports and the average distance seen
+### Most busy origin airports and the average distance seen {#busy-airports-average-distance}
 
 Query:
 
@@ -262,7 +262,7 @@ Result:
      └────────┴─────────┴──────────┴────────────────────────────────────────┘
 ```
 
-### Number of flights from three major Moscow airports, weekly
+### Number of flights from three major Moscow airports, weekly {#flights-from-moscow}
 
 Query:
 
@@ -415,6 +415,6 @@ Result:
      └────────────┴──────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Online Playground
+### Online Playground {#playground}
 
 You can test other queries to this data set using the interactive resource [Online Playground](https://gh-api.clickhouse.tech/play?user=play). For example, [like this](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). However, please note that you cannot create temporary tables here.

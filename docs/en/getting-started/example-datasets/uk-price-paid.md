@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: UK Property Price Paid
 ---
 
-# UK Property Price Paid
+# UK Property Price Paid {#uk-property-price-paid}
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
 The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
@@ -13,7 +13,7 @@ Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
 
 Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
 
-## Download the Dataset
+## Download the Dataset {#download-dataset}
 
 Run the command:
 
@@ -23,7 +23,7 @@ wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.c
 
 Download will take about 2 minutes with good internet connection.
 
-## Create the Table
+## Create the Table {#create-table}
 
 ```sql
 CREATE TABLE uk_price_paid
@@ -46,7 +46,7 @@ CREATE TABLE uk_price_paid
 ) ENGINE = MergeTree ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-## Preprocess and Import Data
+## Preprocess and Import Data {#preprocess-import-data}
 
 We will use `clickhouse-local` tool for data preprocessing and `clickhouse-client` to upload it.
 
@@ -102,7 +102,7 @@ clickhouse-local --input-format CSV --structure '
 
 It will take about 40 seconds.
 
-## Validate the Data
+## Validate the Data {#validate-data}
 
 Query:
 
@@ -134,9 +134,9 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## Run Some Queries
+## Run Some Queries {#run-queries}
 
-### Query 1. Average Price Per Year
+### Query 1. Average Price Per Year {#average-price}
 
 Query:
 
@@ -178,7 +178,7 @@ Result:
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Query 2. Average Price per Year in London
+### Query 2. Average Price per Year in London {#average-price-london}
 
 Query:
 
@@ -222,7 +222,7 @@ Result:
 
 Something happened in 2013. I don't have a clue. Maybe you have a clue what happened in 2020?
 
-### Query 3. The Most Expensive Neighborhoods
+### Query 3. The Most Expensive Neighborhoods {#most-expensive-neighborhoods}
 
 Query:
 
@@ -351,11 +351,11 @@ Result:
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-## Let's Speed Up Queries Using Projections
+## Let's Speed Up Queries Using Projections {#speedup-with-projections}
 
 [Projections](../../sql-reference/statements/alter/projection.md) allow to improve queries speed by storing pre-aggregated data.
 
-### Build a Projection 
+### Build a Projection {#build-projection}
 
 Create an aggregate projection by dimensions `toYear(date)`, `district`, `town`:
 
@@ -385,7 +385,7 @@ ALTER TABLE uk_price_paid
 SETTINGS mutations_sync = 1;
 ```
 
-## Test Performance
+## Test Performance {#test-performance}
 
 Let's run the same 3 queries.
 
@@ -395,7 +395,7 @@ Enable projections for selects:
 SET allow_experimental_projection_optimization = 1;
 ```
 
-### Query 1. Average Price Per Year
+### Query 1. Average Price Per Year {#average-price-projections}
 
 Query:
 
@@ -443,7 +443,7 @@ Result:
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Query 2. Average Price Per Year in London
+### Query 2. Average Price Per Year in London {#average-price-london-projections}
 
 Query:
 
@@ -492,7 +492,7 @@ Result:
 └──────┴─────────┴───────────────────────────────────────────────────────┘
 ```
 
-### Query 3. The Most Expensive Neighborhoods
+### Query 3. The Most Expensive Neighborhoods {#most-expensive-neighborhoods-projections}
 
 The condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020).
 
@@ -622,7 +622,7 @@ Result:
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-### Summary
+### Summary {#summary}
 
 All 3 queries work much faster and read fewer rows.
 
@@ -644,6 +644,6 @@ no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows
    projection: 100 rows in set. Elapsed: 0.029 sec. Processed 8.08 thousand rows, 511.08 KB (276.06 thousand rows/s., 17.47 MB/s.)
 ```
 
-### Test It in Playground
+### Test It in Playground {#playground}
 
 The dataset is also available in the [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
