@@ -96,7 +96,7 @@ namespace
 }
 
 
-void registerFunctionBuildId(FunctionFactory & factory)
+void registerFunctionBuildId([[maybe_unused]] FunctionFactory & factory)
 {
 #if defined(__ELF__) && !defined(__FreeBSD__)
     factory.registerFunction<FunctionBuildId>();
