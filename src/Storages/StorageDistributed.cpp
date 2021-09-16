@@ -1300,8 +1300,14 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
+        const ContextPtr & local_context = args.getLocalContext();
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
-        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
+        String storage_policy = "default";
+        if (engine_args.size() >= 5)
+        {
+            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
+            storage_policy = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
