@@ -282,9 +282,16 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                 const auto & out_file = out_file_node.value.safeGet<std::string>();
 
+                std::string compression_method;
+                if (query_with_output->compression)
+                {
+                    const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                    compression_method = compression_method_node.value.safeGet<std::string>();
+                }
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, ""),
+                    chooseCompressionMethod(out_file, compression_method),
                     /* compression level = */ 3
                 );
 
@@ -703,12 +710,24 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         progress_indication.setFileProgressCallback(global_context, true);
     }
 
+    /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
+        /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
 
-        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+        std::string compression_method;
+        /// Compression method can be specified in query
+        if (parsed_insert_query->compression)
+        {
+            const auto & compression_method_node = parsed_insert_query->compression->as<ASTLiteral &>();
+            compression_method = compression_method_node.value.safeGet<std::string>();
+        }
+
+        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+        /// Buffer for reading from file is created and wrapped with appropriate compression method
+        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
 
         try
         {
