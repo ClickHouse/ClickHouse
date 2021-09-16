@@ -800,9 +800,9 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
                 break;
             }
         }
-        catch (Exception & e)
+        catch (Exception &)
         {
-            e.addMessage(fmt::format("(in query: {})", full_query));
+            // e.addMessage(fmt::format("(in query: {})", full_query));
             throw;
         }
 
