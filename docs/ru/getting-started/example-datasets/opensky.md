@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: Набор данных о воздушном движении OpenSky Network 2020
 ---
 
-# Набор данных о воздушном движении OpenSky Network 2020
+# Набор данных о воздушном движении OpenSky Network 2020 {#opensky}
 
 "Данные в этом наборе получены и отфильтрованы из полного набора данных OpenSky, чтобы проиллюстрировать развитие воздушного движения во время пандемии COVID-19. Набор включает в себя все рейсы, которые видели более 2500 участников сети с 1 января 2019 года. Дополнительные данные будут периодически включаться в набор данных до окончания пандемии COVID-19".
 
@@ -14,7 +14,7 @@ Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent L
 Earth System Science Data 13(2), 2021
 https://doi.org/10.5194/essd-13-357-2021
 
-## Загрузите набор данных
+## Загрузите набор данных {#download-dataset}
 
 Выполните команду:
 
@@ -24,7 +24,7 @@ wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record
 
 Загрузка займет около 2 минут при хорошем подключении к интернету. Будет загружено 30 файлов общим размером 4,3 ГБ.
 
-## Создайте таблицу
+## Создайте таблицу {#create-table}
 
 ```sql
 CREATE TABLE opensky
@@ -48,7 +48,7 @@ CREATE TABLE opensky
 ) ENGINE = MergeTree ORDER BY (origin, destination, callsign);
 ```
 
-## Импортируйте данные в ClickHouse
+## Импортируйте данные в ClickHouse {#import-data}
 
 Загрузите данные в ClickHouse параллельными потоками:
 
@@ -73,7 +73,7 @@ ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhou
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
 
-## Проверьте импортированные данные
+## Проверьте импортированные данные {#validate-data}
 
 Запрос:
 
@@ -105,7 +105,7 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
 └─────────────────────────────────┘
 ```
 
-## Примеры
+## Примеры {#run-queries}
 
 Общее пройденное расстояние составляет 68 миллиардов километров.
 
@@ -139,7 +139,7 @@ SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM o
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Наиболее загруженные аэропорты в указанных координатах и среднее пройденное расстояние
+### Наиболее загруженные аэропорты в указанных координатах и среднее пройденное расстояние {#busy-airports-average-distance}
 
 Запрос:
 
@@ -263,7 +263,7 @@ LIMIT 100;
      └────────┴─────────┴──────────┴────────────────────────────────────────┘
 ```
 
-### Номера рейсов из трех крупных аэропортов Москвы, еженедельно
+### Номера рейсов из трех крупных аэропортов Москвы, еженедельно {#flights-from-moscow}
 
 Запрос:
 
@@ -416,6 +416,6 @@ ORDER BY k ASC;
      └────────────┴──────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Online Playground
+### Online Playground {#playground}
 
 Вы можете протестировать другие запросы к этому набору данным с помощью интерактивного ресурса [Online Playground](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). Однако обратите внимание, что здесь нельзя создавать временные таблицы.
