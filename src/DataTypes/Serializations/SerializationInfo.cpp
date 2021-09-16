@@ -46,18 +46,17 @@ void SerializationInfoBuilder::add(const Block & block)
         info->columns[elem.name].num_defaults += static_cast<size_t>(
             num_rows * elem.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
 
-        for (const auto & subcolumn_name : elem.type->getSubcolumnNames())
+        elem.type->forEachSubcolumn([&](const auto & subcolumn_name, const auto & subcolumn_type, const auto &)
         {
-            auto subcolumn_type = elem.type->getSubcolumnType(subcolumn_name);
             if (!subcolumn_type->supportsSparseSerialization())
-                continue;
+                return;
 
             auto parent_subcolumn_name = Nested::splitName(subcolumn_name, /*reverse=*/ true).first;
             if (!parent_subcolumn_name.empty())
             {
                 auto parent_subcolumn_type = elem.type->tryGetSubcolumnType(parent_subcolumn_name);
                 if (parent_subcolumn_type && !parent_subcolumn_type->supportsSparseSerialization())
-                    continue;
+                    return;
             }
 
             auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
@@ -65,7 +64,7 @@ void SerializationInfoBuilder::add(const Block & block)
 
             info->columns[full_name].num_defaults += static_cast<size_t>(
                 num_rows * subcolumn->getRatioOfDefaultRows(default_rows_search_sample_ratio));
-        }
+        });
     }
 }
 
@@ -86,7 +85,7 @@ SerializationInfoPtr SerializationInfoBuilder::build() &&
             column_info.kind = ISerialization::Kind::SPARSE;
     }
 
-    return info;
+    return std::move(info);
 }
 
 SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo & other) &&
@@ -100,7 +99,7 @@ SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo
             it->second.kind = column_info.kind;
     }
 
-    return info;
+    return std::move(info);
 }
 
 SerializationInfo::SerializationInfo(size_t number_of_rows_, const NameToKind & kinds)
