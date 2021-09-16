@@ -114,9 +114,9 @@ if __name__ == "__main__":
     commit = get_commit(gh, pr_info.sha)
     url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if not can_run:
-        print("::notice ::<h1>Cannot run</h1>")
+        print("::notice ::**Cannot run**")
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)
         sys.exit(1)
     else:
-        print("::notice ::<h1>Can run</h1>")
+        print("::notice ::**Can run**")
         commit.create_status(context=NAME, description=description, state="pending", target_url=url)

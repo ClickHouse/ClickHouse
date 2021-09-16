@@ -26,7 +26,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
-        uses: ./.github/actions/docker-hub-push
+        run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
