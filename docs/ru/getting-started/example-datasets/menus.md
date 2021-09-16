@@ -21,7 +21,7 @@ toc_title: Menus
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
 ```
 
-Замените ссылку на актуальную ссылку с http://menus.nypl.org/data, если это необходимо.
+При необходимости, замените ссылку на актуальную ссылку с http://menus.nypl.org/data.
 Размер загрузки составляет около 35 МБ.
 
 ## Распакуйте набор данных {#unpack-dataset}
@@ -32,13 +32,15 @@ tar xvf 2021_08_01_07_01_17_data.tgz
 
 Размер распакованных данных составляет около 150 МБ.
 
-The data is normalized consisted of four tables:
-- Menu — information about menus: the name of the restaurant, the date when menu was seen, etc.
-- Dish — information about dishes: the name of the dish along with some characteristic.
-- MenuPage — information about the pages in the menus, because every page belongs to some menu.
-- MenuItem — an item of the menu. A dish along with its price on some menu page: links to dish and menu page.
+Данные нормализованы и состоят из четырех таблиц:
+- `Menu` — информация о меню: название ресторана, дата, когда было просмотрено меню, и т.д.
+- `Dish` — информация о блюдах: название блюда вместе с некоторыми характеристиками.
+- `MenuPage` — информация о страницах в меню, потому что каждая страница принадлежит какому-либо меню.
+- `MenuItem` — один из пунктов меню. Блюдо вместе с его ценой на какой-либо странице меню: ссылки на блюдо и страницу меню.
 
 ## Создайте таблицы {#create-tables}
+
+Для хранения цен используется тип данных [Decimal](../../sql-reference/data-types/decimal.md).
 
 ```sql
 CREATE TABLE dish
@@ -103,11 +105,9 @@ CREATE TABLE menu_item
 ) ENGINE = MergeTree ORDER BY id;
 ```
 
-We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices. Everything else is quite straightforward.
+## Импортируйте данные {#import-data}
 
-## Import Data {#import-data}
-
-Upload data into ClickHouse:
+Импортируйте данные в ClickHouse, выполните:
 
 ```bash
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
@@ -116,21 +116,27 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the data is represented by CSV with header.
+Поскольку данные представлены в формате CSV с заголовком указывается параметр [CSVWithNames](../../interfaces/formats.md#csvwithnames).
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable `input_format_null_as_default` as our data does not have NULLs. Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+Отключите `format_csv_allow_single_quotes`, так как для данных используются только двойные кавычки, а одинарные кавычки могут находиться внутри значений и не должны сбивать с толку CSV-парсер.
 
-The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed [DateTime](../../sql-reference/data-types/datetime.md) format is allowed.
+Отключите [input_format_null_as_default](../../operations/settings/settings.mdsettings-input-format-null-as-default), поскольку в данных нет значений [NULL](../../sql-reference/syntax.md#null-literal).
 
+В противном случае ClickHouse попытается проанализировать последовательности `\N` и может перепутать с `\` в данных.
 
-## Denormalize the Data {#denormalize-data}
+Настройка [date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format) позволяет анализировать поля [DateTime](../../sql-reference/data-types/datetime.md) в самых разных форматах. К примеру, будет распознан ISO-8601 без секунд: '2000-01-01 01:02'. Без этой настройки допускается только фиксированный формат даты и времени.
 
-Data is presented in multiple tables in normalized form. It means you have to perform JOINs if you want to query, e.g. dish names from menu items.
-For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing JOIN every time. It is called "denormalized" data.
+## Денормализуйте данные {#denormalize-data}
 
-We will create a table that will contain all the data JOINed together:
+Данные представлены в нескольких таблицах в [нормализованном виде](https://ru.wikipedia.org/wiki/%D0%9D%D0%BE%D1%80%D0%BC%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F_%D1%84%D0%BE%D1%80%D0%BC%D0%B0). 
+
+Это означает, что вам нужно использовать условие объединения [JOIN](../../sql-reference/statements/select/join.md#select-join), если вы хотите получить, например, названия блюд из пунктов меню.
+
+Для типовых аналитических задач гораздо эффективнее работать с предварительно объединенными данными, чтобы не использовать JOIN каждый раз. Такие данные называются "денормализованными".
+
+Создайте таблицу `menu_item_denorm`, которая будет содержать все данные, объединенные вместе:
 
 ```sql
 CREATE TABLE menu_item_denorm
@@ -177,7 +183,7 @@ FROM menu_item
     JOIN menu ON menu_page.menu_id = menu.id;
 ```
 
-## Validate the Data {#validate-data}
+## Проверьте загруженные данные {#validate-data}
 
 Запрос:
 
@@ -306,11 +312,11 @@ ORDER BY d ASC;
 └──────┴─────────┴──────────────────────┴─────────────────────────────┘
 ```
 
-To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
+Чтобы получить водку, мы должны написать `ILIKE '%vodka%'`, и это хорошая идея.
 
 ### Икра {#query-caviar}
 
-Давайте выведем цены на икру. Также давайте выведем название любого блюда с икрой.
+Посмотрите цены на икру. Получите название любого блюда с икрой.
 
 Запрос:
 
@@ -353,4 +359,4 @@ ORDER BY d ASC;
 
 ### Test it in Playground {#playground}
 
-The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).
+Этот набор данных доступен в интерактивном ресурсе [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).
