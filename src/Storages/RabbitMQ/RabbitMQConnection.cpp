@@ -33,7 +33,7 @@ bool RabbitMQConnection::connect()
 {
     std::lock_guard lock(mutex);
     connectImpl();
-    return event_handler.connectionRunning();
+    return isConnectedImpl();
 }
 
 bool RabbitMQConnection::reconnect()
@@ -48,19 +48,15 @@ bool RabbitMQConnection::reconnect()
     if (!connection->closed())
         connection->close(true);
 
-    LOG_TRACE(log, "Trying to restore connection to {}", connectionInfoForLog());
+    LOG_DEBUG(log, "Trying to restore connection to {}", connectionInfoForLog());
     connectImpl();
 
-    return event_handler.connectionRunning();
+    return isConnectedImpl();
 }
 
 ChannelPtr RabbitMQConnection::createChannel()
 {
     std::lock_guard lock(mutex);
-
-    if (!isConnectedImpl())
-        connectImpl();
-
     return std::make_unique<AMQP::TcpChannel>(connection.get());
 }
 
@@ -91,6 +87,7 @@ void RabbitMQConnection::connectImpl()
 {
     if (configuration.connection_string.empty())
     {
+        LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
         AMQP::Login login(configuration.username, configuration.password);
         AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
         connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
