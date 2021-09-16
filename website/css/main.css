@@ -364,39 +364,44 @@ a.card:hover:after,
   white-space: nowrap;
 }
 
-.form-control {
+form .form-control {
   border: 1px solid #6c757d;
   border-radius: 6px;
   box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
   color: #212529;
   height: auto;
-  min-height: 48px;
+  line-height: 20px;
+  min-height: 44px;
   padding: 12px 16px;
   width: 100%;
 }
-.form-control:focus {
+form .form-control:focus {
   border-color: #212529;
   box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
   color: #212529;
 }
-.form-control::-moz-placeholder {
+form .form-control::-moz-placeholder {
   color: #6c757d;
 }
-.form-control:-ms-input-placeholder {
+form .form-control:-ms-input-placeholder {
   color: #6c757d;
 }
-.form-control::placeholder {
+form .form-control::placeholder {
   color: #6c757d;
 }
-
-select.form-control {
+form select.form-control {
   -webkit-appearance: none;
      -moz-appearance: none;
           appearance: none;
 }
-
-select.form-control:not([data-chosen]) {
+form select.form-control:not([data-chosen]) {
   color: #6c757d;
+}
+form .btn-secondary:active,
+form .btn-secondary:hover {
+  color: #212529;
+  background: #ffcc00;
+  border-color: #ffcc00;
 }
 
 .hero {
@@ -435,6 +440,10 @@ hr {
   height: 4px;
   margin: 0;
   width: 100%;
+}
+
+hr.is-small {
+  height: 2px;
 }
 
 hr.is-large {
