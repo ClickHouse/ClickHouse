@@ -55,9 +55,9 @@ In this example, we define the structure of source data from the CSV file and sp
 The preprocessing is:
 - splitting the postcode to two different columns `postcode1` and `postcode2` that is better for storage and queries;
 - coverting the `time` field to date as it only contains 00:00 time;
-- ignoring the `uuid` field because we don't need it for analysis;
-- transforming `type` and `duration` to more readable Enum fields with function `transform`;
-- transforming `is_new` and `category` fields from single-character string (`Y`/`N` and `A`/`B`) to UInt8 field with 0 and 1.
+- ignoring the [UUid](../../sql-reference/data-types/uuid.md) field because we don't need it for analysis;
+- transforming `type` and `duration` to more readable Enum fields with function [transform](../../sql-reference/functions/other-functions.md#transform);
+- transforming `is_new` and `category` fields from single-character string (`Y`/`N` and `A`/`B`) to [UInt8](../../sql-reference/data-types/int-uint.md##uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) field with 0 and 1.
 
 Preprocessed data is piped directly to `clickhouse-client` to be inserted into ClickHouse table in streaming fashion.
 
@@ -389,7 +389,7 @@ SETTINGS mutations_sync = 1;
 
 Let's run the same 3 queries.
 
-Enable projections for selects:
+[Enable](../../operations/settings/settings.md#allow-experimental-projection-optimization) projections for selects:
 
 ```sql
 SET allow_experimental_projection_optimization = 1;

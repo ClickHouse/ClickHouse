@@ -55,9 +55,9 @@ CREATE TABLE uk_price_paid
 Предварительная обработка включает:
 - разделение почтового индекса на два разных столбца `postcode1` и `postcode2`, что лучше подходит для хранения данных и выполнения запросов к ним;
 - преобразование поля `time` в дату, поскольку оно содержит только время 00:00;
-- поле `uuid` игнорируется, потому что оно не будет использовано для анализа;
-- преобразование полей `type` и `duration` в более читаемые поля типа `Enum` с помощью функции `transform`;
-- преобразование полей `is_new` и `category` из односимвольной строки (`Y`/`N` и `A`/`B`) в поле `UInt8` со значениями 0 и 1 соответственно.
+- поле [UUid](../../sql-reference/data-types/uuid.md) игнорируется, потому что оно не будет использовано для анализа;
+- преобразование полей `type` и `duration` в более читаемые поля типа `Enum` с помощью функции [transform](../../sql-reference/functions/other-functions.md#transform);
+- преобразование полей `is_new` и `category` из односимвольной строки (`Y`/`N` и `A`/`B`) в поле [UInt8](../../sql-reference/data-types/int-uint.md##uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) со значениями 0 и 1 соответственно.
 
 Обработанные данные передаются в `clickhouse-client` и импортируются в таблицу ClickHouse потоковым способом.
 
@@ -389,7 +389,7 @@ SETTINGS mutations_sync = 1;
 
 Давайте выполним те же 3 запроса.
 
-Включите поддержку проекций:
+[Включите](../../operations/settings/settings.md#allow-experimental-projection-optimization) поддержку проекций:
 
 ```sql
 SET allow_experimental_projection_optimization = 1;
