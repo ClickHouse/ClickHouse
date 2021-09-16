@@ -1,0 +1,18 @@
+name: 'DockerHubPush'
+description: 'Action push images to dockerhub'
+runs:
+  steps:
+    - name: Check out repository code
+      uses: actions/checkout@v2
+    - name: Images check
+      run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
+      env:
+        YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
+        YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DOCKER_ROBOT_PASSWORD: ${{ secrets.DOCKER_ROBOT_PASSWORD }}
+    - name: Upload images files to artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: changed_images
+        path: ${{ runner.temp }}/docker_images_check/changed_images.json
