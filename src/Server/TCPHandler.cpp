@@ -1164,7 +1164,7 @@ void TCPHandler::receiveQuery()
     readStringBinary(state.query_id, *in);
 
     /// Read client info.
-    ClientInfo client_info = session->getClientInfo();
+    ClientInfo & client_info = session->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         client_info.read(*in, client_tcp_protocol_version);
 
