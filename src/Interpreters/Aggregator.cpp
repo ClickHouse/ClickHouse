@@ -907,7 +907,7 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
 
-            if (typeid_cast<const ColumnSparse *>(aggregate_columns[i][j]))
+            if (aggregate_columns[i][j]->isSparse())
                 has_sparse_arguments = true;
         }
 

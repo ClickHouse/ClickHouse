@@ -54,6 +54,8 @@ void DistinctTransform::buildFilter(
 
 void DistinctTransform::transform(Chunk & chunk)
 {
+    convertToFullIfSparse(chunk);
+
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
