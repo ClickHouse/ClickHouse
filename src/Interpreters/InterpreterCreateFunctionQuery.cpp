@@ -8,6 +8,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/UserDefinedFunctionFactory.h>
+#include <stack>
 
 
 namespace DB

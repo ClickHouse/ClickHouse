@@ -233,17 +233,18 @@ bool StorageS3Source::initialize()
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
         chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size, format_settings);
-    pipeline = std::make_unique<QueryPipelineBuilder>();
-    pipeline->init(Pipe(input_format));
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
     {
-        pipeline->addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
         });
     }
 
+    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     initialized = false;

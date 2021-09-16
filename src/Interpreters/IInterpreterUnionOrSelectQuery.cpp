@@ -20,7 +20,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
     buildQueryPlan(query_plan);
 
     return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
 
 }

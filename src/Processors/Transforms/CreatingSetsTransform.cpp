@@ -52,7 +52,7 @@ void CreatingSetsTransform::startSubquery()
 
     if (subquery.table)
         /// TODO: make via port
-        table_out = Chain(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
+        table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
 
     done_with_set = !subquery.set;
     done_with_table = !subquery.table;
@@ -60,7 +60,7 @@ void CreatingSetsTransform::startSubquery()
     if (done_with_set /*&& done_with_join*/ && done_with_table)
         throw Exception("Logical error: nothing to do with subquery", ErrorCodes::LOGICAL_ERROR);
 
-    if (!table_out.empty())
+    if (!table_out.initialized())
     {
         executor = std::make_unique<PushingPipelineExecutor>(table_out);
         executor->start();
@@ -128,7 +128,7 @@ Chunk CreatingSetsTransform::generate()
     if (subquery.set)
         subquery.set->finishInsert();
 
-    if (!table_out.empty())
+    if (!table_out.initialized())
     {
         executor->finish();
         executor.reset();

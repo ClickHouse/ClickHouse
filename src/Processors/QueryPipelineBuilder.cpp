@@ -79,6 +79,22 @@ void QueryPipelineBuilder::init(Pipe pipe_)
     pipe = std::move(pipe_);
 }
 
+void QueryPipelineBuilder::init(QueryPipeline pipeline)
+{
+    if (initialized())
+        throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+
+    if (!pipeline.pulling())
+        throw Exception("Can't initialize not pulling pipeline.", ErrorCodes::LOGICAL_ERROR);
+
+    pipe.holder = std::move(pipeline.resources);
+    pipe.processors = std::move(pipeline.processors);
+    pipe.output_ports = {pipeline.output};
+    pipe.totals_port = pipeline.totals;
+    pipe.extremes_port = pipeline.extremes;
+    pipe.max_parallel_streams = pipeline.num_threads;
+}
+
 void QueryPipelineBuilder::reset()
 {
     Pipe pipe_to_destroy(std::move(pipe));

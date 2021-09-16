@@ -537,7 +537,6 @@ namespace
         void createExternalTables();
 
         void generateOutput();
-        void generateOutputWithProcessors();
 
         void finishQuery();
         void onException(const Exception & exception);
@@ -589,7 +588,7 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        std::unique_ptr<QueryPipelineBuilder> pipeline;
+        std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
@@ -806,7 +805,7 @@ namespace
 
     void Call::processInput()
     {
-        if (io.out.empty())
+        if (!io.pipeline.pushing())
             return;
 
         bool has_data_to_insert = (insert_query && insert_query->data)
@@ -821,9 +820,9 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.out.getInputHeader());
+        initializeBlockInputStream(io.pipeline.getHeader());
 
-        PushingPipelineExecutor executor(io.out);
+        PushingPipelineExecutor executor(io.pipeline);
         executor.start();
 
         Block block;
@@ -896,10 +895,10 @@ namespace
         });
 
         assert(!pipeline);
-        pipeline = std::make_unique<QueryPipelineBuilder>();
         auto source = FormatFactory::instance().getInput(
             input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
-        pipeline->init(Pipe(source));
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(source));
 
         /// Add default values if necessary.
         if (ast)
@@ -913,7 +912,7 @@ namespace
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
                     {
-                        pipeline->addSimpleTransform([&](const Block & cur_header)
+                        builder.addSimpleTransform([&](const Block & cur_header)
                         {
                             return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
                         });
@@ -922,6 +921,7 @@ namespace
             }
         }
 
+        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -1030,85 +1030,7 @@ namespace
 
     void Call::generateOutput()
     {
-        if (io.pipeline.initialized())
-        {
-            generateOutputWithProcessors();
-            return;
-        }
-
-        if (!io.in)
-            return;
-
-        AsynchronousBlockInputStream async_in(io.in);
-        write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
-        Stopwatch after_send_progress;
-
-        /// Unless the input() function is used we are not going to receive input data anymore.
-        if (!input_function_is_used)
-            check_query_info_contains_cancel_only = true;
-
-        auto check_for_cancel = [&]
-        {
-            if (isQueryCancelled())
-            {
-                async_in.cancel(false);
-                return false;
-            }
-            return true;
-        };
-
-        async_in.readPrefix();
-        block_output_stream->writePrefix();
-
-        while (check_for_cancel())
-        {
-            Block block;
-            if (async_in.poll(interactive_delay / 1000))
-            {
-                block = async_in.read();
-                if (!block)
-                    break;
-            }
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-
-            if (block && !io.null_format)
-                block_output_stream->write(block);
-
-            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
-            {
-                addProgressToResult();
-                after_send_progress.restart();
-            }
-
-            addLogsToResult();
-
-            bool has_output = write_buffer->offset();
-            if (has_output || result.has_progress() || result.logs_size())
-                sendResult();
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-        }
-
-        async_in.readSuffix();
-        block_output_stream->writeSuffix();
-
-        if (!isQueryCancelled())
-        {
-            addTotalsToResult(io.in->getTotals());
-            addExtremesToResult(io.in->getExtremes());
-            addProfileInfoToResult(io.in->getProfileInfo());
-        }
-    }
-
-    void Call::generateOutputWithProcessors()
-    {
-        if (!io.pipeline.initialized())
+        if (!io.pipeline.pulling())
             return;
 
         auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);

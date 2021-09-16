@@ -336,8 +336,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipelineBuilder>();
-                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
+                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -394,16 +393,18 @@ public:
                 auto format = FormatFactory::instance().getInput(
                     storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
 
-                pipeline = std::make_unique<QueryPipelineBuilder>();
-                pipeline->init(Pipe(format));
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(format));
 
                 if (columns_description.hasDefaults())
                 {
-                    pipeline->addSimpleTransform([&](const Block & header)
+                    builder.addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
                     });
                 }
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
@@ -454,7 +455,7 @@ private:
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipelineBuilder> pipeline;
+    std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     ColumnsDescription columns_description;

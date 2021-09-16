@@ -2,7 +2,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Chain.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
@@ -121,7 +121,7 @@ private:
 
         ConnectionPool::Entry connection_entry;
         ContextPtr local_context;
-        Chain chain;
+        QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;
 
         UInt64 blocks_written = 0;

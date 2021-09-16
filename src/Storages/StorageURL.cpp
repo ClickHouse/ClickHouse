@@ -105,14 +105,15 @@ namespace
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            pipeline = std::make_unique<QueryPipelineBuilder>();
-            pipeline->init(Pipe(input_format));
+            QueryPipelineBuilder builder;
+            builder.init(Pipe(input_format));
 
-            pipeline->addSimpleTransform([&](const Block & cur_header)
+            builder.addSimpleTransform([&](const Block & cur_header)
             {
                 return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
             });
 
+            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
         }
 
@@ -139,7 +140,7 @@ namespace
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::unique_ptr<QueryPipelineBuilder> pipeline;
+        std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 }

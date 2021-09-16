@@ -8,6 +8,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -15,7 +16,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Common/typeid_cast.h>
@@ -159,13 +160,9 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                io.pipeline.addChain(Chain(std::move(table_out)));
-                io.pipeline.setSinks([&](const Block & header, Pipe::StreamType) -> ProcessorPtr
-                {
-                    return std::make_shared<ExceptionHandlingSink>(header);
-                });
-                auto executor = io.pipeline.execute();
-                executor->execute(io.pipeline.getNumStreams());
+                io.pipeline.complete(std::move(table_out));
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
             }
             else
             {
