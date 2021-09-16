@@ -3566,3 +3566,15 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## log_queries_probability {#log-queries-probability}
+
+Allows a user to write to [query_log](../../operations/system-tables/query_log.md) system table only a sample of queries selected randomly with the specified probability. It helps to reduce the load with a large volume of queries in a second.
+
+Possible values:
+
+-   0 — Queries are not logged in `query_log`.
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, about half of the queries are logged in `query_log`.
+-   1 — All queries are logged in `query_log`.
+
+Default value: `1`.
