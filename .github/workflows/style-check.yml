@@ -19,8 +19,6 @@ jobs:
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Just Checking
-        run: echo "::notice ::Hello world"
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted]
