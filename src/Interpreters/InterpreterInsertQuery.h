@@ -5,9 +5,11 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
+
 
 /** Interprets the INSERT query.
   */
@@ -28,13 +30,18 @@ public:
       */
     BlockIO execute() override;
 
+    /// Returns only sinks, without input sources.
+    Processors getSinks();
+
     StorageID getDatabaseTable() const;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    StoragePtr getTable(ASTInsertQuery & query);
 
 private:
-    StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    std::pair<BlockIO, BlockOutputStreams> executeImpl(
+        const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, Block & sample_block);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
