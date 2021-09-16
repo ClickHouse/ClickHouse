@@ -142,7 +142,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const auto & key_column = map_column.getNestedData().getColumns()[0];
             const auto & value_column = map_column.getNestedData().getColumns()[1];
 
-            const auto & map_type = assert_cast<const DataTypeMap &>(data_type);
+            const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             const auto & offsets = nested_column.getOffsets();
             size_t offset = offsets[row_num - 1];
             size_t size = offsets[row_num] - offset;
@@ -152,14 +152,16 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 serializeField(*key_column, map_type.getKeyType(), row_num);
                 serializeField(*value_column, map_type.getValueType(), row_num);
             }
+            return;
         }
         case TypeIndex::LowCardinality:
         {
             const auto & lc_column = assert_cast<const ColumnLowCardinality &>(column);
             auto dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
-            auto dict_column = lc_column.getDictionaryPtr();
+            auto dict_column = lc_column.getDictionary().getNestedColumn();
             size_t index = lc_column.getIndexAt(row_num);
             serializeField(*dict_column, dict_type, index);
+            return;
         }
         default:
             break;
