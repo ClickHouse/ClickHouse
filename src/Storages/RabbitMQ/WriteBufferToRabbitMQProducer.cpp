@@ -266,7 +266,10 @@ void WriteBufferToRabbitMQProducer::writingFunc()
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
         else if (!producer_channel->usable())
-            setupChannel();
+        {
+            if (connection.reconnect())
+                setupChannel();
+        }
     }
 
     LOG_DEBUG(log, "Producer on channel {} completed", channel_id);

@@ -35,8 +35,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , received(queue_size_)
 {
-    if (consumer_channel)
-        setupChannel();
 }
 
 
@@ -122,6 +120,12 @@ void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
 
 void ReadBufferFromRabbitMQConsumer::setupChannel()
 {
+    if (!consumer_channel)
+        return;
+
+    /// We mark initialized only once.
+    initialized = true;
+
     wait_subscription.store(true);
 
     consumer_channel->onReady([&]()
