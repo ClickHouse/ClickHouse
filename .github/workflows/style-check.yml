@@ -23,6 +23,8 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted]
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
       - name: Images check
         uses: .github/actions
         env:
