@@ -54,3 +54,21 @@ jobs:
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
+  PVS-Check:
+    needs: DockerHubPush
+    runs-on: [self-hosted]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/pvs_check
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: PVS Check
+        env:
+          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
+          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PVS_STUDIO_KEY: ${{ secrets.PVS_STUDIO_KEY }}
+        run: cd $GITHUB_WORKSPACE/tests/ci && python3 pvs_check.py
