@@ -34,7 +34,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
-#include "Columns/ColumnsNumber.h"
+#include <Columns/ColumnsNumber.h>
 #include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -62,6 +62,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
+#include "TestTags.h"
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -218,11 +219,16 @@ bool Client::executeMultiQuery(const String & all_queries_text)
 
     bool echo_query = echo_queries;
 
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
+    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+
     /// Several queries separated by ';'.
     /// INSERT data is ended by the end of line, not ';'.
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data();
+    const char * this_query_begin = all_queries_text.data() + test_tags_length;
     const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
