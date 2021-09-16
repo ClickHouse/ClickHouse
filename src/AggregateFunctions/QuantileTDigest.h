@@ -447,7 +447,7 @@ private:
     static ResultType checkOverflow(Value val)
     {
         ResultType result;
-        if (bool ok = accurate::convertNumeric(val, result); ok)
+        if (accurate::convertNumeric(val, result))
             return result;
         throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
