@@ -10,8 +10,12 @@
 		left: 1px;
 		position: absolute;
 		right: 1px;
-		top: 76px;
+		top: 68px;
 		z-index: 10;
+		
+		@media screen and (min-width: 1240px) {
+			top: 76px;
+		}
 	}
 
 	&-body {
@@ -21,20 +25,36 @@
 		border-style: solid;
 		border-width: $border-width;
 		box-shadow: $box-shadow;
-		padding: 40px;
+		padding: $spacer * 3;
+
+		@media screen and (min-width: 980px) {
+			padding: $spacer * 4;
+		}
+		
+		@media screen and (min-width: 1240px) {
+			padding: $spacer * 5;
+		}
 	}
 
 	.nav-tabs {
 		border-bottom: 0;
 		flex-wrap: nowrap;
-		height: 76px + $border-radius;
+		height: 68px + $border-radius;
 		margin: -20px -20px #{-($border-radius + $border-width)};
 		mask-image: linear-gradient(90deg, transparent 0%, #000 20px, #000 calc(100% - 20px), transparent 100%);
-		overflow: auto;
-		overflow-x: auto;
+		overflow: scroll;
+		overflow-x: scroll;
 		overflow-y: visible;
 		padding: 20px 20px 0;
 		position: relative;
+
+		@media screen and (min-width: 940px) {
+			overflow: visible;
+		}
+		
+		@media screen and (min-width: 1240px) {
+			height: 76px + $border-radius;
+		}
 	}
 
 	.nav-link {
@@ -44,18 +64,31 @@
 		display: flex;
 		font-size: $font-size-sm;
 		flex-shrink: 0;
-		height: 56px + $border-radius;
+		height: 48px + $border-radius;
 		justify-content: center;
-		padding: 0 16px $border-radius;
+		padding: 0 12px $border-radius;
 		text-align: center;
 		white-space: nowrap;
+		
+		@media screen and (min-width: 1240px) {
+			height: 56px + $border-radius;
+			padding: 0 16px $border-radius;
+		}
 	}
 
 	.nav-link.active {
 		background: $white;
 		box-shadow: 0 -4px 8px rgba($gray-700, .1);
 		font-weight: $font-weight-bold;
-		padding: 0 32px $border-radius;
+		padding: 0 16px $border-radius;
+		
+		@media screen and (min-width: 980px) {
+			padding: 0 24px $border-radius;
+		}
+		
+		@media screen and (min-width: 1240px) {
+			padding: 0 32px $border-radius;
+		}
 	}
 }
 
@@ -64,6 +97,10 @@
 		background: $black;
 		border-radius: 16px;
 		color: $white;
-		padding: ($spacer * 4) ($spacer * 3);
+		padding: ($spacer * 3) ($spacer * 2);
+		
+		@media screen and (min-width: 1240px) {
+			padding: ($spacer * 4) ($spacer * 3);
+		}
 	}
 }

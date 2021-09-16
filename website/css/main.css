@@ -236,15 +236,25 @@ a.card:hover:after,
     position: absolute;
     right: 0;
     top: 40px;
+    transform: translateX(30%);
     transition: 0.4s transform;
     transition-delay: 0.6s;
     width: 100%;
     z-index: 1;
   }
+}
+@media screen and (min-width: 980px) and (min-width: 1240px) {
+  .case-study-card:before {
+    transform: translateX(10%);
+  }
+}
+@media screen and (min-width: 980px) {
   .case-study-card.is-open:before {
     transform: translateX(60%);
     transition-delay: 0s;
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card-wrap {
     align-items: stretch;
     display: flex;
@@ -256,18 +266,24 @@ a.card:hover:after,
     width: calc(200% + 42px);
     z-index: 2;
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card.is-open .case-study-card-wrap {
     transition-delay: 0s;
     width: 100%;
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card-body {
     display: flex;
     flex-direction: column;
-    padding-right: 112px !important;
+    padding-right: 80px !important;
   }
   .case-study-card-body > .row {
     align-self: stretch;
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card-toggle {
     background: #fff;
     box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
@@ -291,39 +307,96 @@ a.card:hover:after,
   .case-study-card-toggle:after {
     transform: rotate(90deg);
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card.is-open .case-study-card-toggle:before {
     opacity: 0;
     transform: rotate(-90deg);
   }
+}
+@media screen and (min-width: 980px) {
   .case-study-card.is-open .case-study-card-toggle:after {
     transform: rotate(0);
   }
-  .case-study-card .col-lg-4,
-.case-study-card .col-lg-6 {
+}
+@media screen and (min-width: 980px) {
+  .case-study-card .col-lg-3,
+.case-study-card .col-lg-auto {
     opacity: 0;
     transform: translateX(24px);
     transition: 0.4s opacity, 0.4s transform;
   }
-  .case-study-card .col-lg-4 {
+}
+@media screen and (min-width: 980px) {
+  .case-study-card .col-lg-3 {
     transition-delay: 0s;
   }
-  .case-study-card .col-lg-6 {
+}
+@media screen and (min-width: 980px) {
+  .case-study-card .col-lg-auto {
     transition-delay: 0.2s;
   }
-  .case-study-card.is-open .col-lg-4, .case-study-card.is-open .col-lg-6 {
+}
+@media screen and (min-width: 980px) and (min-width: 980px) {
+  .case-study-card .col-lg-auto {
+    max-width: 605px;
+    width: calc(100% - 319px);
+  }
+}
+@media screen and (min-width: 980px) {
+  .case-study-card.is-open .col-lg-3, .case-study-card.is-open .col-lg-auto {
     opacity: 1;
     transform: none;
   }
-  .case-study-card.is-open .col-lg-4 {
+}
+@media screen and (min-width: 980px) {
+  .case-study-card.is-open .col-lg-3 {
     transition-delay: 0.4s;
   }
-  .case-study-card.is-open .col-lg-6 {
+}
+@media screen and (min-width: 980px) {
+  .case-study-card.is-open .col-lg-auto {
     transition-delay: 0.2s;
   }
 }
 
 .footer-copy {
   white-space: nowrap;
+}
+
+.form-control {
+  border: 1px solid #6c757d;
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
+  color: #212529;
+  height: auto;
+  min-height: 48px;
+  padding: 12px 16px;
+  width: 100%;
+}
+.form-control:focus {
+  border-color: #212529;
+  box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
+  color: #212529;
+}
+.form-control::-moz-placeholder {
+  color: #6c757d;
+}
+.form-control:-ms-input-placeholder {
+  color: #6c757d;
+}
+.form-control::placeholder {
+  color: #6c757d;
+}
+
+select.form-control {
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+}
+
+select.form-control:not([data-chosen]) {
+  color: #6c757d;
 }
 
 .hero {
@@ -387,6 +460,10 @@ hr.is-yellow {
   display: block;
   height: 48px;
   margin-bottom: 24px;
+  -o-object-fit: contain;
+     object-fit: contain;
+  -o-object-position: center;
+     object-position: center;
 }
 @media screen and (min-width: 576px) {
   .icon {
@@ -537,10 +614,10 @@ img {
 }
 
 .photo-frame {
-  background: #fff;
-  border: 6px solid #257af4;
+  background: rgba(255, 255, 255, 0.6);
   border-radius: 100%;
   box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
+  display: block;
   margin-bottom: 24px;
   max-width: 160px;
   overflow: hidden;
@@ -696,8 +773,13 @@ img {
   left: 1px;
   position: absolute;
   right: 1px;
-  top: 76px;
+  top: 68px;
   z-index: 10;
+}
+@media screen and (min-width: 1240px) {
+  .tabs:before {
+    top: 76px;
+  }
 }
 .tabs-body {
   background: #fff;
@@ -706,20 +788,40 @@ img {
   border-style: solid;
   border-width: 1px;
   box-shadow: 0 8px 20px rgba(108, 117, 125, 0.2);
-  padding: 40px;
+  padding: 24px;
+}
+@media screen and (min-width: 980px) {
+  .tabs-body {
+    padding: 32px;
+  }
+}
+@media screen and (min-width: 1240px) {
+  .tabs-body {
+    padding: 40px;
+  }
 }
 .tabs .nav-tabs {
   border-bottom: 0;
   flex-wrap: nowrap;
-  height: 84px;
+  height: 76px;
   margin: -20px -20px -9px;
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 20px, #000 calc(100% - 20px), transparent 100%);
           mask-image: linear-gradient(90deg, transparent 0%, #000 20px, #000 calc(100% - 20px), transparent 100%);
-  overflow: auto;
-  overflow-x: auto;
+  overflow: scroll;
+  overflow-x: scroll;
   overflow-y: visible;
   padding: 20px 20px 0;
   position: relative;
+}
+@media screen and (min-width: 940px) {
+  .tabs .nav-tabs {
+    overflow: visible;
+  }
+}
+@media screen and (min-width: 1240px) {
+  .tabs .nav-tabs {
+    height: 84px;
+  }
 }
 .tabs .nav-link {
   align-items: center;
@@ -728,24 +830,45 @@ img {
   display: flex;
   font-size: 0.875rem;
   flex-shrink: 0;
-  height: 64px;
+  height: 56px;
   justify-content: center;
-  padding: 0 16px 8px;
+  padding: 0 12px 8px;
   text-align: center;
   white-space: nowrap;
+}
+@media screen and (min-width: 1240px) {
+  .tabs .nav-link {
+    height: 64px;
+    padding: 0 16px 8px;
+  }
 }
 .tabs .nav-link.active {
   background: #fff;
   box-shadow: 0 -4px 8px rgba(108, 117, 125, 0.1);
   font-weight: 700;
-  padding: 0 32px 8px;
+  padding: 0 16px 8px;
+}
+@media screen and (min-width: 980px) {
+  .tabs .nav-link.active {
+    padding: 0 24px 8px;
+  }
+}
+@media screen and (min-width: 1240px) {
+  .tabs .nav-link.active {
+    padding: 0 32px 8px;
+  }
 }
 
 .tab-pane pre {
   background: #212529;
   border-radius: 16px;
   color: #fff;
-  padding: 32px 24px;
+  padding: 24px 16px;
+}
+@media screen and (min-width: 1240px) {
+  .tab-pane pre {
+    padding: 32px 24px;
+  }
 }
 
 .trailing-link {
@@ -808,14 +931,31 @@ ul.has-separators li:not(:last-child) {
 
 .bg-offset-right {
   bottom: 0;
+  left: -24px;
+  position: absolute;
+  top: 0;
+  width: calc(100vw + 24px);
+  z-index: -1;
+}
+@media screen and (min-width: 1240px) {
+  .bg-offset-right {
+    left: -96px;
+    width: calc(100vw + 96px);
+  }
+}
+
+.bg-inset-right {
+  bottom: 0;
   left: 40px;
   position: absolute;
   top: 0;
-  width: 100vw;
+  width: calc(100vw - 40px);
+  z-index: -1;
 }
 @media screen and (min-width: 980px) {
-  .bg-offset-right {
+  .bg-inset-right {
     left: 96px;
+    width: calc(100vw - 96px);
   }
 }
 
