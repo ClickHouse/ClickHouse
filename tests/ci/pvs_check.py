@@ -123,9 +123,9 @@ if __name__ == "__main__":
                 index_html = '<a href="{}">HTML report</a>'.format(url)
                 break
 
-            if not index_html:
-                commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
-                sys.exit(1)
+        if not index_html:
+            commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+            sys.exit(1)
 
         txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
         warnings, errors = _process_txt_report(txt_report)
