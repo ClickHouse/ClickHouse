@@ -873,7 +873,7 @@ void StorageRabbitMQ::initializeBuffers()
     assert(rabbit_is_ready);
     if (!initialized)
     {
-        for (auto buffer : buffers)
+        for (const auto & buffer : buffers)
             buffer->initialize();
         initialized = true;
     }
