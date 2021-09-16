@@ -127,7 +127,7 @@ if __name__ == "__main__":
     errors = errors + warnings
 
     status = 'success'
-    test_results = [(index_html, "Look at the report")]
+    test_results = [(index_html, "Look at the report"), ("Errors count not checked", "OK")]
     description = "Total errors {}".format(len(errors))
     additional_logs = [txt_report, os.path.join(temp_path, 'pvs-studio.log')]
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs)
