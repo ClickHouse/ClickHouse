@@ -26,7 +26,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
-        uses: .github/actions
+        uses: ./.github/actions/docker-hub-push
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
