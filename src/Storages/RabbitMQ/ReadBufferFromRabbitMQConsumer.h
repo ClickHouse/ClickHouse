@@ -75,6 +75,12 @@ public:
     auto getMessageID() const { return current.message_id; }
     auto getTimestamp() const { return current.timestamp; }
 
+    void initialize()
+    {
+        if (!initialized)
+            setupChannel();
+    }
+
 private:
     bool nextImpl() override;
 
@@ -99,6 +105,9 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
+
+    /// Has initial setup after constructor been made?
+    bool initialized = false;
 };
 
 }

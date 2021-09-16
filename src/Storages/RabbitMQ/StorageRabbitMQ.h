@@ -73,7 +73,8 @@ protected:
             const StorageID & table_id_,
             ContextPtr context_,
             const ColumnsDescription & columns_,
-            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
+            bool is_attach_);
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -133,8 +134,11 @@ private:
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
     mutable bool drop_table = false;
+    bool is_attach;
 
     ConsumerBufferPtr createReadBuffer();
+    void initializeBuffers();
+    bool initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
