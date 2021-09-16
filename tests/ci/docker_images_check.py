@@ -7,6 +7,7 @@ import json
 import os
 from pr_info import PRInfo
 from github import Github
+import shutil
 
 NAME = "Push to Dockerhub (actions)"
 
