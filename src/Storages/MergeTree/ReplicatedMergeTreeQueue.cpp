@@ -59,17 +59,16 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(state_mutex);
 
-    /// Clear parts before setting new one
-    current_parts.clear();
-    virtual_parts.clear();
-
+    LOG_TRACE(log, "Initializing parts in queue");
     /// Get current parts state from zookeeper
     Strings parts = zookeeper->getChildren(replica_path + "/parts");
     for (const auto & part_name : parts)
     {
+        LOG_TEST(log, "Adding part {} to current and virtual parts", part_name);
         current_parts.add(part_name, nullptr);
         virtual_parts.add(part_name, nullptr);
     }
+    LOG_TRACE(log, "Queue initilized");
 }
 
 bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
