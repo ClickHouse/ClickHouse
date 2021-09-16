@@ -280,10 +280,13 @@ MergeTreeData::MergeTreeData(
     if (!attach || !version_file_exists)
     {
         format_version = min_format_version;
-        auto buf = version_file.second->writeFile(version_file.first);
-        writeIntText(format_version.toUnderType(), *buf);
-        if (getContext()->getSettingsRef().fsync_metadata)
-            buf->sync();
+        if (!version_file.second->isReadOnly())
+        {
+            auto buf = version_file.second->writeFile(version_file.first);
+            writeIntText(format_version.toUnderType(), *buf);
+            if (getContext()->getSettingsRef().fsync_metadata)
+                buf->sync();
+        }
     }
     else
     {
@@ -3457,10 +3460,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     if (fields_count)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        ConcatReadBuffer buf;
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>("(", 1));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
         auto input_format = FormatFactory::instance().getInput(
             "Values",
