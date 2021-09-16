@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: Набор данных о стоимости недвижимости в Великобритании
 ---
 
-# Набор данных о стоимости недвижимости в Великобритании
+# Набор данных о стоимости недвижимости в Великобритании {#uk-property-price-paid}
 
 Набор содержит данные о стоимости недвижимости в Англии и Уэльсе. Данные доступны с 1995 года.
 Размер набора данных в несжатом виде составляет около 4 GiB, а в ClickHouse он займет около 278 MiB.
@@ -13,7 +13,7 @@ toc_title: Набор данных о стоимости недвижимост�
 
 Набор содержит данные HM Land Registry data © Crown copyright and database right 2021. Эти данные лицензированы в соответствии с Open Government Licence v3.0.
 
-## Загрузите набор данных
+## Загрузите набор данных {#download-dataset}
 
 Выполните команду:
 
@@ -23,7 +23,7 @@ wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.c
 
 Загрузка займет около 2 минут при хорошем подключении к интернету.
 
-## Создайте таблицу
+## Создайте таблицу {#create-table}
 
 ```sql
 CREATE TABLE uk_price_paid
@@ -46,7 +46,7 @@ CREATE TABLE uk_price_paid
 ) ENGINE = MergeTree ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-## Обработайте и импортируйте данные
+## Обработайте и импортируйте данные {#preprocess-import-data}
 
 В этом примере используется `clickhouse-local` для предварительной обработки данных и `clickhouse-client` для импорта данных.
 
@@ -102,7 +102,7 @@ clickhouse-local --input-format CSV --structure '
 
 Выполнение запроса займет около 40 секунд.
 
-## Проверьте импортированные данные
+## Проверьте импортированные данные {#validate-data}
 
 Запрос:
 
@@ -134,9 +134,9 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price
 └─────────────────────────────────┘
 ```
 
-## Примеры запросов
+## Примеры запросов {#run-queries}
 
-### Запрос 1. Средняя цена за год
+### Запрос 1. Средняя цена за год {#average-price}
 
 Запрос:
 
@@ -178,7 +178,7 @@ SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Запрос 2. Средняя цена за год в Лондоне
+### Запрос 2. Средняя цена за год в Лондоне {#average-price-london}
 
 Запрос:
 
@@ -222,7 +222,7 @@ SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 
 
 Что-то случилось в 2013 году. Я понятия не имею. Может быть, вы имеете представление о том, что произошло в 2020 году?
 
-### Запрос 3. Самые дорогие районы
+### Запрос 3. Самые дорогие районы {#most-expensive-neighborhoods}
 
 Запрос:
 
@@ -351,11 +351,11 @@ LIMIT 100;
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-## Ускорьте запросы с помощью проекций
+## Ускорьте запросы с помощью проекций {#speedup-with-projections}
 
 [Проекции](../../sql-reference/statements/alter/projection.md) позволяют повысить скорость запросов за счет хранения предварительно агрегированных данных.
 
-### Создайте проекцию 
+### Создайте проекцию {#build-projection}
 
 Создайте агрегирующую проекцию по параметрам `toYear(date)`, `district`, `town`:
 
@@ -385,7 +385,7 @@ ALTER TABLE uk_price_paid
 SETTINGS mutations_sync = 1;
 ```
 
-## Проверьте производительность
+## Проверьте производительность {#test-performance}
 
 Давайте выполним те же 3 запроса.
 
@@ -395,7 +395,7 @@ SETTINGS mutations_sync = 1;
 SET allow_experimental_projection_optimization = 1;
 ```
 
-### Запрос 1. Средняя цена за год
+### Запрос 1. Средняя цена за год {#average-price-projections}
 
 Запрос:
 
@@ -443,7 +443,7 @@ ORDER BY year ASC;
 └──────┴────────┴────────────────────────────────────────┘
 ```
 
-### Запрос 2. Средняя цена за год в Лондоне
+### Запрос 2. Средняя цена за год в Лондоне {#average-price-london-projections}
 
 Запрос:
 
@@ -492,7 +492,7 @@ ORDER BY year ASC;
 └──────┴─────────┴───────────────────────────────────────────────────────┘
 ```
 
-### Запрос 3. Самые дорогие районы
+### Запрос 3. Самые дорогие районы {#most-expensive-neighborhoods-projections}
 
 Условие (date >= '2020-01-01') необходимо изменить, чтобы оно соответствовало проекции (toYear(date) >= 2020).
 
@@ -622,7 +622,7 @@ LIMIT 100;
 └──────────────────────┴────────────────────────┴──────┴─────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-### Резюме
+### Резюме {#summary}
 
 Все три запроса работают намного быстрее и читают меньшее количество строк.
 
@@ -644,6 +644,6 @@ no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows
    projection: 100 rows in set. Elapsed: 0.029 sec. Processed 8.08 thousand rows, 511.08 KB (276.06 thousand rows/s., 17.47 MB/s.)
 ```
 
-### Online Playground
+### Online Playground {#playground}
 
 Этот набор данных доступен в [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
