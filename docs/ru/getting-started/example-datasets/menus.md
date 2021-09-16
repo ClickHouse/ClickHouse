@@ -122,7 +122,7 @@ We disable `format_csv_allow_single_quotes` as only double quotes are used for d
 
 Отключите `format_csv_allow_single_quotes`, так как для данных используются только двойные кавычки, а одинарные кавычки могут находиться внутри значений и не должны сбивать с толку CSV-парсер.
 
-Отключите [input_format_null_as_default](../../operations/settings/settings.mdsettings-input-format-null-as-default), поскольку в данных нет значений [NULL](../../sql-reference/syntax.md#null-literal).
+Отключите [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default), поскольку в данных нет значений [NULL](../../sql-reference/syntax.md#null-literal).
 
 В противном случае ClickHouse попытается проанализировать последовательности `\N` и может перепутать с `\` в данных.
 
