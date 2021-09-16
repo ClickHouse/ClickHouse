@@ -254,21 +254,24 @@ public:
     const IColumn & getDataColumn() const { return *data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
 
-    Field getField() const 
-    { 
-        auto & col = getDataColumn();
-        auto * array_col = typeid_cast<ColumnArray *>(const_cast<IColumn*>(&col));
-        //if it can successfully down-convert to ColumnArray 
+    Field getField() const
+    {
+        auto col = getDataColumnPtr();
+        Field field;
+        const auto * array_col = typeid_cast<const ColumnArray *>(col.get());
+        /// if it can successfully down-convert to ColumnArray
         if (array_col)
         {
             auto field_size = array_col->getOffsets()[0];
             if (field_size > max_array_size_as_field)
             {
-                Field zero = 0;
-                return zero;
+                /// make sure that in the function checkBlockStructure it gets two same field values
+                field = 0;
             }
         }
-        return col[0];
+        else
+            col->get(0, field);
+        return field;
     }
 
     /// The constant value. It is valid even if the size of the column is 0.
