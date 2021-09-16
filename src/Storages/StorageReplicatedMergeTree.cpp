@@ -5105,8 +5105,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     /// Don't recheck ZooKeeper too often
     constexpr auto event_wait_timeout_ms = 3000;
 
-    if (!startsWith(entry.znode_name, "log-"))
-        throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
+    LOG_DEBUG(log, "Waiting for {} to process log entry", replica);
 
     {
         /// Take the number from the node name `log-xxxxxxxxxx`.
@@ -5117,7 +5116,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 
         /// Let's wait until entry gets into the replica queue.
         bool pulled_to_queue = false;
-        while (!stop_waiting())
+        do
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -5132,8 +5131,9 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
             /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
             /// but the query will never finish because the drop already shut down the table.
-            event->tryWait(event_wait_timeout_ms);
-        }
+            if (!stop_waiting())
+                event->tryWait(event_wait_timeout_ms);
+        } while (!stop_waiting());
 
         if (!pulled_to_queue)
             return false;
