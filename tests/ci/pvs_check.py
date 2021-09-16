@@ -104,9 +104,13 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
     licence_key = os.getenv('PVS_STUDIO_KEY')
-    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENSE_NAME='{LICENSE_NAME}' -e LICENCE_KEY='{licence_key}' -e CC=clang-11 -e CXX=clang++-11 {docker_image}"
+    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENSE_NAME='{LICENSE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
 
-    subprocess.check_output(cmd, shell=True)
+    try:
+        subprocess.check_output(cmd, shell=True)
+    except:
+        commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+        sys.exit(1)
 
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
     html_urls = self.s3_client.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
