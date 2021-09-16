@@ -104,7 +104,8 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
     licence_key = os.getenv('PVS_STUDIO_KEY')
-    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENSE_NAME='{LICENSE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
+    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENSE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
+    commit = get_commit(gh, pr_info.sha)
 
     try:
         subprocess.check_output(cmd, shell=True)
@@ -116,7 +117,6 @@ if __name__ == "__main__":
     html_urls = self.s3_client.upload_test_folder_to_s3(os.path.join(temp_path, HTML_REPORT_FOLDER), s3_path_prefix)
     index_html = None
 
-    commit = get_commit(gh, pr_info.sha)
     for url in html_urls:
         if 'index.html' in url:
             index_html = '<a href="{}">HTML report</a>'.format(url)
