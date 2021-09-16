@@ -352,8 +352,7 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipelineBuilder pipeline;
-    pipeline.init(source_ptr->loadAll());
+    QueryPipeline pipeline(source_ptr->loadAll());
 
     std::vector<IPRecord> ip_records;
 

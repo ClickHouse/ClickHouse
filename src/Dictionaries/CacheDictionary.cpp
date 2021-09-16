@@ -570,12 +570,12 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
-            QueryPipelineBuilder pipeline;
+            QueryPipeline pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
+                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
             else
-                pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
+                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;

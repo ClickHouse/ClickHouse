@@ -42,6 +42,7 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
+    void init(QueryPipeline pipeline);
     /// Clear and release all resources.
     void reset();
 

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class QueryPipelineBuilder;
+class QueryPipeline;
 class PullingAsyncPipelineExecutor;
 class PullingPipelineExecutor;
 
@@ -13,7 +13,7 @@ class PullingPipelineExecutor;
 class PipelineExecutingBlockInputStream : public IBlockInputStream
 {
 public:
-    explicit PipelineExecutingBlockInputStream(QueryPipelineBuilder pipeline_);
+    explicit PipelineExecutingBlockInputStream(QueryPipeline pipeline_);
     ~PipelineExecutingBlockInputStream() override;
 
     String getName() const override { return "PipelineExecuting"; }
@@ -32,7 +32,7 @@ protected:
     Block readImpl() override;
 
 private:
-    std::unique_ptr<QueryPipelineBuilder> pipeline;
+    std::unique_ptr<QueryPipeline> pipeline;
     /// One of executors is used.
     std::unique_ptr<PullingPipelineExecutor> executor; /// for single thread.
     std::unique_ptr<PullingAsyncPipelineExecutor> async_executor; /// for many threads.

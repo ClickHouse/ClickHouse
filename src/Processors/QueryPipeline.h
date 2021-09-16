@@ -77,6 +77,8 @@ public:
     void complete(Pipe pipe);
     /// Only for pulling.
     void complete(std::shared_ptr<IOutputFormat> format);
+    void complete(Chain chain);
+    void complete(std::shared_ptr<SinkToStorage> sink);
 
     /// Only for pushing and pulling.
     Block getHeader() const;
@@ -112,6 +114,7 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class QueryPipelineBuilder;
 };
 
 }

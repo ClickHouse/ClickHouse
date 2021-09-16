@@ -97,7 +97,7 @@ public:
             max_block_size = configuration.number_of_rows_to_read;
         }
 
-        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
+        pipeline = QueryPipeline(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
     }
 
@@ -175,7 +175,7 @@ private:
 
     std::shared_ptr<ProcessPool> process_pool;
 
-    QueryPipelineBuilder pipeline;
+    QueryPipeline pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
 
     std::vector<ThreadFromGlobalPool> send_data_threads;

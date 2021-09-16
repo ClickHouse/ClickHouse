@@ -962,7 +962,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
-    PushingPipelineExecutor executor(block_io.out);
+    PushingPipelineExecutor executor(block_io.pipeline);
     executor.start();
     executor.push(std::move(block_to_write));
     executor.finish();

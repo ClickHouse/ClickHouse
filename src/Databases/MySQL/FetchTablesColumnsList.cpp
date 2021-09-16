@@ -88,8 +88,7 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
 
     StreamSettings mysql_input_stream_settings(settings);
     auto result = std::make_unique<MySQLSource>(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
-    QueryPipelineBuilder pipeline;
-    pipeline.init(Pipe(std::move(result)));
+    QueryPipeline pipeline(std::move(result));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);
