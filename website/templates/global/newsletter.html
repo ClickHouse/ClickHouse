@@ -13,8 +13,24 @@
 					{{ _('Sign up for our newsletter') }}
 				</h2>
 
-				<div class="mx-auto mr-lg-0 pl-0 pl-lg-3" style="max-width: 557px; position: relative;">
-					<img src="/images/placeholder-newsletter-form.png" height="94" width="557" class="d-block mx-auto" style="aspect-ratio: 557 / 94; height: auto; margin: -14px 0 -26px -20px;">
+				<div class="mx-auto mr-lg-0 pl-0 pl-lg-3" style="flex-grow: 1; max-width: 544px; position: relative;">
+
+					<form action="https://webto.salesforce.com/servlet/servlet.WebToLead?encoding=UTF-8" method="POST">
+
+						<input type=hidden name="oid" value="00D5f000000JueF">
+						<input type=hidden name="retURL" value="http://www.clickhouse.com/contact-thank-you.html">
+		
+						<div class="d-flex" style="max-width: 520px;">
+							<div style="flex-basis: 400px;">
+								<input class="form-control" id="email" placeholder="Email*" maxlength="80" name="email" size="20" type="text" required style="border-radius:6px 0 0 6px;">
+							</div>
+							<div style="flex-basis: 120px;">
+								<input type="submit" name="submit" value="Sign Up" class="btn btn-secondary" style="border-radius: 0 6px 6px 0;">
+							</div>
+						</div>
+						
+					</form>
+					
 				</div>
 
 			</div>
