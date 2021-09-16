@@ -438,56 +438,56 @@ h6, .h6 {
 }
 
 .lead {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 400;
 }
 @media (max-width: 1200px) {
   .lead {
-    font-size: calc(1.275rem + 0.3vw);
+    font-size: calc(1.2625rem + 0.15vw);
   }
 }
 
 .display-1 {
-  font-size: 5rem;
+  font-size: 4rem;
   font-weight: 600;
   line-height: 1.125;
 }
 @media (max-width: 1200px) {
   .display-1 {
-    font-size: calc(1.625rem + 4.5vw);
+    font-size: calc(1.525rem + 3.3vw);
   }
 }
 
 .display-2 {
-  font-size: 3rem;
+  font-size: 2.5rem;
   font-weight: 600;
   line-height: 1.125;
 }
 @media (max-width: 1200px) {
   .display-2 {
-    font-size: calc(1.425rem + 2.1vw);
+    font-size: calc(1.375rem + 1.5vw);
   }
 }
 
 .display-3 {
-  font-size: 2.25rem;
+  font-size: 2rem;
   font-weight: 500;
   line-height: 1.125;
 }
 @media (max-width: 1200px) {
   .display-3 {
-    font-size: calc(1.35rem + 1.2vw);
+    font-size: calc(1.325rem + 0.9vw);
   }
 }
 
 .display-4 {
-  font-size: 1.875rem;
+  font-size: 1.75rem;
   font-weight: 500;
   line-height: 1.125;
 }
 @media (max-width: 1200px) {
   .display-4 {
-    font-size: calc(1.3125rem + 0.75vw);
+    font-size: calc(1.3rem + 0.6vw);
   }
 }
 
@@ -631,12 +631,12 @@ pre code {
 }
 @media (min-width: 768px) {
   .container {
-    max-width: 748px;
+    max-width: 958px;
   }
 }
 @media (min-width: 980px) {
   .container {
-    max-width: 948px;
+    max-width: 1008px;
   }
 }
 @media (min-width: 1240px) {
@@ -665,12 +665,12 @@ pre code {
 }
 @media (min-width: 768px) {
   .container-md, .container-sm, .container-xs, .container {
-    max-width: 748px;
+    max-width: 958px;
   }
 }
 @media (min-width: 980px) {
   .container-lg, .container-md, .container-sm, .container-xs, .container {
-    max-width: 948px;
+    max-width: 1008px;
   }
 }
 @media (min-width: 1240px) {
