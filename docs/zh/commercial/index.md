@@ -4,7 +4,7 @@ toc_priority: 70
 toc_title: 简介
 ---
 
-# ClickHouse商业服务 {#clickhouse-commercial-services}
+# ClickHouse 商业服务 {#clickhouse-commercial-services}
 
 此部分是专门从事ClickHouse的商业服务提供商的目录。 他们是独立的公司，不一定隶属于Yandex。
 
