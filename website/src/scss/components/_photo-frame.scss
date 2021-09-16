@@ -1,8 +1,9 @@
 .photo-frame {
-	background: $white;
-	border: 6px solid $color-primary-accent-blue;
+	background: rgba($white, 0.6);
+	//border: 6px solid $color-primary-accent-blue;
 	border-radius: 100%;
 	box-shadow: $box-shadow;
+	display: block;
 	margin-bottom: $spacer * 3;
 	max-width: 160px;
 	overflow: hidden;

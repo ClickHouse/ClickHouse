@@ -139,8 +139,8 @@ $grid-breakpoints: (
 $container-max-widths: (
   xs: 576px,
   sm: 576px,
-  md: 748px,
-  lg: 948px,
+  md: 958px,
+  lg: 1008px,
   xl: 1118px
 );
 
@@ -206,10 +206,10 @@ $headings-font-weight:        500;
 $headings-line-height:        1.125;
 $headings-color:              null;
 
-$display1-size:               80px;
-$display2-size:               48px;
-$display3-size:               36px;
-$display4-size:               30px;
+$display1-size:               64px;
+$display2-size:               40px;
+$display3-size:               32px;
+$display4-size:               28px;
 $display5-size:               20px;
 $display6-size:               14px;
 
@@ -221,7 +221,7 @@ $display5-weight:             500;
 $display6-weight:             700;
 $display-line-height:         $headings-line-height;
 
-$lead-font-size:              $font-size-base * 1.5;
+$lead-font-size:              22px;
 $lead-font-weight:            400;
 
 $text-muted:                  $gray-700;

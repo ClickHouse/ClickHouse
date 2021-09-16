@@ -8,12 +8,28 @@
 
 .bg-offset-right {
 	bottom: 0;
+	left: -24px;
+	position: absolute;
+	top: 0;
+	width: calc(100vw + 24px);
+	z-index: -1;
+
+	@media screen and (min-width: 1240px) {
+		left: -96px;
+		width: calc(100vw + 96px);
+	}
+}
+
+.bg-inset-right {
+	bottom: 0;
 	left: 40px;
 	position: absolute;
 	top: 0;
-	width: 100vw;
+	width: calc(100vw - 40px);
+	z-index: -1;
 
 	@media screen and (min-width: 980px) {
 		left: 96px;
+		width: calc(100vw - 96px);
 	}
 }
