@@ -1,5 +1,15 @@
 name: 'DockerHubPush'
 description: 'Action push images to dockerhub'
+on: # yamllint disable-line rule:truthy
+  pull_request:
+    types:
+      - labeled
+      - unlabeled
+      - synchronize
+      - reopened
+      - opened
+    branches:
+      - master
 runs:
   steps:
     - name: Check out repository code
