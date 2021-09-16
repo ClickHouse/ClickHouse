@@ -3,7 +3,7 @@ toc_priority: 1
 toc_title: 云
 ---
 
-# ClickHouse云服务提供商 {#clickhouse-cloud-service-providers}
+# ClickHouse 云服务提供商 {#clickhouse-cloud-service-providers}
 
 !!! info "注意"
     如果您已经推出具有托管ClickHouse服务的公共云，请随时[提交一个 pull request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md)将其添加到以下列表。
