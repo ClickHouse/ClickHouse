@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-unbundled-builder .
-FROM yandex/clickhouse-deb-builder
+# docker build -t clickhouse/unbundled-builder .
+FROM clickhouse/deb-builder
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && wget -nv -O /tmp/arrow-keyring.deb "https://apache.jfrog.io/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${CODENAME}.deb" \

@@ -9,9 +9,9 @@ import sys
 SCRIPT_PATH = os.path.realpath(__file__)
 
 IMAGE_MAP = {
-    "deb": "yandex/clickhouse-deb-builder",
-    "binary": "yandex/clickhouse-binary-builder",
-    "unbundled": "yandex/clickhouse-unbundled-builder"
+    "deb": "clickhouse/deb-builder",
+    "binary": "clickhouse/binary-builder",
+    "unbundled": "clickhouse/unbundled-builder"
 }
 
 def check_image_exists_locally(image_name):
@@ -205,7 +205,8 @@ if __name__ == "__main__":
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
                                                "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
-                                               "clang-11-freebsd", "clang-12-freebsd", "gcc-10"), default="clang-12")
+                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64",
+                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
