@@ -4669,7 +4669,7 @@ void StorageReplicatedMergeTree::alter(
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
 /// NOTE: use it in pair with getFakePartCoveringAllPartsInPartition(...)
-static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
+String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
 {
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -6568,6 +6568,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     dst_pins.part_uuids.insert(part->uuid);
 
     PartMovesBetweenShardsOrchestrator::Entry part_move_entry;
+    part_move_entry.state = PartMovesBetweenShardsOrchestrator::EntryState::SYNC_SOURCE;
     part_move_entry.create_time = std::time(nullptr);
     part_move_entry.update_time = part_move_entry.create_time;
     part_move_entry.task_uuid = UUIDHelpers::generateV4();
@@ -6591,10 +6592,13 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
     LOG_DEBUG(log, "Created task for part movement between shards at " + task_znode_path);
 
-    /// Force refresh local state. This will make the task immediately visible in `system.part_moves_between_shards` table.
-    part_moves_between_shards_orchestrator.fetchStateFromZK();
+    /// TODO(nv): Nice to have support for `replication_alter_partitions_sync`.
+    ///     For now use the system.part_moves_between_shards table for status.
+}
 
-    // TODO: Add support for `replication_alter_partitions_sync`.
+CancellationCode StorageReplicatedMergeTree::killPartMoveToShard(const UUID & task_uuid)
+{
+    return part_moves_between_shards_orchestrator.killPartMoveToShard(task_uuid);
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(
