@@ -187,7 +187,7 @@ SRCS(
     Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
-    Transforms/getSourceFromFromASTInsertQuery.cpp
+    Transforms/getSourceFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )
