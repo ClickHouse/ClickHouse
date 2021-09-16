@@ -104,7 +104,7 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
     licence_key = os.getenv('PVS_STUDIO_KEY')
-    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENSE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
+    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
     commit = get_commit(gh, pr_info.sha)
 
     try:
