@@ -39,6 +39,8 @@ public:
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
         RELOAD_MODELS,
+        RELOAD_FUNCTION,
+        RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
@@ -65,6 +67,7 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_model;
+    String target_function;
     String database;
     String table;
     String replica;

@@ -53,7 +53,6 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
