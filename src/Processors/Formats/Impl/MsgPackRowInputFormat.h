@@ -35,6 +35,7 @@ public:
     bool visit_float64(Float64 value);
     bool visit_str(const char * value, size_t size);
     bool visit_bin(const char * value, size_t size);
+    bool visit_boolean(bool value);
     bool start_array(size_t size);
     bool end_array();
     bool visit_nil();

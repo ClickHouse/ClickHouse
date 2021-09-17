@@ -149,8 +149,8 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_map(size);
             for (size_t i = 0; i < size; ++i)
             {
-                serializeField(*key_column, map_type.getKeyType(), row_num);
-                serializeField(*value_column, map_type.getValueType(), row_num);
+                serializeField(*key_column, map_type.getKeyType(), offset + i);
+                serializeField(*value_column, map_type.getValueType(), offset + i);
             }
             return;
         }
