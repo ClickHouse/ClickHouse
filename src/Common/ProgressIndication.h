@@ -14,15 +14,16 @@
 namespace DB
 {
 
-struct ThreadTime
+struct ThreadEventData
 {
     UInt64 time() const noexcept { return user_ms + system_ms; }
 
-    UInt64 user_ms   = 0;
-    UInt64 system_ms = 0;
+    UInt64 user_ms      = 0;
+    UInt64 system_ms    = 0;
+    UInt64 memory_usage = 0;
 };
 
-using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadTime>;
+using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
 using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
 
 class ProgressIndication
@@ -57,13 +58,15 @@ public:
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadTimes(HostToThreadTimesMap & new_thread_times);
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
 private:
 
     size_t getUsedThreadsCount() const;
 
     UInt64 getApproximateCoresNumber() const;
+
+    UInt64 getMemoryUsage() const;
 
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
@@ -83,7 +86,7 @@ private:
     bool write_progress_on_update = false;
 
     std::unordered_map<String, UInt64> host_active_cores;
-    HostToThreadTimesMap thread_times;
+    HostToThreadTimesMap thread_data;
 };
 
 }

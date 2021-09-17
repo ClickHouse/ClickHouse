@@ -61,7 +61,7 @@ void ProgressIndication::resetProgress()
     written_progress_chars = 0;
     write_progress_on_update = false;
     host_active_cores.clear();
-    thread_times.clear();
+    thread_data.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -78,17 +78,17 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
 
 void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
 {
-    auto & thread_to_times = thread_times[host];
+    auto & thread_to_times = thread_data[host];
     if (thread_to_times.contains(thread_id))
         return;
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadTimes(HostToThreadTimesMap & new_thread_times)
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
 {
-    for (auto & new_host_map : new_thread_times)
+    for (auto & new_host_map : new_thread_data)
     {
-        auto & host_map = thread_times[new_host_map.first];
+        auto & host_map = thread_data[new_host_map.first];
         auto new_cores = calculateNewCoresNumber(host_map, new_host_map.second);
         host_active_cores[new_host_map.first] = new_cores;
         host_map = std::move(new_host_map.second);
@@ -97,7 +97,7 @@ void ProgressIndication::updateThreadTimes(HostToThreadTimesMap & new_thread_tim
 
 size_t ProgressIndication::getUsedThreadsCount() const
 {
-    return std::accumulate(thread_times.cbegin(), thread_times.cend(), 0,
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
         [] (size_t acc, auto const & threads)
         {
             return acc + threads.second.size();
@@ -110,6 +110,19 @@ UInt64 ProgressIndication::getApproximateCoresNumber() const
         [](UInt64 acc, auto const & elem)
         {
             return acc + elem.second;
+        });
+}
+
+UInt64 ProgressIndication::getMemoryUsage() const
+{
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), ZERO,
+        [](UInt64 acc, auto const & host_data)
+        {
+            return acc + std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
+                [](UInt64 memory, auto const & data)
+                {
+                    return memory + data.second.memory_usage;
+                });
         });
 }
 
@@ -127,18 +140,6 @@ void ProgressIndication::writeFinalProgress()
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
         std::cout << ". ";
-
-    size_t used_threads = getUsedThreadsCount();
-    if (used_threads != 0)
-    {
-        std::cout << "\nUsed threads to process: " << used_threads;
-
-        auto approximate_core_number = getApproximateCoresNumber();
-        if (approximate_core_number != 0)
-            std::cout << " and cores: " << approximate_core_number << ".";
-        else
-            std::cout << ".";
-    }
 }
 
 void ProgressIndication::writeProgress()
@@ -238,7 +239,13 @@ void ProgressIndication::writeProgress()
         // so it's better to print min(threads, cores).
         auto threads_number = getUsedThreadsCount();
         message << " Running " << threads_number << " threads on "
-            << std::min(cores_number, threads_number) << " cores.";
+            << std::min(cores_number, threads_number) << " cores";
+
+        auto memory_usage = getMemoryUsage();
+        if (memory_usage != 0)
+            message << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used.";
+        else
+            message << ".";
     }
 
     message << CLEAR_TO_END_OF_LINE;
