@@ -809,7 +809,7 @@ ClickHouse может парсить только базовый формат `Y
 
 ## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
 
-Задает интервал в секундах в ClickHouse для выполнения очистки старых временных каталогов.
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
 
 Возможные значения:
 
