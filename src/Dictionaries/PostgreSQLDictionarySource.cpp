@@ -32,7 +32,7 @@ namespace
     {
         QualifiedTableName qualified_name{schema, table};
 
-        if (qualified_name.database.empty())
+        if (qualified_name.database.empty() && !qualified_name.table.empty())
             qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
 
         /// Do not need db because it is already in a connection string.
