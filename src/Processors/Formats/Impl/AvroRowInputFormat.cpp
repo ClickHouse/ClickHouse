@@ -185,7 +185,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         auto dict_deserialize = createDeserializeFn(root_node, lc_type->getDictionaryType());
         return [dict_deserialize](IColumn & column, avro::Decoder & decoder)
         {
-
             auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
             auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
             dict_deserialize(*tmp_column, decoder);
