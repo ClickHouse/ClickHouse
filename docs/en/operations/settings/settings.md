@@ -2833,6 +2833,43 @@ Possible values:
 
 Default value: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+
+Default value: `\N`.
+
+**Examples**
+
+Query
+
+```sql
+SELECT * from csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+\N
+\N
+```
+
+Query
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
