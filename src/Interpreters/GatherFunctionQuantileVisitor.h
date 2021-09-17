@@ -27,8 +27,9 @@ public:
 
     static String getFusedName(const String & func_name);
 
+    static bool needChild(const ASTPtr & node, const ASTPtr &);
 };
 
-using GatherFunctionQuantileVisitor = InDepthNodeVisitor<OneTypeMatcher<GatherFunctionQuantileData>, true>;
+using GatherFunctionQuantileVisitor = InDepthNodeVisitor<OneTypeMatcher<GatherFunctionQuantileData, GatherFunctionQuantileData::needChild>, true>;
 
 }
