@@ -175,7 +175,10 @@ Example: The table contains discounts for each advertiser in the format:
 +---------|-------------|-------------|------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+
+!!! warning "Warning"
+    Values of `range_min` and `range_max` should fit in `Int64` type.
 
 Example:
 
@@ -226,34 +229,33 @@ Configuration example:
 
 ``` xml
 <yandex>
-        <dictionary>
+    <dictionary>
+        ...
 
-                ...
+        <layout>
+            <range_hashed />
+        </layout>
 
-                <layout>
-                        <range_hashed />
-                </layout>
+        <structure>
+            <id>
+                <name>Abcdef</name>
+            </id>
+            <range_min>
+                <name>StartTimeStamp</name>
+                <type>UInt64</type>
+            </range_min>
+            <range_max>
+                <name>EndTimeStamp</name>
+                <type>UInt64</type>
+            </range_max>
+            <attribute>
+                <name>XXXType</name>
+                <type>String</type>
+                <null_value />
+            </attribute>
+        </structure>
 
-                <structure>
-                        <id>
-                                <name>Abcdef</name>
-                        </id>
-                        <range_min>
-                                <name>StartTimeStamp</name>
-                                <type>UInt64</type>
-                        </range_min>
-                        <range_max>
-                                <name>EndTimeStamp</name>
-                                <type>UInt64</type>
-                        </range_max>
-                        <attribute>
-                                <name>XXXType</name>
-                                <type>String</type>
-                                <null_value />
-                        </attribute>
-                </structure>
-
-        </dictionary>
+    </dictionary>
 </yandex>
 ```
 
