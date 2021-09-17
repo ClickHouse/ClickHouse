@@ -384,14 +384,6 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    if (http_method == ClientInfo::HTTPMethod::UNKNOWN)
-    {
-        response.setStatusAndReason(exceptionCodeToHTTPStatus(ErrorCodes::NOT_IMPLEMENTED));
-        response.set("Connection", HTTPServerRequest::CONNECTION_CLOSE);
-        response.send();
-        return false;
-    }
-
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
