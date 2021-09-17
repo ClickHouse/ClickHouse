@@ -111,7 +111,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 Подмножество битмапа.
 
-Тип: `Bitmap object`.
+Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
 
 **Пример**
 
