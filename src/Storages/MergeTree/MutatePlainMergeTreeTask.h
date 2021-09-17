@@ -36,9 +36,7 @@ public:
         , task_result_callback(std::forward<Callback>(task_result_callback_)) {}
 
     bool executeStep() override;
-
     void onCompleted() override;
-
     StorageID getStorageID() override;
 
 private:

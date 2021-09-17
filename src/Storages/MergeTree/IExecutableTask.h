@@ -57,7 +57,6 @@ public:
     }
 
     void onCompleted() override { job_result_callback(!res); }
-
     StorageID getStorageID() override { return id; }
 
 private:

@@ -54,9 +54,11 @@ public:
 
     enum class Type
     {
-        MERGE_MUTATE,
+        MERGE,
+        MUTATE,
         FETCH,
-        MOVE
+        MOVE,
+        COMMON
     };
 
     MergeTreeBackgroundExecutor(
@@ -88,9 +90,7 @@ public:
     }
 
     bool trySchedule(ExecutableTaskPtr task);
-
     void removeTasksCorrespondingToStorage(StorageID id);
-
     void wait();
 
     size_t activeCount()

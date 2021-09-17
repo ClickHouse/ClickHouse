@@ -18,7 +18,6 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
     extern const Metric PartMutation;
 }
 

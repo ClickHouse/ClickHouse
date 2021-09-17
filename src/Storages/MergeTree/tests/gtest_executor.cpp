@@ -12,7 +12,7 @@ using namespace DB;
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMergesPoolTask;
 }
 
 std::random_device device;
@@ -64,10 +64,10 @@ TEST(Executor, RemoveTasks)
 
     auto executor = DB::MergeTreeBackgroundExecutor::create
     (
-        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        DB::MergeTreeBackgroundExecutor::Type::MUTATE,
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundPoolTask
+        CurrentMetrics::BackgroundMergesPoolTask
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -92,7 +92,7 @@ TEST(Executor, RemoveTasks)
 
     ASSERT_EQ(executor->activeCount(), 0);
     ASSERT_EQ(executor->pendingCount(), 0);
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesPoolTask], 0);
 
     executor->wait();
 }
@@ -107,10 +107,10 @@ TEST(Executor, RemoveTasksStress)
 
     auto executor = DB::MergeTreeBackgroundExecutor::create
     (
-        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        DB::MergeTreeBackgroundExecutor::Type::MUTATE,
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundPoolTask
+        CurrentMetrics::BackgroundMergesPoolTask
     );
 
     std::barrier barrier(schedulers_count + removers_count);
@@ -149,7 +149,7 @@ TEST(Executor, RemoveTasksStress)
 
     ASSERT_EQ(executor->activeCount(), 0);
     ASSERT_EQ(executor->pendingCount(), 0);
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesPoolTask], 0);
 
     executor->wait();
 }

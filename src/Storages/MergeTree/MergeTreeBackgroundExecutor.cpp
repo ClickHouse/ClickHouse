@@ -5,6 +5,11 @@
 #include <Common/setThreadName.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric BackgroundMergesPoolTask;
+    extern const Metric BackgroundMutationsPoolTask;
+}
 
 namespace DB
 {
@@ -14,12 +19,16 @@ String MergeTreeBackgroundExecutor::toString(Type type)
 {
     switch (type)
     {
-        case Type::MERGE_MUTATE:
-            return "MergeMutate";
+        case Type::MERGE:
+            return "Merge";
+        case Type::MUTATE:
+            return "Mutate";
         case Type::FETCH:
             return "Fetch";
         case Type::MOVE:
             return "Move";
+        case Type::COMMON:
+            return "Common";
     }
     __builtin_unreachable();
 }

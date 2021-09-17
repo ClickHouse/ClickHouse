@@ -80,9 +80,14 @@ class IColumn;
     M(Bool, use_uncompressed_cache, false, "Whether to use the cache of uncompressed blocks.", 0) \
     M(Bool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.", 0) \
     M(UInt64, background_buffer_flush_schedule_pool_size, 16, "Number of threads performing background flush for tables with Buffer engine. Only has meaning at server startup.", 0) \
-    M(UInt64, background_pool_size, 16, "Number of threads performing background work for tables (for example, merging in merge tree). Only has meaning at server startup.", 0) \
+    M(UInt64, background_pool_size, 16, "Deprecated???", 0) \
+    M(UInt64, background_merges_count, 32, "Number of merges that could be performed in background. Has to be not less than `background_merges_pool_size`. Only has meaning at server startup.", 0) \
+    M(UInt64, background_merges_pool_size, 8, "Number of threads performing background merges for tables. Only has meaning at server startup.", 0) \
+    M(UInt64, background_mutations_count, 32, "Number of mutations that could be performed in background. Has to be not less than `background_mutations_pool_size`. Only has meaning at server startup.", 0) \
+    M(UInt64, background_mutations_pool_size, 8, "Number of threads performing background mutations for tables. Only has meaning at server startup.", 0) \
     M(UInt64, background_move_pool_size, 8, "Number of threads performing background moves for tables. Only has meaning at server startup.", 0) \
     M(UInt64, background_fetches_pool_size, 8, "Number of threads performing background fetches for replicated tables. Only has meaning at server startup.", 0) \
+    M(UInt64, background_common_pool_size, 8, "Number of threads for some lightweight tasks for replicated tables (like cleaning old parts etc.). Only has meaning at server startup.", 0) \
     M(UInt64, background_schedule_pool_size, 128, "Number of threads performing background tasks for replicated tables, dns cache updates. Only has meaning at server startup.", 0) \
     M(UInt64, background_message_broker_schedule_pool_size, 16, "Number of threads performing background tasks for message streaming. Only has meaning at server startup.", 0) \
     M(UInt64, background_distributed_schedule_pool_size, 16, "Number of threads performing background tasks for distributed sends. Only has meaning at server startup.", 0) \

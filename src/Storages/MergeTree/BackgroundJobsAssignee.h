@@ -66,9 +66,11 @@ public:
     void postpone();
     void finish();
 
-    void scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
+    void scheduleMergeTask(ExecutableTaskPtr merge_task);
+    void scheduleMutateTask(ExecutableTaskPtr mutate_task);
     void scheduleFetchTask(ExecutableTaskPtr fetch_task);
     void scheduleMoveTask(ExecutableTaskPtr move_task);
+    void scheduleCommonTask(ExecutableTaskPtr common_task);
 
     /// Just call finish
     ~BackgroundJobsAssignee();

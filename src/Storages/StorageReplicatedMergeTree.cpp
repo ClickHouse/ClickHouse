@@ -281,7 +281,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this, getContext()->getSettingsRef().background_merges_count)
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -2822,18 +2822,18 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     else if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = MergeFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
+        assignee.scheduleMergeTask(task);
         return true;
     }
     else if (job_type == LogEntry::MUTATE_PART)
     {
         auto task = MutateFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
+        assignee.scheduleMutateTask(task);
         return true;
     }
     else
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);

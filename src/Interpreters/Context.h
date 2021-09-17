@@ -847,9 +847,11 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutors();
 
-    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
+    MergeTreeBackgroundExecutorPtr getMergeExecutor() const;
+    MergeTreeBackgroundExecutorPtr getMutateExecutor() const;
     MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
     MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+    MergeTreeBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
