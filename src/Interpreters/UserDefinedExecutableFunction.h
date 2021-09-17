@@ -2,9 +2,8 @@
 
 #include <string>
 
-#include <common/scope_guard.h>
-
 #include <DataTypes/IDataType.h>
+#include <DataStreams/ShellCommandSource.h>
 #include <Interpreters/IExternalLoadable.h>
 
 
@@ -19,7 +18,7 @@ enum class UserDefinedExecutableFunctionType
 
 struct UserDefinedExecutableFunctionConfiguration
 {
-    UserDefinedExecutableFunctionType type;
+    UserDefinedExecutableFunctionType type = UserDefinedExecutableFunctionType::executable;
     std::string name;
     std::string script_path;
     std::string format;
@@ -39,8 +38,8 @@ public:
 
     UserDefinedExecutableFunction(
         const UserDefinedExecutableFunctionConfiguration & configuration_,
-        std::shared_ptr<scope_guard> function_deregister_,
-        const ExternalLoadableLifetime & lifetime_);
+        const ExternalLoadableLifetime & lifetime_,
+        std::shared_ptr<ProcessPool> process_pool_ = nullptr);
 
     const ExternalLoadableLifetime & getLifetime() const override
     {
@@ -64,12 +63,18 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedExecutableFunction>(configuration, function_deregister, lifetime);
+        std::cerr << "UserDefinedExecutableFunction::clone " << this << std::endl;
+        return std::make_shared<UserDefinedExecutableFunction>(configuration, lifetime, process_pool);
     }
 
     const UserDefinedExecutableFunctionConfiguration & getConfiguration() const
     {
         return configuration;
+    }
+
+    std::shared_ptr<ProcessPool> getProcessPool() const
+    {
+        return process_pool;
     }
 
     std::shared_ptr<UserDefinedExecutableFunction> shared_from_this()
@@ -83,9 +88,13 @@ public:
     }
 
 private:
+    UserDefinedExecutableFunction(const UserDefinedExecutableFunctionConfiguration & configuration_,
+        std::shared_ptr<ProcessPool> process_pool_,
+        const ExternalLoadableLifetime & lifetime_);
+
     UserDefinedExecutableFunctionConfiguration configuration;
-    std::shared_ptr<scope_guard> function_deregister;
     ExternalLoadableLifetime lifetime;
+    std::shared_ptr<ProcessPool> process_pool;
 };
 
 }
