@@ -71,7 +71,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")), "repo_with_submodules")
+    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'pvs_check')
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
@@ -80,6 +80,13 @@ if __name__ == "__main__":
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
+
+    new_repo_path = os.path.join(temp_path, repo_path)
+    if os.path.exists(new_repo_path):
+        shutil.rmtree(new_repo_path)
+    shutil.copytree(repo_path, temp_path)
+    # this check modify repository so copy it to the temp directory
+    repo_path = new_repo_path
 
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
@@ -104,7 +111,7 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
     licence_key = os.getenv('PVS_STUDIO_KEY')
-    cmd = f"docker run --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
+    cmd = f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
     commit = get_commit(gh, pr_info.sha)
 
     try:
