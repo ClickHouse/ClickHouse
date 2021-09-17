@@ -269,8 +269,7 @@ public:
                 field = 0;
             }
         }
-        else
-            col->get(0, field);
+        col->get(0, field);
         return field;
     }
 
