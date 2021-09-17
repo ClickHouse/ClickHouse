@@ -95,7 +95,7 @@ def update_check_with_curl(check_id):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")), 'repo_without_submodules')
+    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
 
-    subprocess.check_output(f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)
+    subprocess.check_output(f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
     print("::notice ::Report url: {}".format(report_url))
