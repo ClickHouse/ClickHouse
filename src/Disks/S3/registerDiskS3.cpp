@@ -19,6 +19,7 @@
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
 #include "Disks/DiskRestartProxy.h"
+#include "Disks/DiskCache.h"
 
 
 namespace DB
@@ -150,10 +151,12 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
         config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
 }
 
-std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context,
+        const std::shared_ptr<DiskCache> & cache_ptr)
 {
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
+        cache_ptr,
         config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
         config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
         config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
@@ -181,12 +184,35 @@ void registerDiskS3(DiskFactory & factory)
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
 
+        std::shared_ptr<DiskCache> data_cache_ptr;
+
+        bool data_cache_enabled = config.getBool(config_prefix + ".data_cache_enabled", true);
+
+        if (data_cache_enabled)
+        {
+            String cache_path = config.getString(config_prefix + ".data_cache_path", context->getPath() + "disks/" + name + "/data_cache/");
+
+            if (metadata_path == cache_path)
+                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
+
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Create local data cache by path: {}", cache_path);
+
+            auto cache_disk = std::make_shared<DiskLocal>("s3-data-cache", cache_path, 0);
+
+            size_t cache_size = config.getUInt64(config_prefix + ".data_cache_size_limit", 1024*1024*1024);
+            size_t cache_nodes = config.getUInt64(config_prefix + ".data_cache_nodes_limit", 1024*1024);
+
+            std::shared_ptr<DiskCacheLRUPolicy> cache_policy = std::make_shared<DiskCacheLRUPolicy>(cache_size, cache_nodes);
+
+            data_cache_ptr = std::make_shared<DiskCache>(cache_disk, std::move(cache_policy));
+        }
+
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
             metadata_path,
-            getSettings(config, config_prefix, context),
+            getSettings(config, config_prefix, context, data_cache_ptr),
             getSettings);
 
         /// This code is used only to check access to the corresponding disk.
@@ -207,6 +233,8 @@ void registerDiskS3(DiskFactory & factory)
 
             if (metadata_path == cache_path)
                 throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
+
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Create local index cache by path: {}", cache_path);
 
             auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
             auto cache_file_predicate = [] (const String & path)

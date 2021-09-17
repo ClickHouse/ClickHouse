@@ -59,29 +59,33 @@ public:
     BufferBase(Position ptr, size_t size, size_t offset)
         : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
-    void set(Position ptr, size_t size, size_t offset)
+    virtual ~BufferBase() {}
+
+    virtual void set(Position ptr, size_t size, size_t offset)
     {
         internal_buffer = Buffer(ptr, ptr + size);
         working_buffer = Buffer(ptr, ptr + size);
         pos = ptr + offset;
     }
 
+    virtual void set(Position ptr, size_t size) { set(ptr, size, 0); }
+
     /// get buffer
-    inline Buffer & internalBuffer() { return internal_buffer; }
+    virtual inline Buffer & internalBuffer() { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
-    inline Buffer & buffer() { return working_buffer; }
+    virtual inline Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; }
+    virtual inline Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
+    virtual inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
 
     /// How many bytes are available for read/write
-    inline size_t available() const { return size_t(working_buffer.end() - pos); }
+    virtual inline size_t available() const { return size_t(working_buffer.end() - pos); }
 
-    inline void swap(BufferBase & other)
+    virtual inline void swap(BufferBase & other)
     {
         internal_buffer.swap(other.internal_buffer);
         working_buffer.swap(other.working_buffer);
@@ -89,12 +93,12 @@ public:
     }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
-    size_t count() const { return bytes + offset(); }
+    virtual size_t count() const { return bytes + offset(); }
 
     /** Check that there is more bytes in buffer after cursor. */
-    bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
+    virtual bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
 
-    bool isPadded() const { return padded; }
+    virtual bool isPadded() const { return padded; }
 
 protected:
     /// Read/write position.

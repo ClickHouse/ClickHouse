@@ -48,12 +48,12 @@ public:
     ReadBuffer(const ReadBuffer &) = delete;
 
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
-    void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
+    virtual void set(Position ptr, size_t size) override { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
     /** read next data and fill a buffer with it; set position to the beginning;
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
-    bool next()
+    virtual bool next()
     {
         assert(!hasPendingData());
         assert(position() <= working_buffer.end());
@@ -72,13 +72,13 @@ public:
     }
 
 
-    inline void nextIfAtEnd()
+    virtual inline void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
     }
 
-    virtual ~ReadBuffer() = default;
+    virtual ~ReadBuffer() override {}
 
 
     /** Unlike std::istream, it returns true if all data was read
@@ -88,12 +88,12 @@ public:
       *
       * Try to read after the end should throw an exception.
       */
-    bool ALWAYS_INLINE eof()
+    virtual bool ALWAYS_INLINE eof()
     {
         return !hasPendingData() && !next();
     }
 
-    void ignore()
+    virtual void ignore()
     {
         if (!eof())
             ++pos;
@@ -101,7 +101,7 @@ public:
             throwReadAfterEOF();
     }
 
-    void ignore(size_t n)
+    virtual void ignore(size_t n)
     {
         while (n != 0 && !eof())
         {
@@ -115,7 +115,7 @@ public:
     }
 
     /// You could call this method `ignore`, and `ignore` call `ignoreStrict`.
-    size_t tryIgnore(size_t n)
+    virtual size_t tryIgnore(size_t n)
     {
         size_t bytes_ignored = 0;
 
@@ -129,13 +129,13 @@ public:
         return bytes_ignored;
     }
 
-    void ignoreAll()
+    virtual void ignoreAll()
     {
         tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.
-    bool ALWAYS_INLINE peek(char & c)
+    virtual bool ALWAYS_INLINE peek(char & c)
     {
         if (eof())
             return false;
@@ -144,7 +144,7 @@ public:
     }
 
     /// Reads a single byte.
-    bool ALWAYS_INLINE read(char & c)
+    virtual bool ALWAYS_INLINE read(char & c)
     {
         if (peek(c))
         {
@@ -155,7 +155,7 @@ public:
         return false;
     }
 
-    void ALWAYS_INLINE readStrict(char & c)
+    virtual void ALWAYS_INLINE readStrict(char & c)
     {
         if (read(c))
             return;
@@ -163,7 +163,7 @@ public:
     }
 
     /** Reads as many as there are, no more than n bytes. */
-    size_t read(char * to, size_t n)
+    virtual size_t read(char * to, size_t n)
     {
         size_t bytes_copied = 0;
 
@@ -179,7 +179,7 @@ public:
     }
 
     /** Reads n bytes, if there are less - throws an exception. */
-    void readStrict(char * to, size_t n)
+    virtual void readStrict(char * to, size_t n)
     {
         auto read_bytes = read(to, n);
         if (n != read_bytes)

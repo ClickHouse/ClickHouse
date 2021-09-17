@@ -24,11 +24,14 @@
 namespace DB
 {
 
+class DiskCache;
+
 /// Settings for DiskS3 that can be changed in runtime.
 struct DiskS3Settings
 {
     DiskS3Settings(
         const std::shared_ptr<Aws::S3::S3Client> & client_,
+        const std::shared_ptr<DiskCache> & cache_ptr_,
         size_t s3_max_single_read_retries_,
         size_t s3_min_upload_part_size_,
         size_t s3_max_single_part_upload_size_,
@@ -39,6 +42,7 @@ struct DiskS3Settings
         int objects_chunk_size_to_delete_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<DiskCache> cache_ptr;
     size_t s3_max_single_read_retries;
     size_t s3_min_upload_part_size;
     size_t s3_max_single_part_upload_size;
@@ -62,7 +66,7 @@ public:
     using Futures = std::vector<std::future<void>>;
 
     using SettingsPtr = std::unique_ptr<DiskS3Settings>;
-    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
+    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr, const std::shared_ptr<DiskCache> &)>;
 
     struct RestoreInformation;
 

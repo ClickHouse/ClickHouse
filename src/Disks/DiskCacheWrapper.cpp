@@ -1,4 +1,5 @@
 #include "DiskCacheWrapper.h"
+#include "DiskCacheMetadata.h"
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFileDecorator.h>
@@ -40,21 +41,6 @@ public:
 
 private:
     const std::function<void()> completion_callback;
-};
-
-enum FileDownloadStatus
-{
-    NONE,
-    DOWNLOADING,
-    DOWNLOADED,
-    ERROR
-};
-
-struct FileDownloadMetadata
-{
-    /// Thread waits on this condition if download process is in progress.
-    std::condition_variable condition;
-    FileDownloadStatus status = NONE;
 };
 
 DiskCacheWrapper::DiskCacheWrapper(
@@ -104,22 +90,22 @@ DiskCacheWrapper::readFile(
     {
         std::unique_lock<std::mutex> lock{mutex};
 
-        if (metadata->status == NONE)
+        if (metadata->status == FileDownloadStatus::NONE)
         {
             /// This thread will responsible for file downloading to cache.
-            metadata->status = DOWNLOADING;
+            metadata->status = FileDownloadStatus::DOWNLOADING;
             LOG_DEBUG(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
-        else if (metadata->status == DOWNLOADING)
+        else if (metadata->status == FileDownloadStatus::DOWNLOADING)
         {
             LOG_DEBUG(log, "Waiting for file {} download to cache", backQuote(path));
-            metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
+            metadata->condition.wait(lock, [metadata] { return metadata->status == FileDownloadStatus::DOWNLOADED || metadata->status == FileDownloadStatus::ERROR; });
         }
     }
 
-    if (metadata->status == DOWNLOADING)
+    if (metadata->status == FileDownloadStatus::DOWNLOADING)
     {
-        FileDownloadStatus result_status = DOWNLOADED;
+        FileDownloadStatus result_status = FileDownloadStatus::DOWNLOADED;
 
         if (!cache_disk->exists(path))
         {
@@ -142,7 +128,7 @@ DiskCacheWrapper::readFile(
             catch (...)
             {
                 tryLogCurrentException("DiskCache", "Failed to download file + " + backQuote(path) + " to cache");
-                result_status = ERROR;
+                result_status = FileDownloadStatus::ERROR;
             }
         }
 
@@ -154,7 +140,7 @@ DiskCacheWrapper::readFile(
         metadata->condition.notify_all();
     }
 
-    if (metadata->status == DOWNLOADED)
+    if (metadata->status == FileDownloadStatus::DOWNLOADED)
         return cache_disk->readFile(path, settings, estimated_size);
 
     return DiskDecorator::readFile(path, settings, estimated_size);

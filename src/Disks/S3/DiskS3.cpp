@@ -132,12 +132,14 @@ class ReadIndirectBufferFromS3 final : public ReadIndirectBufferFromRemoteFS<Rea
 public:
     ReadIndirectBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<DiskCache> cache_ptr_,
         const String & bucket_,
         DiskS3::Metadata metadata_,
         size_t max_single_read_retries_,
         size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
+        , cache_ptr(std::move(cache_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
@@ -146,11 +148,12 @@ public:
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, cache_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size);
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<DiskCache> cache_ptr;
     const String & bucket;
     UInt64 max_single_read_retries;
     size_t buf_size;
@@ -230,7 +233,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromS3>(
-        settings->client, bucket, metadata, settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
+        settings->client, settings->cache_ptr, bucket, metadata, settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
@@ -374,6 +377,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
     auto settings = current_settings.get();
     ReadBufferFromS3 buffer(
         settings->client,
+        nullptr,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries,
@@ -1034,7 +1038,7 @@ void DiskS3::onFreeze(const String & path)
 
 void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
 {
-    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
+    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context, current_settings.get()->cache_ptr);
 
     current_settings.set(std::move(new_settings));
 
@@ -1044,6 +1048,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const std::shared_ptr<DiskCache> & cache_ptr_,
     size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
@@ -1053,6 +1058,7 @@ DiskS3Settings::DiskS3Settings(
     int list_object_keys_size_,
     int objects_chunk_size_to_delete_)
     : client(client_)
+    , cache_ptr(cache_ptr_)
     , s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
     , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)

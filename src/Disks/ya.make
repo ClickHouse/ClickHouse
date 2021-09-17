@@ -8,6 +8,7 @@ PEERDIR(
 )
 
 SRCS(
+    DiskCache.cpp
     DiskCacheWrapper.cpp
     DiskDecorator.cpp
     DiskEncrypted.cpp

@@ -31,7 +31,6 @@ public:
     using BufferBase::set;
     using BufferBase::position;
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
-    void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
       * set the position to the beginning; throw an exception, if something is wrong
@@ -61,7 +60,7 @@ public:
     /** it is desirable in the derived classes to place the next() call in the destructor,
       * so that the last data is written
       */
-    virtual ~WriteBuffer() = default;
+    virtual ~WriteBuffer() override = default;
 
     inline void nextIfAtEnd()
     {
