@@ -819,7 +819,7 @@ ClickHouse может парсить только базовый формат `Y
 
 ## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
 
-Задает интервал в секундах в ClickHouse для выполнения очистки старых кусков, WAL-ов и мутаций.
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
 
 Возможные значения:
 
