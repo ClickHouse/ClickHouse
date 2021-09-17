@@ -59,7 +59,7 @@ static bool checkAndInsertNullable(IColumn & column, DataTypePtr type, InsertFun
     {
         auto & nullable_column = assert_cast<ColumnNullable &>(column);
         auto & nested_column = nullable_column.getNestedColumn();
-        auto & nested_type = assert_cast<const DataTypeNullable *>(type.get())->getNestedType();
+        const auto & nested_type = assert_cast<const DataTypeNullable *>(type.get())->getNestedType();
         insert_func(nested_column, nested_type);
         nullable_column.getNullMapColumn().insertValue(0);
         return true;
@@ -202,7 +202,7 @@ static void insertNull(IColumn & column, DataTypePtr type)
         insertNull(column_, type_);
     };
 
-    /// LowCardinalityNullable(...)
+    /// LowCardinality(Nullable(...))
     if (checkAndInsertLowCardinality(column, type, insert_func))
         return;
 
@@ -230,7 +230,7 @@ bool MsgPackVisitor::visit_str(const char * value, size_t size) // NOLINT
     return true;
 }
 
-bool MsgPackVisitor::visit_bin(const char * value, size_t size)
+bool MsgPackVisitor::visit_bin(const char * value, size_t size) // NOLINT
 {
     insertString(info_stack.top().column, info_stack.top().type, value, size);
     return true;
@@ -245,6 +245,12 @@ bool MsgPackVisitor::visit_float32(Float32 value) // NOLINT
 bool MsgPackVisitor::visit_float64(Float64 value) // NOLINT
 {
     insertFloat64(info_stack.top().column, info_stack.top().type, value);
+    return true;
+}
+
+bool MsgPackVisitor::visit_boolean(bool value)
+{
+    insertInteger(info_stack.top().column, info_stack.top().type, UInt64(value));
     return true;
 }
 
