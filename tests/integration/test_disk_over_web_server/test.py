@@ -26,7 +26,7 @@ def cluster():
             print(f'Metadata: {metadata_path}')
 
             node1.exec_in_container(['bash', '-c',
-                                    '/usr/bin/clickhouse static-files-disk-uploader --test-mode --files-prefix data --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
+                                    '/usr/bin/clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
             parts = metadata_path.split('/')
             uuids.append(parts[3])
             print(f'UUID: {parts[3]}')
