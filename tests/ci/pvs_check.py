@@ -71,26 +71,13 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
+    repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'pvs_check')
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
         event = json.load(event_file)
     pr_info = PRInfo(event)
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
-
-    new_repo_path = os.path.join(temp_path, repo_path)
-    logging.info("Will try to copy repo to %s", new_repo_path)
-    if os.path.exists(new_repo_path):
-        logging.info("Removing old copy")
-        shutil.rmtree(new_repo_path)
-
-    logging.info("Copy repo from %s (exists %s) to %s", repo_path, os.path.exists(repo_path), temp_path)
-    shutil.copytree(repo_path, temp_path)
     # this check modify repository so copy it to the temp directory
-    repo_path = new_repo_path
     logging.info("Repo copy path %s", repo_path)
 
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
