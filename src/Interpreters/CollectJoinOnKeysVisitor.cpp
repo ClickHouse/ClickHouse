@@ -46,7 +46,15 @@ void CollectJoinOnKeysMatcher::Data::addDisjunct(const ASTPtr & ast)
     const IAST * addr = ast.get();
 
     if (std::find_if(disjuncts.begin(), disjuncts.end(), [addr](const ASTPtr & ast_){return ast_.get() == addr;}) != disjuncts.end())
+    {
+        if (num_of_ors++ > MAX_ORS)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                            "Maximum allowed number of ORs in JOIN ON section is {}",
+                            MAX_ORS);
+        }
         analyzed_join.newClauseIfPopulated();
+    }
 }
 
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)

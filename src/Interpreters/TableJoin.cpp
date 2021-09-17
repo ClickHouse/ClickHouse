@@ -138,33 +138,34 @@ void TableJoin::newClauseIfPopulated()
 namespace
 {
 
-bool operator==(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+bool equalTableColumns(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
 {
     return l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right;
 }
 
-TableJoin::JoinOnClause & operator+=(TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
 {
-    for (const auto & cp : {std::pair(&l.on_filter_condition_left, &r.on_filter_condition_left),
-                std::pair(&l.on_filter_condition_right, &r.on_filter_condition_right) })
+    if (from == nullptr)
+        return;
+    if (to == nullptr)
+        to = from;
+    else if (const auto * func = (to)->as<ASTFunction>(); func && func->name == "or")
     {
-        if (*cp.first == nullptr)
-            *cp.first = *cp.second;
-        else if (const auto * func = (*cp.first)->as<ASTFunction>(); func && func->name == "or")
-        {
-            /// already have `or` in condition, just add new argument
-            if (*cp.second != nullptr)
-                func->arguments->children.push_back(*cp.second);
-        }
-        else
-        {
-            /// already have some conditions, unite it with `or`
-            if (*cp.second != nullptr)
-                *cp.first = makeASTFunction("or", *cp.first, *cp.second);
-        }
+        /// already have `or` in condition, just add new argument
+        func->arguments->children.push_back(from);
     }
+    else
+    {
+        /// already have some conditions, unite it with `or`
+        to = makeASTFunction("or", to, from);
+    }
+}
 
-    return l;
+/// from's conditions added to to's ones
+void addConditionsToClause(TableJoin::JoinOnClause & to, const TableJoin::JoinOnClause & from)
+{
+    joinASTbyOR(to.on_filter_condition_left, from.on_filter_condition_left);
+    joinASTbyOR(to.on_filter_condition_right, from.on_filter_condition_right);
 }
 }
 
@@ -184,7 +185,7 @@ void TableJoin::optimizeClauses()
 
         for (; from_it != clauses.end(); ++from_it)
         {
-            if (*from_it != *to_it)
+            if (! equalTableColumns(*from_it,*to_it))
             {
                 if (++to_it != from_it)
                 {
@@ -193,8 +194,7 @@ void TableJoin::optimizeClauses()
             }
             else
             {
-                /// ORing filter conditions
-                *to_it += *from_it;
+                addConditionsToClause(*to_it, *from_it);
             }
         }
         const Clauses::size_type new_size = std::distance(clauses.begin(), to_it) + 1;
