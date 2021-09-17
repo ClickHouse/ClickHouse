@@ -179,7 +179,7 @@ public:
         /// Don't produce empty block
         } while (columns.empty() || columns[0]->empty());
 
-        size_t num_rows = columns.empty() ? columns.front()->size() : 0;
+        size_t num_rows = columns.empty() ? 0 : columns.front()->size();
         return Chunk(std::move(columns), num_rows);
     }
 
