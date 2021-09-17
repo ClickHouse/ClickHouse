@@ -48,6 +48,11 @@ public:
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
         ASTs disjuncts{};
+        size_t num_of_ors{0};
+
+        /// the limit has no technical reasons, it supposed to improve safety
+        static constexpr std::size_t MAX_ORS = 16;
+
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,

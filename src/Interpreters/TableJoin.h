@@ -227,7 +227,7 @@ public:
     ///    This is vital for queries like t1.key = t2.key AND (t1.a = 1 OR t2.bb > 2)
     ///    to be compartible with merge joins and to create only one hashmap if hashjoin,
     ///    because after DNFing it is (t1.key = t2.key AND t1.a = 1) OR (t1.key = t2.key AND t2.bb > 2)
-    ///    and we unable to proceed with mergejoin and have to do deal with extra hashmap for hashjoin.
+    ///    and we unable to proceed with mergejoin and have to deal with extra hashmap for hashjoin.
     ///    Practically we revert DNFing in this case.
     void optimizeClauses();
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
