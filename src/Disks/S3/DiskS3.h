@@ -36,7 +36,8 @@ struct DiskS3Settings
         bool send_metadata_,
         int thread_pool_size_,
         int list_object_keys_size_,
-        int objects_chunk_size_to_delete_);
+        int objects_chunk_size_to_delete_,
+        bool async_read);
 
     std::shared_ptr<Aws::S3::S3Client> client;
     size_t s3_max_single_read_retries;
@@ -47,6 +48,7 @@ struct DiskS3Settings
     int thread_pool_size;
     int list_object_keys_size;
     int objects_chunk_size_to_delete;
+    bool async_read;
 };
 
 
