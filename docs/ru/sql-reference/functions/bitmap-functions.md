@@ -104,7 +104,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 **Аргументы**
 
 -   `bitmap` – битмап. Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
--   `offset` – количество смещений. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `offset` – смещение. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
 -   `cardinality_limit` – верхний предел подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
