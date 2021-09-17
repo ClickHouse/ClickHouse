@@ -842,6 +842,7 @@ namespace
         UInt64 thread_id;
         ProfileEvents::Counters counters;
         CurrentMetrics::Metric metric;
+        Int64 memory_usage;
         time_t current_time;
     };
 
@@ -849,18 +850,16 @@ namespace
      * Add records about provided non-zero ProfileEvents::Counters.
      */
     void dumpProfileEvents(
-        ProfileEvents::Counters const & snapshot,
+        ProfileEventsSnapshot const & snapshot,
         MutableColumns & columns,
-        String const & host_name,
-        time_t current_time,
-        UInt64 thread_id)
+        String const & host_name)
     {
         size_t rows = 0;
         auto & name_column = columns[NAME_COLUMN_INDEX];
         auto & value_column = columns[VALUE_COLUMN_INDEX];
         for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
         {
-            UInt64 value = snapshot[event].load(std::memory_order_relaxed);
+            UInt64 value = snapshot.counters[event].load(std::memory_order_relaxed);
 
             if (value == 0)
                 continue;
@@ -876,32 +875,43 @@ namespace
         {
             size_t i = 0;
             columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(current_time));
-            columns[i++]->insert(UInt64{thread_id});
+            columns[i++]->insert(UInt64(snapshot.current_time));
+            columns[i++]->insert(UInt64{snapshot.thread_id});
             columns[i++]->insert(ProfileEventTypes::INCREMENT);
         }
     }
 
     void dumpMemoryTracker(
-        CurrentMetrics::Metric metric,
+        ProfileEventsSnapshot const & snapshot,
         MutableColumns & columns,
-        String const & host_name,
-        UInt64 thread_id)
+        String const & host_name)
     {
-        if (metric == CurrentMetrics::end())
-            return;
-        time_t current_time = time(nullptr);
+        {
+            size_t i = 0;
+            columns[i++]->insertData(host_name.data(), host_name.size());
+            columns[i++]->insert(UInt64(snapshot.current_time));
+            columns[i++]->insert(UInt64{snapshot.thread_id});
+            columns[i++]->insert(ProfileEventTypes::GAUGE);
 
-        size_t i = 0;
-        columns[i++]->insertData(host_name.data(), host_name.size());
-        columns[i++]->insert(UInt64(current_time));
-        columns[i++]->insert(UInt64{thread_id});
-        columns[i++]->insert(ProfileEventTypes::GAUGE);
+            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
+            columns[i++]->insert(snapshot.memory_usage);
+        }
 
-        auto const * metric_name = CurrentMetrics::getName(metric);
-        columns[i++]->insertData(metric_name, strlen(metric_name));
-        auto metric_value = CurrentMetrics::get(metric);
-        columns[i++]->insert(metric_value);
+        if (snapshot.metric != CurrentMetrics::end())
+        {
+            time_t current_time = time(nullptr);
+
+            size_t i = 0;
+            columns[i++]->insertData(host_name.data(), host_name.size());
+            columns[i++]->insert(UInt64(current_time));
+            columns[i++]->insert(UInt64{snapshot.thread_id});
+            columns[i++]->insert(ProfileEventTypes::GAUGE);
+
+            auto const * metric_name = CurrentMetrics::getName(snapshot.metric);
+            columns[i++]->insertData(metric_name, strlen(metric_name));
+            auto metric_value = CurrentMetrics::get(snapshot.metric);
+            columns[i++]->insert(metric_value);
+        }
     }
 }
 
@@ -945,26 +955,30 @@ void TCPHandler::sendProfileEvents()
             auto current_time = time(nullptr);
             auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
             auto metric = thread->memory_tracker.getMetric();
-            snapshots.push_back(ProfileEventsSnapshot{thread_id, std::move(counters), metric, current_time});
+            auto memory_usage = thread->memory_tracker.get();
+            snapshots.push_back(ProfileEventsSnapshot{
+                thread_id,
+                std::move(counters),
+                metric,
+                memory_usage,
+                current_time
+            });
         }
 
+        group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
-        group_snapshot.metric = thread_group->memory_tracker.getMetric();
-        group_snapshot.counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        group_snapshot.metric       = thread_group->memory_tracker.getMetric();
+        group_snapshot.memory_usage = thread_group->memory_tracker.get();
+        group_snapshot.counters     = thread_group->performance_counters.getPartiallyAtomicSnapshot();
     }
 
     for (auto & snapshot : snapshots)
     {
-        dumpProfileEvents(
-            snapshot.counters,
-            columns,
-            server_display_name,
-            snapshot.current_time,
-            snapshot.thread_id);
-        dumpMemoryTracker(snapshot.metric, columns, server_display_name, snapshot.thread_id);
+        dumpProfileEvents(snapshot, columns, server_display_name);
+        dumpMemoryTracker(snapshot, columns, server_display_name);
     }
-    dumpProfileEvents(group_snapshot.counters, columns, server_display_name, group_snapshot.current_time, 0);
-    dumpMemoryTracker(group_snapshot.metric, columns, server_display_name, 0);
+    dumpProfileEvents(group_snapshot, columns, server_display_name);
+    dumpMemoryTracker(group_snapshot, columns, server_display_name);
 
     MutableColumns logs_columns;
     Block curr_block;
