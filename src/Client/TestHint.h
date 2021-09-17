@@ -7,6 +7,19 @@
 namespace DB
 {
 
+struct ExpectedError
+{
+    int code{0};
+    bool is_server{false};
+    bool required{false};
+
+    static ExpectedError makeServer(int code, bool required = true) { return ExpectedError{code, true, required}; }
+    static ExpectedError makeClient(int code, bool required = true) { return ExpectedError{code, false, required}; }
+
+    int serverError() const { return is_server ? code : 0; }
+    int clientError() const { return is_server ? 0 : code; }
+};
+
 /// Checks expected server and client error codes in --testmode.
 ///
 /// The following comment hints are supported:
@@ -45,27 +58,18 @@ class TestHint
 public:
     TestHint(bool enabled_, const String & query_);
 
-    int serverError() const { return server_error; }
-    int clientError() const { return client_error; }
+    int serverError() const { return expected_error.serverError(); }
+    int clientError() const { return expected_error.clientError(); }
+    bool errorRequired() const { return expected_error.required; }
     std::optional<bool> echoQueries() const { return echo; }
 
 private:
     const String & query;
-    int server_error = 0;
-    int client_error = 0;
+    ExpectedError expected_error;
     std::optional<bool> echo;
 
     void parse(const String & hint, bool is_leading_hint);
 
-    bool allErrorsExpected(int actual_server_error, int actual_client_error) const
-    {
-        return (server_error || client_error) && (server_error == actual_server_error) && (client_error == actual_client_error);
-    }
-
-    bool lostExpectedError(int actual_server_error, int actual_client_error) const
-    {
-        return (server_error && !actual_server_error) || (client_error && !actual_client_error);
-    }
 };
 
 }

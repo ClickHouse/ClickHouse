@@ -231,13 +231,13 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 {
                     if (test_hint.serverError())
                     {
-                        if (!server_exception)
+                        if (!server_exception && test_hint.errorRequired())
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
                                        test_hint.serverError(), full_query);
                         }
-                        else if (server_exception->code() != test_hint.serverError())
+                        else if (server_exception && server_exception->code() != test_hint.serverError() && test_hint.serverError() >= 0)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
@@ -246,20 +246,21 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                     }
                     if (test_hint.clientError())
                     {
-                        if (!client_exception)
+                        if (!client_exception && test_hint.errorRequired())
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
                                        test_hint.clientError(), full_query);
                         }
-                        else if (client_exception->code() != test_hint.clientError())
+                        else if (client_exception && client_exception->code() != test_hint.clientError() && test_hint.clientError() >= 0)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
                                        test_hint.clientError(), client_exception->code(), full_query);
                         }
                     }
-                    if (!test_hint.clientError() && !test_hint.serverError())
+                    if ((client_exception && !test_hint.clientError()) ||
+                        (server_exception && !test_hint.serverError()))
                     {
                         // No error was expected but it still occurred. This is the
                         // default case w/o test hint, doesn't need additional
@@ -269,13 +270,13 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 }
                 else
                 {
-                    if (test_hint.clientError())
+                    if (test_hint.clientError() && test_hint.errorRequired())
                     {
                         fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
                                    test_hint.clientError(), full_query);
                         error_matches_hint = false;
                     }
-                    if (test_hint.serverError())
+                    if (test_hint.serverError() && test_hint.errorRequired())
                     {
                         fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
                                    test_hint.serverError(), full_query);

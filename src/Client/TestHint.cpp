@@ -24,6 +24,10 @@ int parseErrorCode(DB::ReadBufferFromString & in)
 
     /// Try parse as string
     readStringUntilWhitespace(code_name, in);
+    if (code_name.empty())
+    {
+        return code;
+    }
     return DB::ErrorCodes::getErrorCodeByName(code_name);
 }
 
@@ -88,9 +92,13 @@ void TestHint::parse(const String & hint, bool is_leading_hint)
         if (!is_leading_hint)
         {
             if (item == "serverError")
-                server_error = parseErrorCode(in);
+                expected_error = ExpectedError::makeServer(parseErrorCode(in));
             else if (item == "clientError")
-                client_error = parseErrorCode(in);
+                expected_error = ExpectedError::makeClient(parseErrorCode(in));
+            else if (item == "serverError?")
+                expected_error = ExpectedError::makeServer(parseErrorCode(in), false);
+            else if (item == "clientError?")
+                expected_error = ExpectedError::makeClient(parseErrorCode(in), false);
         }
 
         if (item == "echo")
