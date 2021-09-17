@@ -1,18 +1,11 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
-
 #include <DataTypes/DataTypeFactory.h>
-
-#include <IO/WriteHelpers.h>
-
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/UserDefinedExecutableFunction.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
 namespace DB
@@ -20,132 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
-    extern const int TIMEOUT_EXCEEDED;
+    extern const int BAD_ARGUMENTS;
+    extern const int FUNCTION_ALREADY_EXISTS;
 }
-
-class UserDefinedFunction final : public IFunction
-{
-public:
-    using GetProcessFunction = std::function<std::unique_ptr<ShellCommand> (void)>;
-
-    explicit UserDefinedFunction(
-        ContextPtr context_,
-        const UserDefinedExecutableFunctionConfiguration & configuration_,
-        GetProcessFunction get_process_function_,
-        std::shared_ptr<ProcessPool> process_pool_)
-        : context(context_)
-        , configuration(configuration_)
-        , get_process_function(std::move(get_process_function_))
-        , process_pool(std::move(process_pool_))
-    {
-    }
-
-    String getName() const override { return configuration.name; }
-
-    bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return configuration.argument_types.size(); }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return true; }
-    bool isDeterministic() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & expected_argument_type = configuration.argument_types[i];
-            if (!areTypesEqual(expected_argument_type, arguments[i]))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Function {} for {} argument expected {} actual {}",
-                    getName(),
-                    i,
-                    expected_argument_type->getName(),
-                    arguments[i]->getName());
-        }
-
-        return configuration.result_type;
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        std::unique_ptr<ShellCommand> process = get_process_function();
-
-        ColumnWithTypeAndName result(result_type, "result");
-        Block result_block({result});
-
-        Block arguments_block(arguments);
-        auto * process_in = &process->in;
-
-        bool is_executable_pool_function = (process_pool != nullptr);
-
-        ShellCommandSourceConfiguration shell_command_source_configuration;
-
-        if (is_executable_pool_function)
-        {
-            shell_command_source_configuration.read_fixed_number_of_rows = true;
-            shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
-        }
-
-        ShellCommandSource::SendDataTask task = {[process_in, arguments_block, is_executable_pool_function, this]()
-        {
-            auto & out = *process_in;
-
-            if (configuration.send_chunk_header)
-            {
-                writeText(arguments_block.rows(), out);
-                writeChar('\n', out);
-            }
-
-            auto output_stream = context->getOutputStream(configuration.format, out, arguments_block.cloneEmpty());
-            formatBlock(output_stream, arguments_block);
-            if (!is_executable_pool_function)
-                out.close();
-        }};
-        std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
-
-        Pipe pipe(std::make_unique<ShellCommandSource>(
-            context,
-            configuration.format,
-            result_block.cloneEmpty(),
-            std::move(process),
-            std::move(tasks),
-            shell_command_source_configuration,
-            process_pool));
-
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
-
-        PullingPipelineExecutor executor(pipeline);
-
-        auto result_column = result_type->createColumn();
-        result_column->reserve(input_rows_count);
-
-        Block block;
-        while (executor.pull(block))
-        {
-            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
-        }
-
-        size_t result_column_size = result_column->size();
-        if (result_column_size != input_rows_count)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {} wrong result rows count expected {} actual {}",
-                getName(),
-                input_rows_count,
-                result_column_size);
-
-        return result_column;
-    }
-
-private:
-    ContextPtr context;
-    UserDefinedExecutableFunctionConfiguration configuration;
-    GetProcessFunction get_process_function;
-    mutable std::shared_ptr<ProcessPool> process_pool;
-};
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
     : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
@@ -166,11 +36,22 @@ ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr E
     return std::static_pointer_cast<const UserDefinedExecutableFunction>(tryLoad(user_defined_function_name));
 }
 
+void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::string & user_defined_function_name) const
+{
+    loadOrReload(user_defined_function_name);
+}
+
 ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const
 {
+    if (FunctionFactory::instance().hasNameOrAlias(name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", name);
+
+    if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", name);
+
     String type = config.getString(key_in_config + ".type");
     UserDefinedExecutableFunctionType function_type;
 
@@ -236,53 +117,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .send_chunk_header = send_chunk_header
     };
 
-    std::shared_ptr<scope_guard> function_deregister_ptr = std::make_shared<scope_guard>([function_name = function_configuration.name]()
-    {
-        UserDefinedExecutableFunctionFactory::instance().unregisterFunction(function_name);
-    });
-
-    auto function = std::make_shared<UserDefinedExecutableFunction>(function_configuration, std::move(function_deregister_ptr), lifetime);
-
-    std::shared_ptr<ProcessPool> process_pool;
-    if (function_configuration.type == UserDefinedExecutableFunctionType::executable_pool)
-        process_pool = std::make_shared<ProcessPool>(function_configuration.pool_size == 0 ? std::numeric_limits<int>::max() : function_configuration.pool_size);
-
-    auto get_process_function = [function, process_pool]()
-    {
-        const auto & executable_function_config = function->getConfiguration();
-
-        std::unique_ptr<ShellCommand> process;
-        bool is_executable_pool_function = (process_pool != nullptr);
-        if (is_executable_pool_function)
-        {
-            bool result = process_pool->tryBorrowObject(process, [&]()
-            {
-                ShellCommand::Config process_config(function->getConfiguration().script_path);
-                process_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, executable_function_config.command_termination_timeout };
-                auto shell_command = ShellCommand::execute(process_config);
-                return shell_command;
-            }, executable_function_config.max_command_execution_time * 1000);
-
-            if (!result)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                    executable_function_config.max_command_execution_time);
-        }
-        else
-        {
-            process = ShellCommand::execute(executable_function_config.script_path);
-        }
-
-        return process;
-    };
-
-    UserDefinedExecutableFunctionFactory::instance().registerFunction(function_configuration.name, [get_process_function, function, process_pool](ContextPtr function_context)
-    {
-        std::shared_ptr<UserDefinedFunction> user_defined_function = std::make_shared<UserDefinedFunction>(function_context, function->getConfiguration(), std::move(get_process_function), process_pool);
-        return std::make_unique<FunctionToOverloadResolverAdaptor>(user_defined_function);
-    });
-
-    return function;
+    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, lifetime);
 }
 
 }
