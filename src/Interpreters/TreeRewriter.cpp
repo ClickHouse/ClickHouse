@@ -1,6 +1,8 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Common/checkStackSize.h>
+
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -626,6 +628,7 @@ class DNF
                         makeASTFunction("or", lst) :
                         lst[0];
 
+                    checkStackSize();
                     node_added = true;
 
                     return ret;
@@ -886,6 +889,9 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             if (required.count(name))
             {
                 /// Optimisation: do not add columns needed only in JOIN ON section.
+                ///   Does not work well if AST was altered, the problem here is DNFing applied to table_join.on_query,
+                ///   not to original query, so calculation of 'how many times a column occurred in a query' is not affected by DNFing,
+                ///   but calculation of 'how many times it occurred in join' is affected.
                 if (columns_context.converted_to_dnf || columns_context.nameInclusion(name) > analyzed_join->rightKeyInclusion(name))
                     analyzed_join->addJoinedColumn(joined_column);
 
