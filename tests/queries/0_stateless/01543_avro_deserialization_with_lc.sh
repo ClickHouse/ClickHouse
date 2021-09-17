@@ -12,7 +12,7 @@ SET allow_suspicious_low_cardinality_types=1;
 CREATE TABLE IF NOT EXISTS test_01543 (value LowCardinality(String), value2 LowCardinality(UInt64)) ENGINE=Memory();
 "
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO test_01543 SELECT toString(number), number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO test_01543 SELECT toString(number), number FROM numbers(10)"
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_01543 FORMAT Avro" |
     $CLICKHOUSE_CLIENT -q "INSERT INTO test_01543 FORMAT Avro";
