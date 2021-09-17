@@ -5,7 +5,7 @@ toc_title: VIEW
 
 # ALTER TABLE … MODIFY QUERY Statement {#alter-modify-query}
 
-You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the 'ALTER TABLE … MODIFY QUERY' statement. Use it when the materialized view was created without the `TO [db.]name` clause. The `allow_experimental_alter_materialized_view_structure` setting must be enabled. 
+You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE … MODIFY QUERY` statement. Use it when the materialized view was created without the `TO [db.]name` clause. The `allow_experimental_alter_materialized_view_structure` setting must be enabled. 
 
 If a materialized view uses the `TO [db.]name` construction, you must [DETACH](../detach.md) the view, run [ALTER TABLE](index.md) query for the target table, and then [ATTACH](../attach.md) the previously detached (`DETACH`) view.
 
