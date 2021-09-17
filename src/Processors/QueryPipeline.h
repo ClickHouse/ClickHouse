@@ -64,14 +64,14 @@ public:
         OutputPort * totals_ = nullptr,
         OutputPort * extremes_ = nullptr);
 
-    /// Exactly one of the following is true.
     bool initialized() const { return !processors.empty(); }
+    /// When initialized, exactly one of the following is true.
     /// Use PullingPipelineExecutor or PullingAsyncPipelineExecutor.
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
     /// Use PipelineExecutor. Call execute() to build one.
-    bool completed() const { return !pulling() && !pushing(); }
+    bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
     void complete(Pipe pipe);

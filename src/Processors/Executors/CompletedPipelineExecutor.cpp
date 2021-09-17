@@ -5,7 +5,16 @@
 namespace DB
 {
 
-CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_) {}
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+{
+    if (!pipeline.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelineExecutor must be completed");
+}
 
 void CompletedPipelineExecutor::execute()
 {
