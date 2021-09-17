@@ -52,6 +52,18 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
     }
+
+    if (settings.background_pool_size.changed)
+    {
+        if (log)
+            LOG_WARNING(log, "Setting `background_pool_size` is deprecated." \
+                "You have to configure `background_merges_pool_size` and `background_mutations_pool_size` instead." \
+                "Currently these settings are adapted according to the changed value");
+
+        settings.background_merges_pool_size = settings.background_pool_size / 2;
+        settings.background_mutations_pool_size = settings.background_pool_size / 2;
+        settings.background_common_pool_size = settings.background_pool_size / 2;
+    }
 }
 
 }

@@ -79,7 +79,9 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getSettingsRef().background_merges_count)
+    , merger_mutator(*this,
+        getContext()->getSettingsRef().background_merges_concurrency_ratio *
+        getContext()->getSettingsRef().background_merges_pool_size)
 {
     loadDataParts(has_force_restore_data_flag);
 

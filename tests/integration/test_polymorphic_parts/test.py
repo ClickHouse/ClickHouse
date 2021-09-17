@@ -388,7 +388,7 @@ def test_in_memory_wal_rotate(start_cluster):
 
     for node in [node11, node12]:
         node.query(
-            "ALTER TABLE restore_table MODIFY SETTING number_of_free_entries_in_pool_to_lower_max_size_of_merge = 0")
+            "ALTER TABLE restore_table MODIFY SETTING ratio_of = 0")
         node.query("ALTER TABLE restore_table MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 10000000")
 
     assert_eq_with_retry(node11, "OPTIMIZE TABLE restore_table FINAL SETTINGS optimize_throw_if_noop = 1", "")

@@ -2800,7 +2800,7 @@ void Context::initializeBackgroundExecutors()
     (
         MergeTreeBackgroundExecutor::Type::MERGE,
         /*max_threads_count*/getSettingsRef().background_merges_pool_size,
-        /*max_tasks_count*/getSettingsRef().background_merges_count,
+        /*max_tasks_count*/getSettingsRef().background_merges_concurrency_ratio * getSettingsRef().background_merges_pool_size,
         CurrentMetrics::BackgroundMergesPoolTask
     );
 
@@ -2809,7 +2809,7 @@ void Context::initializeBackgroundExecutors()
     (
         MergeTreeBackgroundExecutor::Type::MUTATE,
         /*max_threads_count*/getSettingsRef().background_mutations_pool_size,
-        /*max_tasks_count*/getSettingsRef().background_mutations_count,
+        /*max_tasks_count*/getSettingsRef().background_mutations_concurrency_ratio * getSettingsRef().background_mutations_pool_size,
         CurrentMetrics::BackgroundMutationsPoolTask
     );
 

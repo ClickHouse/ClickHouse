@@ -17,20 +17,7 @@ namespace DB
 
 String MergeTreeBackgroundExecutor::toString(Type type)
 {
-    switch (type)
-    {
-        case Type::MERGE:
-            return "Merge";
-        case Type::MUTATE:
-            return "Mutate";
-        case Type::FETCH:
-            return "Fetch";
-        case Type::MOVE:
-            return "Move";
-        case Type::COMMON:
-            return "Common";
-    }
-    __builtin_unreachable();
+    return String(magic_enum::enum_name<Type>(type));
 }
 
 
