@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SELECT '--allow_simdjson=1--';
 SET allow_simdjson=1;
 

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS testlazy;
 
 CREATE TABLE `таблица_со_странным_названием` (a UInt64, b UInt64) ENGINE = Log;

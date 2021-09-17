@@ -7,13 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/CurrentMetrics.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
 
 namespace DB
 {
@@ -309,9 +303,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
-            /// This part will never appear, so remove it from virtual parts
-            virtual_parts.remove(virtual_part_name);
-
             /// Because execution of the entry is unsuccessful,
             /// `virtual_part_name` will never appear so we won't need to mutate
             /// it.
@@ -627,7 +618,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             }
         }
 
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
     }
 
     return stat.version;
@@ -716,7 +707,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     }
 
     if (some_active_mutations_were_killed)
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
 
     if (!entries_to_load.empty())
     {
@@ -850,7 +841,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     }
 
     if (mutation_was_active)
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
 
     return entry;
 }
@@ -915,6 +906,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 
     if (entry_ptr->replace_range_entry == current.replace_range_entry) /// same partition, don't want to drop ourselves
         return false;
+
 
     if (!part_info.contains(MergeTreePartInfo::fromPartName(entry_ptr->replace_range_entry->drop_range_part_name, format_version)))
         return false;
@@ -1185,18 +1177,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
-            size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
-            size_t thread_pool_size = data.getContext()->getSettingsRef().background_pool_size;
-            size_t free_threads = thread_pool_size - busy_threads_in_pool;
-            size_t required_threads = data_settings->number_of_free_entries_in_pool_to_execute_mutation;
-            out_postpone_reason = fmt::format("Not executing log entry {} of type {} for part {}"
-                " because source parts size ({}) is greater than the current maximum ({})."
-                " {} free of {} threads, required {} free threads.",
-                entry.znode_name, entry.typeToString(), entry.new_part_name,
-                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size),
-                free_threads, thread_pool_size, required_threads);
+            const char * format_str = "Not executing log entry {} of type {} for part {}"
+                " because source parts size ({}) is greater than the current maximum ({}).";
 
-            LOG_DEBUG(log, out_postpone_reason);
+            LOG_DEBUG(log, format_str, entry.znode_name,
+                entry.typeToString(), entry.new_part_name,
+                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
+
+            out_postpone_reason = fmt::format(format_str, entry.znode_name,
+                entry.typeToString(), entry.new_part_name,
+                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
             return false;
         }

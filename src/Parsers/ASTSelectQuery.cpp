@@ -319,15 +319,23 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
-    bool is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
-    return {array_join->expression_list, is_left};
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
+    return array_join->expression_list;
 }
+
+
+ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+{
+    bool is_left;
+    return arrayJoinExpressionList(is_left);
+}
+
 
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
