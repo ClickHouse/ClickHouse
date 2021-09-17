@@ -173,13 +173,13 @@ Chain InterpreterInsertQuery::buildChainImpl(
     const Block & query_sample_block,
     ExceptionKeepingTransformRuntimeDataPtr runtime_data)
 {
-    auto context = getContext();
+    auto context_ptr = getContext();
     const ASTInsertQuery * query = nullptr;
     if (query_ptr)
         query = query_ptr->as<ASTInsertQuery>();
 
-    const Settings & settings = context->getSettingsRef();
-    bool null_as_default = query && query->select && context->getSettingsRef().insert_null_as_default;
+    const Settings & settings = context_ptr->getSettingsRef();
+    bool null_as_default = query && query->select && context_ptr->getSettingsRef().insert_null_as_default;
 
     /// We create a pipeline of several streams, into which we will write data.
     Chain out;
@@ -188,13 +188,13 @@ Chain InterpreterInsertQuery::buildChainImpl(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
-        auto sink = table->write(query_ptr, metadata_snapshot, context);
+        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
         sink->setRuntimeData(runtime_data);
         out.addSource(std::move(sink));
     }
     else
     {
-        out = buildPushingToViewsDrain(table, metadata_snapshot, context, query_ptr, no_destination, runtime_data);
+        out = buildPushingToViewsDrain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, runtime_data);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -202,13 +202,13 @@ Chain InterpreterInsertQuery::buildChainImpl(
     /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
     if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
         out.addSource(std::make_shared<CheckConstraintsTransform>(
-            table->getStorageID(), out.getInputHeader(), metadata_snapshot->getConstraints(), context));
+            table->getStorageID(), out.getInputHeader(), metadata_snapshot->getConstraints(), context_ptr));
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         query_sample_block,
         out.getInputHeader().getNamesAndTypesList(),
         metadata_snapshot->getColumns(),
-        context,
+        context_ptr,
         null_as_default);
 
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
@@ -233,7 +233,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     }
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), runtime_data ? runtime_data->thread_status : nullptr);
-    counting->setProcessListElement(context->getProcessListElement());
+    counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
     return out;

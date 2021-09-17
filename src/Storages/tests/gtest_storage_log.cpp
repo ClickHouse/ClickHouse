@@ -102,10 +102,9 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    Chain chain;
-    chain.addSource(table->write({}, metadata_snapshot, context));
+    QueryPipeline pipeline(table->write({}, metadata_snapshot, context));
 
-    PushingPipelineExecutor executor(chain);
+    PushingPipelineExecutor executor(pipeline);
     executor.push(block);
     executor.finish();
 
@@ -125,8 +124,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
-    QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    QueryPipeline pipeline(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
     PullingPipelineExecutor executor(pipeline);
 
     Block sample;
