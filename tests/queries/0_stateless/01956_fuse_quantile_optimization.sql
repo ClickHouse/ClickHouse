@@ -62,5 +62,7 @@ SELECT quantileTiming(0.5)(NULL, NULL, quantileTiming(-inf)(NULL), NULL) FROM da
 SELECT quantileTDigest(NULL)(NULL, quantileTDigest(3.14)(NULL, d + NULL), 2.), NULL FORMAT Null; -- { serverError ILLEGAL_AGGREGATION }
 SELECT quantile(1, 0.3)(d), quantile(0.3)(d) FROM datetime; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT quantile(quantileDeterministic('', '2.47')('0.02', '0.2', NULL), 0.9)(d), quantile(0.3)(d) FROM datetime; -- { serverError ILLEGAL_AGGREGATION }
+SELECT quantileTimingWeighted([[[[['-214748364.8'], NULL]], [[[quantileTimingWeighted([[[[['-214748364.8'], NULL], '-922337203.6854775808'], [[['-214748364.7']]], NULL]])([NULL], NULL), '-214748364.7']]], NULL]])([NULL], NULL); -- { serverError ILLEGAL_AGGREGATION }
+SELECT quantileTimingWeighted([quantileTimingWeighted(0.5)(1, 1)])(1, 1); -- { serverError ILLEGAL_AGGREGATION }
 
 DROP TABLE datetime;
