@@ -338,13 +338,13 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                                 common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                                 return ReturnType(false);
 
-                            res = -signed_res;
+                            res = -static_cast<UnsignedT>(signed_res);
                         }
                         else
                         {
                             T signed_res = res;
-                            if (common::mulOverflow<T>(signed_res, 10, signed_res)
-                                || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
+                                common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                                 return ReturnType(false);
 
                             res = signed_res;
