@@ -305,7 +305,7 @@ void TCPHandler::runImpl()
             {
                 processOrdinaryQueryWithProcessors();
             }
-            else
+            else if (state.io.pipeline.completed())
             {
                 CompletedPipelineExecutor executor(state.io.pipeline);
                 executor.execute();

@@ -985,7 +985,7 @@ void executeQuery(
             auto pipe = getSourceFromFromASTInsertQuery(ast, &istr, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
         }
-        else if (pipeline.pushing())
+        else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
@@ -1042,8 +1042,11 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
+        if (pipeline.initialized())
+        {
+            CompletedPipelineExecutor executor(pipeline);
+            executor.execute();
+        }
     }
     catch (...)
     {
