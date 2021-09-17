@@ -694,8 +694,12 @@ void ClientBase::onProfileEvents(Block & block)
         {
             thread_times[host_name][thread_id].system_ms = value;
         }
+        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        {
+            thread_times[host_name][thread_id].memory_usage = value;
+        }
     }
-    progress_indication.updateThreadTimes(thread_times);
+    progress_indication.updateThreadEventData(thread_times);
 }
 
 
