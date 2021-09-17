@@ -71,5 +71,13 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
     arg_map_function[arg_name].push_back(&ast);
 }
 
+bool GatherFunctionQuantileData::needChild(const ASTPtr & node, const ASTPtr &)
+{
+    /// Skip children of quantile* functions to escape cycles in further processing
+    if (const auto * func = node ? node->as<ASTFunction>() : nullptr)
+        return !quantile_fuse_name_mapping.contains(func->name);
+    return true;
+}
+
 }
 
