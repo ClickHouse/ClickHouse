@@ -52,13 +52,13 @@
 
 #include <Common/SensitiveDataMasker.h>
 #include "IO/CompressionMethod.h"
+#include "Processors/printPipeline.h"
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
 #include <random>
@@ -597,7 +597,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
                 auto query_id = context->getCurrentQueryId();
                 auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
-                io.pipeline.init(Pipe(source));
+                io.pipeline = QueryPipeline(Pipe(std::move(source)));
             }
 
             return std::make_tuple(ast, std::move(io));
@@ -1020,7 +1020,7 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
-            auto pipe = getSourceFromFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())
