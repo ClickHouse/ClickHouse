@@ -873,7 +873,6 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::ProfileEvents:
-                LOG_DEBUG(log_wrapper.get(), "Connection received ProfileEvents");
                 res.block = receiveProfileEvents();
                 return res;
 

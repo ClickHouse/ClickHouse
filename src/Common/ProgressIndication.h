@@ -14,6 +14,17 @@
 namespace DB
 {
 
+struct ThreadTime
+{
+    UInt64 time() const noexcept { return user_ms + system_ms; }
+
+    UInt64 user_ms   = 0;
+    UInt64 system_ms = 0;
+};
+
+using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadTime>;
+using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
+
 class ProgressIndication
 {
 public:
@@ -46,9 +57,7 @@ public:
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadUserTime(String const & host, UInt64 thread_id, UInt64 value);
-
-    void updateThreadSystemTime(String const & host, UInt64 thread_id, UInt64 value);
+    void updateThreadTimes(HostToThreadTimesMap & new_thread_times);
 
 private:
 
@@ -73,15 +82,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    struct ThreadTime
-    {
-        UInt64 user_ms   = 0;
-        UInt64 system_ms = 0;
-    };
-
-    using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadTime>;
-    using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
-
+    std::unordered_map<String, UInt64> host_active_cores;
     HostToThreadTimesMap thread_times;
 };
 

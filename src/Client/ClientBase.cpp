@@ -677,6 +677,7 @@ void ClientBase::onProfileEvents(Block & block)
     auto const * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
     auto const * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
+    HostToThreadTimesMap thread_times;
     for (size_t i = 0; i < block.rows(); ++i)
     {
         auto thread_id = array_thread_id[i];
@@ -687,13 +688,14 @@ void ClientBase::onProfileEvents(Block & block)
         auto value = array_values[i];
         if (event_name == user_time_name)
         {
-            progress_indication.updateThreadUserTime(host_name, thread_id, value);
+            thread_times[host_name][thread_id].user_ms = value;
         }
         else if (event_name == system_time_name)
         {
-            progress_indication.updateThreadSystemTime(host_name, thread_id, value);
+            thread_times[host_name][thread_id].system_ms = value;
         }
     }
+    progress_indication.updateThreadTimes(thread_times);
 }
 
 
