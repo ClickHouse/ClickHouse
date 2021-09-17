@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 QueryPipeline::QueryPipeline() = default;
 QueryPipeline::QueryPipeline(QueryPipeline &&) = default;
 QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default;
