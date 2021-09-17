@@ -12,6 +12,28 @@
 namespace
 {
     constexpr UInt64 ZERO = 0;
+
+    UInt64 calculateNewCoresNumber(DB::ThreadIdToTimeMap const & prev, DB::ThreadIdToTimeMap const& next)
+    {
+        if (next.find(ZERO) == next.end())
+            return ZERO;
+        auto accumulated = std::accumulate(next.cbegin(), next.cend(), ZERO,
+            [&prev](UInt64 acc, auto const & elem)
+            {
+                if (elem.first == ZERO)
+                    return acc;
+                auto thread_time = elem.second.time();
+                auto it = prev.find(elem.first);
+                if (it != prev.end())
+                    thread_time -= it->second.time();
+                return acc + thread_time;
+            });
+
+        auto elapsed = next.at(ZERO).time() - (prev.contains(ZERO) ? prev.at(ZERO).time() : ZERO);
+        if (elapsed == ZERO)
+            return ZERO;
+        return (accumulated + elapsed - 1) / elapsed;
+    }
 }
 
 namespace DB
@@ -38,6 +60,7 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
+    host_active_cores.clear();
     thread_times.clear();
 }
 
@@ -61,14 +84,15 @@ void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadUserTime(String const & host, UInt64 thread_id, UInt64 value)
+void ProgressIndication::updateThreadTimes(HostToThreadTimesMap & new_thread_times)
 {
-    thread_times[host][thread_id].user_ms = value;
-}
-
-void ProgressIndication::updateThreadSystemTime(String const & host, UInt64 thread_id, UInt64 value)
-{
-    thread_times[host][thread_id].system_ms = value;
+    for (auto & new_host_map : new_thread_times)
+    {
+        auto & host_map = thread_times[new_host_map.first];
+        auto new_cores = calculateNewCoresNumber(host_map, new_host_map.second);
+        host_active_cores[new_host_map.first] = new_cores;
+        host_map = std::move(new_host_map.second);
+    }
 }
 
 size_t ProgressIndication::getUsedThreadsCount() const
@@ -82,24 +106,10 @@ size_t ProgressIndication::getUsedThreadsCount() const
 
 UInt64 ProgressIndication::getApproximateCoresNumber() const
 {
-    return std::accumulate(thread_times.cbegin(), thread_times.cend(), ZERO,
-        [](UInt64 acc, auto const & threads)
+    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), ZERO,
+        [](UInt64 acc, auto const & elem)
         {
-            auto total_time = std::accumulate(threads.second.cbegin(), threads.second.cend(), ZERO,
-                [] (UInt64 temp, auto const & elem)
-                {
-                    if (elem.first == 0)
-                        return temp;
-                    return temp + elem.second.user_ms + elem.second.system_ms;
-                });
-            // Zero thread_id represents thread group which execute query
-            // (including thread of TCPHandler).
-            auto const & accumulated_time = threads.second.find(ZERO)->second;
-            // Performance events of TCPHandler thread are not transmitted, but
-            // we can calculate it's working time which shows how long the query
-            // is being processed.
-            auto io_time = accumulated_time.user_ms + accumulated_time.system_ms - total_time;
-            return acc + (total_time + io_time - 1) / io_time;
+            return acc + elem.second;
         });
 }
 
@@ -218,6 +228,17 @@ void ProgressIndication::writeProgress()
 
         /// Underestimate percentage a bit to avoid displaying 100%.
         message << ' ' << (99 * current_count / max_count) << '%';
+    }
+
+    // If approximate cores number is known, display it.
+    auto cores_number = getApproximateCoresNumber();
+    if (cores_number != 0)
+    {
+        // Calculated cores number may be not accurate
+        // so it's better to print min(threads, cores).
+        auto threads_number = getUsedThreadsCount();
+        message << " Running " << threads_number << " threads on "
+            << std::min(cores_number, threads_number) << " cores.";
     }
 
     message << CLEAR_TO_END_OF_LINE;

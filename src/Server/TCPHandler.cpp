@@ -947,13 +947,12 @@ void TCPHandler::sendProfileEvents()
             auto metric = thread->memory_tracker.getMetric();
             snapshots.push_back(ProfileEventsSnapshot{thread_id, std::move(counters), metric, current_time});
         }
-        group_snapshot.counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        group_snapshot.metric = thread_group->memory_tracker.getMetric();
+
         group_snapshot.current_time = time(nullptr);
+        group_snapshot.metric = thread_group->memory_tracker.getMetric();
+        group_snapshot.counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
     }
 
-    dumpProfileEvents(group_snapshot.counters, columns, server_display_name, group_snapshot.current_time, 0);
-    dumpMemoryTracker(group_snapshot.metric, columns, server_display_name, 0);
     for (auto & snapshot : snapshots)
     {
         dumpProfileEvents(
@@ -964,15 +963,15 @@ void TCPHandler::sendProfileEvents()
             snapshot.thread_id);
         dumpMemoryTracker(snapshot.metric, columns, server_display_name, snapshot.thread_id);
     }
+    dumpProfileEvents(group_snapshot.counters, columns, server_display_name, group_snapshot.current_time, 0);
+    dumpMemoryTracker(group_snapshot.metric, columns, server_display_name, 0);
 
     MutableColumns logs_columns;
     Block curr_block;
     size_t rows = 0;
 
-    bool from_queue = false;
     for (; state.profile_queue->tryPop(curr_block); ++rows)
     {
-        from_queue = true;
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)
             columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
@@ -990,7 +989,6 @@ void TCPHandler::sendProfileEvents()
 
         state.profile_events_block_out->write(block);
         out->next();
-        LOG_DEBUG(log, "Sent ProfileEvents packet {} data from queue", (from_queue ? "with" : "without"));
     }
 }
 
