@@ -1443,6 +1443,13 @@ bool ReplicatedMergeTreeQueue::processEntry(
 
     if (saved_exception)
     {
+        /// Avoid entries that have been failing, causing queues to accumulate
+        if (entry->num_tries > storage.getContext()->getSettingsRef().max_log_entry_num_tries)
+        {
+            removeProcessedEntry(get_zookeeper(), entry);
+            return false;
+        }
+
         std::lock_guard lock(state_mutex);
         entry->exception = saved_exception;
         return false;
