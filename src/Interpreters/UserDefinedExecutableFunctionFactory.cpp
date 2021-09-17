@@ -19,8 +19,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 class UserDefinedFunction final : public IFunction
