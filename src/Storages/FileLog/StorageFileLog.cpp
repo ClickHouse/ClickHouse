@@ -61,8 +61,9 @@ StorageFileLog::StorageFileLog(
 
     if (std::filesystem::is_regular_file(path))
     {
-        file_status[path] = FileContext{};
-        file_names.push_back(path);
+        auto normal_path = std::filesystem::path(path).lexically_normal().native();
+        file_status[normal_path] = FileContext{};
+        file_names.push_back(normal_path);
     }
     else if (std::filesystem::is_directory(path))
     {
@@ -72,8 +73,9 @@ StorageFileLog::StorageFileLog(
         {
             if (dir_entry.is_regular_file())
             {
-                file_status[dir_entry.path()] = FileContext{};
-                file_names.push_back(dir_entry.path());
+                auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
+                file_status[normal_path] = FileContext{};
+                file_names.push_back(normal_path);
             }
         }
     }
@@ -381,31 +383,37 @@ bool StorageFileLog::updateFileStatus()
     {
         switch (event.type)
         {
-            case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+            case Poco::DirectoryWatcher::DW_ITEM_ADDED: {
+                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                if (std::filesystem::is_regular_file(event.path))
+                if (std::filesystem::is_regular_file(normal_path))
                 {
                     file_status[event.path] = FileContext{};
-                    file_names.push_back(event.path);
+                    file_names.push_back(normal_path);
                 }
                 break;
+            }
 
-            case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+            case Poco::DirectoryWatcher::DW_ITEM_MODIFIED: {
+                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
+                if (std::filesystem::is_regular_file(normal_path) && file_status.contains(normal_path))
                 {
-                    file_status[event.path].status = FileStatus::UPDATED;
+                    file_status[normal_path].status = FileStatus::UPDATED;
                 }
                 break;
+            }
 
             case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
-            case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                if (std::filesystem::is_regular_file(event.path) && file_status.contains(event.path))
+            case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM: {
+                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
+                if (std::filesystem::is_regular_file(normal_path) && file_status.contains(normal_path))
                 {
-                    file_status[event.path].status = FileStatus::REMOVED;
+                    file_status[normal_path].status = FileStatus::REMOVED;
                 }
+            }
         }
     }
     std::vector<String> valid_files;
