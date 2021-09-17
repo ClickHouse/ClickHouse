@@ -3,6 +3,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/ReadBufferFromRemoteFS.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <common/logger_useful.h>
@@ -48,7 +49,7 @@ private:
 
 
 /// Reads data from HDFS using stored paths in metadata.
-class ReadIndirectBufferFromHDFS final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>
+class ReadIndirectBufferFromHDFS final : public ReadBufferFromRemoteFS
 {
 public:
     ReadIndirectBufferFromHDFS(
@@ -56,7 +57,7 @@ public:
             const String & hdfs_uri_,
             DiskHDFS::Metadata metadata_,
             size_t buf_size_)
-        : ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>(metadata_)
+        : ReadBufferFromRemoteFS(metadata_)
         , config(config_)
         , buf_size(buf_size_)
     {
@@ -65,7 +66,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    std::unique_ptr<ReadBufferFromHDFS> createReadBuffer(const String & path) override
+    SeekableReadBufferPtr createReadBuffer(const String & path) const override
     {
         return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + path, config, buf_size);
     }

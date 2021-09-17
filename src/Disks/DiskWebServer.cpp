@@ -11,6 +11,7 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromRemoteFS.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -105,22 +106,20 @@ private:
 };
 
 
-class ReadBufferFromWebServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>
+class ReadBufferFromWebServer final : public ReadBufferFromRemoteFS
 {
 public:
     ReadBufferFromWebServer(
-            const String & uri_,
-            RemoteMetadata metadata_,
-            ContextPtr context_,
-            size_t buf_size_)
-        : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
+            const String & uri_, RemoteMetadata metadata_,
+            ContextPtr context_, size_t buf_size_)
+        : ReadBufferFromRemoteFS(metadata_)
         , uri(uri_)
         , context(context_)
         , buf_size(buf_size_)
     {
     }
 
-    std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
+    SeekableReadBufferPtr createReadBuffer(const String & path) const override
     {
         return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size);
     }
