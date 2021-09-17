@@ -82,11 +82,16 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     new_repo_path = os.path.join(temp_path, repo_path)
+    logging.info("Will try to copy repo to %s", new_repo_path)
     if os.path.exists(new_repo_path):
+        logging.info("Removing old copy")
         shutil.rmtree(new_repo_path)
+
+    logging.info("Copy repo from %s (exists %s) to %s", repo_path, os.path.exists(repo_path), temp_path)
     shutil.copytree(repo_path, temp_path)
     # this check modify repository so copy it to the temp directory
     repo_path = new_repo_path
+    logging.info("Repo copy path %s", repo_path)
 
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
