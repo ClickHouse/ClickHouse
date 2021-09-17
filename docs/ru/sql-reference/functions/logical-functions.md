@@ -19,7 +19,7 @@ toc_title: "Логические функции"
 and(val1, val2...)
 ```
 
-Чтобы вычислять функцию `and` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `vali` вычисляется только для строк, где условие `(val1 AND val2 AND ... AND val{i-1})` верно. Например, при выполнении запроса `SELECT number != 0 AND intDiv(1, number) = 0 AND number != 2 AND intDiv(1, number - 2) = 0 FROM numbers(10)` не будет сгенерировано исключение о делении на ноль.
+Чтобы вычислять функцию `and` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `vali` вычисляется только для строк, где условие `(val1 AND val2 AND ... AND val{i-1})` верно. Например, при выполнении запроса `SELECT number != 0 AND intDiv(1, number) = 0 AND number != 2 AND intDiv(1, number - 2) = 0 FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
 
 **Аргументы**
 
