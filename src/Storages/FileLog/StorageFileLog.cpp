@@ -307,10 +307,6 @@ bool StorageFileLog::streamToViews()
     return updateFileStatus();
 }
 
-void StorageFileLog::clearInvalidFiles()
-{
-}
-
 void registerStorageFileLog(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
