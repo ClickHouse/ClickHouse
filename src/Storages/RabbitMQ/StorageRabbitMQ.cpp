@@ -104,9 +104,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .port = parsed_address.second,
         .username = getContext()->getConfigRef().getString("rabbitmq.username"),
         .password = getContext()->getConfigRef().getString("rabbitmq.password"),
-        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
-        .secure = rabbitmq_settings->rabbitmq_secure.value,
-        .connection_string = getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_address)
+        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost))
     };
 
     if (configuration.secure)
