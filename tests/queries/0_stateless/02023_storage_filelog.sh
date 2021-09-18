@@ -22,7 +22,6 @@ echo  8, 8 >> ${user_files_path}/logs/a.txt
 echo  9, 9 >> ${user_files_path}/logs/a.txt
 echo  10, 10 >> ${user_files_path}/logs/a.txt
 
-### 1st TEST in CLIENT mode.
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('logs', 'CSV');"
 

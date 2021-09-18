@@ -101,8 +101,6 @@ private:
 
     void threadFunc();
 
-    void clearInvalidFiles();
-
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
