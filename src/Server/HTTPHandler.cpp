@@ -32,6 +32,7 @@
 #include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/scope_guard.h>
+#include "Server/HTTP/HTTPResponse.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -106,6 +107,37 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+}
+
+namespace
+{
+    /// Process options request. Usefull for CORS.
+    void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+    {
+        /// If answer for options request was not defined, return 501 to client.
+        if (!config.has("http_options_response"))
+        {
+            response.setStatusAndReason(HTTPResponse::HTTP_NOT_IMPLEMENTED);
+            response.send();
+        }
+        else
+        {
+            /// otherwise fill response.
+            Strings config_keys;
+            config.keys("http_options_response", config_keys);
+            for (const std::string & config_key : config_keys)
+            {
+                if (config_key == "header" || config_key.starts_with("header["))
+                {
+                    response.add(config.getString("http_options_response." + config_key + ".name", "Empty header"),
+                                 config.getString("http_options_response." + config_key + ".value", ""));
+                    response.setKeepAlive(false);
+                }
+            }
+            response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+            response.send();
+        }
+    }
 }
 
 static String base64Decode(const String & encoded)
@@ -850,6 +882,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
+        if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
+        {
+            processOptionsRequest(response, server.config());
+            return;
+        }
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
