@@ -123,7 +123,7 @@ Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_c
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 ```
 
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `multiIf` function according to a short scheme. If this setting is enabled, `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT multiIf(number = 0, 0, number = 1, intDiv(1, number), number = 2, intDiv(1, number - 1), number = 3, intDiv(1, number - 2), intDiv(1, number - 3)) FROM numbers(10)`.
+You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `multiIf` function according to a short scheme. If this setting is enabled, `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
 
 **Arguments**
 
