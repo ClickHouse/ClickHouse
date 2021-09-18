@@ -1,6 +1,7 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=unused-argument
 # pylint: disable=line-too-long
+# pylint: disable=bare-except
 
 import os
 import time
@@ -24,7 +25,11 @@ def started_node():
         cluster.start()
         yield node
     finally:
-        cluster.shutdown()
+        # It will print Fatal message after pkill -SEGV, suppress it
+        try:
+            cluster.shutdown()
+        except:
+            pass
 
 
 def test_send_segfault(started_node):
