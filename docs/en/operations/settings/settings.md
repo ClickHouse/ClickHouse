@@ -3566,3 +3566,91 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
+```
+
+Result:
+
+```text
+Exception: Regexp length too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+Exception: Total regexp lengths too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
