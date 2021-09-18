@@ -357,11 +357,9 @@ bool MergeTreeConditionFullText::getKey(const ASTPtr & node, size_t & key_column
     String column_name = node->getColumnName();
 
     //try to get map column name in arrayElement function
-    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-    {
+    if (const auto func = node.get()->as<ASTFunction>())
         if (func->name == "arrayElement")
             column_name = assert_cast<ASTIdentifier *>(func->arguments.get()->children[0].get())->name();
-    }
 
     auto it = std::find(index_columns.begin(), index_columns.end(), column_name);
     if (it == index_columns.end())
@@ -410,10 +408,9 @@ bool MergeTreeConditionFullText::atomFromAST(
         }
         
         //try to parse arrayElement function
-        if (const auto * map_func = typeid_cast<const ASTFunction *>(args[0].get()))
+        if (const auto map_func = args[0].get()->as<ASTFunction>())
             if (map_func->name == "arrayElement")
-                const_value = assert_cast<ASTIdentifier *>(map_func->arguments.get()->children[1].get())->name();
-
+                const_value = assert_cast<ASTIdentifier *>(map_func->arguments->children[1].get())->name();
         if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
             return false;
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
