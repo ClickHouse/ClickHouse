@@ -3467,3 +3467,13 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Sets the maximum number of retries during a single HTTP read.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1024`.

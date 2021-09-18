@@ -113,3 +113,42 @@ Example of disk configuration:
     </storage_configuration>
 </yandex>
 ```
+
+## Using IDisk interface to store data on web server of static files {#configuring-idisk}
+
+Uses to store data on web server as static files (for example, table's data directory) using a disk with type `web` and to run queries on this data. It can be useful for serving public datasets.
+
+Example of disk configuration:
+
+``` xml
+<yandex>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</yandex>
+```
+
+You can use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to set the maximum number of retries during a single HTTP read.
+
+Required parameters:
+
+-   `type` — `web`. Otherwise the disk is not created.
+-   `endpoint` — The endpoint URL in `path` format. Endpoint URL should contain a root path to store data that was obtained using the `clickhouse-static-files-uploader` utility.
+
+Optional parameters:
+
+-   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
