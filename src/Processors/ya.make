@@ -8,13 +8,15 @@ PEERDIR(
     contrib/libs/msgpack
     contrib/libs/protobuf
     contrib/libs/apache/arrow
+    contrib/libs/apache/orc
 )
 
 ADDINCL(
     contrib/libs/apache/arrow/src
+    contrib/libs/apache/orc/c++/include
 )
 
-CFLAGS(-DUSE_ARROW=1)
+CFLAGS(-DUSE_ARROW=1 -DUSE_PARQUET=1 -DUSE_ORC=1)
 
 SRCS(
     Chunk.cpp
@@ -56,8 +58,12 @@ SRCS(
     Formats/Impl/MySQLOutputFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
+    Formats/Impl/ORCBlockInputFormat.cpp
+    Formats/Impl/ORCBlockOutputFormat.cpp
     Formats/Impl/ParallelFormattingOutputFormat.cpp
     Formats/Impl/ParallelParsingInputFormat.cpp
+    Formats/Impl/ParquetBlockInputFormat.cpp
+    Formats/Impl/ParquetBlockOutputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
@@ -118,6 +124,7 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
+    QueryPlan/IntersectOrExceptStep.cpp
     QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
@@ -165,6 +172,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
+    Transforms/IntersectOrExceptTransform.cpp
     Transforms/JoiningTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
@@ -179,7 +187,7 @@ SRCS(
     Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
-    Transforms/getSourceFromFromASTInsertQuery.cpp
+    Transforms/getSourceFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )
