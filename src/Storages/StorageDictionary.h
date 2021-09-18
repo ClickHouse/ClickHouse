@@ -73,7 +73,6 @@ private:
     Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
 
-    std::atomic<bool> remove_repository_callback_executed = false;
     scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();
