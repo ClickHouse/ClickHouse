@@ -85,7 +85,7 @@ SELECT if(0, plus(2, 2), plus(2, 6));
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 ```
 
-Чтобы вычислять функцию `multiIf` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` верно, `cond_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` верно. Например, при выполнении запроса `SELECT multiIf(number = 0, 0, number = 1, intDiv(1, number), number = 2, intDiv(1, number - 1), number = 3, intDiv(1, number - 2), intDiv(1, number - 3)) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
+Чтобы вычислять функцию `multiIf` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` верно, `cond_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` верно. Например, при выполнении запроса `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
 
 **Аргументы**
 
