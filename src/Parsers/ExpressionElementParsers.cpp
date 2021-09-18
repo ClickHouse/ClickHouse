@@ -103,18 +103,18 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
-    /// empty expression in parentheses is not allowed
+    /// Empty expression in parentheses is not allowed.
     if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    /// special case for one-element tuple
+    /// Special case for one-element tuple.
     if (expr_list.children.size() == 1 && is_elem)
     {
         auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
-        /// but only if it's argument is not tuple,
+        /// But only if its argument is not tuple,
         /// since otherwise it will do incorrect transformation:
         ///
         ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
