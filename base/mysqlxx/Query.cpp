@@ -79,7 +79,7 @@ void Query::executeImpl()
         default:
             /// Add query to the exception message, since it may differs from the user input query.
             /// (also you can use this and create query with an error to see what query ClickHouse created)
-            throw BadQuery(errorMessage(mysql_driver) + "(query: " + query_string + ")", err_no);
+            throw BadQuery(errorMessage(mysql_driver) + " (query: " + query_string + ")", err_no);
         }
     }
 }
