@@ -51,7 +51,6 @@ void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
-void registerAggregateFunctionExponentialMovingSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
@@ -119,7 +118,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionSingleValueOrNull(factory);
         registerAggregateFunctionIntervalLengthSum(factory);
         registerAggregateFunctionExponentialMovingAverage(factory);
-        registerAggregateFunctionExponentialMovingSum(factory);
         registerAggregateFunctionSparkbar(factory);
 
         registerWindowFunctions(factory);
