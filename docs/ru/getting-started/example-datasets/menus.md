@@ -116,7 +116,7 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-Поскольку данные представлены в формате CSV с заголовком указывается параметр [CSVWithNames](../../interfaces/formats.md#csvwithnames).
+Поскольку данные представлены в формате CSV с заголовком, используется формат [CSVWithNames](../../interfaces/formats.md#csvwithnames).
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
