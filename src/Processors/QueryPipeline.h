@@ -91,6 +91,8 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota);
     bool tryGetResultRowsAndBytes(size_t & result_rows, size_t & result_bytes) const;
 
+    void addStorageHolder(StoragePtr storage);
+
     const Processors & getProcessors() const { return processors; }
 
     void reset();
