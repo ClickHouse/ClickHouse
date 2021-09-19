@@ -118,8 +118,6 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 Поскольку данные представлены в формате CSV с заголовком, используется формат [CSVWithNames](../../interfaces/formats.md#csvwithnames).
 
-We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
-
 Отключите `format_csv_allow_single_quotes`, так как для данных используются только двойные кавычки, а одинарные кавычки могут находиться внутри значений и не должны сбивать с толку CSV-парсер.
 
 Отключите [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default), поскольку в данных нет значений [NULL](../../sql-reference/syntax.md#null-literal).
