@@ -44,12 +44,13 @@ namespace ErrorCodes
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
+    , async_insert(async_insert_)
 {
     checkStackSize();
 }
@@ -421,7 +422,7 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline = QueryPipeline(std::move(out_chains.at(0)));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
 
-        if (query.hasInlinedData())
+        if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
             auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);

@@ -51,8 +51,8 @@
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
-#include "IO/CompressionMethod.h"
-#include "Processors/printPipeline.h"
+#include <DataStreams/materializeBlock.h>
+#include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -1061,7 +1061,7 @@ void executeQuery(
             auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
                 compressed_buffer ? *compressed_buffer : *out_buf,
-                pipeline.getHeader(),
+                materializeBlock(pipeline.getHeader()),
                 context,
                 {},
                 output_format_settings);
