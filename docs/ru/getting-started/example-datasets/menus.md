@@ -21,7 +21,7 @@ toc_title: Меню
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
 ```
 
-При необходимости, замените ссылку на актуальную ссылку с http://menus.nypl.org/data.
+При необходимости замените ссылку на актуальную ссылку с http://menus.nypl.org/data.
 Размер загрузки составляет около 35 МБ.
 
 ## Распакуйте набор данных {#unpack-dataset}
