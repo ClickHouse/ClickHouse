@@ -36,7 +36,7 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
 
 const Block & PullingPipelineExecutor::getHeader() const
 {
-    return pipeline.output->getHeader();
+    return pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
 bool PullingPipelineExecutor::pull(Chunk & chunk)
