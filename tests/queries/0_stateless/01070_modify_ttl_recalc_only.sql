@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 set mutations_sync = 2;
 
 drop table if exists ttl;
