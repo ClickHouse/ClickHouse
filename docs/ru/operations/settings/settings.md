@@ -1098,6 +1098,40 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: `5`.
 
+## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для синхронизации между [репликами](../../engines/table-engines/mergetree-family/replication.md). Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
@@ -3341,3 +3375,91 @@ SETTINGS index_granularity = 8192 │
 -   Положительное целое число.
 
 Значение по умолчанию: `1000`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 - длина не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
+```
+
+Результат:
+
+```text
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
+```
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
+```
+
+Результат:
+
+```text
+Exception: Regexp length too large.
+```
+
+**См. также**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Задает максимальную общую длину всех регулярных выражений в каждой [hyperscan-функции](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 - длина не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Результат:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Результат:
+
+```text
+Exception: Total regexp lengths too large.
+```
+
+**См. также**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)

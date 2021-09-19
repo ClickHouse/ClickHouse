@@ -522,7 +522,7 @@ public:
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
-        else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
+        else if (element.isBool() && is_integer<NumberType> && convert_bool_to_integer)
         {
             value = static_cast<NumberType>(element.getBool());
         }

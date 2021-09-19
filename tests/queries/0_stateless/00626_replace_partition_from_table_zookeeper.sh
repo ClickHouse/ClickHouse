@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database, no-parallel
+# Tag no-replicated-database: Unsupported type of ALTER query
 
 # Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
 # (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
