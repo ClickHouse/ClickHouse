@@ -162,7 +162,7 @@
     <mlock_executable>false</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.yandex/docs/en/table_engines/distributed/
+         https://clickhouse.tech/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="remote" >
         <!-- Test only shard config for testing distributed storage -->
@@ -222,14 +222,14 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.tech/docs/en/table_engines/replication/
       -->
     <zookeeper incl="zookeeper" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/table_engines/replication/#creating-replicated-tables
       -->
     <macros incl="macros" optional="true" />
 
@@ -289,7 +289,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr https://clickhouse.tech/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -339,7 +339,7 @@
     -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
+         See https://clickhouse.tech/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -350,7 +350,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.tech/docs/en/dicts/external_dicts/
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 

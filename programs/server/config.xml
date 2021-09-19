@@ -834,7 +834,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.tech/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -975,7 +975,7 @@
     </session_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
+         See https://clickhouse.tech/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
