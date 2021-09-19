@@ -107,9 +107,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost))
     };
 
-    if (configuration.secure)
-        SSL_library_init();
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
