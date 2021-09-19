@@ -162,19 +162,19 @@ bool ThreadFuzzer::isEffective() const
             || (sleep_probability > 0 && sleep_time_us > 0));
 }
 
-void ThreadFuzzer::stopFuzzing()
+void ThreadFuzzer::stop()
 {
-    stop_fuzzing.store(true);
+    stop_fuzzing.store(true, std::memory_order_relaxed);
 }
 
-void ThreadFuzzer::startFuzzing()
+void ThreadFuzzer::start()
 {
-    stop_fuzzing.store(false);
+    stop_fuzzing.store(false, std::memory_order_relaxed);
 }
 
 bool ThreadFuzzer::isStopped()
 {
-    return stop_fuzzing.load();
+    return stop_fuzzing.load(std::memory_order_relaxed);
 }
 
 static void injection(

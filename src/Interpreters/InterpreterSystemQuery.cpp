@@ -431,10 +431,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_LISTEN_QUERIES:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
-            ThreadFuzzer::stopFuzzing();
+            ThreadFuzzer::stop();
             break;
         case Type::START_THREAD_FUZZER:
-            ThreadFuzzer::startFuzzing();
+            ThreadFuzzer::start();
             break;
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);

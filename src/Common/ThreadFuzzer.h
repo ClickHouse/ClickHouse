@@ -54,8 +54,8 @@ public:
 
     bool isEffective() const;
 
-    static void stopFuzzing();
-    static void startFuzzing();
+    static void stop();
+    static void start();
     static bool isStopped();
 
 private:
