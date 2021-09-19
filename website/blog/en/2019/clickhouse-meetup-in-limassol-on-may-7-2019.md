@@ -9,7 +9,7 @@ The first open-air ClickHouse Meetup took place in the heart of Limassol, the se
 
 ![Intro](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/1.jpg)
 
-[Kirill Shvakov](https://github.com/kshvakov) has played the key role in making this event possible by reaching out to the ClickHouse Community at Cyprus, finding the great venue, and other speakers. Most of the worldwide ClickHouse Meetups happen thanks to active community members like Kirill, if you want to help us organize ClickHouse Meetup in your area, please reach the Yandex ClickHouse team via [this form](https://clickhouse.tech/#meet) or any other convenient way.
+[Kirill Shvakov](https://github.com/kshvakov) has played the key role in making this event possible by reaching out to the ClickHouse Community at Cyprus, finding the great venue, and other speakers. Most of the worldwide ClickHouse Meetups happen thanks to active community members like Kirill, if you want to help us organize ClickHouse Meetup in your area, please reach the ClickHouse team via [this form](https://clickhouse.tech/#meet) or any other convenient way.
 
 ![Kirill Shvakov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/2.jpg)
 
@@ -24,7 +24,7 @@ The event has begun in the early evening...
 Sergey Tomilov with his colleagues from the Exness Platform Team has shared details on the evolution of their systems for analyzing logs and metrics and how they ended up relying on ClickHouse for long-term storage ([slides](https://presentations.clickhouse.tech/meetup22/exness.pdf)):
 ![Sergey Tomilov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/5.jpg)
 
-Alexey Milovidov from the Yandex ClickHouse team has demonstrated features from recent ClickHouse releases and gave an update on what's coming soon ([slides](https://presentations.clickhouse.tech/meetup22/new_features/)):
+Alexey Milovidov from the ClickHouse team has demonstrated features from recent ClickHouse releases and gave an update on what's coming soon ([slides](https://presentations.clickhouse.tech/meetup22/new_features/)):
 ![Alexey Milovidov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/6.jpg)
 
 Alexander Zaitsev, CTO of Altinity, have shown an overview of how to integrate ClickHouse into environments running on Kubernetes ([slides](https://presentations.clickhouse.tech/meetup22/kubernetes.pdf)):
