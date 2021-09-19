@@ -90,6 +90,7 @@ void QueryPipelineBuilder::init(QueryPipeline pipeline)
     pipe.holder = std::move(pipeline.resources);
     pipe.processors = std::move(pipeline.processors);
     pipe.output_ports = {pipeline.output};
+    pipe.header = pipeline.output->getHeader();
     pipe.totals_port = pipeline.totals;
     pipe.extremes_port = pipeline.extremes;
     pipe.max_parallel_streams = pipeline.num_threads;
