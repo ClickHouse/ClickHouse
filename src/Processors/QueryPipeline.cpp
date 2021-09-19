@@ -362,6 +362,17 @@ void QueryPipeline::complete(Pipe pipe)
     processors.insert(processors.end(), pipe_processors.begin(), pipe_processors.end());
 }
 
+static void addMaterializing(OutputPort *& output, Processors & processors)
+{
+    if (!output)
+        return;
+
+    auto materializing = std::make_shared<MaterializingTransform>(output->getHeader());
+    connect(*output, materializing->getInputPort());
+    output = &materializing->getOutputPort();
+    processors.emplace_back(std::move(materializing));
+}
+
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 {
     if (!pulling())
@@ -369,10 +380,9 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (format->expectMaterializedColumns())
     {
-        auto materializing = std::make_shared<MaterializingTransform>(output->getHeader());
-        connect(*output, materializing->getInputPort());
-        output = &materializing->getOutputPort();
-        processors.emplace_back(std::move(materializing));
+        addMaterializing(output, processors);
+        addMaterializing(totals, processors);
+        addMaterializing(extremes, processors);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);

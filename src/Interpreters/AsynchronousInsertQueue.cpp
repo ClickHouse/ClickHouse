@@ -364,7 +364,7 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(key.settings);
 
-    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns);
+    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
     auto pipeline = interpreter.execute().pipeline;
     assert(pipeline.pushing());
 
