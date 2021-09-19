@@ -116,4 +116,4 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 
 4. Скопируйте снэпшот на узлы сервера ClickHouse с настроенным `keeper` или запустите ClickHouse Keeper вместо ZooKeeper. Снэпшот должен сохраняться на всех узлах: в противном случае пустые узлы могут захватить лидерство и сконвертированные данные могут быть отброшены на старте.
 
-[Original article](https://clickhouse.tech/docs/en/operations/clickhouse-keeper/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->

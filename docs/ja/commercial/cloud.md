@@ -32,4 +32,4 @@ toc_title: "\u30AF\u30E9\u30A6\u30C9"
 -   組み込み型の監視およびデータベース管理プラットフォーム
 -   プロフェッショナルデータベースエキスパートによるテクニカル・サポートとサービス
 
-{## [元の記事](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/commercial/cloud/) ##}
