@@ -127,7 +127,7 @@ The setting [date_time_input_format best_effort](../../operations/settings/setti
 ## Denormalize the Data {#denormalize-data}
 
 Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](../../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
-For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing JOIN every time. It is called "denormalized" data.
+For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing `JOIN` every time. It is called "denormalized" data.
 
 We will create a table `menu_item_denorm` where will contain all the data JOINed together:
 
