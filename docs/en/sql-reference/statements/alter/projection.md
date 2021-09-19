@@ -5,7 +5,7 @@ toc_title: PROJECTION
 
 # Manipulating Projections {#manipulations-with-projections}
 
-The following operations are available:
+The following operations with [projections](../../../engines/table-engines/mergetree-family/mergetree.md#projections) are available:
 
 -   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` - Adds projection description to tables metadata.
 
@@ -15,7 +15,7 @@ The following operations are available:
 
 -   `ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` - Deletes projection files from disk without removing description.
 
-The commands ADD, DROP and CLEAR are lightweight in a sense that they only change metadata or remove files.
+The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing projections metadata via ZooKeeper.
 

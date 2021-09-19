@@ -178,7 +178,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     while (index >= 0)
     {
         offsets_data[index] = last_offset;
-        if (mask[index] ^ inverted)
+        if (!!mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);

@@ -354,7 +354,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {
-        if (mask[index] ^ inverted)
+        if (!!mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);

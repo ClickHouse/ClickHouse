@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -55,7 +56,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -121,6 +121,33 @@ namespace
             throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
+    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
+    {
+        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
+            return GRPC_COMPRESS_NONE;
+        else if (algorithm == ::clickhouse::grpc::DEFLATE)
+            return GRPC_COMPRESS_DEFLATE;
+        else if (algorithm == ::clickhouse::grpc::GZIP)
+            return GRPC_COMPRESS_GZIP;
+        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
+            return GRPC_COMPRESS_STREAM_GZIP;
+        else
+            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+    }
+
+    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
+    {
+        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
+            return GRPC_COMPRESS_LEVEL_NONE;
+        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
+            return GRPC_COMPRESS_LEVEL_LOW;
+        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
+            return GRPC_COMPRESS_LEVEL_MED;
+        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
+            return GRPC_COMPRESS_LEVEL_HIGH;
+        else
+            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+    }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -243,7 +270,22 @@ namespace
         virtual void write(const GRPCResult & result, const CompletionCallback & callback) = 0;
         virtual void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) = 0;
 
-        Poco::Net::SocketAddress getClientAddress() const { String peer = grpc_context.peer(); return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)}; }
+        Poco::Net::SocketAddress getClientAddress() const
+        {
+            String peer = grpc_context.peer();
+            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
+        }
+
+        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
+        {
+            grpc_context.set_compression_algorithm(algorithm);
+            grpc_context.set_compression_level(level);
+        }
+
+        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
+        {
+            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
+        }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -561,7 +603,7 @@ namespace
         IServer & iserver;
         Poco::Logger * log = nullptr;
 
-        std::shared_ptr<NamedSession> session;
+        std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
@@ -690,34 +732,20 @@ namespace
             password = "";
         }
 
-        /// Create context.
-        query_context = Context::createCopy(iserver.context());
-
         /// Authentication.
-        query_context->setUser(user, password, user_address);
-        query_context->setCurrentQueryId(query_info.query_id());
-        if (!quota_key.empty())
-            query_context->setQuotaKey(quota_key);
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
+        session->authenticate(user, password, user_address);
+        session->getClientInfo().quota_key = quota_key;
 
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
         {
-            session = query_context->acquireNamedSession(
+            session->makeSessionContext(
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
-            query_context = Context::createCopy(session->context);
-            query_context->setSessionContext(session->context);
         }
 
-        query_scope.emplace(query_context);
-
-        /// Set client info.
-        ClientInfo & client_info = query_context->getClientInfo();
-        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-        client_info.interface = ClientInfo::Interface::GRPC;
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
+        query_context = session->makeQueryContext();
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -727,11 +755,14 @@ namespace
         }
         query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
-        const Settings & settings = query_context->getSettingsRef();
+
+        query_context->setCurrentQueryId(query_info.query_id());
+        query_scope.emplace(query_context);
 
         /// Prepare for sending exceptions and logs.
-        send_exception_with_stacktrace = query_context->getSettingsRef().calculate_text_stack_trace;
-        const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
+        const Settings & settings = query_context->getSettingsRef();
+        send_exception_with_stacktrace = settings.calculate_text_stack_trace;
+        const auto client_logs_level = settings.send_logs_level;
         if (client_logs_level != LogsLevel::none)
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
@@ -742,14 +773,14 @@ namespace
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
-        {
-            if (!DatabaseCatalog::instance().isDatabaseExist(query_info.database()))
-                throw Exception("Database " + query_info.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             query_context->setCurrentDatabase(query_info.database());
-        }
+
+        /// Apply compression settings for this call.
+        if (query_info.has_result_compression())
+            responder->setResultCompression(query_info.result_compression());
 
         /// The interactive delay will be used to show progress.
-        interactive_delay = query_context->getSettingsRef().interactive_delay;
+        interactive_delay = settings.interactive_delay;
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
@@ -815,7 +846,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
@@ -1255,8 +1286,6 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
-        if (session)
-            session->release();
         session.reset();
     }
 

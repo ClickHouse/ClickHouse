@@ -13,7 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Coordination/KeeperStorageDispatcher.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Coordination/ThreadSafeQueue.h>
@@ -41,7 +41,7 @@ private:
     Poco::Logger * log;
     ContextPtr global_context;
     KeeperTCPInterfaceConfig config;
-    std::shared_ptr<KeeperStorageDispatcher> keeper_dispatcher;
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id{-1};

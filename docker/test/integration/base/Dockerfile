@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-integration-test .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/integration-test .
+FROM clickhouse/test-base
 
 SHELL ["/bin/bash", "-c"]
 

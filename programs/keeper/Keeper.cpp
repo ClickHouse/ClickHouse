@@ -19,6 +19,7 @@
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Core/ServerUUID.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 
@@ -214,9 +215,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     if (config().has("keeper_server.storage_path"))
         path = config().getString("keeper_server.storage_path");
     else if (config().has("keeper_server.log_storage_path"))
-        path = config().getString("keeper_server.log_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
     else if (config().has("keeper_server.snapshot_storage_path"))
-        path = config().getString("keeper_server.snapshot_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
@@ -241,6 +242,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
     }
 
+    DB::ServerUUID::load(path + "/uuid", log);
+
     const Settings & settings = global_context->getSettingsRef();
 
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
@@ -259,14 +262,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     const auto proxies = Util::parseProxies(config());
     const auto interfaces = Util::parseInterfaces(config(), settings, proxies);
 
-    for (const auto & interface : interfaces)
-    {
-        if (boost::iequals(interface.second->protocol, "keeper_tcp"))
-        {
-            context()->initializeKeeperStorageDispatcher();
-            break;
-        }
-    }
+    context()->initializeKeeperDispatcher();
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
 
@@ -305,7 +301,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperStorageDispatcher();
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

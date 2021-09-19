@@ -188,6 +188,8 @@ ProtocolServerAdapter MultiEndpointInterfaceConfigBase::createServerAdapter(ISer
         }
     }
 
+    server.context()->registerServerPort(name, port);
+
     return adapter;
 }
 
