@@ -73,22 +73,22 @@ SELECT a['key2'] FROM table_map;
 **Синтаксис**
 
 ``` sql
-mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
+mapAdd(arg1, arg2 [, ...])
 ```
 
 **Аргументы**
 
-Аргументами являются [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
+Аргументами являются контейнеры [Map](../../sql-reference/data-types/map.md) или [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
 Все массивы ключей должны иметь один и тот же тип, а все массивы значений должны содержать элементы, которые можно приводить к одному типу ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) или [Float64](../../sql-reference/data-types/float.md#float32-float64)).
 Общий приведенный тип используется в качестве типа для результирующего массива.
 
 **Возвращаемое значение**
 
--   Возвращает один [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй — значения.
+-   В зависимости от типа аргументов возвращает один [Map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй — значения.
 
 **Пример**
 
-Запрос:
+Запрос с кортежем:
 
 ``` sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
@@ -100,6 +100,20 @@ SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTy
 ┌─res───────────┬─type───────────────────────────────┐
 │ ([1,2],[2,2]) │ Tuple(Array(UInt8), Array(UInt64)) │
 └───────────────┴────────────────────────────────────┘
+```
+
+Запрос с контейнером `Map`:
+
+```sql
+SELECT mapAdd(map(1,1), map(1,1));
+```
+
+Result:
+
+```text
+┌─mapAdd(map(1, 1), map(1, 1))─┐
+│ {1:2}                        │
+└──────────────────────────────┘
 ```
 
 ## mapSubtract {#function-mapsubtract}
