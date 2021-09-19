@@ -3460,10 +3460,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     if (fields_count)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        ConcatReadBuffer buf;
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>("(", 1));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
         auto input_format = FormatFactory::instance().getInput(
             "Values",
@@ -4248,10 +4248,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         const auto & part = parts[part_idx];
 
-        if (!part->minmax_idx.initialized)
+        if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        size_t minmax_idx_size = part->minmax_idx.hyperrectangle.size();
+        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         if (2 * minmax_idx_size + 1 != minmax_count_columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -4266,7 +4266,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             size_t max_pos = i * 2 + 1;
             auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[min_pos]);
             auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[max_pos]);
-            const auto & range = part->minmax_idx.hyperrectangle[i];
+            const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
         }
