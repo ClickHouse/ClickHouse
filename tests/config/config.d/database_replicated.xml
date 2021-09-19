@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>localhost</host>
@@ -79,4 +79,4 @@
     </remote_servers>
 
     <_functional_tests_helper_database_replicated_replace_args_macros>1</_functional_tests_helper_database_replicated_replace_args_macros>
-</yandex>
+</clickhouse>

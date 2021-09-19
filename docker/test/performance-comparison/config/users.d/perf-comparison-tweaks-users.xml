@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <allow_introspection_functions>1</allow_introspection_functions>
@@ -28,4 +28,4 @@
             <access_management>1</access_management>
         </default>
     </users>
-</yandex>
+</clickhouse>
