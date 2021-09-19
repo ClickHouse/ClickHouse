@@ -810,21 +810,8 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     PullingAsyncPipelineExecutor executor(pipeline);
 
     Block block;
-    while (true)
+    while (executor.pull(block))
     {
-        try
-        {
-            if (!executor.pull(block))
-            {
-                break;
-            }
-        }
-        catch (Exception &)
-        {
-            // e.addMessage(fmt::format("(in query: {})", full_query));
-            throw;
-        }
-
         /// Check if server send Log packet
         receiveLogs(parsed_query);
 
@@ -832,10 +819,10 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         auto packet_type = connection->checkPacket();
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
-            /*
-                * We're exiting with error, so it makes sense to kill the
-                * input stream without waiting for it to complete.
-                */
+            /**
+             * We're exiting with error, so it makes sense to kill the
+             * input stream without waiting for it to complete.
+             */
             executor.cancel();
             return;
         }
@@ -1374,7 +1361,7 @@ void ClientBase::init(int argc, char ** argv)
         ("version,V", "print version information and exit")
         ("version-clean", "print version in machine-readable format and exit")
 
-        ("config-file,c", po::value<std::string>(), "config-file path")
+        ("config-file,C", po::value<std::string>(), "config-file path")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("database,d", po::value<std::string>(), "database")
