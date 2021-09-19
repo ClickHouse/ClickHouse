@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS data;
 CREATE TABLE data (a Int64, b Int64) ENGINE = TinyLog();
 

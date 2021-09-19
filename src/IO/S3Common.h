@@ -74,8 +74,6 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
-
-    static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
 }

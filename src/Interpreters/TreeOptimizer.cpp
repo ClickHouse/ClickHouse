@@ -39,7 +39,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TYPE_OF_AST_NODE;
 }
 
 namespace
@@ -70,9 +69,7 @@ const std::unordered_set<String> possibly_injective_function_names
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
 {
     /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer from source_columns.size() + 1, because lower numbers ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
-    UInt64 unused_column = source_columns.size() + 1;
+    UInt64 unused_column = 0;
     String unused_column_name = toString(unused_column);
 
     while (source_columns.count(unused_column_name))
@@ -91,7 +88,12 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
     if (!select_query->groupBy())
+    {
+        // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
+        if (select_query->having())
+            appendUnusedGroupByColumn(select_query, source_columns);
         return;
+    }
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
@@ -108,8 +110,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 
         group_exprs.pop_back();
     };
-
-    const auto & settings = context->getSettingsRef();
 
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
     for (size_t i = 0; i < group_exprs.size();)
@@ -166,22 +166,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         }
         else if (is_literal(group_exprs[i]))
         {
-            bool keep_position = false;
-            if (settings.enable_positional_arguments)
-            {
-                const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
-                if (value.getType() == Field::Types::UInt64)
-                {
-                    auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->children.size())
-                        keep_position = true;
-                }
-            }
-
-            if (keep_position)
-                ++i;
-            else
-                remove_expr_at_index(i);
+            remove_expr_at_index(i);
         }
         else
         {
@@ -278,8 +263,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         String name = elem->children.front()->getColumnName();
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
-        if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
-            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+        if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -422,17 +406,6 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     if (!order_by)
         return;
 
-    for (const auto & child : order_by->children)
-    {
-        auto * order_by_element = child->as<ASTOrderByElement>();
-
-        if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-
-        if (order_by_element->with_fill)
-            return;
-    }
-
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
@@ -448,7 +421,6 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     for (size_t i = 0; i < order_by->children.size(); ++i)
     {
         auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
-
         auto & ast_func = order_by_element->children[0];
         if (!ast_func->as<ASTFunction>())
             continue;
@@ -483,17 +455,6 @@ void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, Co
     const auto & order_by = select_query->orderBy();
     if (!order_by)
         return;
-
-    for (const auto & child : order_by->children)
-    {
-        auto * order_by_element = child->as<ASTOrderByElement>();
-
-        if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-
-        if (order_by_element->with_fill)
-            return;
-    }
 
     std::unordered_set<String> prev_keys;
     ASTs modified;

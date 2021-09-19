@@ -1,7 +1,7 @@
-# docker build -t clickhouse/test-base .
+# docker build -t yandex/clickhouse-test-base .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -62,8 +62,5 @@ RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/
 ENV TSAN_OPTIONS='halt_on_error=1 history_size=7'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
-
-ENV TZ=Europe/Moscow
-RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 CMD sleep 1

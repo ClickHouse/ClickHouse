@@ -14,7 +14,7 @@ class NativeInputFormatFromNativeBlockInputStream : public IInputFormat
 public:
     NativeInputFormatFromNativeBlockInputStream(const Block & header, ReadBuffer & in_)
         : IInputFormat(header, in_)
-        , stream(std::make_shared<NativeBlockInputStream>(*in, header, 0))
+        , stream(std::make_shared<NativeBlockInputStream>(in, header, 0))
     {
     }
 

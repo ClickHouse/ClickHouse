@@ -25,7 +25,7 @@ toc_title: Adopters
 | <a href="https://badoo.com" class="favicon">Badoo</a> | Dating | Timeseries | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/forecast.pdf) |
 | <a href="https://www.benocs.com/" class="favicon">Benocs</a> | Network Telemetry and Analytics | Main Product | — | — | [Slides in English, October 2017](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup9/lpm.pdf) |
 | <a href="https://www.bigo.sg/" class="favicon">BIGO</a> | Video | Computing Platform | — | — | [Blog Article, August 2020](https://www.programmersought.com/article/44544895251/) |
-| <a href="https://www.bloomberg.com/">Bloomberg</a> | Finance, Media | Monitoring | — | — | [Slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
+| <a href="https://www.bloomberg.com/" class="favicon">Bloomberg</a> | Finance, Media | Monitoring | 102 servers | — | [Slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
 | <a href="https://bloxy.info" class="favicon">Bloxy</a> | Blockchain | Analytics | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/4_bloxy.pptx) |
 | <a href="https://www.bytedance.com" class="favicon">Bytedance</a> | Social platforms | — | — | — | [The ClickHouse Meetup East, October 2020](https://www.youtube.com/watch?v=ckChUkC3Pns) |
 | <a href="https://cardsmobile.ru/" class="favicon">CardsMobile</a> | Finance | Analytics | — | — | [VC.ru](https://vc.ru/s/cardsmobile/143449-rukovoditel-gruppy-analiza-dannyh) |
@@ -115,7 +115,6 @@ toc_title: Adopters
 | <a href="http://english.sina.com/index.html" class="favicon">Sina</a> | News | — | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/6.%20ClickHouse最佳实践%20高鹏_新浪.pdf) |
 | <a href="https://smi2.ru/" class="favicon">SMI2</a> | News | Analytics | — | — | [Blog Post in Russian, November 2017](https://habr.com/ru/company/smi2/blog/314558/) |
 | <a href="https://www.spark.co.nz/" class="favicon">Spark New Zealand</a> | Telecommunications | Security Operations | — | — | [Blog Post, Feb 2020](https://blog.n0p.me/2020/02/2020-02-05-dnsmonster/) |
-| <a href="https://splitbee.io" class="favicon">Splitbee</a> | Analytics | Main Product | — | — | [Blog Post, Mai 2021](https://splitbee.io/blog/new-pricing) |
 | <a href="https://www.splunk.com/" class="favicon">Splunk</a> | Business Analytics | Main product | — | — | [Slides in English, January 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup12/splunk.pdf) |
 | <a href="https://www.spotify.com" class="favicon">Spotify</a> | Music | Experimentation | — | — | [Slides, July 2018](https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173) |
 | <a href="https://www.staffcop.ru/" class="favicon">Staffcop</a> | Information Security | Main Product | — | — | [Official website, Documentation](https://www.staffcop.ru/sce43) |
@@ -158,6 +157,5 @@ toc_title: Adopters
 | <a href="https://signoz.io/" class="favicon">SigNoz</a> | Observability Platform | Main Product | — | — | [Source code](https://github.com/SigNoz/signoz) |
 | <a href="https://chelpipegroup.com/" class="favicon">ChelPipe Group</a> | Analytics | — | — | — | [Blog post, June 2021](https://vc.ru/trade/253172-tyazhelomu-proizvodstvu-user-friendly-sayt-internet-magazin-trub-dlya-chtpz) |
 | <a href="https://zagravagames.com/en/" class="favicon">Zagrava Trading</a> | — | — | — | — | [Job offer, May 2021](https://twitter.com/datastackjobs/status/1394707267082063874) |
-| <a href="https://beeline.ru/" class="favicon">Beeline</a> | Telecom | Data Platform | — | — | [Blog post, July 2021](https://habr.com/en/company/beeline/blog/567508/) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->

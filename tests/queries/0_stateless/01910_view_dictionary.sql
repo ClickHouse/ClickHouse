@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS dictionary_source_en;
 DROP TABLE IF EXISTS dictionary_source_ru;
 DROP TABLE IF EXISTS dictionary_source_view;

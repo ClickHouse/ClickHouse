@@ -33,7 +33,8 @@ static void testCascadeBufferRedability(
     EXPECT_EQ(cascade.count(), data.size());
 
     std::vector<WriteBufferPtr> write_buffers;
-    ConcatReadBuffer concat;
+    std::vector<ReadBufferPtr> read_buffers;
+    std::vector<ReadBuffer *> read_buffers_raw;
     cascade.getResultBuffers(write_buffers);
 
     for (WriteBufferPtr & wbuf : write_buffers)
@@ -46,9 +47,11 @@ static void testCascadeBufferRedability(
         auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
-        concat.appendBuffer(wrapReadBufferPointer(rbuf));
+        read_buffers.emplace_back(rbuf);
+        read_buffers_raw.emplace_back(rbuf.get());
     }
 
+    ConcatReadBuffer concat(read_buffers_raw);
     std::string decoded_data;
     {
         WriteBufferFromString decoded_data_writer(decoded_data);
