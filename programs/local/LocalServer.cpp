@@ -93,26 +93,6 @@ void LocalServer::processError(const String & query) const
 }
 
 
-void LocalServer::executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query)
-{
-    const auto * insert = parsed_query->as<ASTInsertQuery>();
-    ASTPtr input_function;
-    if (insert && insert->select)
-        insert->tryFindInputFunction(input_function);
-
-    /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-    if (insert && (!insert->select || input_function) && !insert->watch)
-    {
-        if (input_function && insert->format.empty())
-            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-        processInsertQuery(query_to_execute, parsed_query);
-    }
-    else
-        processOrdinaryQuery(query_to_execute, parsed_query);
-}
-
-
 bool LocalServer::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;

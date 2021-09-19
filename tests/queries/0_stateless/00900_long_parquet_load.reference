@@ -52,17 +52,17 @@ idx9	['Which','Heaven','to','gaudy','day','denies']
 idx10	['This','is','a','test']
 === Try load data from binary.parquet
 \0
-
-
-
-
-
-
-
+
+
+
+
+
+
+
 \b
 \t
 \n
-
+
 === Try load data from byte_array_decimal.parquet
 1
 2
