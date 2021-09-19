@@ -110,7 +110,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     result.sample_block = select.getSampleBlock();
 
     StorageInMemoryMetadata metadata;
-    metadata.partition_key = KeyDescription::getSortingKeyFromAST({}, {}, query_context, {});
+    metadata.partition_key = KeyDescription::buildEmptyKey();
 
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
     if (select.hasAggregation())
@@ -142,11 +142,12 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
             auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
             metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
             metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
+            metadata.primary_key.definition_ast = nullptr;
         }
         else
         {
-            metadata.sorting_key = KeyDescription::getSortingKeyFromAST({}, {}, query_context, {});
-            metadata.primary_key = KeyDescription::getKeyFromAST({}, {}, query_context);
+            metadata.sorting_key = KeyDescription::buildEmptyKey();
+            metadata.primary_key = KeyDescription::buildEmptyKey();
         }
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
@@ -156,8 +157,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.type = ProjectionDescription::Type::Normal;
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
         metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.primary_key.definition_ast = nullptr;
     }
-    metadata.primary_key.definition_ast = nullptr;
 
     auto block = result.sample_block;
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
@@ -200,10 +201,9 @@ ProjectionDescription::getMinMaxCountProjection(const ColumnsDescription & colum
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
-    metadata.partition_key = KeyDescription::getSortingKeyFromAST({}, {}, query_context, {});
-    metadata.sorting_key = KeyDescription::getSortingKeyFromAST({}, {}, query_context, {});
-    metadata.primary_key = KeyDescription::getKeyFromAST({}, {}, query_context);
-    metadata.primary_key.definition_ast = nullptr;
+    metadata.partition_key = KeyDescription::buildEmptyKey();
+    metadata.sorting_key = KeyDescription::buildEmptyKey();
+    metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     result.is_minmax_count_projection = true;
     return result;
