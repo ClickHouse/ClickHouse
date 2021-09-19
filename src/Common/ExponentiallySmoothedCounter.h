@@ -33,12 +33,12 @@ struct ExponentiallySmoothedAverage
     /// that inflates over time, while the counter itself does not change
     /// (it continues to be the same physical quantity, but only changes its representation in the "usual" coordinate system).
 
-    /// Recap: the whole counter is one dimensional and it can be represented as a curve formed by two dependent coordinates in 2d space,
+    /// Recap: the whole counter is one dimensional and it can be represented as a curve formed by two dependent coordinates in 2d plane,
     /// the space can be represented by (value, time) coordinates, and the curves will be exponentially decaying over time,
     /// alternatively the space can be represented by (exponentially_adjusted_value, time) and then the curves will be constant over time.
 
     /// Also useful analogy is the exponential representation of a number: x = a * exp(b) = a * e (where e = exp(b))
-    /// a number x is represented by a curve in 2d space that can be parametrized by coordinates (a, b) or (a, e).
+    /// a number x is represented by a curve in 2d plane that can be parametrized by coordinates (a, b) or (a, e).
 
     double time = 0;
 
