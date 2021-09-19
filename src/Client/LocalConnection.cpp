@@ -82,24 +82,24 @@ void LocalConnection::sendQuery(
     {
         state->io = executeQuery(state->query, query_context, false, state->stage);
 
-        if (state->io.out)
+        if (state->io.out && !state->io.in)
         {
             /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
              *  client receive exception before sending data.
              */
-            state->io.out->writePrefix();
             state->block = state->io.out->getHeader();
+            state->io.out->writePrefix();
         }
         else if (state->io.pipeline.initialized())
         {
-            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
             state->block = state->io.pipeline.getHeader();
+            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
         }
         else if (state->io.in)
         {
+            state->block = state->io.in->getHeader();
             state->async_in = std::make_unique<AsynchronousBlockInputStream>(state->io.in);
             state->async_in->readPrefix();
-            state->block = state->io.in->getHeader();
         }
 
         if (state->block)
@@ -287,7 +287,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block)
+    if (state->block && state->block.value())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -338,9 +338,9 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
         {
-            if (state->block)
+            if (state->block && state->block.value())
             {
-                packet.block = std::move(*state->block);
+                packet.block = std::move(state->block.value());
                 state->block.reset();
             }
             break;

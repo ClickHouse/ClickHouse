@@ -73,7 +73,7 @@ public:
         setDescription();
     }
 
-    static ServerConnectionPtr createConnection(const ConnectionParameters & connection, ContextPtr context);
+    static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override
