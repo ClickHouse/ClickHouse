@@ -15,4 +15,4 @@ ClickHouse supports the following types of queries:
 -   [ALTER](../sql-reference/statements/alter/index.md)
 -   [Other types of queries](../sql-reference/statements/index.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/) <!--hide-->

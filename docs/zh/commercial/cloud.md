@@ -59,4 +59,4 @@ toc_title: 云
 -   每个集群VPC隔离的高安全性
 -   按需定价，无前期成本或长期承诺
 
-{## [原始文章](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
+{## [原始文章](https://clickhouse.com/docs/en/commercial/cloud/) ##}
