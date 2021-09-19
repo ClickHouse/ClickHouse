@@ -10,8 +10,8 @@ tags: ['meetup', 'Amsterdam', 'Netherlands', 'events']
 Aleksandar Aleksandrov and Felix Mattrat, data engineers from MessageBird, show how they use ClickHouse to analyze process of delivery of SMS and other kinds of messages:
 ![Aleksandar Aleksandrov and Felix Mattrat](https://blog-images.clickhouse.tech/en/2018/clickhouse-meetup-in-amsterdam-on-november-15-2018/1.jpg)
 
-Nikolay Kochetov from Yandex ClickHouse team demonstrates recent features related to string processing optimization:
-![Nikolay Kochetov from Yandex ClickHouse team](https://blog-images.clickhouse.tech/en/2018/clickhouse-meetup-in-amsterdam-on-november-15-2018/2.jpg)
+Nikolay Kochetov from ClickHouse team demonstrates recent features related to string processing optimization:
+![Nikolay Kochetov from ClickHouse team](https://blog-images.clickhouse.tech/en/2018/clickhouse-meetup-in-amsterdam-on-november-15-2018/2.jpg)
 
 Konstantin Ignatov from Qrator Labs shares his experience in using ClickHouse as time-series database:
 ![Konstantin Ignatov from Qrator Labs](https://blog-images.clickhouse.tech/en/2018/clickhouse-meetup-in-amsterdam-on-november-15-2018/3.jpg)
