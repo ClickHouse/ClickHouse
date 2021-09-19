@@ -178,3 +178,7 @@ a.btn-outline-yellow {
 #feedback_email {
     white-space: nowrap;
 }
+
+.height-20 {
+    height: 20px;
+}
