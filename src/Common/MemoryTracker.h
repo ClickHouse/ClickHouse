@@ -62,8 +62,8 @@ private:
     void logMemoryUsage(Int64 current) const;
 
 public:
-    MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
+    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
     ~MemoryTracker();
 
