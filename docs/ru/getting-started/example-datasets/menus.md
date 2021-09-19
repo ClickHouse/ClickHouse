@@ -107,7 +107,7 @@ CREATE TABLE menu_item
 
 ## Импортируйте данные {#import-data}
 
-Импортируйте данные в ClickHouse, выполните:
+Импортируйте данные в ClickHouse, выполните команды:
 
 ```bash
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
