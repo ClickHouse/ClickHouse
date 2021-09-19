@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -203,6 +204,13 @@ void TableJoin::optimizeClauses()
             LOG_TRACE(
                 &Poco::Logger::get("TableJoin"), "optimizeClauses trim clauses, size {} => {}", clauses.size(), new_size);
             clauses.resize(new_size);
+        }
+
+        if (clauses.size() > MAX_DISJUNCTS)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "Maximum number of keys that join tables via OR is {} (after normalization), consider reducing",
+                MAX_DISJUNCTS);
         }
     }
 }
