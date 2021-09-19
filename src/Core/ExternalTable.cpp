@@ -12,6 +12,7 @@
 #include <IO/LimitReadBuffer.h>
 
 #include <Processors/Pipe.h>
+#include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>

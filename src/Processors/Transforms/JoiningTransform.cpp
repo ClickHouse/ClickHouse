@@ -1,6 +1,8 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/join_common.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <common/logger_useful.h>
 
@@ -115,7 +117,7 @@ void JoiningTransform::work()
     }
     else
     {
-        if (!non_joined_blocks)
+        if (!non_joined_stream)
         {
             if (!finish_counter || !finish_counter->isLast())
             {
@@ -123,15 +125,15 @@ void JoiningTransform::work()
                 return;
             }
 
-            non_joined_blocks = join->getNonJoinedBlocks(outputs.front().getHeader(), max_block_size);
-            if (!non_joined_blocks)
+            non_joined_stream = join->createStreamWithNonJoinedRows(outputs.front().getHeader(), max_block_size);
+            if (!non_joined_stream)
             {
                 process_non_joined = false;
                 return;
             }
         }
 
-        Block block = non_joined_blocks->read();
+        auto block = non_joined_stream->read();
         if (!block)
         {
             process_non_joined = false;

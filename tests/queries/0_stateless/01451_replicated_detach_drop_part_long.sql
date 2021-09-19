@@ -1,6 +1,3 @@
--- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Unsupported type of ALTER query
-
 SET replication_alter_partitions_sync = 2;
 
 DROP TABLE IF EXISTS replica1;

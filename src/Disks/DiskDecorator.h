@@ -37,8 +37,11 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        size_t estimated_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t direct_io_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -61,8 +64,7 @@ public:
     void sync(int fd) const;
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
-    DiskType getType() const override { return delegate->getType(); }
-    bool isRemote() const override { return delegate->isRemote(); }
+    DiskType::Type getType() const override { return delegate->getType(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;

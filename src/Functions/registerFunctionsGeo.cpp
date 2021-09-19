@@ -29,7 +29,6 @@ void registerFunctionSvg(FunctionFactory & factory);
 #if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
 void registerFunctionH3ToGeo(FunctionFactory &);
-void registerFunctionH3ToGeoBoundary(FunctionFactory &);
 void registerFunctionH3EdgeAngle(FunctionFactory &);
 void registerFunctionH3EdgeLengthM(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
@@ -82,7 +81,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
 #if USE_H3
     registerFunctionGeoToH3(factory);
     registerFunctionH3ToGeo(factory);
-    registerFunctionH3ToGeoBoundary(factory);
     registerFunctionH3EdgeAngle(factory);
     registerFunctionH3EdgeLengthM(factory);
     registerFunctionH3GetResolution(factory);

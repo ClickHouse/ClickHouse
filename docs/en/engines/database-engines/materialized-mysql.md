@@ -1,6 +1,6 @@
 ---
 toc_priority: 29
-toc_title: MaterializedMySQL
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}

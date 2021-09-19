@@ -4,9 +4,6 @@
 
 namespace DB
 {
-
-class Block;
-
 void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 }

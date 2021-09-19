@@ -8,7 +8,7 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.

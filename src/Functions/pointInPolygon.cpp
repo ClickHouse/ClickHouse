@@ -188,7 +188,7 @@ public:
             /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
             using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local static.
+            /// C++11 has thread-safe function-local statics.
             static Pool known_polygons;
 
             auto factory = [&polygon]()

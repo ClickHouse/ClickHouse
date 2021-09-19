@@ -1,5 +1,3 @@
--- Tags: distributed
-
 drop table if exists dist_01643;
 drop table if exists data_01643;
 

@@ -1,6 +1,3 @@
--- Tags: long, zookeeper, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 DROP TABLE IF EXISTS test_alter_on_mutation;
 
 CREATE TABLE test_alter_on_mutation

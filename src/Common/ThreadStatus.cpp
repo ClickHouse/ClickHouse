@@ -221,6 +221,7 @@ MainThreadStatus & MainThreadStatus::getInstance()
     return thread_status;
 }
 MainThreadStatus::MainThreadStatus()
+    : ThreadStatus()
 {
     main_thread = current_thread;
 }
