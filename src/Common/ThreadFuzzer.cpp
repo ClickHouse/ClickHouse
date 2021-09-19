@@ -128,7 +128,7 @@ void ThreadFuzzer::initConfiguration()
 
 bool ThreadFuzzer::isEffective() const
 {
-    if (isStopped())
+    if (!isStarted())
         return false;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
@@ -164,17 +164,17 @@ bool ThreadFuzzer::isEffective() const
 
 void ThreadFuzzer::stop()
 {
-    stop_fuzzing.store(true, std::memory_order_relaxed);
+    started.store(false, std::memory_order_relaxed);
 }
 
 void ThreadFuzzer::start()
 {
-    stop_fuzzing.store(false, std::memory_order_relaxed);
+    started.store(true, std::memory_order_relaxed);
 }
 
-bool ThreadFuzzer::isStopped()
+bool ThreadFuzzer::isStarted()
 {
-    return stop_fuzzing.load(std::memory_order_relaxed);
+    return started.load(std::memory_order_relaxed);
 }
 
 static void injection(
@@ -184,7 +184,7 @@ static void injection(
     double sleep_time_us [[maybe_unused]])
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (ThreadFuzzer::isStopped())
+    if (!ThreadFuzzer::isStarted())
         return;
 
     if (yield_probability > 0

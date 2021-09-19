@@ -56,7 +56,7 @@ public:
 
     static void stop();
     static void start();
-    static bool isStopped();
+    static bool isStarted();
 
 private:
     uint64_t cpu_time_period_us = 0;
@@ -65,7 +65,7 @@ private:
     double sleep_probability = 0;
     double sleep_time_us = 0;
 
-    inline static std::atomic<bool> stop_fuzzing{false};
+    inline static std::atomic<bool> started{true};
 
     ThreadFuzzer();
 
