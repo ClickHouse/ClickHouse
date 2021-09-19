@@ -695,4 +695,16 @@ void Block::updateHash(SipHash & hash) const
             col.column->updateHashWithValue(row_no, hash);
 }
 
+
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
+{
+    auto current_column = block.getByName(column.getNameInStorage()).column;
+    current_column = current_column->decompress();
+
+    if (column.isSubcolumn())
+        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), *current_column);
+
+    return current_column;
+}
+
 }
