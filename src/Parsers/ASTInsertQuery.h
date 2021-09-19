@@ -18,6 +18,7 @@ public:
     String format;
     ASTPtr select;
     ASTPtr infile;
+    ASTPtr compression;
     ASTPtr watch;
     ASTPtr table_function;
     ASTPtr partition_by;

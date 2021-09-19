@@ -28,13 +28,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integer_v<T>;
+    return is_integer<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integer_v<T> && is_unsigned_v<T>;
+    return is_integer<T> && is_unsigned_v<T>;
 }
 
 
