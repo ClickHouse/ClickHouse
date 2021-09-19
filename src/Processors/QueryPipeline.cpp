@@ -478,6 +478,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(size_t & result_rows, size_t & resu
     return true;
 }
 
+void QueryPipeline::addStorageHolder(StoragePtr storage)
+{
+    resources.storage_holders.emplace_back(std::move(storage));
+}
+
 void QueryPipeline::reset()
 {
     QueryPipeline to_remove = std::move(*this);

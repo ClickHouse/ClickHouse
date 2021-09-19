@@ -695,12 +695,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Log into system table start of query execution, if need.
             if (log_queries)
             {
-                const auto & info = context->getQueryAccessInfo();
-                elem.query_databases = info.databases;
-                elem.query_tables = info.tables;
-                elem.query_columns = info.columns;
-                elem.query_projections = info.projections;
-                elem.query_views = info.views;
+                /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
+                if (pipeline.initialized())
+                {
+                    const auto & info = context->getQueryAccessInfo();
+                    elem.query_databases = info.databases;
+                    elem.query_tables = info.tables;
+                    elem.query_columns = info.columns;
+                    elem.query_projections = info.projections;
+                    elem.query_views = info.views;
+                }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
 
