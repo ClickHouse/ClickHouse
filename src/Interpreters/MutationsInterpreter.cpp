@@ -221,12 +221,16 @@ bool isStorageTouchedByMutations(
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    auto should_continue = executor.pull(block);
+    while (!block.rows())
+        executor.pull(block);
     if (!block.rows())
         return false;
-    else if (block.rows() != 1 || should_continue)
+    else if (block.rows() != 1)
         throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
             ErrorCodes::LOGICAL_ERROR);
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
