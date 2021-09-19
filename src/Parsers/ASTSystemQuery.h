@@ -59,6 +59,8 @@ public:
         FLUSH_DISTRIBUTED,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
+        START_THREAD_FUZZER,
+        STOP_THREAD_FUZZER,
         END
     };
 

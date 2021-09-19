@@ -128,6 +128,9 @@ void ThreadFuzzer::initConfiguration()
 
 bool ThreadFuzzer::isEffective() const
 {
+    if (isStopped())
+        return false;
+
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
         if (NAME##_before_yield_probability.load(std::memory_order_relaxed)) \
@@ -159,6 +162,20 @@ bool ThreadFuzzer::isEffective() const
             || (sleep_probability > 0 && sleep_time_us > 0));
 }
 
+void ThreadFuzzer::stopFuzzing()
+{
+    stop_fuzzing.store(true);
+}
+
+void ThreadFuzzer::startFuzzing()
+{
+    stop_fuzzing.store(false);
+}
+
+bool ThreadFuzzer::isStopped()
+{
+    return stop_fuzzing.load();
+}
 
 static void injection(
     double yield_probability,
@@ -166,6 +183,10 @@ static void injection(
     double sleep_probability,
     double sleep_time_us [[maybe_unused]])
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+    if (ThreadFuzzer::isStopped())
+        return;
+
     if (yield_probability > 0
         && std::bernoulli_distribution(yield_probability)(thread_local_rng))
     {
