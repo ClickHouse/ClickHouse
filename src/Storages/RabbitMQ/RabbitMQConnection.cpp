@@ -85,7 +85,9 @@ bool RabbitMQConnection::isConnectedImpl() const
 
 void RabbitMQConnection::connectImpl()
 {
-    AMQP::Address address(configuration.connection_string);
+    LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
+    AMQP::Login login(configuration.username, configuration.password);
+    AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
     connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
 
     auto cnt_retries = 0;
