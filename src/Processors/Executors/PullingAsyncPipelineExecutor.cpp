@@ -65,7 +65,7 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 
 const Block & PullingAsyncPipelineExecutor::getHeader() const
 {
-    return pipeline.output->getHeader();
+    return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
