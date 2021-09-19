@@ -1,6 +1,6 @@
 ---
 toc_priority: 21
-toc_title: Menus
+toc_title: Меню
 ---
 
 # New York Public Library "What's on the Menu?" Dataset {#menus-dataset}
