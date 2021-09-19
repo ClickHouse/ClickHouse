@@ -16,12 +16,12 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
     bool executeMultiQuery(const String & all_queries_text) override;
     bool processWithFuzzing(const String & full_query) override;
 
     void connect() override;
     void processError(const String & query) const override;
+    String getName() const override { return "client"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
     void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;

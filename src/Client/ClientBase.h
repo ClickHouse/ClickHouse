@@ -46,11 +46,10 @@ protected:
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
     virtual bool executeMultiQuery(const String & all_queries_text) = 0;
-
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
+    virtual String getName() const = 0;
 
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
