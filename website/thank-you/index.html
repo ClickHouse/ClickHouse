@@ -5,6 +5,7 @@
 {% extends "templates/base.html" %}
 
 {% block extra_meta %}
+{% include "templates/common_fonts.html" %}
 {% endblock %}
 
 {% block nav %}
@@ -19,5 +20,7 @@
 {% include "templates/contact-thank-you/overview.html" %}
 
 {% include "templates/global/newsletter.html" %}
+
+<script async defer src="https://buttons.github.io/buttons.js"></script>
 
 {% endblock %}
