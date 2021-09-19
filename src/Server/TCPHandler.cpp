@@ -843,80 +843,6 @@ void TCPHandler::sendExtremes(const Block & extremes)
 }
 
 
-<<<<<<< HEAD
-=======
-bool TCPHandler::receiveProxyHeader()
-{
-    if (in->eof())
-    {
-        LOG_WARNING(log, "Client has not sent any data.");
-        return false;
-    }
-
-    String forwarded_address;
-
-    /// Only PROXYv1 is supported.
-    /// Validation of protocol is not fully performed.
-
-    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
-
-    assertString("PROXY ", limit_in);
-
-    if (limit_in.eof())
-    {
-        LOG_WARNING(log, "Incomplete PROXY header is received.");
-        return false;
-    }
-
-    /// TCP4 / TCP6 / UNKNOWN
-    if ('T' == *limit_in.position())
-    {
-        assertString("TCP", limit_in);
-
-        if (limit_in.eof())
-        {
-            LOG_WARNING(log, "Incomplete PROXY header is received.");
-            return false;
-        }
-
-        if ('4' != *limit_in.position() && '6' != *limit_in.position())
-        {
-            LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-            return false;
-        }
-
-        ++limit_in.position();
-        assertChar(' ', limit_in);
-
-        /// Read the first field and ignore other.
-        readStringUntilWhitespace(forwarded_address, limit_in);
-
-        /// Skip until \r\n
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-    }
-    else if (checkString("UNKNOWN", limit_in))
-    {
-        /// This is just a health check, there is no subsequent data in this connection.
-
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-        return false;
-    }
-    else
-    {
-        LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-        return false;
-    }
-
-    LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    session->getClientInfo().forwarded_for = forwarded_address;
-    return true;
-}
-
-
 namespace
 {
 
@@ -940,7 +866,6 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
 }
 
 
->>>>>>> master
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
