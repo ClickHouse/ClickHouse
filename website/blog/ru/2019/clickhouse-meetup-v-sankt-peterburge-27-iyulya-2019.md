@@ -7,4 +7,4 @@ tags: ['мероприятия', 'meetup', 'Санкт-Петербург']
 
 ![iframe](https://www.youtube.com/embed/videoseries?list=PL0Z2YDlm0b3j3X7TWrKmnEPcfEG901W-T)
 
-[Слайды опубликованы на GitHub](https://github.com/yandex/clickhouse-presentations/tree/master/meetup27).
+[Слайды опубликованы на GitHub](https://github.com/ClickHouse/clickhouse-presentations/tree/master/meetup27).
