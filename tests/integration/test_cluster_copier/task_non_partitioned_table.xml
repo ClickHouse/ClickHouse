@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>   
        <source_cluster>
           <shard>
@@ -36,4 +36,4 @@
         <sharding_key>rand()</sharding_key>
       </table_copier_test1>
     </tables>
-</yandex>
+</clickhouse>

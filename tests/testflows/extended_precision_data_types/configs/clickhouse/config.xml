@@ -2,7 +2,7 @@
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
@@ -445,4 +445,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-</yandex>
+</clickhouse>

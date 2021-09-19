@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <!-- Profile that allows only read queries. -->
         <readonly>
@@ -18,4 +18,4 @@
             <quota>default</quota>
         </readonly>
     </users>
-</yandex>
+</clickhouse>

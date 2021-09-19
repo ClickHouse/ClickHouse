@@ -5,7 +5,7 @@
   You can either move the settings to the right place inside "users.xml" file
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels [1]:
 
@@ -1115,4 +1115,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-</yandex>
+</clickhouse>

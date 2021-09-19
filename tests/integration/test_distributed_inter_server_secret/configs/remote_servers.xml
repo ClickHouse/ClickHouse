@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
         <insecure>
             <node>
@@ -23,4 +23,4 @@
             </node>
         </secure>
     </remote_servers>
-</yandex>
+</clickhouse>

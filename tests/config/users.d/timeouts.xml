@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <!-- Default HTTP timeout is 30 minutes. Set it to 1 minute. -->
@@ -10,4 +10,4 @@
             <replication_wait_for_inactive_replica_timeout>30</replication_wait_for_inactive_replica_timeout>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

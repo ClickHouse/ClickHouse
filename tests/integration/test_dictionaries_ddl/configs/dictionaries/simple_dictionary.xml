@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
 <dictionary>
    <name>xml_dictionary</name>
    <source>
@@ -38,4 +38,4 @@
         </attribute>
    </structure>
 </dictionary>
-</yandex>
+</clickhouse>
