@@ -52,6 +52,8 @@ void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingSum(AggregateFunctionFactory &);
+void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -66,8 +68,6 @@ void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFact
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
-
-void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -120,6 +120,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionIntervalLengthSum(factory);
         registerAggregateFunctionExponentialMovingAverage(factory);
         registerAggregateFunctionExponentialMovingSum(factory);
+        registerAggregateFunctionSparkbar(factory);
 
         registerWindowFunctions(factory);
     }

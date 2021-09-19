@@ -49,6 +49,7 @@ SRCS(
     AggregateFunctionSimpleLinearRegression.cpp
     AggregateFunctionSimpleState.cpp
     AggregateFunctionSingleValueOrNull.cpp
+    AggregateFunctionSparkbar.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
