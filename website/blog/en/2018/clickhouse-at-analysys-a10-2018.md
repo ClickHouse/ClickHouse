@@ -5,7 +5,7 @@ date: '2018-11-04'
 tags: ['conference', 'Beijing', 'China', 'events', 'Analysys', 'Asia']
 ---
 
-[Analysys A10](https://event.analysys.cn/pc/2018/index.html) is a large conference on Big Data that took place on October 26-27 in Beijing. Since China's population is huge, it generates a lot of data and Big Data industry is in very high demand. Yandex ClickHouse team has been honored to participate in this event alongside top management, analysts, and IT professionals from various Chinese companies.
+[Analysys A10](https://event.analysys.cn/pc/2018/index.html) is a large conference on Big Data that took place on October 26-27 in Beijing. Since China's population is huge, it generates a lot of data and Big Data industry is in very high demand. ClickHouse team has been honored to participate in this event alongside top management, analysts, and IT professionals from various Chinese companies.
 
 Each year Analysys also organizes the OLAP contest. The second year in a row the same team of Sundy Li (李本旺) and Winter Zhang (张健) wins it by using ClickHouse as the core of their solution. The task was to calculate complex marketing funnel as fast as possible.
 
