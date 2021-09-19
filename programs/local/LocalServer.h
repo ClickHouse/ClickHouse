@@ -31,11 +31,11 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
     bool executeMultiQuery(const String & all_queries_text) override;
 
     void connect() override;
     void processError(const String & query) const override;
+    String getName() const override { return "local"; }
 
     String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
