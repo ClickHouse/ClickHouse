@@ -7,7 +7,7 @@ tags: ['meetup', 'Beijing', 'China', 'Asia', 'events']
 
 Interest in ClickHouse among Chinese experts is growing rapidly. It was second ClickHouse Meetup in Beijing this year and the venue was more than full, it could fit only about 170 people out of 500 who signed up and around 2000 more joined the live translation online. Many Chinese companies have already adopted ClickHouse in production and are willing to share their experience.
 
-See the **[video recording of all talks](http://play.yunxi.tv/livestream/flash?id=05527cf6e260448b9d880b99d2cf4d40)** and **[all slides](https://github.com/yandex/clickhouse-presentations/tree/master/meetup19)**.
+See the **[video recording of all talks](http://play.yunxi.tv/livestream/flash?id=05527cf6e260448b9d880b99d2cf4d40)** and **[all slides](https://github.com/ClickHouse/clickhouse-presentations/tree/master/meetup19)**.
 
 Welcome word by William Kwok (郭炜), CTO of Analysys, who played a key role in organizing this event:
 ![William Kwok](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/1.jpg)

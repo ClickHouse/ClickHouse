@@ -32,7 +32,7 @@ BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$B
 
 if [ -z $ROOT_DIR ]; then
     #  Checkout ClickHouse sources
-    git clone --recursive https://github.com/yandex/ClickHouse.git
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     cd ClickHouse
 fi
 
