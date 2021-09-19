@@ -116,6 +116,9 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
+    /// the limit has no technical reasons, it supposed to improve safety
+    const size_t MAX_DISJUNCTS = 16;
+
     ASTs key_asts_left;
     ASTs key_asts_right;
 
