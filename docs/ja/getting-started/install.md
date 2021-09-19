@@ -92,7 +92,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 ### Dockerイメージから {#from-docker-image}
 
-Docker内でClickHouseを実行するには、次の [DockerHub](https://hub.docker.com/r/yandex/clickhouse-server/) のガイドに従います。それらのイメージでは内部で公式の `deb` パッケージを使っています。
+Docker内でClickHouseを実行するには、次の [DockerHub](https://hub.docker.com/r/clickhouse/clickhouse-server/) のガイドに従います。それらのイメージでは内部で公式の `deb` パッケージを使っています。
 
 ### 非標準環境向けの事前コンパイルされたバイナリから {#from-binaries-non-linux}
 

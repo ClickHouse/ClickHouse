@@ -96,7 +96,7 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 ### From Docker Image {#from-docker-image}
 
-To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
 ### Single Binary {#from-single-binary}
 
