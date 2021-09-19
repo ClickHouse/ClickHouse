@@ -496,7 +496,6 @@ img {
   font-weight: 600;
   letter-spacing: 1px;
   margin: 0;
-  text-transform: uppercase;
 }
 
 @media screen and (max-width: 978.98px) {
@@ -1011,4 +1010,25 @@ ul.has-separators li:not(:last-child) {
 
 .text-upper {
   text-transform: uppercase;
+}
+.base-hero {
+    height:22.5vw;
+    max-height:324px;
+    min-height:280px;
+}
+.index-hero {
+  background-image:url('/images/backgrounds/bg-hero-home.svg');
+  height:68vw;
+  max-height:980px;
+  max-width:2448px;
+  width:170vw;
+}
+.other-hero {
+  background-image: url('/images/backgrounds/bg-hero.svg');
+  max-width: 2448px;
+  width: 170vw;
+}
+.bg-footer-cta {
+  background-image:url('/images/backgrounds/bg-footer-cta.svg');
+  width:2448px;
 }
