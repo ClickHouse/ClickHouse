@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <default>
             <!-- List of networks with open access.
@@ -32,4 +32,4 @@
             </networks>
         </default>
     </users>
-</yandex>
+</clickhouse>
