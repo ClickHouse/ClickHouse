@@ -77,6 +77,7 @@
 #include <common/logger_useful.h>
 #include <common/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
@@ -127,6 +128,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
 }
 
@@ -247,6 +249,7 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
@@ -430,11 +433,6 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
-}
-
-void Context::copyFrom(const ContextPtr & other)
-{
-    *this = *other;
 }
 
 Context::~Context() = default;
@@ -964,7 +962,6 @@ void Context::addQueryAccessInfo(
     if (!view_name.empty())
         query_access_info.views.emplace(view_name);
 }
-
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
@@ -2738,6 +2735,20 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
     return ignored_part_uuids;
 }
 
+AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
+{
+    return shared->async_insert_queue.get();
+}
+
+void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+{
+    using namespace std::chrono;
+
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+    shared->async_insert_queue = ptr;
+}
 
 void Context::initializeBackgroundExecutors()
 {
