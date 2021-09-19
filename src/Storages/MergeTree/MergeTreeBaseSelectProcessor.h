@@ -1,11 +1,11 @@
 #pragma once
 
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-
 
 namespace DB
 {
@@ -13,7 +13,7 @@ namespace DB
 class IMergeTreeReader;
 class UncompressedCache;
 class MarkCache;
-struct PrewhereExprInfo;
+
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
 class MergeTreeBaseSelectProcessor : public SourceWithProgress
@@ -24,7 +24,6 @@ public:
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        ExpressionActionsSettings actions_settings,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
@@ -37,10 +36,7 @@ public:
     static Block transformHeader(
         Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
-    static std::unique_ptr<MergeTreeBlockSizePredictor> getSizePredictor(
-        const MergeTreeData::DataPartPtr & data_part,
-        const MergeTreeReadTaskColumns & task_columns,
-        const Block & sample_block);
+    static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 
 protected:
     Chunk generate() final;
@@ -65,7 +61,6 @@ protected:
     StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
-    std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;

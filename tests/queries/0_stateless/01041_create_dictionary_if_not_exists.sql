@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS dictdb.table_for_dict;
 DROP DICTIONARY IF EXISTS dictdb.dict_exists;
 DROP DATABASE IF EXISTS dictdb;

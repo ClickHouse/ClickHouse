@@ -61,7 +61,7 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    bool hasColumn(const String & name) const { return names.contains(name); }
+    bool hasColumn(const String & name) const { return names.count(name); }
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
@@ -86,6 +86,8 @@ private:
             names.insert(col.name);
     }
 
+
+private:
     NameSet names;
 };
 
