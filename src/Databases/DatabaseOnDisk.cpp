@@ -187,6 +187,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
+
+        if (metadata.comment.empty())
+            storage_ast.reset(storage_ast.comment);
+        else
+            storage_ast.set(storage_ast.comment, std::make_shared<ASTLiteral>(metadata.comment));
     }
 }
 
