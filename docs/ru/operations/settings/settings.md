@@ -3376,6 +3376,18 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `1000`.
 
+## log_queries_probability {#log-queries-probability}
+
+Позволяет пользователю записать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов за секунду.
+
+Возможные значения:
+
+-   0 — запросы не регистрируются в системных таблицах.
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равной `0.5`, примерно половина запросов регистрируется в системных таблицах.
+-   1 — все запросы регистрируются в системных таблицах.
+
+Значение по умолчанию: `1`.
+
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
 Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
