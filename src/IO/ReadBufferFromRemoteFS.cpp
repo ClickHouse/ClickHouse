@@ -75,10 +75,7 @@ bool ReadBufferFromRemoteFS::readImpl()
     auto result = current_buf->next();
     /// Assign result to current buffer.
     swap(*current_buf);
-
-    /// absolute position is shifted by a data size that was read in next() call above.
-    if (result)
-        absolute_position += working_buffer.size();
+    /// Absolute position is updated by *IndirectBufferFromRemoteFS only.
 
     return result;
 }
