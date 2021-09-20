@@ -18,7 +18,7 @@ CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) 
 
 void CompletedPipelineExecutor::execute()
 {
-    PipelineExecutor executor(pipeline.processors);
+    PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
     executor.execute(pipeline.getNumThreads());
 }
 

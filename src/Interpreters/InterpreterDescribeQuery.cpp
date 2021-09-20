@@ -16,7 +16,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
