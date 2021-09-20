@@ -403,12 +403,8 @@ Chain buildPushingToViewsDrain(
 
             InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
             out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, view_runtime_data);
+            out.addStorageHolder(dependent_table);
             out.addStorageHolder(inner_table);
-            if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(inner_table.get()))
-            {
-                if (auto inner_mv_table = mv->tryGetTargetTable())
-                    out.addStorageHolder(inner_mv_table);
-            }
         }
         else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
         {
