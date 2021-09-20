@@ -1387,6 +1387,11 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     return keys.getByPosition(keys.columns() - 1);
 }
 
+void HashJoin::checkTypesOfKeys(const Block & block) const
+{
+    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, key_names_right);
+}
+
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     const Names & key_names_left = table_join->keyNamesLeft();
