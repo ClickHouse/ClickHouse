@@ -94,9 +94,9 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
                 // NULL_LAST
                 if (min_val.isNull())
-                    min_val = POSITIVE_INFINITY;
+                    min_val = PositiveInfinity();
                 if (max_val.isNull())
-                    max_val = POSITIVE_INFINITY;
+                    max_val = PositiveInfinity();
 
                 break;
             default:

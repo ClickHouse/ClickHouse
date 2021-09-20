@@ -65,8 +65,8 @@ struct ChangelogFileDescription
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
-/// No compression, no metadata, just entries with headers one by one.
-/// Able to read broken files/entries and discard them. Not thread safe.
+/// No compression, no metadata, just entries with headers one by one
+/// Able to read broken files/entries and discard them.
 class Changelog
 {
 
@@ -142,14 +142,9 @@ private:
     const bool force_sync;
     Poco::Logger * log;
 
-    /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
-
-    /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
-    /// Mapping log_id -> binary offset in log file
     IndexToOffset index_to_start_pos;
-    /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
     /// Start log_id which exists in all "active" logs
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft

@@ -1,5 +1,3 @@
--- Tags: zookeeper
-
 DROP TABLE IF EXISTS check_comments;
 
 CREATE TABLE check_comments

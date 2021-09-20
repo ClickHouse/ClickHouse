@@ -1,5 +1,3 @@
--- Tags: long, replica
-
 DROP TABLE IF EXISTS minmax_idx;
 DROP TABLE IF EXISTS minmax_idx_r;
 DROP TABLE IF EXISTS minmax_idx2;

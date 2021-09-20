@@ -1318,7 +1318,6 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
         }
     }
 
-
     EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin"));
 
     DB::KeeperLogStore changelog_1("./logs", 10, true);
@@ -1393,7 +1392,6 @@ TEST(CoordinationTest, TestSessionExpiryQueue)
     std::this_thread::sleep_for(std::chrono::milliseconds(700));
     EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
-
 
 int main(int argc, char ** argv)
 {

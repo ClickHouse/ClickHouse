@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists summing_table01747;
 drop view if exists rates01747;
 drop view if exists agg_view01747;

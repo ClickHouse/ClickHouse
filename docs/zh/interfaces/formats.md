@@ -23,19 +23,20 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -464,7 +465,7 @@ ClickHouse支持[NULL](../sql-reference/syntax.md), 在JSON输出中显示为`nu
 -   [JSONEachRow](#jsoneachrow)格式
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)设置
 
-## JSONStrings {#jsonstrings}
+## JSONString {#jsonstring}
 
 与JSON的不同之处在于数据字段以字符串输出，而不是以类型化JSON值输出。
 
@@ -542,7 +543,7 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactStrings {#jsoncompactstrings}
+## JSONCompactString {#jsoncompactstring}
 
 与JSON格式不同的是它以数组的方式输出结果，而不是以结构体。
 
@@ -581,7 +582,7 @@ SELECT * FROM json_as_string;
 ```
 
 ```json
-// JSONCompactStrings
+// JSONCompactString
 {
         "meta":
         [
@@ -613,9 +614,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringsEachRow {#jsonstringseachrow}
+## JSONStringEachRow {#jsonstringeachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
+## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
 使用这些格式时，ClickHouse会将行输出为用换行符分隔的JSON值，这些输出数据作为一个整体时，由于没有分隔符(,)因而不是有效的JSON文档。
 
@@ -628,9 +629,9 @@ SELECT * FROM json_as_string;
 在插入数据时，应该为每一行提供一个单独的JSON值。
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
+## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
 
-与`JSONEachRow`/`JSONStringsEachRow`不同的是，ClickHouse还将生成作为JSON值的进度信息。
+与`JSONEachRow`/`JSONStringEachRow`不同的是，ClickHouse还将生成作为JSON值的进度信息。
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -640,9 +641,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
+## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
 
-与`JSONCompactEachRow`/`JSONCompactStringsEachRow`不同的是，列名和类型被写入前两行。
+与`JSONCompactEachRow`/`JSONCompactStringEachRow`不同的是，列名和类型被写入前两行。
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -949,6 +950,31 @@ SELECT * FROM t_null FORMAT Vertical
     y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入(将数据插入到表中)。
+
+## VerticalRaw {#verticalraw}
+
+和 `Vertical` 格式不同点在于，行是不会被转义的。
+这种格式仅仅适用于输出，但不适用于解析输入(将数据插入到表中)。
+
+示例:
+
+    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
+
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    test: string with 'quotes' and   with some special
+     characters
+
+和 Vertical 格式相比：
+
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
+    Row 1:
+    ──────
+    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 

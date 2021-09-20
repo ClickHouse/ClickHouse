@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS quorum1 SYNC;

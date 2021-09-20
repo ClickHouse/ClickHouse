@@ -267,15 +267,11 @@ void registerStorageMySQL(StorageFactory & factory)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(
-            remote_database,
-            addresses,
-            username,
-            password,
+        mysqlxx::PoolWithFailover pool(remote_database, addresses,
+            username, password,
             MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            mysql_settings.connection_wait_timeout);
+            mysql_settings.connection_max_tries);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
