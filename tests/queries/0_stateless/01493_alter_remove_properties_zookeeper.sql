@@ -1,5 +1,3 @@
--- Tags: zookeeper, no-parallel
-
 DROP TABLE IF EXISTS r_prop_table1;
 DROP TABLE IF EXISTS r_prop_table2;
 
@@ -12,7 +10,7 @@ CREATE TABLE r_prop_table1
   column_comment Date COMMENT 'Some comment',
   column_ttl UInt64 TTL column_comment + INTERVAL 1 MONTH
 )
-ENGINE ReplicatedMergeTree('/clickhouse/{database}/test_01493/r_prop_table', '1')
+ENGINE ReplicatedMergeTree('/clickhouse/test_01493/r_prop_table', '1')
 ORDER BY tuple()
 TTL column_comment + INTERVAL 2 MONTH;
 
@@ -23,7 +21,7 @@ CREATE TABLE r_prop_table2
   column_comment Date COMMENT 'Some comment',
   column_ttl UInt64 TTL column_comment + INTERVAL 1 MONTH
 )
-ENGINE ReplicatedMergeTree('/clickhouse/{database}/test_01493/r_prop_table', '2')
+ENGINE ReplicatedMergeTree('/clickhouse/test_01493/r_prop_table', '2')
 ORDER BY tuple()
 TTL column_comment + INTERVAL 2 MONTH;
 

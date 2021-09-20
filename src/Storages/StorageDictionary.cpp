@@ -169,7 +169,9 @@ Pipe StorageDictionary::read(
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    return dictionary->read(column_names, max_block_size);
+    auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
+    /// TODO: update dictionary interface for processors.
+    return Pipe(std::make_shared<SourceFromInputStream>(stream));
 }
 
 void StorageDictionary::shutdown()
@@ -193,6 +195,10 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
+    if (remove_repository_callback_executed)
+        return;
+
+    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 
