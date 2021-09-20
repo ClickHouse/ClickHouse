@@ -24,6 +24,8 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+class AlterCommands;
+class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
 namespace ErrorCodes
@@ -279,6 +281,13 @@ public:
 
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
+
+    virtual void applySettingsChanges(const SettingsChanges &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Database engine {} either does not support settings, or does not support altering settings",
+                        getEngineName());
+    }
 
     virtual ~IDatabase() = default;
 

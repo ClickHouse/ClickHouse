@@ -74,6 +74,8 @@ public:
     void checkMetadataFilenameAvailability(const String & to_table_name) const;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
 
+    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
+
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -97,6 +99,9 @@ protected:
 
     const String metadata_path;
     const String data_path;
+
+    /// For alter settings.
+    std::mutex modify_settings_mutex;
 };
 
 }
