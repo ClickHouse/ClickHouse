@@ -163,7 +163,7 @@ void PushingAsyncPipelineExecutor::start()
     started = true;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors);
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()

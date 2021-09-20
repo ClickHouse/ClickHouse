@@ -85,7 +85,7 @@ void PushingPipelineExecutor::start()
         return;
 
     started = true;
-    executor = std::make_shared<PipelineExecutor>(pipeline.processors);
+    executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
 
     if (!executor->executeStep(&need_data_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
