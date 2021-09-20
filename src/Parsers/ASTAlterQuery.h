@@ -218,6 +218,10 @@ public:
 
     bool isFreezeAlter() const;
 
+    bool isAttachAlter() const;
+
+    bool isFetchAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
