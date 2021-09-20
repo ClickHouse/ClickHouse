@@ -73,4 +73,4 @@ toc_title: "\u7CFB\u7EDF\u8868"
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[原始文章](https://clickhouse.tech/docs/en/operations/system-tables/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

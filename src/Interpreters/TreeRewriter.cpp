@@ -14,7 +14,7 @@
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/UserDefinedFunctionsVisitor.h>
+#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
@@ -1041,8 +1041,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
 {
-    UserDefinedFunctionsVisitor::Data data_user_defined_functions_visitor;
-    UserDefinedFunctionsVisitor(data_user_defined_functions_visitor).visit(query);
+    UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+    UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
