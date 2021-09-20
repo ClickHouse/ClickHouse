@@ -50,6 +50,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
@@ -77,6 +78,7 @@
 #include <common/logger_useful.h>
 #include <common/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
@@ -127,6 +129,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
 }
 
@@ -143,6 +146,7 @@ struct ContextSharedPart
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
+    mutable std::mutex external_user_defined_executable_functions_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
@@ -181,11 +185,13 @@ struct ContextSharedPart
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
+    mutable std::optional<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
+    scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -247,6 +253,7 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
@@ -338,10 +345,12 @@ struct ContextSharedPart
             /// But they cannot be created before storages since they may required table as a source,
             /// but at least they can be preserved for storage termination.
             dictionaries_xmls.reset();
+            user_defined_executable_functions_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
+            external_user_defined_executable_functions_loader.reset();
             models_repository_guard.reset();
             external_models_loader.reset();
             buffer_flush_schedule_pool.reset();
@@ -430,11 +439,6 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
-}
-
-void Context::copyFrom(const ContextPtr & other)
-{
-    *this = *other;
 }
 
 Context::~Context() = default;
@@ -965,7 +969,6 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
-
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
@@ -1327,6 +1330,18 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
     return *shared->external_dictionaries_loader;
 }
 
+const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader() const
+{
+    return const_cast<Context *>(this)->getExternalUserDefinedExecutableFunctionsLoader();
+}
+
+ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
+{
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    if (!shared->external_user_defined_executable_functions_loader)
+        shared->external_user_defined_executable_functions_loader.emplace(getGlobalContext());
+    return *shared->external_user_defined_executable_functions_loader;
+}
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
@@ -1392,6 +1407,13 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     }
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
+
+void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+{
+    getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
+    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
 }
 
 #if USE_NLP
@@ -2738,6 +2760,20 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
     return ignored_part_uuids;
 }
 
+AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
+{
+    return shared->async_insert_queue.get();
+}
+
+void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+{
+    using namespace std::chrono;
+
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+    shared->async_insert_queue = ptr;
+}
 
 void Context::initializeBackgroundExecutors()
 {
