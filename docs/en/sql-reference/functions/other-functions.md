@@ -2354,3 +2354,39 @@ Result:
 │ 1       │
 └─────────┘
 ```
+
+## shardNum {#shard-num}
+
+Returns the number of a shard which executes the query for a distributed query.
+If query is not distributed then *constant value* is returned.
+
+**Syntax**
+
+``` sql
+shardNum()
+```
+
+**Returned value**
+
+-   Shard number.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+## shardCount {#shard-count}
+
+Returns the total number of shards which execute a distributed query.
+If query is not distributed then *constant value* is returned.
+
+**Syntax**
+
+``` sql
+shardCount()
+```
+
+**Returned value**
+
+-   Total number of shards.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+
