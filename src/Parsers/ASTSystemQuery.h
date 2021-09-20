@@ -15,7 +15,7 @@ class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
 
-    enum class Type
+    enum class Type : UInt64
     {
         UNKNOWN,
         SHUTDOWN,
@@ -65,6 +65,8 @@ public:
         STOP_THREAD_FUZZER,
         END
     };
+
+    static const char * typeToString(Type type);
 
     Type type = Type::UNKNOWN;
 
