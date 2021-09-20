@@ -504,12 +504,12 @@ img {
   }
 }
 
-.navbar {
-  border-bottom: 4px solid #f1f6f9;
-  height: 142px;
+.navbar-clickhouse {
+  border-bottom: 4px solid #f1f6f9 !important;
+  height: 142px !important;
 }
-.navbar > .container {
-  flex-wrap: wrap;
+.navbar-clickhouse > .container {
+  flex-wrap: wrap !important;
 }
 .navbar-super {
   flex-shrink: 0;
@@ -536,8 +536,8 @@ img {
   flex-shrink: 0;
   margin-right: 4px;
 }
-.navbar-brand {
-  background: no-repeat url(../images/logo.svg);
+.navbar-brand-clickhouse {
+  background: no-repeat url(/images/logo-clickhouse.svg);
   background-size: contain;
   flex-shrink: 0;
   height: 28px;
