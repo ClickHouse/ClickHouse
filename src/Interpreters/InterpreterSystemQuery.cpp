@@ -11,6 +11,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
+#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -296,7 +297,6 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.reloadDictionary(query.table, getContext());
 
-
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -324,6 +324,22 @@ BlockIO InterpreterSystemQuery::execute()
 
             auto & external_models_loader = system_context->getExternalModelsLoader();
             external_models_loader.reloadAllTriedToLoad();
+            break;
+        }
+        case Type::RELOAD_FUNCTION:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
+
+            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+            external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
+            break;
+        }
+        case Type::RELOAD_FUNCTIONS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
+
+            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+            external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -738,6 +754,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_MODELS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
+            break;
+        }
+        case Type::RELOAD_FUNCTION: [[fallthrough]];
+        case Type::RELOAD_FUNCTIONS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
             break;
         }
         case Type::RELOAD_CONFIG:

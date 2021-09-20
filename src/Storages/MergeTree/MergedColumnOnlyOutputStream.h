@@ -34,5 +34,7 @@ private:
     Block header;
 };
 
+using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;
+
 
 }

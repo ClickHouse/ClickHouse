@@ -19,7 +19,7 @@ public:
 
     using WrittenOffsetColumns = std::set<std::string>;
 
-    const MergeTreeIndexGranularity & getIndexGranularity()
+    const MergeTreeIndexGranularity & getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
@@ -47,5 +47,7 @@ protected:
     SerializationInfoPtr input_serialization_info;
     SerializationInfoBuilder new_serialization_info;
 };
+
+using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;
 
 }

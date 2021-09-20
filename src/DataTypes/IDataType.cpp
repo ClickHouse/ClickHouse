@@ -204,7 +204,7 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
             return subcolumn_type.getSerialization(column.name, info);
         };
 
-        auto type_in_storage = column.getTypeInStorage();
+        const auto & type_in_storage = column.getTypeInStorage();
         return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 

@@ -194,4 +194,8 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 
 void convertToFullIfSparse(Block & block);
 
+/// Helps in-memory storages to extract columns from block.
+/// Properly handles cases, when column is a subcolumn and when it is compressed.
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
+
 }

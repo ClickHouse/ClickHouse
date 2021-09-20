@@ -224,8 +224,8 @@ void MergeTreeReaderCompact::readData(
 
     if (name_and_type.isSubcolumn())
     {
-        auto name_in_storage = name_and_type.getNameInStorage();
-        auto type_in_storage = name_and_type.getTypeInStorage();
+        const auto & type_in_storage = name_and_type.getTypeInStorage();
+        const auto & name_in_storage = name_and_type.getNameInStorage();
 
         const auto & serialization = serializations.at(name_in_storage);
         ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
