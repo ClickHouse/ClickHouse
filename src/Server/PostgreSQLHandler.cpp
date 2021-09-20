@@ -64,7 +64,7 @@ void PostgreSQLHandler::run()
     if (!config.allow_direct && !isIndirect())
         throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
-    connection_context->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
+    session->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
 
     try
     {

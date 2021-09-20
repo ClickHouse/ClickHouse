@@ -109,7 +109,7 @@ void TCPHandler::runImpl()
     if (!config.allow_direct && !isIndirect())
         throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
-    connection_context->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
+    session->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
