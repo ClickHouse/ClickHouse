@@ -9,4 +9,4 @@ toc_title: "\u96A0\u3057"
 
 # 入れ子データ構造 {#nested-data-structures}
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/nested_data_structures/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/nested_data_structures/) <!--hide-->

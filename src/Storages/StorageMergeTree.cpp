@@ -1020,7 +1020,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    bool has_mutations;
+    bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
@@ -1028,16 +1028,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
+        {
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
-
-        has_mutations = !current_mutations_by_version.empty();
-    }
-
-    if (!mutate_entry && has_mutations)
-    {
-        /// Notify in case of errors
-        std::lock_guard lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
+            has_mutations = !current_mutations_by_version.empty();
+        }
     }
 
     if (merge_entry)
@@ -1052,6 +1046,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
+    if (has_mutations)
+    {
+        /// Notify in case of errors if no mutation was successfully selected.
+        /// Otherwise, notification will occur after any of mutations complete.
+        std::lock_guard lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
+
     bool scheduled = false;
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
