@@ -4,6 +4,8 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadBufferFromRemoteFS.h>
+#include <IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <common/logger_useful.h>
@@ -102,8 +104,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
+    auto hdfs_impl = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
+
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
+    {
+        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+        auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(hdfs_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    }
 }
 
 

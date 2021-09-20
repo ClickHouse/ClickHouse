@@ -16,8 +16,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event RemoteVFSReadMicroseconds;
-    extern const Event RemoteVFSReadBytes;
+    extern const Event RemoteFSReadMicroseconds;
+    extern const Event RemoteFSReadBytes;
 }
 
 namespace CurrentMetrics
@@ -41,20 +41,18 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         setThreadName("ThreadPoolRead");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-        Stopwatch watch(CLOCK_MONOTONIC);
-
-        size_t bytes_read = 0;
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
         auto * remote_fs_buf = dynamic_cast<ReadBufferFromRemoteFS *>(remote_fs_fd->impl.get());
+
+        Stopwatch watch(CLOCK_MONOTONIC);
+        size_t bytes_read = 0;
         auto result = remote_fs_buf->readNext();
         if (result)
             bytes_read = remote_fs_buf->buffer().size();
-
-        std::cerr << "Read " << bytes_read << " bytes.\n";
         watch.stop();
 
-        ProfileEvents::increment(ProfileEvents::RemoteVFSReadMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::RemoteVFSReadBytes, bytes_read);
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
 
         return bytes_read;
     });

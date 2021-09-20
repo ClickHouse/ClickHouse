@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/// Reads data from S3/HDFS using stored paths in metadata.
+/// Reads data from S3/HDFS/Web using stored paths in metadata.
 class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
@@ -25,9 +25,9 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override { return absolute_position - available(); }
+    off_t getPosition() override { return impl->absolute_position - available(); }
 
-    String getFileName() const override { return metadata_file_path; }
+    String getFileName() const override { return impl->getFileName(); }
 
     void prefetch() override;
 
@@ -36,15 +36,11 @@ private:
 
     void finalize();
 
-    std::future<IAsynchronousReader::Result> read();
-
-    String metadata_file_path;
-    size_t absolute_position = 0;
+    std::future<IAsynchronousReader::Result> readNext();
 
     AsynchronousReaderPtr reader;
     Int32 priority;
     ReadBufferFromRemoteFSImpl impl;
-
     std::future<IAsynchronousReader::Result> prefetch_future;
 };
 

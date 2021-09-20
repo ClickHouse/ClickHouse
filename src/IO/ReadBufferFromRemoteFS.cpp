@@ -76,6 +76,10 @@ bool ReadBufferFromRemoteFS::readImpl()
     /// Assign result to current buffer.
     swap(*current_buf);
 
+    /// absolute position is shifted by a data size that was read in next() call above.
+    if (result)
+        absolute_position += working_buffer.size();
+
     return result;
 }
 
@@ -84,11 +88,17 @@ off_t ReadBufferFromRemoteFS::seek(off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET is allowed");
+    /// We already made a seek and adjusted position in ReadIndirectBufferFromRemoteFS.
+    assert(offset_ == static_cast<off_t>(absolute_position));
 
-    absolute_position = offset_;
     current_buf = initialize();
     return absolute_position;
 }
 
+
+void ReadBufferFromRemoteFS::reset()
+{
+    set(nullptr, 0);
+}
 
 }
