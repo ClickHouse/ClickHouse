@@ -495,4 +495,4 @@ FROM
 
 和 [sumMap](./reference/summap.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
