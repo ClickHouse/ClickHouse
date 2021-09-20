@@ -72,6 +72,8 @@ public:
         LIVE_VIEW_REFRESH,
 
         MODIFY_DATABASE_SETTING,
+
+        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;

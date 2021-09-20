@@ -47,6 +47,15 @@ size_t IAST::checkSize(size_t max_size) const
     return res;
 }
 
+void IAST::reset(IAST *& field)
+{
+    std::find_if(children.begin(), children.end(), [field](const auto & p)
+    {
+       return p.get() == field;
+    });
+    field = nullptr;
+}
+
 
 IAST::Hash IAST::getTreeHash() const
 {
