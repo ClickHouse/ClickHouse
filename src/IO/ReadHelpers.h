@@ -161,14 +161,22 @@ void assertEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
+inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
+{
+    char a;
+    if (!buf.peek(a) || a != c)
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
-    if (buf.eof() || *buf.position() != symbol)
+    if (!checkChar(symbol, buf))
     {
         char err[2] = {symbol, '\0'};
         throwAtAssertionFailed(err, buf);
     }
-    ++buf.position();
 }
 
 inline void assertString(const String & s, ReadBuffer & buf)
@@ -180,14 +188,6 @@ bool checkString(const char * s, ReadBuffer & buf);
 inline bool checkString(const String & s, ReadBuffer & buf)
 {
     return checkString(s.c_str(), buf);
-}
-
-inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
-{
-    if (buf.eof() || *buf.position() != c)
-        return false;
-    ++buf.position();
-    return true;
 }
 
 bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
@@ -331,12 +331,24 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
                     if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
                     {
-                        T signed_res = res;
-                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
-                            || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
-                            return ReturnType(false);
+                        if (negative)
+                        {
+                            T signed_res = -res;
+                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
+                                common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                                return ReturnType(false);
 
-                        res = signed_res;
+                            res = -static_cast<UnsignedT>(signed_res);
+                        }
+                        else
+                        {
+                            T signed_res = res;
+                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
+                                common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                                return ReturnType(false);
+
+                            res = signed_res;
+                        }
                         break;
                     }
                 }
@@ -366,7 +378,7 @@ end:
         {
             if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
             {
-                if (common::mulOverflow<T>(x, -1, x))
+                if (common::mulOverflow<UnsignedT, Int8, T>(res, -1, x))
                     return ReturnType(false);
             }
             else
