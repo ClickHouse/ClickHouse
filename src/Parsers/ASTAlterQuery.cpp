@@ -450,6 +450,17 @@ bool ASTAlterQuery::isFreezeAlter() const
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
 }
 
+bool ASTAlterQuery::isAttachAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::ATTACH_PARTITION);
+}
+
+bool ASTAlterQuery::isFetchAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::FETCH_PARTITION);
+}
+
+
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
