@@ -6,7 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
-#include <span>
+#include <magic_enum.hpp>
 #include <common/EnumReflection.h>
 
 namespace ErrorCodes
@@ -78,7 +78,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             found = true;
             break;
         }
-     }
+    }
 
     if (!found)
         return false;
