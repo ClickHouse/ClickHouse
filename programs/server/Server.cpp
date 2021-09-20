@@ -99,10 +99,6 @@
 #   include <sys/syscall.h>
 #endif
 
-#if USE_BASE64
-#   include <turbob64.h>
-#endif
-
 #if USE_JEMALLOC
 #   include <jemalloc/jemalloc.h>
 #endif
@@ -228,39 +224,6 @@ std::string getUserName(uid_t user_id)
     else if (result)
         return result->pw_name;
     return DB::toString(user_id);
-}
-
-void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::Logger * log)
-{
-#if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
-
-    auto process = DB::ShellCommand::execute(key_command);
-
-    std::string b64_key;
-    readStringUntilEOF(b64_key, process->out);
-    process->wait();
-
-    // turbob64 doesn't like whitespace characters in input. Strip
-    // them before decoding.
-    std::erase_if(b64_key, [](char c)
-    {
-        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    });
-
-    std::vector<char> buf(b64_key.size());
-    const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
-                                    reinterpret_cast<unsigned char *>(buf.data()));
-    if (!key_size)
-        throw DB::Exception("Failed to decode encryption key", DB::ErrorCodes::INCORRECT_DATA);
-    else if (key_size < 16)
-        LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
-
-    const std::string_view key = std::string_view(buf.data(), key_size);
-    DB::CompressionCodecEncrypted::setMasterKey(key);
-
-#else
-    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
-#endif
 }
 
 [[noreturn]] void forceShutdown()
