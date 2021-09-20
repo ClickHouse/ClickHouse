@@ -1700,7 +1700,10 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 
 void HashJoin::checkTypesOfKeys(const Block & block) const
 {
-    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, key_names_right);
+    for (const auto & onexpr : table_join->getClauses())
+    {
+        JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
+    }
 }
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
