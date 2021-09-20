@@ -1095,7 +1095,7 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
                 std::move(key_getter), nullptr, added_columns, null_map, flags);
     }
 
-    throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", STRICTNESS, KIND);
 }
 
 } /// nameless
@@ -1387,6 +1387,11 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     return keys.getByPosition(keys.columns() - 1);
 }
 
+void HashJoin::checkTypesOfKeys(const Block & block) const
+{
+    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, key_names_right);
+}
+
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     const Names & key_names_left = table_join->keyNamesLeft();
@@ -1414,13 +1419,13 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
                     joinBlockImpl<Kind::Left, Strictness::Anti>(block, key_names_left, sample_block_with_columns_to_add, map);
                     break;
                 default:
-                    throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: dictionary + {} {}", strictness, kind);
             }
         }
         else if (kind == Kind::Inner && strictness == Strictness::All)
             joinBlockImpl<Kind::Left, Strictness::Semi>(block, key_names_left, sample_block_with_columns_to_add, map);
         else
-            throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: dictionary + {} {}", strictness, kind);
     }
     else if (joinDispatch(kind, strictness, data->maps, [&](auto kind_, auto strictness_, auto & map)
         {
@@ -1432,7 +1437,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     else if (kind == ASTTableJoin::Kind::Cross)
         joinBlockImplCross(block, not_processed);
     else
-        throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
 }
 
 template <typename Mapped>
@@ -1494,7 +1499,7 @@ public:
         };
 
         if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps, fill_callback))
-            throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
 
         fillNullsFromBlocks(columns_right, rows_added);
         return rows_added;

@@ -61,7 +61,6 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
-    ReadSettings.cpp
     SeekAvoidingReadBuffer.cpp
     SynchronousReader.cpp
     ThreadPoolReader.cpp

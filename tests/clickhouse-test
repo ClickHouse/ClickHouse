@@ -998,9 +998,14 @@ def main(args):
         return stdout.startswith(b'1')
 
     if not check_server_started(args.client, args.server_check_retries):
-        raise Exception(
-            "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option.")
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
+            If you are using split build, you have to specify -c option."
+        if args.hung_check:
+            print(msg)
+            pid = get_server_pid()
+            print("Got server pid", pid)
+            print_stacktraces()
+        raise Exception(msg)
 
     args.build_flags = collect_build_flags(args.client)
 
