@@ -78,9 +78,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (size)
     {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
-        prefetch_future = {};
+        impl->absolute_position += working_buffer.size();
     }
 
+    prefetch_future = {};
     return size;
 }
 
