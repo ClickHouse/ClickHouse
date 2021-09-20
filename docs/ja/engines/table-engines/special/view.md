@@ -9,4 +9,4 @@ toc_title: "\u8868\u793A"
 
 ビューの実装に使用されます(詳細については、 `CREATE VIEW query`). これはデータを格納せず、指定されたデータのみを格納します `SELECT` クエリ。 テーブルから読み取るときに、このクエリが実行されます（クエリから不要な列がすべて削除されます）。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/view/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/view/) <!--hide-->
