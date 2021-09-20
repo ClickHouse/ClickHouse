@@ -237,7 +237,7 @@ void ProgressIndication::writeProgress()
     {
         // Calculated cores number may be not accurate
         // so it's better to print min(threads, cores).
-        auto threads_number = getUsedThreadsCount();
+        UInt64 threads_number = getUsedThreadsCount();
         message << " Running " << threads_number << " threads on "
             << std::min(cores_number, threads_number) << " cores";
 
