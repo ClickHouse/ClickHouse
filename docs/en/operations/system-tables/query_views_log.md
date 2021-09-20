@@ -45,9 +45,13 @@ Columns:
 
 **Example**
 
+Query:
+
 ``` sql
- SELECT * FROM system.query_views_log LIMIT 1 \G
+SELECT * FROM system.query_views_log LIMIT 1 \G;
 ```
+
+Result:
 
 ``` text
 Row 1:
@@ -78,6 +82,3 @@ stack_trace:
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
-
-
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
