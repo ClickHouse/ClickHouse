@@ -1964,7 +1964,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 }
                 catch (...)
                 {
-                    LOG_WARNING(log, "Seemns like node with address {} is unreachable.", node.host_name);
+                    LOG_WARNING(log, "It looks like node with address {} is unreachable.", node.host_name);
                     continue;
                 }
 
