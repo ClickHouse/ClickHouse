@@ -918,6 +918,9 @@ namespace
 
 void TCPHandler::sendProfileEvents()
 {
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+        return;
+
     auto profile_event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
