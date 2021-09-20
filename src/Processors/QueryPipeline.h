@@ -109,6 +109,8 @@ private:
 
     QueryStatus * process_list_element = nullptr;
 
+    IOutputFormat * output_format = nullptr;
+
     size_t num_threads = 0;
 
     friend class PushingPipelineExecutor;

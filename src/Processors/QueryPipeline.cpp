@@ -327,6 +327,8 @@ void QueryPipeline::complete(Chain chain)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
 
+    resources = chain.detachResources();
+
     drop(totals, processors);
     drop(extremes, processors);
 
@@ -412,6 +414,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
+    output_format = format.get();
 
     processors.emplace_back(std::move(format));
 }
@@ -476,15 +479,11 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
 bool QueryPipeline::tryGetResultRowsAndBytes(size_t & result_rows, size_t & result_bytes) const
 {
-    if (!output || !output->isConnected())
+    if (!output_format)
         return false;
 
-    const auto * format = typeid_cast<const IOutputFormat *>(&output->getInputPort().getProcessor());
-    if (!format)
-        return false;
-
-    result_rows = format->getResultRows();
-    result_bytes = format->getResultBytes();
+    result_rows = output_format->getResultRows();
+    result_bytes = output_format->getResultBytes();
     return true;
 }
 

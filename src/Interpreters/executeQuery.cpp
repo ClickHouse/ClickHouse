@@ -775,7 +775,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries,
                  log_queries_min_type = settings.log_queries_min_type,
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 status_info_to_query_log
+                 status_info_to_query_log,
+                 pulling_pipeline = pipeline.pulling()
             ]
                 (QueryPipeline & query_pipeline) mutable
             {
@@ -805,7 +806,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (progress_callback)
                     progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
 
-                else if (query_pipeline.pulling())
+                if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
                 }

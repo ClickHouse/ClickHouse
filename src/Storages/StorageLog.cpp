@@ -463,6 +463,8 @@ void LogSink::writeMarks(MarksForColumns && marks)
     }
 }
 
+StorageLog::~StorageLog() = default;
+
 StorageLog::StorageLog(
     DiskPtr disk_,
     const String & relative_path_,
