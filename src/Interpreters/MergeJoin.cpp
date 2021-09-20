@@ -674,7 +674,8 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 void MergeJoin::checkTypesOfKeys(const Block & block) const
 {
     /// Do not check auxailary column for extra conditions, use original key names
-    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+    const auto & onexpr = table_join->getOnlyClause();
+    JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
 }
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
