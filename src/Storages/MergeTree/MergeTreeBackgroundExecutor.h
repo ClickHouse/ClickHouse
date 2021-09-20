@@ -7,6 +7,7 @@
 #include <future>
 #include <condition_variable>
 #include <set>
+#include <iostream>
 
 #include <boost/circular_buffer.hpp>
 
@@ -21,7 +22,12 @@ namespace DB
 {
 
 
- /**
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+/**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
  * Also has some flags and primitives to wait for current task to be executed.
  */
@@ -94,19 +100,7 @@ private:
 class MergeMutateRuntimeQueue : public IRuntimeQueue
 {
 public:
-    TaskRuntimeDataPtr pop() override
-    {
-        if (!merges.empty())
-        {
-            auto result = std::move(merges.front());
-            merges.pop_front();
-            return result;
-        }
-
-        auto result = std::move(mutations.front());
-        mutations.pop_front();
-        return result;
-    }
+    TaskRuntimeDataPtr pop() override;
 
     void push(TaskRuntimeDataPtr item) override
     {
@@ -138,6 +132,14 @@ public:
     bool empty() override { return merges.empty() && mutations.empty(); }
 
 private:
+    enum class State : uint8_t
+    {
+        NO_TASKS = 0,
+        ONLY_MERGES = 1,
+        ONLY_MUTATIONS = 2,
+        BOTH = 3
+    };
+    bool choise{false};
     boost::circular_buffer<TaskRuntimeDataPtr> merges{0};
     boost::circular_buffer<TaskRuntimeDataPtr> mutations{0};
 };
@@ -185,6 +187,9 @@ public:
         , max_tasks_count(max_tasks_count_)
         , metric(metric_)
     {
+        if (max_tasks_count == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task count for MergeTreeBackgroundExecutor must not be zero");
+
         pending.setCapacity(max_tasks_count);
         active.set_capacity(max_tasks_count);
 

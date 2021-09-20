@@ -8,6 +8,53 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
+TaskRuntimeDataPtr MergeMutateRuntimeQueue::pop()
+{
+    auto pick_merge = [this]()
+    {
+        auto result = std::move(merges.front());
+        merges.pop_front();
+        return result;
+    };
+
+    auto pick_mutation = [this]()
+    {
+        auto result = std::move(mutations.front());
+        mutations.pop_front();
+        return result;
+    };
+
+    auto x = static_cast<uint8_t>(!merges.empty());
+    auto y = static_cast<uint8_t>(!mutations.empty());
+    auto state = State(x + y * 2);
+
+    switch (state)
+    {
+        case State::NO_TASKS:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop from queue");
+        case State::ONLY_MERGES:
+            return pick_merge();
+        case State::ONLY_MUTATIONS:
+            return pick_mutation();
+        case State::BOTH:
+        {
+            choise = !choise;
+            if (choise)
+                return pick_merge();
+            else
+                return pick_mutation();
+        }
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop from queue");
+}
+
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
