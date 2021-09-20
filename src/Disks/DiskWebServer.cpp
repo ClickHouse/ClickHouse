@@ -12,6 +12,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromRemoteFS.h>
+#include <IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -189,8 +191,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
+    auto web_impl = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size);
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
+    {
+        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+        auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(web_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
 }
 
 

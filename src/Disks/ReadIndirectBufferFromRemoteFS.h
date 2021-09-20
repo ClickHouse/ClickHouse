@@ -16,21 +16,21 @@ namespace DB
 /// Reads data from S3/HDFS/Web using stored paths in metadata.
 class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
+using ImplPtr = std::unique_ptr<ReadBufferFromRemoteFS>;
+
 public:
-    explicit ReadIndirectBufferFromRemoteFS(ReadBufferFromRemoteFSImpl impl_);
+    explicit ReadIndirectBufferFromRemoteFS(ImplPtr impl_);
 
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override { return absolute_position - available(); }
+    off_t getPosition() override { return impl->absolute_position - available(); }
 
     String getFileName() const override { return impl->getFileName(); }
 
 private:
     bool nextImpl() override;
 
-    ReadBufferFromRemoteFSImpl impl;
-
-    size_t absolute_position = 0;
+    ImplPtr impl;
 };
 
 }

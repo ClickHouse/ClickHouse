@@ -32,15 +32,16 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::read()
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readNext()
 {
     IAsynchronousReader::Request request;
 
     auto remote_fd = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>();
     remote_fd->impl = impl;
-    swap(*impl);
+    impl->position() = position();
+    assert(!impl->hasPendingData());
+
     request.descriptor = std::move(remote_fd);
-    request.offset = absolute_position;
     request.priority = priority;
 
     return reader->submit(request);
@@ -50,56 +51,37 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 {
     if (prefetch_future.valid())
-    {
-        std::cerr << "Prefetch, but not needed." << "\n";
         return;
-    }
-
-    std::cerr << fmt::format("Prefetch. Internal buffer size: {}, "
-                             "prefetch buffer size: {}, "
-                             "impl interanl buffer size: unknown",
-                             internal_buffer.size());
-
-    prefetch_future = read();
+    prefetch_future = readNext();
 }
 
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
     size_t size = 0;
-    std::cerr << fmt::format("NextImpl. Offset: {}, absolute_pos: {}", offset(), absolute_position) << std::endl;
 
     if (prefetch_future.valid())
     {
-        std::cerr << "Future is VALID!\n";
-
-        Stopwatch watch;
+        std::cerr << "Having prefetched data\n";
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-
+        Stopwatch watch;
         size = prefetch_future.get();
-
         watch.stop();
         ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
-
-        swap(*impl);
-        prefetch_future = {};
     }
     else
     {
-        std::cerr << "Future is NOT VALID!\n";
-
-        size = read().get();
-        swap(*impl);
-        prefetch_future = {};
+        std::cerr << "No prefetched data\n";
+        size = readNext().get();
     }
 
     if (size)
     {
-        absolute_position += size;
-        return true;
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+        prefetch_future = {};
     }
 
-    return false;
+    return size;
 }
 
 
@@ -108,31 +90,33 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     if (whence == SEEK_CUR)
     {
         /// If position within current working buffer - shift pos.
-        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < absolute_position)
+        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < impl->absolute_position)
         {
             pos += offset_;
             return getPosition();
         }
         else
         {
-            absolute_position += offset_;
+            impl->absolute_position += offset_;
         }
     }
     else if (whence == SEEK_SET)
     {
         /// If position is within current working buffer - shift pos.
         if (!working_buffer.empty()
-            && static_cast<size_t>(offset_) >= absolute_position - working_buffer.size()
-            && size_t(offset_) < absolute_position)
+            && static_cast<size_t>(offset_) >= impl->absolute_position - working_buffer.size()
+            && size_t(offset_) < impl->absolute_position)
         {
-            pos = working_buffer.end() - (absolute_position - offset_);
+            pos = working_buffer.end() - (impl->absolute_position - offset_);
+
             assert(pos >= working_buffer.begin());
             assert(pos <= working_buffer.end());
+
             return getPosition();
         }
         else
         {
-            absolute_position = offset_;
+            impl->absolute_position = offset_;
         }
     }
     else
@@ -142,14 +126,14 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     {
         std::cerr << "Ignoring prefetched data" << "\n";
         prefetch_future.wait();
+        impl->reset(); /// Clean the buffer, we do no need it.
         prefetch_future = {};
     }
 
-    std::cerr << "Seek with new absolute_position: " << absolute_position << std::endl;
-    impl->seek(absolute_position, SEEK_SET);
+    impl->seek(impl->absolute_position, SEEK_SET);
     pos = working_buffer.end();
 
-    return absolute_position;
+    return impl->absolute_position;
 }
 
 

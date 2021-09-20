@@ -9,6 +9,9 @@ namespace DB
 
 class ReadBufferFromRemoteFS : public ReadBufferFromFileBase
 {
+friend class ReadIndirectBufferFromRemoteFS;
+friend class AsynchronousReadIndirectBufferFromRemoteFS;
+
 public:
     explicit ReadBufferFromRemoteFS(const RemoteMetadata & metadata_);
 
@@ -19,6 +22,8 @@ public:
     String getFileName() const override { return metadata.metadata_file_path; }
 
     bool readNext() { return nextImpl(); }
+
+    void reset();
 
 protected:
     virtual SeekableReadBufferPtr createReadBuffer(const String & path) const = 0;
