@@ -147,8 +147,6 @@ ENGINE = <Engine>
 ...
 ```
 
-コーデックが指定されている場合、既定のコーデックは適用されません。 コーデックはパイプラインで結合できます。, `CODEC(Delta, ZSTD)`. の選定と大型ブリッジダイオードコーデックの組み合わせますプロジェクト、ベンチマークと同様に記載のAltinity [ClickHouseの効率を改善する新しい符号化](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) 記事だ
-
 !!! warning "警告"
     できない解凍ClickHouseデータベースファイルを外部の事のように `lz4`. 代わりに、特別な [clickhouse-コンプレッサー](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) ユーティリティ
 
