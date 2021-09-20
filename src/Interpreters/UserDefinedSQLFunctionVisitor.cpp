@@ -1,4 +1,4 @@
-#include "UserDefinedFunctionsVisitor.h"
+#include "UserDefinedSQLFunctionVisitor.h"
 
 #include <unordered_map>
 #include <stack>
@@ -7,7 +7,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Interpreters/UserDefinedFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 
 
 namespace DB
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedFunctionsMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
 {
     auto * function = ast->as<ASTFunction>();
     if (!function)
@@ -29,14 +29,14 @@ void UserDefinedFunctionsMatcher::visit(ASTPtr & ast, Data &)
         ast = result;
 }
 
-bool UserDefinedFunctionsMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
+bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
 {
     return true;
 }
 
-ASTPtr UserDefinedFunctionsMatcher::tryToReplaceFunction(const ASTFunction & function)
+ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function)
 {
-    auto user_defined_function = UserDefinedFunctionFactory::instance().tryGet(function.name);
+    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
 

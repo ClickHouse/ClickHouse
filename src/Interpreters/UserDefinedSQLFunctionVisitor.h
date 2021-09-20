@@ -19,10 +19,10 @@ class ASTFunction;
   * After applying visitor:
   * SELECT number + 1 FROM system.numbers LIMIT 10;
   */
-class UserDefinedFunctionsMatcher
+class UserDefinedSQLFunctionMatcher
 {
 public:
-    using Visitor = InDepthNodeVisitor<UserDefinedFunctionsMatcher, true>;
+    using Visitor = InDepthNodeVisitor<UserDefinedSQLFunctionMatcher, true>;
 
     struct Data
     {
@@ -39,6 +39,6 @@ private:
 };
 
 /// Visits AST nodes and collect their aliases in one map (with links to source nodes).
-using UserDefinedFunctionsVisitor = UserDefinedFunctionsMatcher::Visitor;
+using UserDefinedSQLFunctionVisitor = UserDefinedSQLFunctionMatcher::Visitor;
 
 }

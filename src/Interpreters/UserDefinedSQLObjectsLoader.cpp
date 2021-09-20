@@ -1,4 +1,4 @@
-#include "UserDefinedObjectsLoader.h"
+#include "UserDefinedSQLObjectsLoader.h"
 
 #include <filesystem>
 
@@ -32,17 +32,17 @@ namespace ErrorCodes
     extern const int OBJECT_WAS_NOT_STORED_ON_DISK;
 }
 
-UserDefinedObjectsLoader & UserDefinedObjectsLoader::instance()
+UserDefinedSQLObjectsLoader & UserDefinedSQLObjectsLoader::instance()
 {
-    static UserDefinedObjectsLoader ret;
+    static UserDefinedSQLObjectsLoader ret;
     return ret;
 }
 
-UserDefinedObjectsLoader::UserDefinedObjectsLoader()
-    : log(&Poco::Logger::get("UserDefinedObjectsLoader"))
+UserDefinedSQLObjectsLoader::UserDefinedSQLObjectsLoader()
+    : log(&Poco::Logger::get("UserDefinedSQLObjectsLoader"))
 {}
 
-void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedObjectType object_type, const std::string_view & name, const String & path)
+void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & name, const String & path)
 {
     auto name_ref = StringRef(name.data(), name.size());
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(name_ref), path);
@@ -57,7 +57,7 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     {
         switch (object_type)
         {
-            case UserDefinedObjectType::Function:
+            case UserDefinedSQLObjectType::Function:
             {
                 ParserCreateFunctionQuery parser;
                 ASTPtr ast = parseQuery(
@@ -80,7 +80,7 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     }
 }
 
-void UserDefinedObjectsLoader::loadObjects(ContextPtr context)
+void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 {
     LOG_DEBUG(log, "loading user defined objects");
 
@@ -102,19 +102,19 @@ void UserDefinedObjectsLoader::loadObjects(ContextPtr context)
             std::string_view object_name = file_name;
             object_name.remove_suffix(strlen(".sql"));
             object_name.remove_prefix(strlen("function_"));
-            loadUserDefinedObject(context, UserDefinedObjectType::Function, object_name, dir_path + it.name());
+            loadUserDefinedObject(context, UserDefinedSQLObjectType::Function, object_name, dir_path + it.name());
         }
     }
 }
 
-void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name, const IAST & ast)
+void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
 {
     String dir_path = context->getPath() + "user_defined/";
     String file_path;
 
     switch (object_type)
     {
-        case UserDefinedObjectType::Function:
+        case UserDefinedSQLObjectType::Function:
         {
             file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
         }
@@ -140,7 +140,7 @@ void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObject
     LOG_DEBUG(log, "Stored object {}", backQuote(object_name));
 }
 
-void UserDefinedObjectsLoader::removeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name)
+void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
 {
     String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
@@ -149,7 +149,7 @@ void UserDefinedObjectsLoader::removeObject(ContextPtr context, UserDefinedObjec
 
     switch (object_type)
     {
-        case UserDefinedObjectType::Function:
+        case UserDefinedSQLObjectType::Function:
         {
             file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
         }
