@@ -61,19 +61,11 @@ protected:
 
         const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(columns.size());
+        columns.reserve(column_names_and_types.size());
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
-        {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
-
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
+            columns.emplace_back(getColumnFromBlock(src, elem));
 
         return Chunk(std::move(columns), src.rows());
     }

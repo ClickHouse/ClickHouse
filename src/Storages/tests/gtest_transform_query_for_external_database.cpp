@@ -104,12 +104,12 @@ static void check(
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, state.getColumns(), select_options, state.getTables(table_num));
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns()), select_options, state.getTables(table_num));
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, state.getColumns(), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
 
-    EXPECT_EQ(transformed_query, expected);
+    EXPECT_EQ(transformed_query, expected) << query;
 }
 
 
@@ -126,6 +126,18 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
     check(state, 1,
           "SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')",
           R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('hello', 'world'))");
+}
+
+TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
+          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+    check(state, 1,
+          "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithTable)
