@@ -555,6 +555,8 @@ class DNF
 
     ASTPtr distribute(ASTPtr node)
     {
+        checkStackSize();
+
         const auto * function = node->as<ASTFunction>();
 
         if (function && function->children.size() == 1)
@@ -628,7 +630,6 @@ class DNF
                         makeASTFunction("or", lst) :
                         lst[0];
 
-                    checkStackSize();
                     node_added = true;
 
                     return ret;
