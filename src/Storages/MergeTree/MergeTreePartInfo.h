@@ -1,10 +1,8 @@
 #pragma once
 
 #include <limits>
-#include <optional>
 #include <tuple>
 #include <vector>
-#include <array>
 #include <common/types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
@@ -100,8 +98,7 @@ struct MergeTreePartInfo
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
-    static std::optional<MergeTreePartInfo> tryParsePartName(
-        std::string_view part_name, MergeTreeDataFormatVersion format_version);
+    static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
@@ -125,27 +122,11 @@ struct DetachedPartInfo : public MergeTreePartInfo
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 
-    static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
-        "broken",
-        "unexpected",
-        "noquorum",
-        "ignored",
-        "broken-on-start",
-        "clone",
-        "attaching",
-        "deleting",
-        "tmp-fetch"
-    });
+    static const std::vector<String> DETACH_REASONS;
 
     /// NOTE: It may parse part info incorrectly.
-    /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
-    // This method has different semantics with MergeTreePartInfo::tryParsePartName.
-    // Detached parts are always parsed regardless of their validity.
-    // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
-    static DetachedPartInfo parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version);
-
-private:
-    void addParsedPartInfo(const MergeTreePartInfo& part);
+    /// For example, if prefix contain '_' or if DETACH_REASONS doesn't contain prefix.
+    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;

@@ -1,6 +1,5 @@
 #include "readInvalidateQuery.h"
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 
@@ -15,18 +14,11 @@ namespace ErrorCodes
     extern const int RECEIVED_EMPTY_DATA;
 }
 
-std::string readInvalidateQuery(Pipe pipe)
+std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 {
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    block_input_stream.readPrefix();
 
-    PullingPipelineExecutor executor(pipeline);
-
-    Block block;
-    while (executor.pull(block))
-        if (block)
-            break;
-
+    Block block = block_input_stream.read();
     if (!block)
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Empty response");
 
@@ -44,10 +36,11 @@ std::string readInvalidateQuery(Pipe pipe)
     auto & column_type = block.getByPosition(0);
     column_type.type->getDefaultSerialization()->serializeTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
 
-    while (executor.pull(block))
+    while ((block = block_input_stream.read()))
         if (block.rows() > 0)
             throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected single row in resultset, got at least {}", std::to_string(rows + 1));
 
+    block_input_stream.readSuffix();
     return out.str();
 }
 
