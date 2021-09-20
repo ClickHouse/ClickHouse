@@ -217,8 +217,9 @@ def minify_file(path, css_digest, js_digest):
         content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
     elif path.endswith('.css'):
         content = cssmin.cssmin(content)
-    elif path.endswith('.js'):
-        content = jsmin.jsmin(content)
+# TODO: restore jsmin    
+#     elif path.endswith('.js'):
+#         content = jsmin.jsmin(content)
     with open(path, 'wb') as f:
         f.write(content.encode('utf-8'))
 
