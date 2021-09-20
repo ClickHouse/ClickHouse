@@ -16,6 +16,23 @@
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
         }
+        if (selector && selector.startsWith('#') && !is_tab && !is_collapse && !is_rating) {
+            event.preventDefault();
+            var dst = window.location.href.replace(window.location.hash, '');
+            var offset = 0;
+
+            if (selector !== '#') {
+                var destination = $(selector);
+                if (destination.length) {
+                    offset = destination.offset().top - $('#top-nav').height() * 1.5;
+                    dst += selector;
+                }
+            }
+            $('html, body').animate({
+                scrollTop: offset
+            }, 500);
+            window.history.replaceState('', document.title, dst);
+        }
     });
 
     var top_nav = $('#top-nav.sticky-top');
@@ -86,14 +103,6 @@
                     webvisor: !is_single_page
                 });
             } catch(e) { }
-            
-            if (!is_single_page) {
-                $('head').each(function(_, element) {
-                   $(element).append(
-                       '<script async src="https://www.googletagmanager.com/gtag/js?id=G-KF1LLRTQ5Q"></script><script>window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag(\'js\', new Date());gtag(\'config\', \'G-KF1LLRTQ5Q\');</script>'
-                   );
-                });
-            }
         });
 
         var n = d.getElementsByTagName("script")[0],

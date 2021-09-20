@@ -31,17 +31,10 @@ bool CompressedReadBufferFromFile::nextImpl()
     memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
-    decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+    decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
     return true;
 }
-
-
-void CompressedReadBufferFromFile::prefetch()
-{
-    file_in.prefetch();
-}
-
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
@@ -52,12 +45,9 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(
-    const std::string & path,
-    const ReadSettings & settings,
-    size_t estimated_size,
-    bool allow_different_codecs_)
+    const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, size_t buf_size, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0)
-    , p_file_in(createReadBufferFromFileBase(path, settings, estimated_size))
+    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, buf_size))
     , file_in(*p_file_in)
 {
     compressed_in = &file_in;
@@ -118,7 +108,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// If the decompressed block fits entirely where it needs to be copied.
         if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
-            decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
+            decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
         }
@@ -132,9 +122,9 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
             pos = working_buffer.begin();
+
+            decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;

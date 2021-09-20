@@ -18,15 +18,15 @@ public:
 
     using WrittenOffsetColumns = std::set<std::string>;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
+    const MergeTreeIndexGranularity & getIndexGranularity()
     {
         return writer->getIndexGranularity();
     }
 
 protected:
-    // using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
 
-    // ISerialization::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
@@ -44,7 +44,5 @@ protected:
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };
-
-using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;
 
 }

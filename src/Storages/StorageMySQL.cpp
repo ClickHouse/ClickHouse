@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLSource.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -15,12 +15,9 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
-#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -44,29 +41,25 @@ static String backQuoteMySQL(const String & x)
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
-    mysqlxx::PoolWithFailover && pool_,
+    mysqlxx::Pool && pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const bool replace_query_,
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context_,
-    const MySQLSettings & mysql_settings_)
+    const Context & context_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
-    , mysql_settings(mysql_settings_)
-    , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
+    , pool(std::move(pool_))
+    , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -75,9 +68,9 @@ Pipe StorageMySQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
-    ContextPtr context_,
+    const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
+    size_t max_block_size_,
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
@@ -101,25 +94,23 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
-        mysql_settings.connection_auto_close);
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    /// TODO: rewrite MySQLBlockInputStream
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<MySQLLazyBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
 }
 
 
-class StorageMySQLSink : public SinkToStorage
+class StorageMySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageMySQLSink(
+    explicit StorageMySQLBlockOutputStream(
         const StorageMySQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage{storage_}
+        : storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
@@ -128,11 +119,10 @@ public:
     {
     }
 
-    String getName() const override { return "StorageMySQLSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try
@@ -154,12 +144,10 @@ public:
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
-        if (!remote_database_name.empty())
-            sqlbuf << backQuoteMySQL(remote_database_name) << ".";
-        sqlbuf << backQuoteMySQL(remote_table_name);
+        sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.global_context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())
@@ -177,28 +165,28 @@ public:
         if (block.rows() <= max_rows)
             return Blocks{std::move(block)};
 
-        const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
-        Blocks split_blocks(split_block_size);
+        const size_t splited_block_size = ceil(block.rows() * 1.0 / max_rows);
+        Blocks splitted_blocks(splited_block_size);
 
-        for (size_t idx = 0; idx < split_block_size; ++idx)
-            split_blocks[idx] = block.cloneEmpty();
+        for (size_t idx = 0; idx < splited_block_size; ++idx)
+            splitted_blocks[idx] = block.cloneEmpty();
 
         const size_t columns = block.columns();
         const size_t rows = block.rows();
         size_t offsets = 0;
         UInt64 limits = max_batch_rows;
-        for (size_t idx = 0; idx < split_block_size; ++idx)
+        for (size_t idx = 0; idx < splited_block_size; ++idx)
         {
             /// For last batch, limits should be the remain size
-            if (idx == split_block_size - 1) limits = rows - offsets;
+            if (idx == splited_block_size - 1) limits = rows - offsets;
             for (size_t col_idx = 0; col_idx < columns; ++col_idx)
             {
-                split_blocks[idx].getByPosition(col_idx).column = block.getByPosition(col_idx).column->cut(offsets, limits);
+                splitted_blocks[idx].getByPosition(col_idx).column = block.getByPosition(col_idx).column->cut(offsets, limits);
             }
             offsets += max_batch_rows;
         }
 
-        return split_blocks;
+        return splitted_blocks;
     }
 
     static std::string dumpNamesWithBackQuote(const Block & block)
@@ -223,15 +211,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<StorageMySQLSink>(
-        *this,
-        metadata_snapshot,
-        remote_database_name,
-        remote_table_name,
-        pool->get(),
-        local_context->getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, metadata_snapshot, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
@@ -242,40 +224,21 @@ void registerStorageMySQL(StorageFactory & factory)
 
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(
-                "Storage MySQL requires 5-7 parameters: MySQL('host:port' (or 'addresses_pattern'), database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
+                "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         /// 3306 is the default MySQL port.
-        const String & host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 3306);
+
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
 
-        /// TODO: move some arguments from the arguments to the SETTINGS.
-        MySQLSettings mysql_settings;
-        if (args.storage_def->settings)
-        {
-            mysql_settings.loadFromQuery(*args.storage_def);
-        }
-
-        if (!mysql_settings.connection_pool_size)
-            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
-
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(
-            remote_database,
-            addresses,
-            username,
-            password,
-            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            mysql_settings.connection_wait_timeout);
+        mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
@@ -298,12 +261,9 @@ void registerStorageMySQL(StorageFactory & factory)
             on_duplicate_clause,
             args.columns,
             args.constraints,
-            args.comment,
-            args.getContext(),
-            mysql_settings);
+            args.context);
     },
     {
-        .supports_settings = true,
         .source_access_type = AccessType::MYSQL,
     });
 }

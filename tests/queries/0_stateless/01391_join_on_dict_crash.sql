@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS db_01391;
 CREATE DATABASE db_01391;
 USE db_01391;

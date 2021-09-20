@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -61,13 +61,11 @@ public:
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;

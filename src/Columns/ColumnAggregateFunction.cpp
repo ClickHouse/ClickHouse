@@ -1,12 +1,11 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -14,6 +13,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -162,12 +161,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    const auto * machine_learning_function = func.get();
+    auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -309,10 +308,6 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
-void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
-{
-    expandDataByMask<char *>(data, mask, inverted);
-}
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
@@ -489,7 +484,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
@@ -506,9 +501,8 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
-            x.getTypeName(), Field::Types::AggregateFunctionState);
+        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
+                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
@@ -557,11 +551,6 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
     func->deserialize(data.back(), read_buffer, &dst_arena);
 
     return read_buffer.position();
-}
-
-const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
-{
-    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
