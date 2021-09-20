@@ -3573,9 +3573,9 @@ Allows a user to write to [query_log](../../operations/system-tables/query_log.m
 
 Possible values:
 
--   0 — Queries are not logged in tables.
--   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, about half of the queries are logged in tables.
--   1 — All queries are logged in tables.
+-   0 — Queries are not logged in the system tables.
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0.5`, about half of the queries are logged in the system tables.
+-   1 — All queries are logged in the system tables.
 
 Default value: `1`.
 
