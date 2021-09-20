@@ -24,7 +24,7 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to set the probability with which queries are registered in the `query_log` table.
+You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_log` table.
 
 Columns:
 
