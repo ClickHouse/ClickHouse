@@ -56,7 +56,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundMergesPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
     extern const Metric PartMutation;
 }
 
@@ -85,7 +85,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, si
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 {
-    size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesPoolTask].load(std::memory_order_relaxed);
+    size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
     return getMaxSourcePartsSizeForMerge(max_tasks_count, scheduled_tasks_count);
 }

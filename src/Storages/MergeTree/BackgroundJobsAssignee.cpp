@@ -48,16 +48,9 @@ void BackgroundJobsAssignee::postpone()
 }
 
 
-void BackgroundJobsAssignee::scheduleMergeTask(ExecutableTaskPtr merge_task)
+void BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
-    bool res = getContext()->getMergeExecutor()->trySchedule(merge_task);
-    res ? trigger() : postpone();
-}
-
-
-void BackgroundJobsAssignee::scheduleMutateTask(ExecutableTaskPtr mutate_task)
-{
-    bool res = getContext()->getMutateExecutor()->trySchedule(mutate_task);
+    bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
     res ? trigger() : postpone();
 }
 
@@ -115,8 +108,7 @@ void BackgroundJobsAssignee::finish()
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getMergeExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }

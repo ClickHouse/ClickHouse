@@ -282,8 +282,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this,
-        getContext()->getSettingsRef().background_merges_concurrency_ratio *
-        getContext()->getSettingsRef().background_merges_pool_size)
+        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
+        getContext()->getSettingsRef().background_pool_size)
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -2824,13 +2824,13 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     else if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = MergeFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMergeTask(task);
+        assignee.scheduleMergeMutateTask(task);
         return true;
     }
     else if (job_type == LogEntry::MUTATE_PART)
     {
         auto task = MutateFromLogEntryTask::create(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMutateTask(task);
+        assignee.scheduleMergeMutateTask(task);
         return true;
     }
     else

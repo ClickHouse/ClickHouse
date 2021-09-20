@@ -38,6 +38,7 @@ public:
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() override;
+    IExecutableTask::Type getType() override { return IExecutableTask::Type::MUTATE; }
 
 private:
 
