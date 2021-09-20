@@ -40,6 +40,7 @@ public:
     static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
+    void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void attachResources(PipelineResourcesHolder holder_) { holder = std::move(holder_); }
     PipelineResourcesHolder detachResources() { return std::move(holder); }
 
