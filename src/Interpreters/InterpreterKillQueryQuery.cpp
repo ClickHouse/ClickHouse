@@ -306,9 +306,12 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     auto io = executeQuery(select_query, getContext(), true);
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
-    bool need_another_read = executor.pull(res);
+    while (!res && executor.pull(res));
 
-    if (res && need_another_read)
+    Block tmp_block;
+    while (executor.pull(tmp_block))
+
+    if (tmp_block)
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
