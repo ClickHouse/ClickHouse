@@ -236,8 +236,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
         settings->client, bucket, metadata,
         settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
 
-    if (settings->async_read)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {
+        std::cerr << "\n\ncreating read buffer with thtread pool\n\n";
         static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(s3_impl));
         //return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
@@ -1065,8 +1066,7 @@ DiskS3Settings::DiskS3Settings(
     bool send_metadata_,
     int thread_pool_size_,
     int list_object_keys_size_,
-    int objects_chunk_size_to_delete_,
-    bool async_read_)
+    int objects_chunk_size_to_delete_)
     : client(client_)
     , s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
@@ -1076,7 +1076,6 @@ DiskS3Settings::DiskS3Settings(
     , thread_pool_size(thread_pool_size_)
     , list_object_keys_size(list_object_keys_size_)
     , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
-    , async_read(async_read_)
 {
 }
 

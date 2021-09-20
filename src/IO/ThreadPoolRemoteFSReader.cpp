@@ -39,8 +39,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 {
     auto task = std::make_shared<std::packaged_task<Result()>>([request]
     {
-        std::cerr << "\n\nTask is execited!!!\n\n";
-
         setThreadName("ThreadPoolRead");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
         Stopwatch watch(CLOCK_MONOTONIC);
