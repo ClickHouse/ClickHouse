@@ -1,3 +1,5 @@
+-- Tags: deadlock
+
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x UInt8) ENGINE = TinyLog;
 
