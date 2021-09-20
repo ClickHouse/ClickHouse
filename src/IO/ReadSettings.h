@@ -6,7 +6,7 @@
 
 namespace DB
 {
-enum class ReadMethod
+enum class LocalFSReadMethod
 {
     /**
      * Simple synchronous reads with 'read'.
@@ -43,12 +43,20 @@ enum class ReadMethod
     pread_fake_async
 };
 
+enum class RemoteFSReadMethod
+{
+    read,
+    read_threadpool,
+};
+
 class MMappedFileCache;
 
 struct ReadSettings
 {
     /// Method to use reading from local filesystem.
-    ReadMethod local_fs_method = ReadMethod::pread;
+    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
+    /// Method to use reading from remote filesystem.
+    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::read;
 
     size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
