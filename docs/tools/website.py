@@ -104,7 +104,7 @@ def adjust_markdown_html(content):
         for p in div.find_all('p'):
             p_class = p.attrs.get('class')
             if is_admonition and p_class and ('admonition-title' in p_class):
-                p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
+                p.attrs['class'] = p_class + ['alert-heading', 'display-4', 'text-reset', 'mb-2']
 
         if is_admonition:
             div.attrs['role'] = 'alert'
