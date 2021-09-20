@@ -181,9 +181,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (const auto & child : children)
+    for (size_t index = 0; index != children.size(); ++index)
     {
-        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -402,9 +402,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (const auto & child : children)
+    for (size_t i = 0; i != children.size(); ++i)
     {
-        const ASTPair * pair = child->as<const ASTPair>();
+        const ASTPair * pair = children[i]->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 

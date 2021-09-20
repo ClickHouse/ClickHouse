@@ -4,7 +4,6 @@ set (CLICKHOUSE_CLIENT_SOURCES
     QueryFuzzer.cpp
     Suggest.cpp
     TestHint.cpp
-    TestTags.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK

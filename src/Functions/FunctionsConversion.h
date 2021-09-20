@@ -764,7 +764,7 @@ template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name, ConvertDefaultBehaviorTag>
 {
     using FromFieldType = typename FromDataType::FieldType;
-    using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
@@ -1699,9 +1699,9 @@ private:
                 using RightT = typename RightDataType::FieldType;
 
                 static constexpr bool bad_left =
-                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                    IsDecimalNumber<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
                 static constexpr bool bad_right =
-                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                    IsDecimalNumber<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
@@ -2585,9 +2585,8 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                        "Conversion from {} to {} is not supported",
-                        from_type_index, to_type->getName());
+                    throw Exception{"Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
                 }
             }
 
@@ -2696,9 +2695,8 @@ private:
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                        "Conversion from {} to {} is not supported",
-                        type_index, to_type->getName());
+                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
             return result_column;

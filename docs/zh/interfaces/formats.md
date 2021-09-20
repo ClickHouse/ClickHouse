@@ -23,6 +23,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -949,6 +950,31 @@ SELECT * FROM t_null FORMAT Vertical
     y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入(将数据插入到表中)。
+
+## VerticalRaw {#verticalraw}
+
+和 `Vertical` 格式不同点在于，行是不会被转义的。
+这种格式仅仅适用于输出，但不适用于解析输入(将数据插入到表中)。
+
+示例:
+
+    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
+
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    test: string with 'quotes' and   with some special
+     characters
+
+和 Vertical 格式相比：
+
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
+    Row 1:
+    ──────
+    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 

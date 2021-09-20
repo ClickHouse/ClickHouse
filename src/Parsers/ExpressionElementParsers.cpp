@@ -103,33 +103,25 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
-    /// Empty expression in parentheses is not allowed.
+    /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    /// Special case for one-element tuple.
     if (expr_list.children.size() == 1 && is_elem)
     {
-        auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
-        /// But only if its argument is not tuple,
-        /// since otherwise it will do incorrect transformation:
-        ///
-        ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
-        if (!(ast_literal && ast_literal->value.getType() == Field::Types::Tuple))
-        {
-            node = expr_list.children.front();
-            return true;
-        }
+        node = expr_list.children.front();
     }
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "tuple";
-    function_node->arguments = contents_node;
-    function_node->children.push_back(contents_node);
-    node = function_node;
+    else
+    {
+        auto function_node = std::make_shared<ASTFunction>();
+        function_node->name = "tuple";
+        function_node->arguments = contents_node;
+        function_node->children.push_back(contents_node);
+        node = function_node;
+    }
 
     return true;
 }

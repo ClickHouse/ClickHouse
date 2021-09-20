@@ -12,7 +12,7 @@ public:
     explicit KafkaSink(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const ContextPtr & context_);
+        const std::shared_ptr<const Context> & context_);
 
     void consume(Chunk chunk) override;
     void onStart() override;
@@ -24,7 +24,7 @@ public:
 private:
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
-    const ContextPtr context;
+    const std::shared_ptr<const Context> context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

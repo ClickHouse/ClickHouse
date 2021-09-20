@@ -18,6 +18,7 @@ class ReadIndirectBufferFromWebServer : public BufferWithOwnMemory<SeekableReadB
 public:
     explicit ReadIndirectBufferFromWebServer(const String & url_,
                                              ContextPtr context_,
+                                             size_t max_read_tries_,
                                              size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
@@ -33,7 +34,7 @@ private:
     ContextPtr context;
 
     const String url;
-    size_t buf_size;
+    size_t buf_size, max_read_tries;
 
     std::unique_ptr<ReadBuffer> impl;
 

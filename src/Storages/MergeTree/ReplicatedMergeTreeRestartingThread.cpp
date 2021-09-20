@@ -174,8 +174,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         try
         {
-            storage.queue.initialize(zookeeper);
-
             storage.queue.load(zookeeper);
 
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
@@ -206,7 +204,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_event.reset();
 
         /// Start queue processing
-        storage.background_operations_assignee.start();
+        storage.background_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -391,7 +389,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto fetch_lock = storage.fetcher.blocker.cancel();
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
-        storage.background_operations_assignee.finish();
+        storage.background_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

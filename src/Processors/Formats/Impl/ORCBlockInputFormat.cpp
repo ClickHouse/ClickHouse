@@ -93,7 +93,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ORCBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
     stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
 

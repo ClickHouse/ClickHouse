@@ -163,6 +163,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             getContext()->checkAccess(drop_storage, table_id);
+            if (table->isReadOnly())
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             if (table->isDictionary())
             {
@@ -196,7 +198,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
                 throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
 
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
-            if (table->isStaticStorage())
+            if (table->isReadOnly())
                 throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped();

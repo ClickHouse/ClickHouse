@@ -43,6 +43,7 @@ SRCS(
     Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
+    ExternalLoaderStatus.cpp
     FieldVisitorDump.cpp
     FieldVisitorHash.cpp
     FieldVisitorSum.cpp

@@ -18,7 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
-    ExecutableSettings.cpp
+    ExecutablePoolSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -28,12 +28,11 @@ SRCS(
     MemorySettings.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
-    MergeTree/BackgroundJobsAssignee.cpp
+    MergeTree/BackgroundJobsExecutor.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
     MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
-    MergeTree/FutureMergedMutatedPart.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
     MergeTree/IMergeTreeReader.cpp
@@ -41,11 +40,7 @@ SRCS(
     MergeTree/KeyCondition.cpp
     MergeTree/LevelMergeSelector.cpp
     MergeTree/MergeAlgorithm.cpp
-    MergeTree/MergeFromLogEntryTask.cpp
     MergeTree/MergeList.cpp
-    MergeTree/MergePlainMergeTreeTask.cpp
-    MergeTree/MergeTask.cpp
-    MergeTree/MergeTreeBackgroundExecutor.cpp
     MergeTree/MergeTreeBaseSelectProcessor.cpp
     MergeTree/MergeTreeBlockReadUtils.cpp
     MergeTree/MergeTreeData.cpp
@@ -99,14 +94,10 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
-    MergeTree/MutateFromLogEntryTask.cpp
-    MergeTree/MutatePlainMergeTreeTask.cpp
-    MergeTree/MutateTask.cpp
     MergeTree/PartMovesBetweenShardsOrchestrator.cpp
     MergeTree/PartitionPruner.cpp
     MergeTree/PinnedPartUUIDs.cpp
     MergeTree/ReplicatedFetchList.cpp
-    MergeTree/ReplicatedMergeMutateTaskBase.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeCleanupThread.cpp
@@ -223,10 +214,10 @@ SRCS(
     System/StorageSystemTables.cpp
     System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
+    System/StorageSystemViews.cpp
     System/StorageSystemWarnings.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
-    System/attachInformationSchemaTables.cpp
     System/attachSystemTables.cpp
     TTLDescription.cpp
     VirtualColumnUtils.cpp

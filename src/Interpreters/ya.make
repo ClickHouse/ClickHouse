@@ -48,7 +48,6 @@ SRCS(
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
     DictionaryReader.cpp
-    DuplicateOrderByVisitor.cpp
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
@@ -149,7 +148,6 @@ SRCS(
     RowRefs.cpp
     SelectIntersectExceptQueryVisitor.cpp
     Session.cpp
-    SessionLog.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp

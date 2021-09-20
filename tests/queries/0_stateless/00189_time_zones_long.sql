@@ -1,4 +1,3 @@
--- Tags: long
 
 /* timestamp 1419800400 == 2014-12-29 00:00:00 (Europe/Moscow) */
 /* timestamp 1412106600 == 2014-09-30 23:50:00 (Europe/Moscow) */

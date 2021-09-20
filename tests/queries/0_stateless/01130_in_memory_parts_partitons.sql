@@ -1,6 +1,3 @@
--- Tags: no-replicated-database, no-parallel
--- Tag no-replicated-database: Unsupported type of ALTER query
-
 DROP TABLE IF EXISTS t2;
 
 CREATE TABLE t2(id UInt32, a UInt64, s String)

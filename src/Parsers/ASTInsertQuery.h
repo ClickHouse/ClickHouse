@@ -1,37 +1,34 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <Interpreters/StorageID.h>
+#include "Parsers/IAST_fwd.h"
 
 namespace DB
 {
 
-class ReadBuffer;
 
-/// INSERT query
+/** INSERT query
+  */
 class ASTInsertQuery : public IAST
 {
 public:
     StorageID table_id = StorageID::createEmpty();
     ASTPtr columns;
     String format;
+    ASTPtr select;
+    ASTPtr infile;
+    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr partition_by;
     ASTPtr settings_ast;
 
-    ASTPtr select;
-    ASTPtr watch;
-    ASTPtr infile;
-    ASTPtr compression;
-
-    /// Data inlined into query
+    /// Data to insert
     const char * data = nullptr;
     const char * end = nullptr;
 
-    /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBuffer * tail = nullptr;
-
-    bool hasInlinedData() const { return data || tail; }
+    /// Query has additional data, which will be sent later
+    bool has_tail = false;
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
@@ -58,7 +55,6 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 }

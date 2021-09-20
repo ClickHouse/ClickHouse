@@ -13,7 +13,6 @@
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
 #include <common/arithmeticOverflow.h>
-#include <common/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
@@ -36,7 +35,10 @@
 
 #include <double-conversion/double-conversion.h>
 
-static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
+
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
+
 
 namespace DB
 {
@@ -161,22 +163,14 @@ void assertEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
-inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
-{
-    char a;
-    if (!buf.peek(a) || a != c)
-        return false;
-    buf.ignore();
-    return true;
-}
-
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
-    if (!checkChar(symbol, buf))
+    if (buf.eof() || *buf.position() != symbol)
     {
         char err[2] = {symbol, '\0'};
         throwAtAssertionFailed(err, buf);
     }
+    ++buf.position();
 }
 
 inline void assertString(const String & s, ReadBuffer & buf)
@@ -188,6 +182,14 @@ bool checkString(const char * s, ReadBuffer & buf);
 inline bool checkString(const String & s, ReadBuffer & buf)
 {
     return checkString(s.c_str(), buf);
+}
+
+inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
+{
+    if (buf.eof() || *buf.position() != c)
+        return false;
+    ++buf.position();
+    return true;
 }
 
 bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
@@ -331,24 +333,12 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
                     if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
                     {
-                        if (negative)
-                        {
-                            T signed_res = -res;
-                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
-                                common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
-                                return ReturnType(false);
+                        T signed_res = res;
+                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
+                            || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                            return ReturnType(false);
 
-                            res = -static_cast<UnsignedT>(signed_res);
-                        }
-                        else
-                        {
-                            T signed_res = res;
-                            if (common::mulOverflow<T>(signed_res, 10, signed_res) ||
-                                common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
-                                return ReturnType(false);
-
-                            res = signed_res;
-                        }
+                        res = signed_res;
                         break;
                     }
                 }
@@ -378,7 +368,7 @@ end:
         {
             if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
             {
-                if (common::mulOverflow<UnsignedT, Int8, T>(res, -1, x))
+                if (common::mulOverflow<T>(x, -1, x))
                     return ReturnType(false);
             }
             else
@@ -392,7 +382,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (is_decimal<T>)
+    if constexpr (IsDecimalNumber<T>)
     {
         readIntText<check_overflow>(x.value, buf);
     }
@@ -940,22 +930,23 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 
 
 /// Generic methods to read value in text tab-separated format.
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, void>
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-inline void readText(is_integer auto & x, ReadBuffer & buf)
-{
-    if constexpr (std::is_same_v<decltype(x), bool &>)
-        readBoolText(x, buf);
-    else
-        readIntText(x, buf);
-}
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
 
-inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
-{
-    return tryReadIntText(x, buf);
-}
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadFloatText(x, buf); }
 
+inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
@@ -1164,10 +1155,12 @@ inline bool tryParse(T & res, const char * data, size_t size)
 }
 
 template <typename T>
-inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+inline std::enable_if_t<!is_integer_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-template <is_integer T>
-inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);
     if (buf.eof())
