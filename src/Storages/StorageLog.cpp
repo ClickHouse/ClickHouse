@@ -465,7 +465,7 @@ void LogSink::writeMarks(MarksForColumns && marks)
 
 StorageLog::~StorageLog()
 {
-    std::cerr << "======================\n" << StackTrace().toString() << std::endl;
+    // std::cerr << "======================\n" << StackTrace().toString() << std::endl;
 }
 
 StorageLog::StorageLog(
