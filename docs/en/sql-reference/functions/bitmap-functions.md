@@ -139,7 +139,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 -   `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
 -   `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
