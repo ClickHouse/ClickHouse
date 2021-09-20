@@ -132,6 +132,7 @@ public:
         , process_list(process_list_)
         , processes_to_stop(std::move(processes_to_stop_))
         , processes_block(std::move(processes_block_))
+        , res_sample_block(std::move(res_sample_block_))
     {
         addTotalRowsApprox(processes_to_stop.size());
     }
@@ -309,7 +310,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     while (!res && executor.pull(res));
 
     Block tmp_block;
-    while (executor.pull(tmp_block))
+    while (executor.pull(tmp_block));
 
     if (tmp_block)
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
