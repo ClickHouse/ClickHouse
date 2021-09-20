@@ -5,6 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Core/UUID.h>
 
 #include <ctime>
@@ -27,11 +28,14 @@ class ASTCreateQuery;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
+struct ParsedTablesMetadata;
+struct QualifiedTableName;
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 class IDatabaseTablesIterator
@@ -127,13 +131,32 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects(
         ContextMutablePtr /*context*/,
-        bool /*has_force_restore_data_flag*/,
+        bool /*force_restore*/,
         bool /*force_attach*/ = false,
         bool /* skip_startup_tables */ = false)
     {
     }
 
-    virtual void startupTables() {}
+    virtual bool supportsLoadingInTopologicalOrder() const { return false; }
+
+    virtual void beforeLoadingMetadata(
+        ContextMutablePtr /*context*/,
+        bool /*force_restore*/,
+        bool /*force_attach*/)
+    {
+    }
+
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/, bool /*force_restore*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
