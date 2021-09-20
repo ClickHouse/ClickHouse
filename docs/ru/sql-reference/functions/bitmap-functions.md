@@ -91,7 +91,7 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 └───────────────────────────┘
 ```
 
-## subBitmap {#subBitmap}
+## subBitmap {#subbitmap}
 
 Создает подмножество битмапа, ограниченное параметром `cardinality_limit` со смещением `offset`.
 
