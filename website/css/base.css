@@ -1,3 +1,14 @@
+.blog a:link, .blog a:visited,
+.docs a:link, .docs a:visited {
+    color: #f14600;
+    text-decoration: none;
+}
+
+.blog a:hover, .blog a:active,
+.docs a:hover, .docs a:active {
+    text-decoration: underline;
+}
+
 .btn.disabled, .btn:disabled {
     cursor: default;
     opacity: 0.4;
@@ -119,7 +130,7 @@ a.btn-outline-yellow {
 }
 
 .nav .dropdown-toggle::after {
-    vertical-align: 0;
+    vertical-align: 0 !important;
 }
 .nav .dropdown-toggle[aria-expanded=false]::after {
     display: inline-block;

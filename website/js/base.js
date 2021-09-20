@@ -36,7 +36,7 @@
         }
     });
 
-    if (window.location.hostname.endsWith('clickhouse.tech')) {
+    if (window.location.hostname.endsWith('clickhouse.com')) {
         $('a.favicon').each(function () {
             $(this).css({
                 background: 'url(/favicon/' + this.hostname + ') left center no-repeat',
@@ -66,13 +66,6 @@
            })
         });
     }
-
-    $('#feedback_email, .feedback-email').each(function() {
-        var name = window.location.host.substring(0, 10)
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        $(this).attr('href', 'mailto:' + feedback_address);
-        $(this).html(feedback_address);
-    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
