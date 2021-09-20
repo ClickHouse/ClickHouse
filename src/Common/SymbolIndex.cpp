@@ -462,22 +462,12 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance(bool reload)
 {
     static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    return instance;
-}
-
-MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
-{
-    return instanceImpl().get();
-}
-
-void SymbolIndex::reload()
-{
-    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    /// Also drop stacktrace cache.
-    StackTrace::dropCache();
+    if (reload)
+        instance.set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    return instance.get();
 }
 
 }

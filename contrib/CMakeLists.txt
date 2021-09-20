@@ -32,12 +32,12 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-add_subdirectory (abseil-cpp-cmake)
-add_subdirectory (magic-enum-cmake)
+add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
+add_subdirectory (FastMemcpy)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
@@ -47,18 +47,11 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (nanodbc-cmake)
-
-if (USE_YAML_CPP)
-    add_subdirectory (yaml-cpp-cmake)
-endif()
-
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
-endif()
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
+
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -100,8 +93,14 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (TARGET zlibstatic)
+        target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    endif ()
     if (ARCH_AMD64 OR ARCH_AARCH64)
         target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+        if (TARGET zlibstatic)
+            target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
+        endif ()
     endif ()
 endif ()
 
@@ -207,27 +206,25 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-function(add_llvm)
+if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
-
-    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
-    set (CMAKE_INSTALL_RPATH "ON")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-
-    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
-    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-    set (CMAKE_CXX_STANDARD 17)
-
+    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
+    # And c++2a cannot be used, due to ambiguous operator !=
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        set (_CXX_STANDARD "gnu++17")
+    else()
+        set (_CXX_STANDARD "c++17")
+    endif()
+    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
-endfunction()
-if (USE_EMBEDDED_COMPILER)
-    add_llvm()
+    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -283,14 +280,7 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
-    # Need to use C++17 since the compilation is not possible with C++20 currently.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
-    set (CMAKE_CXX_STANDARD 17)
-
     add_subdirectory (cassandra)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
 endif()
 
 # Should go before:
@@ -330,20 +320,3 @@ endif()
 
 add_subdirectory(fast_float)
 
-if (USE_NLP)
-    add_subdirectory(libstemmer-c-cmake)
-    add_subdirectory(wordnet-blast-cmake)
-    add_subdirectory(lemmagen-c-cmake)
-endif()
-
-if (USE_BZIP2)
-    add_subdirectory(bzip2-cmake)
-endif()
-
-if (USE_SQLITE)
-    add_subdirectory(sqlite-cmake)
-endif()
-
-if (USE_S2_GEOMETRY)
-    add_subdirectory(s2geometry-cmake)
-endif()

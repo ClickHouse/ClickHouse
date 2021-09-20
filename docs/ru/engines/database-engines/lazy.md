@@ -15,3 +15,4 @@ toc_title: Lazy
 CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/database_engines/lazy/) <!--hide-->

@@ -7,7 +7,7 @@ namespace DB
 
 /// Type of Merge. Used to control amount of different merges during merges
 /// assignment. Also allows to apply special logic during merge process
-/// Stored in FutureMergedMutatedPart and
+/// (mergePartsToTemporaryPart). Stored in FutureMergedMutatedPart and
 /// ReplicatedMergeTreeLogEntry.
 ///
 /// Order is important, don't try to change it.
