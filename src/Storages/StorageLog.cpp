@@ -463,7 +463,10 @@ void LogSink::writeMarks(MarksForColumns && marks)
     }
 }
 
-StorageLog::~StorageLog() = default;
+StorageLog::~StorageLog()
+{
+    std::cerr << "======================\n" << StackTrace().toString() << std::endl;
+}
 
 StorageLog::StorageLog(
     DiskPtr disk_,
