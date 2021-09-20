@@ -3,15 +3,10 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+#include <magic_enum.hpp>
 
 namespace DB
 {
-
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -24,7 +19,11 @@ namespace
 
         auto entries = magic_enum::enum_entries<ASTSystemQuery::Type>();
         for (const auto & [entry, str] : entries)
-            type_index_to_type_name[static_cast<UInt64>(entry)] = str;
+        {
+            auto str_copy = String(str);
+            std::replace(str_copy.begin(), str_copy.end(), '_', ' ');
+            type_index_to_type_name[static_cast<UInt64>(entry)] = std::move(str_copy);
+        }
 
         return type_index_to_type_name;
     }
