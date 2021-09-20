@@ -51,8 +51,8 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -1086,7 +1086,7 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_INFO(log, "Loading user defined objects from {}", path_str);
     try
     {
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
     }
     catch (...)
     {
@@ -1470,6 +1470,17 @@ if (ThreadFuzzer::instance().isEffective())
         catch (...)
         {
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load user defined executable functions, throw on error and die
+        try
+        {
+            global_context->loadUserDefinedExecutableFunctions(config());
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 
