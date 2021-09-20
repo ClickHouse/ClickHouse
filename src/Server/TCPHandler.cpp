@@ -246,8 +246,11 @@ void TCPHandler::runImpl()
                     sendLogs();
                 });
             }
-            state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-            CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+            {
+                state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+                CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
+            }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
