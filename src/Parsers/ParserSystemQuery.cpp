@@ -125,6 +125,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+        case Type::RELOAD_FUNCTION:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->target_function = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+            {
+                ParserIdentifier function_parser;
+                ASTPtr function;
+                String target_function;
+
+                if (!function_parser.parse(pos, function, expected))
+                    return false;
+
+                if (!tryGetIdentifierNameInto(function, res->target_function))
+                    return false;
+            }
+
+            break;
+        }
         case Type::DROP_REPLICA:
         {
             ASTPtr ast;
