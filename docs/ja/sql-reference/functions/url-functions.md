@@ -206,4 +206,4 @@ URLに類似のものがない場合、URLは変更されません。
 
 を削除します。 ‘name’ URLパラメータが存在する場合。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/url_functions/) <!--hide-->
