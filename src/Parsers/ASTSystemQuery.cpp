@@ -31,6 +31,9 @@ namespace
 
 const char * ASTSystemQuery::typeToString(Type type)
 {
+    /** During parsing if SystemQuery is not parsed properly it is added to Expected variants as description check IParser.h.
+      * Description string must be statically allocated.
+      */
     static std::vector<std::string> type_index_to_type_name = getTypeIndexToTypeName();
     const auto & type_name = type_index_to_type_name[static_cast<UInt64>(type)];
     return type_name.data();
