@@ -107,7 +107,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 The subset.
 
-Type: `Bitmap object`.
+Type: [Bitmap object](#bitmap_functions-bitmapbuild).
 
 **Example**
 
@@ -125,9 +125,9 @@ Result:
 └───────────────────────────┘
 ```
 
-## subBitmap {#subBitmap}
+## subBitmap {#subbitmap}
 
-Creates a subset of bitmap limit the results to `cardinality_limit` with offset of `offset`.
+Returns the bitmap elements, starting from the `offset` position. The number of returned elements is limited by the `cardinality_limit` parameter. Analog of the [substring](string-functions.md#substring)) string function, but for bitmap.
 
 **Syntax**
 
