@@ -1021,6 +1021,7 @@ void executeQuery(
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
 
+    std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
         if (pipeline.pushing())
@@ -1033,7 +1034,6 @@ void executeQuery(
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
-            std::unique_ptr<WriteBuffer> compressed_buffer;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
