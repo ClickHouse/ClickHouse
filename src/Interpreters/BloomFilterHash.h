@@ -129,10 +129,10 @@ struct BloomFilterHash
             const auto * map_col = typeid_cast<const ColumnMap *>(column.get());
             const auto & keys_data = map_col->getNestedData().getColumn(0);
             if (checkAndGetColumn<ColumnNullable>(keys_data))
-                throw Exception("Unexpected key type " + data_type->getName() + " of bloom filter index for map.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Unexpected key type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
             const auto & offsets = map_col->getNestedColumn().getOffsets();
-            limit = offsets[pos + limit - 1] - offsets[pos - 1];
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];  /// PaddedPODArray allows access on index -1.
             pos = offsets[pos - 1];
 
             if (limit == 0)
