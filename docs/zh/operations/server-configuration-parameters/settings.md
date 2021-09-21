@@ -867,4 +867,4 @@ ZooKeeper中数据部分头的存储方法。
 
 **默认值**: 15.
 
-[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
