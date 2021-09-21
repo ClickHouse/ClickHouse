@@ -54,4 +54,4 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 サーバーは、設定ファイルの変更、置換および上書きの実行時に使用されたファイルおよびZooKeeperノードを追跡し、ユーザーおよびクラスターの設定をその場で再ロード つまり、サーバーを再起動せずにクラスター、ユーザー、およびその設定を変更できます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/configuration_files/) <!--hide-->

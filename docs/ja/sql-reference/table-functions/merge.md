@@ -11,4 +11,4 @@ toc_title: "\u30DE\u30FC\u30B8"
 
 テーブル構造は、正規表現に一致する最初に検出されたテーブルから取得されます。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/merge/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/merge/) <!--hide-->
