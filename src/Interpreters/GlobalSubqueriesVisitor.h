@@ -155,7 +155,11 @@ public:
                 table_out->writePrefix();
                 Block block;
                 while (executor.pull(block))
-                    table_out->write(block);
+                {
+                    if (block)
+                        table_out->write(block);
+                    block.clear();
+                }
 
                 table_out->writeSuffix();
             }
