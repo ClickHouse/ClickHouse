@@ -1,4 +1,6 @@
 #include "GRPCServer.h"
+#include <limits>
+#include <memory>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -622,6 +624,7 @@ namespace
         BlockIO io;
         Progress progress;
         InternalTextLogsQueuePtr logs_queue;
+        InternalProfileEventsQueuePtr profile_queue;
 
         GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
         GRPCResult result;
@@ -773,6 +776,8 @@ namespace
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
             CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
+        profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(profile_queue);
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
