@@ -32,7 +32,7 @@ class WriteHelper
     size_t prev_row_buffer_size = 0;
 
 public:
-    WriteHelper(ColumnType & col_, size_t expected_rows, size_t expected_row_size [[maybe_unused]] = 0)
+    WriteHelper(ColumnType & col_, size_t expected_rows)
         : col(col_),
           buffer(col.getChars())
     {
@@ -40,8 +40,9 @@ public:
             col.reserve(expected_rows);
         else
         {
-            if (const size_t estimated_total_size = expected_rows * expected_row_size)
-                col.reserve(estimated_total_size);
+            col.reserve(expected_rows);
+            /// Using coefficient 2 for initial size is arbitrary.
+            col.getChars().reserve(expected_rows * 2);
         }
     }
 
@@ -70,8 +71,7 @@ public:
             // Pad with zeroes on the right to maintain FixedString invariant.
             const auto excess_bytes = buffer.count() % col.getN();
             const auto fill_bytes = col.getN() - excess_bytes;
-            for (size_t i = 0; i < fill_bytes; ++i)
-                buffer.write('\0');
+            buffer.write('\0', fill_bytes);
         }
         else
         {

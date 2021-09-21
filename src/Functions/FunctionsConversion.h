@@ -858,13 +858,9 @@ struct ConvertImplGenericToString
         auto col_to = result_type->createColumn();
 
         {
-            // 2 is arbitrary
-            const size_t estimated_value_size_bytes = arguments[0].type->haveMaximumSizeOfValue() ? arguments[0].type->getMaximumSizeOfValueInMemory() : 2;
-
             ColumnStringHelpers::WriteHelper write_helper(
                     assert_cast<StringColumnType &>(*col_to),
-                    input_rows_count,
-                    estimated_value_size_bytes);
+                    input_rows_count);
 
             auto & write_buffer = write_helper.getWriteBuffer();
 

@@ -5,6 +5,7 @@
 #include <memory>
 #include <iostream>
 #include <cassert>
+#include <string.h>
 
 #include <Common/Exception.h>
 #include <IO/BufferBase.h>
@@ -93,6 +94,23 @@ public:
         nextIfAtEnd();
         *pos = x;
         ++pos;
+    }
+
+    inline void write(char x, size_t n)
+    {
+        size_t bytes_written = 0;
+
+        /// Produces endless loop
+        assert(!working_buffer.empty());
+
+        while (bytes_written < n)
+        {
+            nextIfAtEnd();
+            size_t bytes_to_write = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_written);
+            memset(pos, x, bytes_to_write);
+            pos += bytes_to_write;
+            bytes_written += bytes_to_write;
+        }
     }
 
     virtual void sync()
