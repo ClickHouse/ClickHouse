@@ -42,6 +42,7 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
+void registerFunctionH3ResIsClassIII(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
@@ -95,6 +96,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
+    registerFunctionH3ResIsClassIII(factory);
 #endif
 
 #if USE_S2_GEOMETRY
