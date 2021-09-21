@@ -103,15 +103,8 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-
-template <class Queue>
 class MergeTreeBackgroundExecutor;
-class MergeMutateRuntimeQueue;
-class OrdinaryRuntimeQueue;
-using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
-using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
-using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
+using MergeTreeBackgroundExecutorPtr = std::shared_ptr<MergeTreeBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
@@ -854,10 +847,10 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutors();
 
-    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
-    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
-    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
-    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
+    MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
+    MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+    MergeTreeBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

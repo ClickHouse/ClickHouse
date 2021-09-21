@@ -241,10 +241,10 @@ struct ContextSharedPart
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
-    MergeMutateBackgroundExecutorPtr merge_mutate_executor;
-    OrdinaryBackgroundExecutorPtr moves_executor;
-    OrdinaryBackgroundExecutorPtr fetch_executor;
-    OrdinaryBackgroundExecutorPtr common_executor;
+    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
+    MergeTreeBackgroundExecutorPtr moves_executor;
+    MergeTreeBackgroundExecutorPtr fetch_executor;
+    MergeTreeBackgroundExecutorPtr common_executor;
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -2793,7 +2793,7 @@ void Context::initializeBackgroundExecutors()
     // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
 
     /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
+    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
     (
         "MergeMutate",
         /*max_threads_count*/getSettingsRef().background_pool_size,
@@ -2801,7 +2801,7 @@ void Context::initializeBackgroundExecutors()
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
-    shared->moves_executor = OrdinaryBackgroundExecutor::create
+    shared->moves_executor = MergeTreeBackgroundExecutor::create
     (
         "Move",
         getSettingsRef().background_move_pool_size,
@@ -2809,7 +2809,7 @@ void Context::initializeBackgroundExecutors()
         CurrentMetrics::BackgroundMovePoolTask
     );
 
-    shared->fetch_executor = OrdinaryBackgroundExecutor::create
+    shared->fetch_executor = MergeTreeBackgroundExecutor::create
     (
         "Fetch",
         getSettingsRef().background_fetches_pool_size,
@@ -2817,7 +2817,7 @@ void Context::initializeBackgroundExecutors()
         CurrentMetrics::BackgroundFetchesPoolTask
     );
 
-    shared->common_executor = OrdinaryBackgroundExecutor::create
+    shared->common_executor = MergeTreeBackgroundExecutor::create
     (
         "Common",
         getSettingsRef().background_common_pool_size,
@@ -2827,22 +2827,22 @@ void Context::initializeBackgroundExecutors()
 }
 
 
-MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
     return shared->merge_mutate_executor;
 }
 
-OrdinaryBackgroundExecutorPtr Context::getMovesExecutor() const
+MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
 {
     return shared->moves_executor;
 }
 
-OrdinaryBackgroundExecutorPtr Context::getFetchesExecutor() const
+MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
     return shared->fetch_executor;
 }
 
-OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
+MergeTreeBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     return shared->common_executor;
 }

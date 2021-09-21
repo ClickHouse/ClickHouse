@@ -8,55 +8,8 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
-
-TaskRuntimeDataPtr MergeMutateRuntimeQueue::pop()
-{
-    auto pick_merge = [this]()
-    {
-        auto result = std::move(merges.front());
-        merges.pop_front();
-        return result;
-    };
-
-    auto pick_mutation = [this]()
-    {
-        auto result = std::move(mutations.front());
-        mutations.pop_front();
-        return result;
-    };
-
-    auto x = static_cast<uint8_t>(!merges.empty());
-    auto y = static_cast<uint8_t>(!mutations.empty());
-    auto state = State(x + y * 2);
-
-    switch (state)
-    {
-        case State::NO_TASKS:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop from queue");
-        case State::ONLY_MERGES:
-            return pick_merge();
-        case State::ONLY_MUTATIONS:
-            return pick_mutation();
-        case State::BOTH:
-        {
-            choise = !choise;
-            if (choise)
-                return pick_merge();
-            else
-                return pick_mutation();
-        }
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pop from queue");
-}
-
-template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::wait()
+void MergeTreeBackgroundExecutor::wait()
 {
     {
         std::lock_guard lock(mutex);
@@ -68,8 +21,7 @@ void MergeTreeBackgroundExecutor<Queue>::wait()
 }
 
 
-template <class Queue>
-bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
+bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
 {
     std::lock_guard lock(mutex);
 
@@ -80,22 +32,23 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
+    pending.push_back(std::make_shared<TaskRuntimeData>(std::move(task), metric));
 
     has_tasks.notify_one();
     return true;
 }
 
 
-template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
+void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
 {
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        pending.remove(id);
+        auto it = std::remove_if(pending.begin(), pending.end(),
+            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+        pending.erase(it, pending.end());
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -111,8 +64,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 }
 
 
-template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
+void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -150,7 +102,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             return;
         }
 
-        pending.push(item);
+        pending.push_back(item);
         erase_from_active();
         has_tasks.notify_one();
         return;
@@ -187,8 +139,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 }
 
 
-template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::threadFunction()
+void MergeTreeBackgroundExecutor::threadFunction()
 {
     setThreadName(name.c_str());
 
@@ -206,7 +157,8 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
                 if (shutdown)
                     break;
 
-                item = pending.pop();
+                item = std::move(pending.front());
+                pending.pop_front();
                 active.push_back(item);
             }
 
@@ -218,10 +170,6 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
         }
     }
 }
-
-
-template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 
 }
