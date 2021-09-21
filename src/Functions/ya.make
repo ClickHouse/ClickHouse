@@ -303,7 +303,9 @@ SRCS(
     h3HexAreaM2.cpp
     h3IndexesAreNeighbors.cpp
     h3IsValid.cpp
+    h3ResIsClassIII.cpp
     h3ToChildren.cpp
+    h3ToGeoBoundary.cpp
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
