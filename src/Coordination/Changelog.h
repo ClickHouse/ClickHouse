@@ -133,7 +133,7 @@ private:
     void rotate(uint64_t new_start_log_index);
 
     /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
-    void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
