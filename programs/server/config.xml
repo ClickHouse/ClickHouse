@@ -1003,6 +1003,9 @@
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
+    <!-- Configuration of user defined executable functions -->
+    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
