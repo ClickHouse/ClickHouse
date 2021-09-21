@@ -8,6 +8,7 @@ import signal
 import re
 import copy
 import traceback
+import math
 
 from argparse import ArgumentParser
 from typing import Tuple, Union, Optional, TextIO, Dict, Set, List
@@ -42,19 +43,10 @@ except ImportError:
 DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout"
 
 MESSAGES_TO_RETRY = [
-    "DB::Exception: ZooKeeper session has been expired",
-    "Coordination::Exception: Session expired",
-    "Coordination::Exception: Connection loss",
-    "Coordination::Exception: Operation timeout",
-    "DB::Exception: Session expired",
-    "DB::Exception: Connection loss",
-    "DB::Exception: Operation timeout",
-    "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    "Shutdown is called for table", # It happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
     DISTRIBUTED_DDL_TIMEOUT_MSG  # FIXME
 ]
 
@@ -224,7 +216,32 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     return proc, stdout, stderr, total_time
 
 
-def need_retry(stdout, stderr):
+def get_zookeeper_session_uptime(args):
+    try:
+        query = b"SELECT zookeeperSessionUptime()"
+
+        if args.replicated_database:
+            query = b"SELECT min(materialize(zookeeperSessionUptime())) " \
+                    b"FROM clusterAllReplicas('test_cluster_database_replicated', system.one) "
+
+        clickhouse_proc = open_client_process(args.client)
+
+        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
+
+        return int(stdout.decode('utf-8').strip())
+    except Exception as ex:
+        print("Exception", ex)
+        return None
+
+
+def need_retry(args, stdout, stderr, total_time):
+    # Sometimes we may get unexpected exception like "Replica is readonly" or "Shutdown is called for table"
+    # instead of "Session expired" or "Connection loss"
+    # Retry if session was expired during test execution
+    session_uptime = get_zookeeper_session_uptime(args)
+    if session_uptime is not None and session_uptime < math.ceil(total_time):
+        return True
+
     return any(msg in stdout for msg in MESSAGES_TO_RETRY) or any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
@@ -547,7 +564,7 @@ def run_tests_array(all_tests_with_params):
                     status += 'Database: ' + testcase_args.testcase_database
                 else:
                     counter = 1
-                    while need_retry(stdout, stderr):
+                    while need_retry(args, stdout, stderr, total_time):
                         restarted_tests.append((case_file, stderr))
                         testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                         proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
@@ -1043,13 +1060,17 @@ def main(args):
     def create_common_database(args, db_name):
         create_database_retries = 0
         while create_database_retries < MAX_RETRIES:
+            start_time = datetime.now()
+
             client_cmd = args.client + " " + get_additional_client_options(args)
 
             clickhouse_proc_create = open_client_process(client_cmd, universal_newlines=True)
 
             (stdout, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
 
-            if not need_retry(stdout, stderr):
+            total_time = (datetime.now() - start_time).total_seconds()
+
+            if not need_retry(args, stdout, stderr, total_time):
                 break
             create_database_retries += 1
 
