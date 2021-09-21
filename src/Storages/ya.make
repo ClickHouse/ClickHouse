@@ -164,6 +164,7 @@ SRCS(
     StorageView.cpp
     StorageXDBC.cpp
     System/StorageSystemAggregateFunctionCombinators.cpp
+    System/StorageSystemAsynchronousInserts.cpp
     System/StorageSystemAsynchronousMetrics.cpp
     System/StorageSystemBuildOptions.cpp
     System/StorageSystemClusters.cpp

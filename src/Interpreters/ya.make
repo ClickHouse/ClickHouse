@@ -28,6 +28,7 @@ SRCS(
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
+    AsynchronousInsertQueue.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
