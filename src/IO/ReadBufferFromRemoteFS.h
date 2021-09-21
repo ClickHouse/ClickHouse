@@ -25,6 +25,8 @@ public:
 
     void reset();
 
+    bool initialized() const { return current_buf != nullptr; }
+
 protected:
     virtual SeekableReadBufferPtr createReadBuffer(const String & path) const = 0;
     RemoteMetadata metadata;

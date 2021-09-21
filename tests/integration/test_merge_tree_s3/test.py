@@ -161,9 +161,6 @@ def drop_table(cluster, node_name):
         for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
             minio.remove_object(cluster.minio_bucket, obj.object_name)
 
-def assert_with_read_method(node, query, read_method, expected):
-    assert node.query("SET remote_filesystem_read_method = '{}';{}".format(read_method, query)) == expected
-
 
 @pytest.mark.parametrize(
     "min_rows_for_wide_part,files_per_part,node_name",
@@ -189,7 +186,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, n
     assert node.query("SELECT * FROM s3_test ORDER BY dt, id FORMAT Values") == values1 + "," + values2
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + files_per_part * 2
 
-    assert node.query("SELECT count(*) FROM s3_test where id = 1 FORMAT Values") ==  "(2)"
+    assert node.query("SELECT count(*) FROM s3_test where id = 1 FORMAT Values") == "(2)"
 
 
 @pytest.mark.parametrize(
