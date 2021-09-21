@@ -327,7 +327,7 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeString(settings.csv.null_representation, ostr);
     else
         nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
