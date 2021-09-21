@@ -302,6 +302,7 @@ SRCS(
     h3GetResolution.cpp
     h3HexAreaM2.cpp
     h3IndexesAreNeighbors.cpp
+    h3IsPentagon.cpp
     h3IsValid.cpp
     h3ResIsClassIII.cpp
     h3ToChildren.cpp
