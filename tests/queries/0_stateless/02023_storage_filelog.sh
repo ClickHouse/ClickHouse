@@ -33,6 +33,9 @@ ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/b.txt
 
+# touch does not change file content, no event
+touch ${user_files_path}/logs/a.txt
+
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
@@ -40,14 +43,23 @@ ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order
 
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/c.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
+# MOVE_FILE_FROM and MOVE_FILE_TO monitored
+mv ${user_files_path}/logs/a.txt ${user_files_path}/logs/e.txt
+rm ${user_files_path}/logs/e.txt
 
-sleep 5
+for i in 1 2 3 4 5
+do
+	sleep 1
+done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
-echo  111, 111 >> ${user_files_path}/logs/a.txt
+echo  111, 111 >> ${user_files_path}/logs/c.txt
 
-sleep 5
+for i in 1 2 3 4 5
+do
+	sleep 1
+done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 

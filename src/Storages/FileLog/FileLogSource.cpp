@@ -121,9 +121,7 @@ Chunk FileLogSource::generate()
         {
             total_rows = total_rows + new_rows;
         }
-
-        /// poll succeed, but parse failed
-        else
+        else /// poll succeed, but parse failed
         {
             ++failed_poll_attempts;
         }

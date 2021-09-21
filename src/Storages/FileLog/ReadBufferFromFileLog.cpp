@@ -40,7 +40,6 @@ void ReadBufferFromFileLog::cleanUnprocessed()
 
 bool ReadBufferFromFileLog::poll()
 {
-
     if (hasMorePolledRecords())
     {
         allowed = true;
@@ -98,7 +97,7 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
     size_t read_records_size = 0;
 
     const auto & file_names = storage.getFileNames();
-    auto & file_status = storage.getFileStatus();
+    auto & file_status = storage.getFileStatuses();
 
     size_t files_per_stream = file_names.size() / max_streams_number;
     size_t start = stream_number * files_per_stream;
@@ -113,19 +112,24 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         auto reader = std::ifstream(file_names[i]);
 
         reader.seekg(0, reader.end);
+        assert(reader.good());
+
         auto stream_end = reader.tellg();
+        assert(reader.good());
 
         reader.seekg(file.last_read_position);
+        assert(reader.good());
 
+        Record record;
         while (read_records_size < need_records_size && reader.tellg() < stream_end)
         {
-            Record record;
             std::getline(reader, record);
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
         file.last_read_position = reader.tellg();
+        assert(reader.good());
 
         if (reader.tellg() == stream_end)
         {
