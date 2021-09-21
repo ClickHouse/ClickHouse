@@ -1,5 +1,4 @@
 #include <Common/formatIPv6.h>
-#include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <common/range.h>

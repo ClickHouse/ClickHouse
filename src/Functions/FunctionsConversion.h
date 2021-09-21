@@ -111,6 +111,12 @@ struct AccurateOrNullConvertStrategyAdditions
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
 
+namespace dt
+{
+template <class T>
+concept is_decimal_like_or_number = is_decimal_like<T> || is_number<T>;
+}
+
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
@@ -130,6 +136,12 @@ struct ConvertImpl
         using ColVecFrom = typename FromDataType::ColumnType;
         using ColVecTo = typename ToDataType::ColumnType;
 
+        constexpr bool from_is_decimal = dt::is_decimal_like<FromDataType>;
+        constexpr bool to_is_decimal = dt::is_decimal_like<ToDataType>;
+
+        constexpr bool from_is_number = dt::is_number<FromDataType>;
+        constexpr bool to_is_number = dt::is_number<ToDataType>;
+
         if (std::is_same_v<Name, NameToUnixTimestamp>)
         {
             if (isDateOrDate32(named_from.type))
@@ -137,10 +149,9 @@ struct ConvertImpl
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
-            && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>))
+        if constexpr (dt::is_decimal<FromDataType> || dt::is_decimal<ToDataType>)
         {
-            if constexpr (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>)
+            if constexpr (!dt::is_decimal_like_or_number<FromDataType> || !dt::is_decimal_like_or_number<ToDataType>)
             {
                 throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -150,7 +161,8 @@ struct ConvertImpl
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
-            if constexpr (IsDataTypeDecimal<ToDataType>)
+
+            if constexpr (to_is_decimal)
             {
                 UInt32 scale;
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
@@ -188,18 +200,18 @@ struct ConvertImpl
                 }
                 else
                 {
-                    if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                    if constexpr (from_is_decimal || to_is_decimal)
                     {
                         if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                         {
                             ToFieldType result;
                             bool convert_result = false;
 
-                            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            if constexpr (from_is_decimal && to_is_decimal)
                                 convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
-                            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                            else if constexpr (from_is_decimal && to_is_number)
                                 convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
-                            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            else if constexpr (from_is_number && to_is_decimal)
                                 convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
 
                             if (convert_result)
@@ -212,11 +224,11 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            if constexpr (from_is_decimal && to_is_decimal)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                            else if constexpr (from_is_decimal && to_is_number)
                                 vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            else if constexpr (from_is_number && to_is_decimal)
                                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                             else
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -1086,7 +1098,7 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (IsDataTypeDecimal<ToDataType>)
+        if constexpr (dt::is_decimal_like<ToDataType>)
         {
             UInt32 scale = additions;
             if constexpr (to_datetime64)
@@ -1176,7 +1188,7 @@ struct ConvertThroughParsing
                         readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    else if constexpr (dt::is_decimal_like<ToDataType>)
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
@@ -1221,7 +1233,7 @@ struct ConvertThroughParsing
                         parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (IsDataTypeDecimal<ToDataType>)
+                    else if constexpr (dt::is_decimal_like<ToDataType>)
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
@@ -1661,12 +1673,11 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        // FIXME change Left <-> Right
-        auto call = [&]<class Left, class Right, class Tag>(TypePair<Right, Left>, Tag)
+        auto call = [&]<class To, class From, class Tag>(TypePair<To, From>, Tag)
         {
-            if constexpr (IsDataTypeDecimal<Right>)
+            if constexpr (dt::is_decimal_like<From>)
             {
-                if constexpr (std::is_same_v<Right, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<From, DataTypeDateTime64>)
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
@@ -1682,36 +1693,38 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<From, To, Name, Tag>::execute(
+                    arguments, result_type, input_rows_count, scale);
             }
-            else if constexpr (IsDataTypeDateOrDateTime<Right> && std::is_same_v<Left, DataTypeDateTime64>)
+            else if constexpr (dt::is_date_or_datetime<From> && std::is_same_v<To, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
 
-                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count, dt64->getScale());
             }
-            else if constexpr (IsDataTypeDecimalOrNumber<Left> && IsDataTypeDecimalOrNumber<Right>)
+            else if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal_like_or_number<To>)
             {
-                template <class DT>
-                constexpr bool bad = is_decimal<DT>
-                    || is_floating_point<DT>
-                    || is_big_int_v<DT>
-                    || is_signed_v<DT>;
+                using FromField = typename From::FieldType;
+                using ToField = typename To::FieldType;
 
-                constexpr bool bad_left = bad<typename Left::FieldType>;
-                constexpr bool bad_right = bad<typename Left::FieldType>;
+                constexpr bool bad_from =
+                    is_decimal<FromField> || is_floating_point<FromField> || is_big_int_v<FromField> || is_signed_v<FromField>;
+                constexpr bool bad_to =
+                    is_decimal<ToField> || is_floating_point<ToField> || is_big_int_v<ToField> || is_signed_v<ToField>;
+
+                constexpr bool bad_left = bad_from && std::is_same_v<To, DataTypeUUID>;
+                constexpr bool bad_right = bad_to && std::is_same_v<From, DataTypeUUID>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
-                if constexpr ((bad_left && std::is_same_v<Right, DataTypeUUID>) ||
-                              (bad_right && std::is_same_v<Left, DataTypeUUID>))
+                if constexpr (bad_left || bad_right)
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                 else
-                    result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                    result_column = ConvertImpl<From, To, Name, Tag>::execute(
                         arguments, result_type, input_rows_count);
             }
             else
-                result_column = ConvertImpl<Left, Right, Name, Tag>::execute(
+                result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count);
 
             return true;
@@ -1735,18 +1748,19 @@ private:
         }
 
         bool done;
+
         if constexpr (to_string_or_fixed_string)
         {
-            done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
         else
         {
             /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
             /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
             if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+                done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
             else
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+                done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
 
         if (!done)
@@ -1779,11 +1793,7 @@ class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr bool to_decimal =
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>;
+    static constexpr bool to_decimal = dt::is_decimal<ToDataType>;
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
@@ -2549,23 +2559,17 @@ private:
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
-                using Types = std::decay_t<decltype(types)>;
-                using LeftDataType = typename Types::LeftType;
-                using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+            bool res = dispatchOverDataType<ToDataType>(from_type_index, [&]<class Left, class Right>(TypePair<Left, Right>)
+            {
+                if constexpr (dt::is_number<Left> && dt::is_number<Right>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<Right, Left, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
-                    }
                     else
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<Right, Left, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
-                    }
 
                     return true;
                 }
@@ -2614,9 +2618,9 @@ private:
         };
     }
 
-    template <typename ToDataType>
-    std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
-    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
+    template <dt::is_decimal_like ToDataType>
+    WrapperType createDecimalWrapper(
+        const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
     {
         TypeIndex type_index = from_type->getTypeId();
         UInt32 scale = to_type->getScale();
@@ -2639,19 +2643,16 @@ private:
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
-            {
-                using Types = std::decay_t<decltype(types)>;
-                using LeftDataType = typename Types::LeftType;
-                using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
+            bool res = dispatchOverDataType<ToDataType>(type_index, [&]<class To, class From>(TypePair<To, From>)
+            {
+                if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal<To>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
@@ -2660,27 +2661,28 @@ private:
                     {
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
                     }
                 }
-                else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
+                else if constexpr (std::is_same_v<From, DataTypeString>)
                 {
                     if (requested_result_is_nullable)
                     {
                         /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertReturnNullOnErrorTag>::execute(
+                        result_column = ConvertImpl<From, To, FunctionName, ConvertReturnNullOnErrorTag>::execute(
                             arguments, result_type, input_rows_count, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<From, To, FunctionName>::execute(
+                    arguments, result_type, input_rows_count, scale);
 
                 return true;
             });
@@ -3266,21 +3268,7 @@ private:
 
         auto make_default_wrapper = [&]<class To>(TypePair<void, To>)
         {
-            if constexpr (
-                std::is_same_v<To, DataTypeUInt8> ||
-                std::is_same_v<To, DataTypeUInt16> ||
-                std::is_same_v<To, DataTypeUInt32> ||
-                std::is_same_v<To, DataTypeUInt64> ||
-                std::is_same_v<To, DataTypeUInt128> ||
-                std::is_same_v<To, DataTypeUInt256> ||
-                std::is_same_v<To, DataTypeInt8> ||
-                std::is_same_v<To, DataTypeInt16> ||
-                std::is_same_v<To, DataTypeInt32> ||
-                std::is_same_v<To, DataTypeInt64> ||
-                std::is_same_v<To, DataTypeInt128> ||
-                std::is_same_v<To, DataTypeInt256> ||
-                std::is_same_v<To, DataTypeFloat32> ||
-                std::is_same_v<To, DataTypeFloat64> ||
+            if constexpr (dt::is_number<To> ||
                 std::is_same_v<To, DataTypeDate> ||
                 std::is_same_v<To, DataTypeDate32> ||
                 std::is_same_v<To, DataTypeDateTime> ||
@@ -3289,14 +3277,12 @@ private:
                 ret = createWrapper(from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);
                 return true;
             }
-            else if constexpr (
-                std::is_same_v<ToDataType, DataTypeEnum8> ||
-                std::is_same_v<ToDataType, DataTypeEnum16>)
+            else if constexpr (std::is_same_v<To, DataTypeEnum8> || std::is_same_v<To, DataTypeEnum16>)
             {
-                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
+                ret = createEnumWrapper(from_type, checkAndGetDataType<To>(to_type.get()));
                 return true;
             }
-            else if constexpr (data_types::is_decimal<To> || std::is_same_v<To, DataTypeDateTime64>)
+            else if constexpr (dt::is_decimal_like<To>)
             {
                 ret = createDecimalWrapper(
                     from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);

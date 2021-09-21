@@ -99,14 +99,14 @@ struct ArrayAggregateImpl
 
                 return true;
             }
-            else if constexpr (IsDataTypeNumber<DataType>)
+            else if constexpr (dt::is_number<DataType>)
             {
                 using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 result = std::make_shared<DataTypeNumber<NumberReturnType>>();
 
                 return true;
             }
-            else if constexpr (IsDataTypeDecimal<DataType> && !IsDataTypeDateOrDateTime<DataType>)
+            else if constexpr (dt::is_decimal_like<DataType> && !dt::is_date_or_datetime<DataType>)
             {
                 using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 UInt32 scale = getDecimalScale(*expression_return);

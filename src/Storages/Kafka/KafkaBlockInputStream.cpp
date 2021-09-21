@@ -127,7 +127,9 @@ Block KafkaBlockInputStream::readImpl()
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
                 case IProcessor::Status::ExpandPipeline:
-                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Source processor returned status {}",
+                        status);
             }
         }
     };

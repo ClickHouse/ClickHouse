@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
 
-#include <Common/hex.h>
+#include <common/hex.h>
 
 
 namespace DB

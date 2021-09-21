@@ -2,25 +2,20 @@
 
 #include <type_traits>
 #include <utility>
+#include <concepts>
+#include "CTArray.h"
 
 //template <auto Val, decltype(Val)... List>
 //constexpr bool static_in_v = std::disjunction_v<std::bool_constant<Val == List>...>;
 
+template <class F, auto Elem, class R>
+concept returns_on_elem = requires (F f)
+{
+    { f(std::integral_constant<decltype(Elem), Elem>()) } -> std::same_as<R>;
+};
+
 namespace detail
 {
-template <auto Container>
-concept has_begin_end = requires(decltype(Container) a) {
-    std::begin(a);
-    std::end(a);
-};
-
-template <class F, auto Elem, class R>
-concept returns_elem = std::is_same_v<
-    R
-    std::invoke_result_t<F,
-        std::integral_constant<decltype(Elem), Elem>>;
-};
-
 template <typename T, T Begin, T... Is>
 constexpr bool static_for(auto && f, std::integer_sequence<T, Is...>)
 {
@@ -30,37 +25,28 @@ constexpr bool static_for(auto && f, std::integer_sequence<T, Is...>)
         || ...);
 }
 
+template <CTArray Container, size_t ...I>
+constexpr bool static_for(auto && f, std::index_sequence<I...>)
+{
+    return (
+        std::forward<decltype(f)>(f)(
+            std::integral_constant<decltype(Container[I]), Container[I]>())
+        || ...);
+}
+}
+
 /**
- * Compile-time iteration over values. Iterates over range [Begin; End), invokes @a f on every item.
+ * Compile-time iteration over values. Iterates over range [@a Begin; @a End).
  * @a f is invoked with <tt>std::integral_constant<decltype(Begin), Item></tt> so inside functor call it can be used in
  * compile-time context (e.g. template parameter).
  *
- * @param f Functor that is invoked on elements within @a Begin and @a End.
- *  It should either return @c void (in which case it is invoked on every element in range) or @c bool
- *  (so when functor returns @c true, iteration will stop).
+ * @param f Functor that is invoked on elements within @a Begin and @a End. Should return @c true if iteration should
+ *   stop or @c false if iteration should continue.
  *
- * @code{.cpp}
- * template <size_t I> void foo();
- *
- * constexpr auto Ints = {1, 2, 3, 4, 5};
- *
- * static_for<Ints.begin(), Ints.end()>([](auto int_constant) {
- *     foo<int_constant>(); /// Will invoke foo<1>() ... foo<5>();
- *     return false;
- * });
- *
- * static_for<Ints.begin(), Ints.end()>([](auto int_constant) {
- *     foo<int_constant>(); /// Will invoke foo<1>() ... foo<4>();
- *
- *     if constexpr (int_constant > 4)
- *         return true;
- *     else
- *         return false;
- * });
- * @endcode
+ * See tests/gtest_static_for.cpp for examples.
  */
 template <auto Begin, decltype(Begin) End>
-constexpr bool static_for(detail::returns_elem<Begin, bool> && f)
+constexpr bool static_for(returns_on_elem<Begin, bool> auto && f)
 {
     using T = decltype(Begin);
 
@@ -70,22 +56,13 @@ constexpr bool static_for(detail::returns_elem<Begin, bool> && f)
 }
 
 /**
- * Same as <tt>static_for<Begin, End>(func)</tt>, but without need of explicit specification of @a [begin;end) range.
- *
- * @code{.cpp}
- * template <size_t I> void foo() { std::cout << I; }
- *
- * constexpr auto Ints = {1, 2, 3, 5};
- *
- * static_for<Ints>([](auto int_constant) { /// Will print 1235
- *     foo<int_constant>();
- *     return false;
- * }
- * @endcode
+ * Same as <tt>static_for<Begin, End>(f)</tt>, but without need of explicit specification of [begin;end) range.
+ * See tests/gtest_static_for.cpp for examples.
  */
-template <auto Container>
-constexpr bool static_for(auto && func) requires detail::has_begin_end<Container>
+template <CTArray Container>
+constexpr bool static_for(returns_on_elem<Container[0], bool> auto && f)
 {
-    return static_for<Container.begin(), Container.end()>(
-        std::forward<decltype(func)>(func));
+    return detail::static_for<Container>(
+        std::forward<decltype(f)>(f),
+        std::make_index_sequence<Container.size>{});
 }

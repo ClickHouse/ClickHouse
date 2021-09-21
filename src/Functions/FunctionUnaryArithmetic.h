@@ -101,10 +101,10 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
-            DataTypeDecimal<Decimal32>,
-            DataTypeDecimal<Decimal64>,
-            DataTypeDecimal<Decimal128>,
-            DataTypeDecimal<Decimal256>,
+            DataTypeDecimal32,
+            DataTypeDecimal64,
+            DataTypeDecimal128,
+            DataTypeDecimal256,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }
@@ -140,7 +140,7 @@ public:
             {
                 using T0 = typename DataType::FieldType;
 
-                if constexpr (IsDataTypeDecimal<DataType> && !is_sign_function)
+                if constexpr (data_types::is_decimal_or_dt64<DataType> && !is_sign_function)
                 {
                     if constexpr (!allow_decimal)
                         return false;
@@ -179,7 +179,7 @@ public:
                     }
                 }
             }
-            else if constexpr (IsDataTypeDecimal<DataType>)
+            else if constexpr (data_types::is_decimal_or_dt64<DataType>)
             {
                 using T0 = typename DataType::FieldType;
                 if constexpr (allow_decimal)
@@ -241,7 +241,7 @@ public:
             if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
                 return false;
             else
-                return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
+                return !data_types::is_decimal_or_dt64<DataType> && Op<typename DataType::FieldType>::compilable;
         });
     }
 
@@ -250,16 +250,17 @@ public:
         assert(1 == types.size() && 1 == values.size());
 
         llvm::Value * result = nullptr;
-        castType(types[0].get(), [&](const auto & type)
+
+        castType(types[0].get(), [&]<class DataType>(const DataType &)
         {
-            using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
                 return false;
             else
             {
                 using T0 = typename DataType::FieldType;
                 using T1 = typename Op<T0>::ResultType;
-                if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
+
+                if constexpr (!std::is_same_v<T1, InvalidType> && !data_types::is_decimal_or_dt64<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<T1>>());
@@ -269,6 +270,7 @@ public:
             }
             return false;
         });
+
         return result;
     }
 #endif

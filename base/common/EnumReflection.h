@@ -6,22 +6,12 @@
 
 template <class T> concept is_enum = std::is_enum_v<T>;
 
-/**
- * Iterate over enum values in compile time. See common/static_for.h
- *
- * @code{.cpp}
- * enum class E { A, B, C };
- * template <E v> void foo();
- *
- * static_for<E>([](auto enum_value) {
- *     foo<enum_value>();
- * });
- * @endcode
- */
-template <is_enum E, class F>
-constexpr bool static_for(F && f)
+/// Iterate over enum values in compile time. See tests/gtest_enum_reflection.cpp for examples
+template <is_enum E>
+constexpr bool static_for(auto && f)
 {
-    return static_for<magic_enum::enum_values<E>()>(std::forward<F>(f));
+    return static_for<magic_enum::enum_values<E>()>(
+        std::forward<decltype(f)>(f));
 }
 
 /// Enable printing enum values as strings via fmt + magic_enum

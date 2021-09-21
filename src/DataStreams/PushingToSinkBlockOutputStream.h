@@ -2,6 +2,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <iostream>
+
 namespace DB
 {
 
@@ -45,10 +46,9 @@ public:
                 case IProcessor::Status::ExpandPipeline: [[fallthrough]];
                 case IProcessor::Status::Finished: [[fallthrough]];
                 case IProcessor::Status::PortFull:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Status {} in not expected in PushingToSinkBlockOutputStream::writePrefix",
-                        IProcessor::statusToName(status));
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected status {}",
+                        status);
             }
         }
     }
@@ -71,10 +71,9 @@ public:
                 case IProcessor::Status::ExpandPipeline: [[fallthrough]];
                 case IProcessor::Status::Finished: [[fallthrough]];
                 case IProcessor::Status::PortFull:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Status {} in not expected in PushingToSinkBlockOutputStream::writePrefix",
-                        IProcessor::statusToName(status));
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected status {}",
+                        status);
             }
         }
     }
@@ -98,10 +97,9 @@ public:
                 case IProcessor::Status::Async:
                 case IProcessor::Status::ExpandPipeline:
                 case IProcessor::Status::PortFull:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Status {} in not expected in PushingToSinkBlockOutputStream::writeSuffix",
-                        IProcessor::statusToName(status));
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected status {}",
+                        status);
             }
         }
     }

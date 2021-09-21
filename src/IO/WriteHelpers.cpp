@@ -1,6 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <inttypes.h>
-#include <Common/hex.h>
+#include <common/hex.h>
 
 
 namespace DB

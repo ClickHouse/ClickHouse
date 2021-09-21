@@ -99,7 +99,7 @@ inline void writeBinByte(UInt8 byte, void * out)
 
 /// Produces hex representation of an unsigned int with leading zeros (for checksums)
 template <typename TUInt>
-inline void writeHexUIntImpl(TUInt uint_, char * out, const char * const table)
+inline void writeHexUIntImpl(TUInt uint_, char * out, std::string_view table)
 {
     union
     {

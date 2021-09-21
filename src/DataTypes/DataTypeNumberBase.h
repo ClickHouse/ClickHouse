@@ -15,7 +15,7 @@ class ColumnVector;
 template <typename T>
 class DataTypeNumberBase : public IDataType
 {
-    static_assert(is_arithmetic_v<T>);
+    static_assert(is_arithmetic_v<T>); // FIXME replace with concept
 
 public:
     static constexpr bool is_parametric = false;

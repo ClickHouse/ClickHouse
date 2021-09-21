@@ -648,14 +648,10 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        DataTypePtr result;
-
-        if constexpr (IsDataTypeDecimal<DataType>)
-            result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
+        if constexpr (data_types::is_decimal_or_dt64<DataType>)
+            return std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
-            result = std::make_shared<DataType>();
-
-        return result;
+            return std::make_shared<DataType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

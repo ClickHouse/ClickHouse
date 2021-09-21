@@ -1,8 +1,7 @@
 #pragma once
 
 #include <array>
-#include <common/constexpr_helpers.h>
-
+#include <common/static_for.h>
 #include <Interpreters/HashJoin.h>
 
 
@@ -72,9 +71,9 @@ inline bool joinDispatchInit(ASTTableJoin::Kind kind, ASTTableJoin::Strictness s
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
             maps = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map();
-            return STATIC_STOP;
+            return true;
         }
-        return STATIC_CONTINUE;
+        return false;
     });
 }
 
@@ -94,9 +93,9 @@ inline bool joinDispatch(ASTTableJoin::Kind kind, ASTTableJoin::Strictness stric
                 std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
                 std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
                 std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps));
-            return STATIC_STOP;
+            return true;
         }
-        return STATIC_CONTINUE;
+        return false;
     });
 }
 

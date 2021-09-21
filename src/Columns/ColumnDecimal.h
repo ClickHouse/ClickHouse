@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <common/sort.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <common/TypeName.h>
 
 #include <cmath>
 

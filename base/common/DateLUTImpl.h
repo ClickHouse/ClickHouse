@@ -60,7 +60,7 @@ private:
     // Normalized and bound-checked index of element in lut,
     // has to be a separate type to support overloading
     // TODO: make sure that any arithmetic on LUTIndex actually results in valid LUTIndex.
-    STRONG_TYPEDEF(UInt32, LUTIndex)
+    using LUTIndex = StrongTypedef<UInt32, struct LUTIndexTag>;
 
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
@@ -343,7 +343,7 @@ public:
             --month_inside_quarter;
         }
 
-        return index + 1;
+        return LUTIndex(index + 1);
     }
 
     template <typename DateOrTime>
@@ -1087,7 +1087,7 @@ public:
         if (time >= values.time_at_offset_change())
             time += values.amount_of_offset_change();
 
-        const LUTIndex new_index = index + delta;
+        const LUTIndex new_index(index + delta);
 
         if (time >= lut[new_index].time_at_offset_change())
             time -= lut[new_index].amount_of_offset_change();

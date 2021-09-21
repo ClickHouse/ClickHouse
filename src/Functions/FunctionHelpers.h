@@ -9,7 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 
 
 namespace DB

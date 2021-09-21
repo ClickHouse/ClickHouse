@@ -8,7 +8,7 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <common/TypeName.h>
 
 
 namespace DB
