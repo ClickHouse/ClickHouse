@@ -305,11 +305,11 @@ CancellationCode QueryStatus::cancelQuery(bool)
     if (is_killed.load())
         return CancellationCode::CancelSent;
 
+    is_killed.store(true);
+
     std::lock_guard lock(executors_mutex);
     for (auto * e : executors)
         e->cancel();
-
-    is_killed.store(true);
 
     return CancellationCode::CancelSent;
 }
