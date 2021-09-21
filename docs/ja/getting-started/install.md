@@ -186,6 +186,6 @@ SELECT 1
 
 **おめでとうございます！システムが動きました！**
 
-動作確認を続けるには、テストデータセットをダウンロードするか、[チュートリアル](https://clickhouse.tech/tutorial.html)を参照してください。
+動作確認を続けるには、テストデータセットをダウンロードするか、[チュートリアル](https://clickhouse.com/tutorial.html)を参照してください。
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->
