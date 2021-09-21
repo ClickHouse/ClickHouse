@@ -64,7 +64,7 @@ public:
             int max_faces = maxFaceCount(hindex);
             std::unique_ptr<int> faces(new int(max_faces));
 
-            // h3GetFaces = 3.x name  and getIcosahedronFaces = 4.0.0 name
+            // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(hindex, faces.get());
 
             int total_faces = 0;
