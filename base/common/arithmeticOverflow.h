@@ -127,6 +127,19 @@ namespace common
         return __builtin_mul_overflow(x, y, &res);
     }
 
+    template <typename T, typename U, typename R>
+    inline bool mulOverflow(T x, U y, R & res)
+    {
+        // not built in type, wide integer
+        if constexpr (is_big_int_v<T>  || is_big_int_v<R> || is_big_int_v<U>)
+        {
+            res = mulIgnoreOverflow<R>(x, y);
+            return false;
+        }
+        else
+            return __builtin_mul_overflow(x, y, &res);
+    }
+
     template <>
     inline bool mulOverflow(int x, int y, int & res)
     {
