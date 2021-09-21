@@ -60,11 +60,19 @@ public:
         for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 hindex = col_hindex->getUInt(row);
-            int out;
+
+            int max_faces = maxFaceCount(hindex);
+            std::unique_ptr<int> faces(new int(max_faces));
 
             // h3GetFaces = 3.x name  and getIcosahedronFaces = 4.0.0 name
-            getIcosahedronFaces(hindex, &out);
-            dst_data[row] = out;
+            getIcosahedronFaces(hindex, faces.get());
+
+            int total_faces = 0;
+            for(int i = 0 ; i < max_faces ; i++) {
+                // valid icosahedron faces are represented by integers 0-19
+                if (faces.get()[i] >= 0 && faces.get()[i] <= 19) total_faces++;
+            }
+            dst_data[row] = total_faces;
         }
 
         return dst;
