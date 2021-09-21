@@ -206,4 +206,4 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 
 [Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->
