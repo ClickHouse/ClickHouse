@@ -602,8 +602,6 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
 
         try
         {
-            //std::cerr << "============ Logging for " << static_cast<const void *>(view.runtime_stats.thread_status.get()) << ' ' << view.table_id.getNameForLogs() << "\n";
-
             if (view.runtime_stats.thread_status)
                 view.runtime_stats.thread_status->logToQueryViewsLog(view);
         }
