@@ -4,6 +4,8 @@
 #include <Poco/Foundation.h>
 #include <Poco/Path.h>
 
+#include <common/logger_useful.h>
+
 #include <memory>
 #include <mutex>
 
@@ -19,12 +21,18 @@ public:
 
     using Events = std::vector<DirEvent>;
 
+    struct Error
+    {
+        bool has_error = false;
+        std::string error_msg = {};
+    };
+
     explicit FileLogDirectoryWatcher(const std::string & path_);
     ~FileLogDirectoryWatcher() = default;
 
-    Events getEvents();
+    Events getEventsAndReset();
 
-    bool hasError() const;
+    Error getErrorAndReset();
 
     const std::string & getPath() const;
 
@@ -40,9 +48,11 @@ private:
     const std::string path;
     std::shared_ptr<Poco::DirectoryWatcher> dw;
 
+    Poco::Logger * log;
+
     std::mutex mutex;
 
     Events events;
 
-    bool error = false;
+    Error error;
 };
