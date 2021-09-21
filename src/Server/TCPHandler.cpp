@@ -308,6 +308,7 @@ void TCPHandler::runImpl()
             else if (state.io.pipeline.completed())
             {
                 CompletedPipelineExecutor executor(state.io.pipeline);
+                executor.setCancelCallback([this]() { return isQueryCancelled(); }, interactive_delay / 1000);
                 executor.execute();
             }
 
