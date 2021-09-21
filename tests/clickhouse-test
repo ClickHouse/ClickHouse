@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # pylint: disable=too-many-return-statements
-
+import enum
 import shutil
 import sys
 import os
@@ -229,49 +229,50 @@ def colored(text, args, color=None, on_color=None, attrs=None):
         return text
 
 
-class TestResult:
-
+class TestStatus(enum.Enum):
     FAIL = "FAIL"
     UNKNOWN = "UNKNOWN"
     OK = "OK"
     SKIPPED = "SKIPPED"
 
-    RESULTS = [FAIL, UNKNOWN, OK, SKIPPED]
 
+class FailureReason(enum.Enum):
     # FAIL reasons
-    REASON_TIMEOUT = "Timeout!"
-    REASON_SERVER_DIED = "server died"
-    REASON_EXIT_CODE = "return code: "
-    REASON_STDERR = "having stderror: "
-    REASON_EXCEPTION = "having having exception in stdout: "
-    REASON_RESULT_DIFF = "result differs with reference: "
-    REASON_TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    TIMEOUT = "Timeout!"
+    SERVER_DIED = "server died"
+    EXIT_CODE = "return code: "
+    STDERR = "having stderror: "
+    EXCEPTION = "having having exception in stdout: "
+    RESULT_DIFF = "result differs with reference: "
+    TOO_LONG = "Test runs too long (> 60s). Make it faster."
 
     # SKIPPED reasons
-    REASON_DISABLED = "disabled"
-    REASON_SKIP = "skip"
-    REASON_NO_JINJA = "no jinja"
-    REASON_NO_ZOOKEEPER = "no zookeeper"
-    REASON_NO_SHARD = "no shard"
-    REASON_FAST_ONLY = "running fast tests only"
-    REASON_NO_LONG = "not running long tests"
-    REASON_REPLICATED_DB = "replicated-database"
-    REASON_BUILD = "not running for current build"
+    DISABLED = "disabled"
+    SKIP = "skip"
+    NO_JINJA = "no jinja"
+    NO_ZOOKEEPER = "no zookeeper"
+    NO_SHARD = "no shard"
+    FAST_ONLY = "running fast tests only"
+    NO_LONG = "not running long tests"
+    REPLICATED_DB = "replicated-database"
+    BUILD = "not running for current build"
 
     # UNKNOWN reasons
-    REASON_NO_REFERENCE = "no reference file"
-    REASON_INTERNAL_ERROR = "Test internal error: "
+    NO_REFERENCE = "no reference file"
+    INTERNAL_ERROR = "Test internal error: "
 
-    def __init__(self, case_name: str, msg: str, reason: Optional[str], total_time: float, status: str):
-        self.case_name = case_name
-        self.msg = msg
-        self.reason = reason
-        self.total_time = total_time
-        self.status = status
-        self.need_retry = False
+
+class TestResult:
+    def __init__(self, case_name: str, status: TestStatus, reason: Optional[FailureReason], total_time: float, description: str):
+        self.case_name: str = case_name
+        self.status: TestStatus = status
+        self.reason: Optional[FailureReason] = reason
+        self.total_time: float = total_time
+        self.description: str = description
+        self.need_retry: bool = False
 
     def check_if_need_retry(self, args, stdout, stderr, runs_count):
-        if self.msg != TestResult.FAIL:
+        if self.status != TestStatus.FAIL:
             return
         if not need_retry(args, stdout, stderr, self.total_time):
             return
@@ -361,46 +362,46 @@ class TestCase:
         self.runs_count = 0
 
     # should skip test, should increment skipped_total, skip reason
-    def should_skip_test(self, suite) -> Optional[str]:
+    def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
 
         if tags and ('disabled' in tags) and not args.disabled:
-            return TestResult.REASON_DISABLED
+            return FailureReason.DISABLED
 
         elif os.path.exists(os.path.join(suite.suite_path, self.name) + '.disabled') and not args.disabled:
-            return TestResult.REASON_DISABLED
+            return FailureReason.DISABLED
 
         elif args.skip and any(s in self.name for s in args.skip):
-            return TestResult.REASON_SKIP
+            return FailureReason.SKIP
 
         elif not USE_JINJA and self.ext.endswith("j2"):
-            return TestResult.REASON_NO_JINJA
+            return FailureReason.NO_JINJA
 
         elif tags and (('zookeeper' in tags) or ('replica' in tags)) and not args.zookeeper:
-            return TestResult.REASON_NO_ZOOKEEPER
+            return FailureReason.NO_ZOOKEEPER
 
         elif tags and (('shard' in tags) or ('distributed' in tags) or ('global' in tags)) and not args.shard:
-            return TestResult.REASON_NO_SHARD
+            return FailureReason.NO_SHARD
 
         elif tags and ('no-fasttest' in tags) and args.fast_tests_only:
-            return TestResult.REASON_FAST_ONLY
+            return FailureReason.FAST_ONLY
 
         elif tags and (('long' in tags) or ('deadlock' in tags) or ('race' in tags)) and args.no_long:
             # Tests for races and deadlocks usually are run in a loop for a significant amount of time
-            return TestResult.REASON_NO_LONG
+            return FailureReason.NO_LONG
 
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
-            return TestResult.REASON_REPLICATED_DB
+            return FailureReason.REPLICATED_DB
 
         elif tags:
             for build_flag in args.build_flags:
                 if 'no-' + build_flag in tags:
-                    return TestResult.REASON_BUILD
+                    return FailureReason.BUILD
 
         return None
 
     def process_result_impl(self, proc, stdout: str, stderr: str, total_time: float):
-        status = ""
+        description = ""
 
         if proc.returncode is None:
             try:
@@ -410,70 +411,70 @@ class TestCase:
                     raise
 
             if stderr:
-                status += stderr
-            return TestResult(self.name, TestResult.FAIL, TestResult.REASON_TIMEOUT, total_time, status)
+                description += stderr
+            return TestResult(self.name, TestStatus.FAIL, FailureReason.TIMEOUT, total_time, description)
 
         if proc.returncode != 0:
-            reason = TestResult.REASON_EXIT_CODE
-            status += str(proc.returncode)
+            reason = FailureReason.EXIT_CODE
+            description += str(proc.returncode)
 
             if stderr:
-                status += "\n"
-                status += stderr
+                description += "\n"
+                description += stderr
 
             # Stop on fatal errors like segmentation fault. They are sent to client via logs.
             if ' <Fatal> ' in stderr:
-                reason = TestResult.REASON_SERVER_DIED
+                reason = FailureReason.SERVER_DIED
 
             if self.testcase_args.stop \
                     and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) \
                     and 'Received exception from server' not in stderr:
-                reason = TestResult.REASON_SERVER_DIED
+                reason = FailureReason.SERVER_DIED
 
             if os.path.isfile(self.stdout_file):
-                status += ", result:\n\n"
-                status += '\n'.join(open(self.stdout_file).read().split('\n')[:100])
-                status += '\n'
+                description += ", result:\n\n"
+                description += '\n'.join(open(self.stdout_file).read().split('\n')[:100])
+                description += '\n'
 
-            status += "\nstdout:\n{}\n".format(stdout)
-            return TestResult(self.name, TestResult.FAIL, reason, total_time, status)
+            description += "\nstdout:\n{}\n".format(stdout)
+            return TestResult(self.name, TestStatus.FAIL, reason, total_time, description)
 
         if stderr:
-            status += "\n{}\n".format('\n'.join(stderr.split('\n')[:100]))
-            status += "\nstdout:\n{}\n".format(stdout)
-            return TestResult(self.name, TestResult.FAIL, TestResult.REASON_STDERR, total_time, status)
+            description += "\n{}\n".format('\n'.join(stderr.split('\n')[:100]))
+            description += "\nstdout:\n{}\n".format(stdout)
+            return TestResult(self.name, TestStatus.FAIL, FailureReason.STDERR, total_time, description)
 
         if 'Exception' in stdout:
-            status += "\n{}\n".format('\n'.join(stdout.split('\n')[:100]))
-            return TestResult(self.name, TestResult.FAIL, TestResult.REASON_EXCEPTION, total_time, status)
+            description += "\n{}\n".format('\n'.join(stdout.split('\n')[:100]))
+            return TestResult(self.name, TestStatus.FAIL, FailureReason.EXCEPTION, total_time, description)
 
         if '@@SKIP@@' in stdout:
             skip_reason = stdout.replace('@@SKIP@@', '').rstrip("\n")
-            status += " - "
-            status += skip_reason
-            return TestResult(self.name, TestResult.SKIPPED, TestResult.REASON_SKIP, total_time, status)
+            description += " - "
+            description += skip_reason
+            return TestResult(self.name, TestStatus.SKIPPED, FailureReason.SKIP, total_time, description)
 
         if self.reference_file is None:
-            return TestResult(self.name, TestResult.UNKNOWN, TestResult.REASON_NO_REFERENCE, total_time, status)
+            return TestResult(self.name, TestStatus.UNKNOWN, FailureReason.NO_REFERENCE, total_time, description)
 
         result_is_different = subprocess.call(['diff', '-q', self.reference_file, self.stdout_file], stdout=PIPE)
 
         if result_is_different:
             diff = Popen(['diff', '-U', str(self.testcase_args.unified), self.reference_file, self.stdout_file], stdout=PIPE,
                          universal_newlines=True).communicate()[0]
-            status += "\n{}\n".format(diff)
-            return TestResult(self.name, TestResult.FAIL, TestResult.REASON_RESULT_DIFF, total_time, status)
+            description += "\n{}\n".format(diff)
+            return TestResult(self.name, TestStatus.FAIL, FailureReason.RESULT_DIFF, total_time, description)
 
         if self.testcase_args.test_runs > 1 and total_time > 60 and 'long' not in self.name:
             # We're in Flaky Check mode, check the run time as well while we're at it.
-            return TestResult(self.name, TestResult.FAIL, TestResult.REASON_TOO_LONG, total_time, status)
+            return TestResult(self.name, TestStatus.FAIL, FailureReason.TOO_LONG, total_time, description)
 
         if os.path.exists(self.stdout_file):
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
 
-        return TestResult(self.name, TestResult.OK, None, total_time, status)
+        return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
     @staticmethod
     def print_test_time(test_time) -> str:
@@ -483,19 +484,19 @@ class TestCase:
             return ''
 
     def process_result(self, result: TestResult, messages):
-        status_full = messages[result.msg]
-        status_full += self.print_test_time(result.total_time)
+        description_full = messages[result.status]
+        description_full += self.print_test_time(result.total_time)
         if result.reason is not None:
-            status_full += " - "
-            status_full += result.reason
+            description_full += " - "
+            description_full += result.reason.value
 
-        status_full += result.status
-        status_full += "\n"
+        description_full += result.description
+        description_full += "\n"
 
-        if result.msg == TestResult.FAIL:
-            status_full += 'Database: ' + self.testcase_args.testcase_database
+        if result.status == TestStatus.FAIL:
+            description_full += 'Database: ' + self.testcase_args.testcase_database
 
-        result.status = status_full
+        result.description = description_full
         return result
 
     @staticmethod
@@ -606,11 +607,11 @@ class TestCase:
         try:
             skip_reason = self.should_skip_test(suite)
             if skip_reason is not None:
-                return TestResult(self.name, TestResult.SKIPPED, skip_reason, 0., "")
+                return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0., "")
 
             if args.testname and self.send_test_name_failed(suite, self.case):
-                status = "\nServer does not respond to health check\n"
-                return TestResult(self.name, TestResult.FAIL, TestResult.REASON_SERVER_DIED, 0., status)
+                description = "\nServer does not respond to health check\n"
+                return TestResult(self.name, TestStatus.FAIL, FailureReason.SERVER_DIED, 0., description)
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path, self.stderr_file)
@@ -625,8 +626,8 @@ class TestCase:
             exc_type, exc_value, tb = sys.exc_info()
             exc_name = exc_type.__name__
             traceback_str = "\n".join(traceback.format_tb(tb, 10))
-            status = f"{exc_name}\n{exc_value}\n{traceback_str}"
-            return TestResult(self.name, TestResult.UNKNOWN, TestResult.REASON_INTERNAL_ERROR, 0., status)
+            description = f"{exc_name}\n{exc_value}\n{traceback_str}"
+            return TestResult(self.name, TestStatus.UNKNOWN, FailureReason.INTERNAL_ERROR, 0., description)
 
 
 class TestSuite:
@@ -717,7 +718,6 @@ class TestSuite:
         if elapsed > 1:
             print(f"Tags for suite {suite_dir} read in {elapsed:.2f} seconds")
         return all_tags
-
 
     def __init__(self, args, suite_path: str, suite_tmp_path: str, suite: str):
         self.args = args
@@ -841,7 +841,7 @@ def run_tests_array(all_tests_with_params):
     MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", args, "green", attrs=['bold']) + CL_SQUARE_BRACKET
     MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", args, "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
-    MESSAGES = {TestResult.FAIL: MSG_FAIL, TestResult.UNKNOWN: MSG_UNKNOWN, TestResult.OK: MSG_OK, TestResult.SKIPPED: MSG_SKIPPED}
+    MESSAGES = {TestStatus.FAIL: MSG_FAIL, TestStatus.UNKNOWN: MSG_UNKNOWN, TestStatus.OK: MSG_OK, TestStatus.SKIPPED: MSG_SKIPPED}
 
     passed_total = 0
     skipped_total = 0
@@ -881,7 +881,7 @@ def run_tests_array(all_tests_with_params):
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
         try:
-            status = ''
+            description = ''
             if not is_concurrent:
                 sys.stdout.flush()
                 sys.stdout.write("{0:72}".format(removesuffix(test_case.name, ".gen", ".sql") + ": "))
@@ -890,7 +890,7 @@ def run_tests_array(all_tests_with_params):
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                status = "{0:72}".format(removesuffix(test_case.name, ".gen", ".sql") + ": ")
+                description = "{0:72}".format(removesuffix(test_case.name, ".gen", ".sql") + ": ")
 
             while True:
                 test_result = test_case.run(args, test_suite, client_options, server_logs_level)
@@ -899,25 +899,25 @@ def run_tests_array(all_tests_with_params):
                     break
                 restarted_tests.append(test_result)
 
-            if test_result.msg == TestResult.OK:
+            if test_result.status == TestStatus.OK:
                 passed_total += 1
                 failures_chain = 0
-            elif test_result.msg == TestResult.FAIL:
+            elif test_result.status == TestStatus.FAIL:
                 failures_total += 1
                 failures_chain += 1
-                if test_result.reason == TestResult.REASON_SERVER_DIED:
+                if test_result.reason == FailureReason.SERVER_DIED:
                     server_died.set()
                     stop_tests()
 
-            elif test_result.msg == TestResult.SKIPPED:
+            elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
-            status += test_result.status
+            description += test_result.description
 
-            if status and not status.endswith('\n'):
-                status += '\n'
+            if description and not description.endswith('\n'):
+                description += '\n'
 
-            sys.stdout.write(status)
+            sys.stdout.write(description)
             sys.stdout.flush()
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
@@ -1264,9 +1264,9 @@ def main(args):
         for test_result in restarted_tests:
             print("\n{0:72}: ".format(test_result.case_name))
             # replace it with lowercase to avoid parsing retried tests as failed
-            for result in TestResult.RESULTS:
-                test_result.status = test_result.status.replace(result, result.lower())
-            print(test_result.status)
+            for status in TestStatus:
+                test_result.status = test_result.status.replace(status, status.lower())
+            print(test_result.description)
 
     if total_tests_run == 0:
         print("No tests were run.")
