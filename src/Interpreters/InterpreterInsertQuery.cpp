@@ -163,16 +163,19 @@ Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data)
+    ThreadStatus * thread_status,
+    std::atomic_uint64_t * elapsed_counter_ms)
 {
-    return buildChainImpl(table, metadata_snapshot, getSampleBlock(columns, table, metadata_snapshot), std::move(runtime_data));
+    auto sample = getSampleBlock(columns, table, metadata_snapshot);
+    return buildChainImpl(table, metadata_snapshot, std::move(sample) , thread_status, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Block & query_sample_block,
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data)
+    ThreadStatus * thread_status,
+    std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto context_ptr = getContext();
     const ASTInsertQuery * query = nullptr;
@@ -190,12 +193,12 @@ Chain InterpreterInsertQuery::buildChainImpl(
     if (table->noPushingToViews() && !no_destination)
     {
         auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
-        sink->setRuntimeData(runtime_data);
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
     else
     {
-        out = buildPushingToViewsDrain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, runtime_data);
+        out = buildPushingToViewsDrain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status, elapsed_counter_ms);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -233,7 +236,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
-    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), runtime_data ? runtime_data->thread_status : nullptr);
+    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status);
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
@@ -362,7 +365,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         for (size_t i = 0; i < out_streams_size; i++)
         {
-            auto out = buildChainImpl(table, metadata_snapshot, query_sample_block);
+            auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
             out_chains.emplace_back(std::move(out));
         }
     }
