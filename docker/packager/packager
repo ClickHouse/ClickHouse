@@ -205,7 +205,8 @@ if __name__ == "__main__":
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
                                                "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
-                                               "clang-11-freebsd", "clang-12-freebsd", "gcc-11"), default="clang-12")
+                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64",
+                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

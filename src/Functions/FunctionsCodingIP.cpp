@@ -1,3 +1,7 @@
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>

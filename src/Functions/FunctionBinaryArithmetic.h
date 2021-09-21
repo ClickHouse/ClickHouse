@@ -15,11 +15,13 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include "Core/DecimalFunctions.h"
@@ -191,6 +193,7 @@ template <typename A, typename B, typename Op, typename ResultType = typename Op
 struct BinaryOperation
 {
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
@@ -205,6 +208,71 @@ struct BinaryOperation
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+};
+
+template <typename B, typename Op>
+struct StringIntegerOperationImpl
+{
+    static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = true;
+
+    template <OpCase op_case>
+    static void NO_INLINE processFixedString(const UInt8 * __restrict in_vec, const UInt64 n, const B * __restrict b, ColumnFixedString::Chars & out_vec, size_t size)
+    {
+        size_t prev_offset = 0;
+        out_vec.reserve(n * size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (op_case == OpCase::LeftConstant)
+            {
+                Op::apply(&in_vec[0], &in_vec[n], b[i], out_vec);
+            }
+            else
+            {
+                size_t new_offset = prev_offset + n;
+
+                if constexpr (op_case == OpCase::Vector)
+                {
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec);
+                }
+                else
+                {
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec);
+                }
+                prev_offset = new_offset;
+            }
+        }
+    }
+
+
+    template <OpCase op_case>
+    static void NO_INLINE processString(const UInt8 * __restrict in_vec, const UInt64 * __restrict in_offsets, const B * __restrict b, ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets, size_t size)
+    {
+        size_t prev_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (op_case == OpCase::LeftConstant)
+            {
+                Op::apply(&in_vec[0], &in_vec[in_offsets[0] - 1], b[i], out_vec, out_offsets);
+            }
+            else
+            {
+                size_t new_offset = in_offsets[i];
+
+                if constexpr (op_case == OpCase::Vector)
+                {
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[i], out_vec, out_offsets);
+                }
+                else
+                {
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[0], out_vec, out_offsets);
+                }
+
+                prev_offset = new_offset;
+            }
+        }
+    }
 };
 
 template <typename Op>
@@ -513,7 +581,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
-            DataTypeFixedString>;
+            DataTypeFixedString, DataTypeString>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
 
@@ -950,18 +1018,28 @@ public:
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(),
             [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-            if constexpr (std::is_same_v<DataTypeFixedString, Left> || std::is_same_v<DataTypeFixedString, Right>)
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
-                    return false;
-                else if constexpr (std::is_same_v<Left, Right>)
+                if constexpr (dt::is_string<Left> && dt::is_string<Right>)
                 {
-                    if (left.getN() == right.getN())
+                    if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
+                        return false;
+                    else if (left.getN() == right.getN())
                     {
                         type_res = std::make_shared<Left>(left.getN());
                         return true;
                     }
                 }
+
+                if constexpr (!Op<Left, Right>::allow_string_integer)
+                    return false;
+                else if constexpr (!IsIntegral<Right>)
+                    return false;
+                else if constexpr (std::is_same_v<DataTypeFixedString, Left>)
+                    type_res = std::make_shared<Right>(left.getN());
+                else
+                    type_res = std::make_shared<DataTypeString>();
+                return true;
             }
             else
             {
@@ -1098,6 +1176,103 @@ public:
         return nullptr;
     }
 
+    template <typename LeftColumnType, class Left, class Right>
+    ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const Left &, const Right &) const
+    {
+        const auto * const col_left_raw = arguments[0].column.get();
+        const auto * const col_right_raw = arguments[1].column.get();
+
+        using RightField = FieldType<Right>;
+        using ColVecRight = ColumnVector<RightField>;
+
+        const ColVecRight * const col_right = checkAndGetColumn<ColVecRight>(col_right_raw);
+        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecRight>(col_right_raw);
+
+        using OpImpl = StringIntegerOperationImpl<RightField, Op<Left, RightField>>;
+
+        const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
+
+        const auto * col_left = col_left_const ? checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
+                                               : checkAndGetColumn<LeftColumnType>(col_left_raw);
+
+        if (!col_left)
+            return nullptr;
+
+        const typename LeftColumnType::Chars & in_vec = col_left->getChars();
+
+        typename LeftColumnType::MutablePtr col_res;
+        if constexpr (dt::is_fixed_string<Left>)
+            col_res = LeftColumnType::create(col_left->getN());
+        else
+            col_res = LeftColumnType::create();
+
+        typename LeftColumnType::Chars & out_vec = col_res->getChars();
+
+        if (col_left_const && col_right_const)
+        {
+            const RightField value = col_right_const->template getValue<RightField>();
+            if constexpr (dt::is_fixed_string<Left>)
+            {
+                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), &value, out_vec, 1);
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
+            }
+
+            return ColumnConst::create(std::move(col_res), col_left->size());
+        }
+        else if (!col_left_const && !col_right_const && col_right)
+        {
+            if constexpr (dt::is_fixed_string<Left>)
+            {
+                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_left->size());
+                OpImpl::template processString<OpCase::Vector>(
+                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_left->size());
+            }
+        }
+        else if (col_left_const && col_right)
+        {
+            if constexpr (dt::is_fixed_string<Left>)
+            {
+                OpImpl::template processFixedString<OpCase::LeftConstant>(
+                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_right->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_right->size());
+                OpImpl::template processString<OpCase::LeftConstant>(
+                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_right->size());
+            }
+        }
+        else if (col_right_const)
+        {
+            const T1 value = col_right_const->template getValue<T1>();
+            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            {
+                OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_left->size());
+                OpImpl::template processString<OpCase::RightConstant>(
+                    in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, col_left->size());
+            }
+        }
+        else
+            return nullptr;
+
+        return col_res;
+    }
+
     template <class Left, class Right>
     ColumnPtr executeNumeric(const ColumnsWithTypeAndName &, const Left &, const Right &) const
         requires std::is_same_v<InvalidType, typename BinaryOperationTraits<Op, Left, Right>::ResultDataType>
@@ -1222,12 +1397,24 @@ public:
         const bool valid = castBothTypes(left_generic, right_generic,
             [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-           if constexpr (std::is_same_v<DataTypeFixedString, Left> || std::is_same_v<DataTypeFixedString, Right>)
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
+                if constexpr(dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
+                {
+                    if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
+                        return false;
+                    else
+                        return (res = executeFixedString(arguments)) != nullptr;
+                }
+
+                if constexpr (!Op<Left, Right>::allow_string_integer)
                     return false;
-                else
-                    return (res = executeFixedString(arguments)) != nullptr;
+                else if constexpr (!IsIntegral<Right>)
+                    return false;
+                else if constexpr (dt::is_fixed_string<Left>)
+                    return (res = executeStringInteger<ColumnFixedString>(arguments, left, right)) != nullptr;
+                else if constexpr (dt::is_string<Left>)
+                    return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
             }
             else
                 return (res = executeNumeric(arguments, left, right)) != nullptr;
@@ -1255,7 +1442,7 @@ public:
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&]<class Left, class Right>(const Left&, const Right&)
         {
-            if constexpr (std::is_same_v<Left, DataTypeFixedString> || std::is_same_v<Right, DataTypeFixedString>)
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
                 return false;
             else
             {
@@ -1277,7 +1464,7 @@ public:
 
         castBothTypes(types[0].get(), types[1].get(), [&]<class Left, class Right>(const Left&, const Right&)
         {
-            if constexpr (!std::is_same_v<Left, DataTypeFixedString> && !std::is_same_v<Right, DataTypeFixedString>)
+            if constexpr (!dt::is_string_or_fixed_string<Left> && !dt::is_string_or_fixed_string<Right>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
                 using OpSpec = Op<typename Left::FieldType, typename Right::FieldType>;

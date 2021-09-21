@@ -66,4 +66,8 @@ public:
     void alignStringLength(PaddedPODArray<UInt8> & chars, size_t old_size) const;
 };
 
+namespace dt
+{
+template <class T> concept is_fixed_string = std::is_same_v<T, DataTypeFixedString>;
+}
 }
