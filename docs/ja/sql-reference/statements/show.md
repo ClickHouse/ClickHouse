@@ -166,4 +166,4 @@ Aで使用されたパラメータを示します [設定プロファイルの�
 SHOW CREATE [SETTINGS] PROFILE name
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/show/) <!--hide-->
