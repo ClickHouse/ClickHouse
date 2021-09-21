@@ -507,8 +507,8 @@ class IColumn;
     M(Bool, remote_filesystem_read_prefetch, true, "Should use prefetching when reading data from remote filesystem.", 0) \
     M(Int64, read_priority, 0, "Priority to read data from local filesystem. Only supported for 'pread_threadpool' method.", 0) \
     \
-    M(Int64, remote_disk_read_backoff_threashold, 10000, "Max wait time when trying to read data for remote disk", 0) \
-    M(Int64, remote_disk_read_backoff_max_tries, 5, "Max attempts to read with backoff", 0) \
+    M(Int64, remote_fs_read_backoff_threshold, 10000, "Max wait time when trying to read data for remote disk", 0) \
+    M(Int64, remote_fs_read_backoff_max_tries, 5, "Max attempts to read with backoff", 0) \
     \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
