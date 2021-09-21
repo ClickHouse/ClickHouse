@@ -43,7 +43,7 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::Xz:
             return "xz";
         case CompressionMethod::Zstd:
-            return "zstd";
+            return "zst";
         case CompressionMethod::Lz4:
             return "lz4";
         case CompressionMethod::Bzip2:
