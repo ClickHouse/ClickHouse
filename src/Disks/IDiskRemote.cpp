@@ -12,6 +12,7 @@
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
+#include <IO/ThreadPoolRemoteFSReader.h>
 
 
 namespace DB
@@ -494,6 +495,13 @@ String IDiskRemote::getUniqueId(const String & path) const
     if (!metadata.remote_fs_objects.empty())
         id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
     return id;
+}
+
+
+AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
+{
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+    return reader;
 }
 
 }
