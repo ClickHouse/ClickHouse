@@ -189,7 +189,6 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 const auto & filter = filters[query_index_hash.first];
                 const ColumnPtr & hash_column = query_index_hash.second;
 
-
                 match_rows = maybeTrueOnBloomFilter(&*hash_column,
                                                     filter,
                                                     hash_functions,
@@ -513,7 +512,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (function->name == "arrayElement")
         {
-            auto & col_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
+            const auto & col_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
 
             if (header.has(col_name))
             {
@@ -523,12 +522,20 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 if (map_type)
                 {
                     out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                    /// TODO :: Here, we assume the second argument of arrayElement is const string, need to support column and other data types.
-                    auto & element_key = assert_cast<ASTIdentifier *>(function->arguments.get()->children[1].get())->name();
-                    Field element_key_field = element_key;
 
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key_field)));
+                    auto & argument = function->arguments.get()->children[1];
+
+                    if (const auto * literal = argument->as<ASTLiteral>())
+                    {
+                        auto element_key = literal->value;
+                        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+                        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
+                    }
+                    else
+                    {
+                        return false;
+                    }
+
                     return true;
                 }
             }
