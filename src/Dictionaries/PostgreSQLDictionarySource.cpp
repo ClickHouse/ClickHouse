@@ -1,6 +1,7 @@
 #include "PostgreSQLDictionarySource.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/QualifiedTableName.h>
 #include "DictionarySourceFactory.h"
 #include "registerDictionaries.h"
 
@@ -29,19 +30,13 @@ namespace
 {
     ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, const String & schema, const String & table, const String & query, const String & where)
     {
-        auto schema_value = schema;
-        auto table_value = table;
+        QualifiedTableName qualified_name{schema, table};
 
-        if (schema_value.empty())
-        {
-            if (auto pos = table_value.find('.'); pos != std::string::npos)
-            {
-                schema_value = table_value.substr(0, pos);
-                table_value = table_value.substr(pos + 1);
-            }
-        }
+        if (qualified_name.database.empty() && !qualified_name.table.empty())
+            qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", schema_value, table_value, query, where, IdentifierQuotingStyle::DoubleQuotes};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 

@@ -105,4 +105,4 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[源文章](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[源文章](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

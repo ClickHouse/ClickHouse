@@ -13,7 +13,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -295,7 +295,7 @@ try
         fs::create_directories(fs::path(path) / "user_defined/");
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
@@ -306,6 +306,7 @@ try
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         loadMetadata(global_context);
+        startupSystemTables();
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
