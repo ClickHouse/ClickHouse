@@ -160,7 +160,6 @@ public:
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
     {
-        uint64_t previous_index = 0;
         ChangelogReadResult result{};
         try
         {
@@ -192,8 +191,6 @@ public:
                 }
                 else
                     record.blob = nullptr;
-
-                previous_index = record.header.index;
 
                 /// Compare checksums
                 Checksum checksum = computeRecordChecksum(record);
