@@ -147,7 +147,7 @@ private:
 
     bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool getKey(const ASTPtr & node, size_t & key_column_num);
+    bool getKey(const std::string & key_column_name, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
