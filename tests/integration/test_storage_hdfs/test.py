@@ -224,6 +224,31 @@ def test_write_gzip_storage(started_cluster):
     assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"
 
 
+def test_read_write_parquet_table(started_cluster):
+    node1.query(
+        "create table ParquetHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/parquet_storage', 'Parquet')")
+    node1.query("insert into ParquetHDFSStorage values (1, 'Mark', 72.53)")
+    assert node1.query("select * from ParquetHDFSStorage") == "1\tMark\t72.53\n"
+
+def test_read_write_arrow_table(started_cluster):
+    node1.query(
+        "create table ArrowHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/arrow_storage', 'Arrow')")
+    node1.query("insert into ArrowHDFSStorage values (1, 'Mark', 72.53)")
+    assert node1.query("select * from ArrowHDFSStorage") == "1\tMark\t72.53\n"
+
+def test_read_write_arrow_stream_table(started_cluster):
+    node1.query(
+        "create table ArrowStreamHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/arrow_stream_storage', 'ArrowStream')")
+    node1.query("insert into ArrowStreamHDFSStorage values (1, 'Mark', 72.53)")
+    assert node1.query("select * from ArrowStreamHDFSStorage") == "1\tMark\t72.53\n"
+
+def test_read_write_orc_table(started_cluster):
+    node1.query(
+        "create table OrcHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/orc_storage', 'ORC')")
+    node1.query("insert into OrcHDFSStorage values (1, 'Mark', 72.53)")
+    assert node1.query("select * from OrcHDFSStorage") == "1\tMark\t72.53\n"
+
+
 def test_virtual_columns(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
