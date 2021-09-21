@@ -436,7 +436,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
                 if (new_relation_definition)
                 {
-                    current_schema_data.column_identifiers.emplace_back(std::make_tuple(data_type_id, type_modifier));
+                    current_schema_data.column_identifiers.emplace_back(std::make_pair(data_type_id, type_modifier));
                 }
                 else
                 {
