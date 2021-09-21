@@ -20,7 +20,7 @@ public:
 
     std::future<Result> submit(Request request) override;
 
-    struct RemoteFSFileDescriptor : IFileDescriptor
+    struct RemoteFSFileDescriptor : public IFileDescriptor
     {
         ReadBufferPtr impl;
     };

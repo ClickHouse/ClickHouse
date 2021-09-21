@@ -20,6 +20,8 @@ public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
         : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
+    void prefetch() override { impl->prefetch(); }
+
 private:
     ReadLock lock;
 };

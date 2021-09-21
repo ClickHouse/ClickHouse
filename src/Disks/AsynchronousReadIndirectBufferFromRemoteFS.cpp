@@ -38,8 +38,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 
     auto remote_fd = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>();
     remote_fd->impl = impl;
-    impl->position() = position();
-    assert(!impl->hasPendingData());
 
     request.descriptor = std::move(remote_fd);
     request.priority = priority;
@@ -52,6 +50,12 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 {
     if (prefetch_future.valid())
         return;
+
+    if (impl->initialized())
+    {
+        impl->position() = impl->buffer().end(); /// May be should try to do this differently.
+        assert(!impl->hasPendingData());
+    }
     prefetch_future = readNext();
 }
 
@@ -62,7 +66,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     if (prefetch_future.valid())
     {
-        std::cerr << "Having prefetched data\n";
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
         size = prefetch_future.get();
@@ -71,7 +74,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
-        std::cerr << "No prefetched data\n";
+        if (impl->initialized())
+        {
+            impl->position() = position();
+            assert(!impl->hasPendingData());
+        }
         size = readNext().get();
     }
 
