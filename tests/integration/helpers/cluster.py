@@ -2221,7 +2221,7 @@ class ClickHouseInstance:
 
     @staticmethod
     def dict_to_xml(dictionary):
-        xml_str = dict2xml(dictionary, wrap="yandex", indent="  ", newlines=True)
+        xml_str = dict2xml(dictionary, wrap="clickhouse", indent="  ", newlines=True)
         return xml_str
 
     @property
