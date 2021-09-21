@@ -44,4 +44,4 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 服务器跟踪配置文件中的更改，以及执行替换和复盖时使用的文件和ZooKeeper节点，并动态重新加载用户和集群的设置。 这意味着您可以在不重新启动服务器的情况下修改群集、用户及其设置。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/configuration_files/) <!--hide-->

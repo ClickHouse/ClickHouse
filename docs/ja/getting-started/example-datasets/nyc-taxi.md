@@ -388,4 +388,4 @@ Q4:0.072秒
 | 3      | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140    | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
