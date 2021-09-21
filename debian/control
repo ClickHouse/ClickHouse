@@ -1,7 +1,7 @@
 Source: clickhouse
 Section: database
 Priority: optional
-Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
+Maintainer: Alexey Milovidov <milovidov@clickhouse.com>
 Build-Depends: debhelper (>= 9),
                cmake | cmake3,
                ninja-build,
