@@ -440,6 +440,18 @@ bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
     return target.is_column_oriented;
 }
 
+bool FormatFactory::isInputFormat(const String & name) const
+{
+    auto it = dict.find(name);
+    return it != dict.end() && (it->second.input_creator || it->second.input_processor_creator);
+}
+
+bool FormatFactory::isOutputFormat(const String & name) const
+{
+    auto it = dict.find(name);
+    return it != dict.end() && (it->second.output_creator || it->second.output_processor_creator);
+}
+
 FormatFactory & FormatFactory::instance()
 {
     static FormatFactory ret;
