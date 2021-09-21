@@ -1,7 +1,7 @@
 (function () {
     Sentry.init({
         dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103',
-        environment: window.location.hostname === 'clickhouse.tech' ? 'prod' : 'test'
+        environment: window.location.hostname === 'clickhouse.com' ? 'prod' : 'test'
     });
     $(document).click(function (event) {
         var target = $(event.target);
@@ -95,7 +95,7 @@
         s.type = "text/javascript";
         s.async = true;
         s.src = "/js/metrika.js";
-        if (window.location.hostname.endsWith('clickhouse.tech')) {
+        if (window.location.hostname.endsWith('clickhouse.com')) {
             if (w.opera == "[object Opera]") {
                 d.addEventListener("DOMContentLoaded", f, false);
             } else {
