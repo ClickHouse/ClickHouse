@@ -114,7 +114,7 @@ Example of disk configuration:
 </yandex>
 ```
 
-## Using IDisk interface to store data on web server of static files {#configuring-idisk}
+## Configuring WebServer {#configuring-webserver}
 
 Uses to store data on web server as static files (for example, table's data directory) using a disk with type `web` and to run queries on this data. It can be useful for serving public datasets.
 
