@@ -657,13 +657,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
 
-        if (pipeline.pulling())
+        if (pipeline.pulling() || pipeline.completed())
         {
             /// Limits on the result, the quota on the result, and also callback for progress.
             /// Limits apply only to the final result.
             pipeline.setProgressCallback(context->getProgressCallback());
             pipeline.setProcessListElement(context->getProcessListElement());
-            if (stage == QueryProcessingStage::Complete)
+            if (stage == QueryProcessingStage::Complete && pipeline.pulling())
                 pipeline.setLimitsAndQuota(limits, quota);
         }
         else if (pipeline.pushing())

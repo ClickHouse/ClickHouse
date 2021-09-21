@@ -25,6 +25,7 @@ class Chain;
 class IOutputFormat;
 class SinkToStorage;
 class ISource;
+class ISink;
 
 class QueryPipeline
 {
@@ -79,6 +80,7 @@ public:
     void complete(std::shared_ptr<IOutputFormat> format);
     void complete(Chain chain);
     void complete(std::shared_ptr<SinkToStorage> sink);
+    void complete(std::shared_ptr<ISink> sink);
 
     /// Only for pushing and pulling.
     Block getHeader() const;
