@@ -4,7 +4,6 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadBufferFromRemoteFS.h>
-#include <IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
@@ -108,7 +107,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {
-        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+        auto reader = getThreadPoolReader();
         auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(hdfs_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
     }

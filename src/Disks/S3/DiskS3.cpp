@@ -29,7 +29,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromRemoteFS.h>
 #include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <IO/ThreadPoolRemoteFSReader.h>
 
 #include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
 #include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
@@ -238,7 +237,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {
-        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+        auto reader = getThreadPoolReader();
         auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(s3_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
     }

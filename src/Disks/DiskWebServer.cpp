@@ -11,7 +11,6 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromRemoteFS.h>
 #include <IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
 
@@ -194,7 +193,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     auto web_impl = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size);
     if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {
-        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+        auto reader = IDiskRemote::getThreadPoolReader();
         auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(web_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
     }

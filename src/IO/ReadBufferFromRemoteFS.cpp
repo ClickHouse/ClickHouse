@@ -81,7 +81,7 @@ bool ReadBufferFromRemoteFS::readImpl()
 }
 
 
-off_t ReadBufferFromRemoteFS::seek(off_t offset_, int whence)
+off_t ReadBufferFromRemoteFS::seek([[maybe_unused]] off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET is allowed");

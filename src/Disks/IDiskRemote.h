@@ -35,6 +35,10 @@ protected:
 using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
 
 
+class IAsynchronousReader;
+using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
+
+
 /// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
 class IDiskRemote : public IDisk
 {
@@ -126,6 +130,8 @@ public:
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
+
+    static AsynchronousReaderPtr getThreadPoolReader();
 
 protected:
     Poco::Logger * log;
