@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/PipelineResourcesHolder.h>
+#include <functional>
 
 namespace DB
 {
