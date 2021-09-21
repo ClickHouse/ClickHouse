@@ -139,4 +139,4 @@ regionToTopContinent(id[, geobase])
 
 `ua` 和 `uk` 都意味着乌克兰。
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->
