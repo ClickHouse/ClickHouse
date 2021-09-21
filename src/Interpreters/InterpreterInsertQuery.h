@@ -9,10 +9,8 @@
 namespace DB
 {
 
-struct ExceptionKeepingTransformRuntimeData;
-using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeepingTransformRuntimeData>;
-
 class Chain;
+class ThreadStatus;
 
 /** Interprets the INSERT query.
   */
@@ -40,7 +38,8 @@ public:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
-        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
+        ThreadStatus * thread_status = nullptr,
+        std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
@@ -60,7 +59,8 @@ private:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Block & query_sample_block,
-        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
+        ThreadStatus * thread_status,
+        std::atomic_uint64_t * elapsed_counter_ms);
 };
 
 

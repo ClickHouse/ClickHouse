@@ -16,7 +16,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/LimitTransform.h>
 #include <queue>
-
 namespace DB
 {
 

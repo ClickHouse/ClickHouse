@@ -17,11 +17,6 @@ class Logger;
 namespace DB
 {
 
-class ReplicatedMergeTreeSink;
-
-struct ExceptionKeepingTransformRuntimeData;
-using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeepingTransformRuntimeData>;
-
 struct ViewRuntimeData
 {
     const ASTPtr query;
@@ -34,12 +29,12 @@ struct ViewRuntimeData
     ContextPtr context;
 
     std::exception_ptr exception;
-    QueryViewsLogElement::ViewRuntimeStats runtime_stats;
+    std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
 
     void setException(std::exception_ptr e)
     {
         exception = e;
-        runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
+        runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
     }
 };
 
@@ -51,8 +46,9 @@ Chain buildPushingToViewsDrain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    ExceptionKeepingTransformRuntimeDataPtr runtime_data,
-    const Block & lv_storage = {});
+    ThreadStatus * thread_status,
+    std::atomic_uint64_t * elapsed_counter_ms,
+    const Block & live_view_header = {});
 
 
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform

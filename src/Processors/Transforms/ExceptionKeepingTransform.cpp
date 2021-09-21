@@ -12,14 +12,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExceptionKeepingTransformRuntimeData::ExceptionKeepingTransformRuntimeData(
-    ThreadStatus * thread_status_,
-    std::string additional_exception_message_)
-    : thread_status(thread_status_)
-    , additional_exception_message(std::move(additional_exception_message_))
-{
-}
-
 ExceptionKeepingTransform::ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_)
     : IProcessor({in_header}, {out_header})
     , input(inputs.front()), output(outputs.front())
@@ -87,58 +79,49 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     return Status::Ready;
 }
 
-static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTransformRuntimeData * runtime_data)
+static std::exception_ptr runStep(std::function<void()> step, ThreadStatus * thread_status, std::atomic_uint64_t * elapsed_ms)
 {
+    std::exception_ptr res;
+    std::optional<Stopwatch> watch;
+
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });
 
-    if (runtime_data && runtime_data->thread_status)
+    if (thread_status)
     {
         /// Change thread context to store individual metrics. Once the work in done, go back to the original thread
-        runtime_data->thread_status->resetPerformanceCountersLastUsage();
-        current_thread = runtime_data->thread_status;
+        thread_status->resetPerformanceCountersLastUsage();
+        current_thread = thread_status;
     }
 
-    std::exception_ptr res;
-    Stopwatch watch;
+    if (elapsed_ms)
+        watch.emplace();
 
     try
     {
         step();
     }
-    catch (Exception & exception)
-    {
-        // std::cerr << "===== got exception " << getExceptionMessage(exception, false);
-        if (runtime_data && !runtime_data->additional_exception_message.empty())
-            exception.addMessage(runtime_data->additional_exception_message);
-
-        res = std::current_exception();
-    }
     catch (...)
     {
-        // std::cerr << "===== got exception " << getExceptionMessage(std::current_exception(), false);
         res = std::current_exception();
     }
 
-    if (runtime_data)
-    {
-        if (runtime_data->thread_status)
-            runtime_data->thread_status->updatePerformanceCounters();
+    if (thread_status)
+        thread_status->updatePerformanceCounters();
 
-        runtime_data->elapsed_ms += watch.elapsedMilliseconds();
-    }
+    if (elapsed_ms)
+        elapsed_ms += watch->elapsedMilliseconds();
 
     return res;
 }
 
 void ExceptionKeepingTransform::work()
 {
-    // std::cerr << "============ Executing " << getName() << std::endl;
     if (!ignore_on_start_and_finish && !was_on_start_called)
     {
         was_on_start_called = true;
 
-        if (auto exception = runStep([this] { onStart(); }, runtime_data.get()))
+        if (auto exception = runStep([this] { onStart(); }, thread_status, elapsed_counter_ms))
         {
             has_exception = true;
             ready_output = true;
@@ -149,10 +132,8 @@ void ExceptionKeepingTransform::work()
     {
         ready_input = false;
 
-        if (auto exception = runStep([this] { transform(data.chunk); }, runtime_data.get()))
+        if (auto exception = runStep([this] { transform(data.chunk); }, thread_status, elapsed_counter_ms))
         {
-            // std::cerr << "===== got exception in " << getName() << std::endl;
-            // std::cerr << getExceptionMessage(exception, true) << std::endl;
             has_exception = true;
             data.chunk.clear();
             data.exception = std::move(exception);
@@ -165,13 +146,19 @@ void ExceptionKeepingTransform::work()
     {
         was_on_finish_called = true;
 
-        if (auto exception = runStep([this] { onFinish(); }, runtime_data.get()))
+        if (auto exception = runStep([this] { onFinish(); }, thread_status, elapsed_counter_ms))
         {
             has_exception = true;
             ready_output = true;
             data.exception = std::move(exception);
         }
     }
+}
+
+void ExceptionKeepingTransform::setRuntimeData(ThreadStatus * thread_status_, std::atomic_uint64_t * elapsed_counter_ms_)
+{
+    thread_status = thread_status_;
+    elapsed_counter_ms = elapsed_counter_ms_;
 }
 
 }
