@@ -109,8 +109,8 @@ static std::exception_ptr runStep(std::function<void()> step, ThreadStatus * thr
     if (thread_status)
         thread_status->updatePerformanceCounters();
 
-    if (elapsed_ms)
-        elapsed_ms += watch->elapsedMilliseconds();
+    if (elapsed_ms && watch)
+        *elapsed_ms += watch->elapsedMilliseconds();
 
     return res;
 }
