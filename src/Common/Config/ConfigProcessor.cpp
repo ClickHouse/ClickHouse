@@ -236,8 +236,8 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
     /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
 
-    if (config_root_node_name == merged_root_node_name
-        || ((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
+    if (config_root_node_name != merged_root_node_name
+        && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
             && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
     {
         throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
