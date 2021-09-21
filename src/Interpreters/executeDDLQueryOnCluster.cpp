@@ -217,7 +217,7 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     io.pipeline = QueryPipeline(std::move(source));
 
     if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
-        io.pipeline.complete(Pipe(std::make_shared<EmptySink>(io.pipeline.getHeader())));
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
 }

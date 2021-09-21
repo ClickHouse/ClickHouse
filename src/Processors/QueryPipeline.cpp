@@ -322,6 +322,19 @@ static void drop(OutputPort *& port, Processors & processors)
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
 
+void QueryPipeline::complete(std::shared_ptr<ISink> sink)
+{
+    if (!pulling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
+
+    drop(totals, processors);
+    drop(extremes, processors);
+
+    connect(*output, sink->getPort());
+    processors.emplace_back(std::move(sink));
+    output = nullptr;
+}
+
 void QueryPipeline::complete(Chain chain)
 {
     if (!pulling())
@@ -444,7 +457,7 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
 
-    if (pulling())
+    if (pulling() || completed())
     {
         for (auto & processor : processors)
         {
@@ -467,7 +480,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     if (!pulling())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "It is possible to set limits and quota only to pullint QueryPipeline");
+            "It is possible to set limits and quota only to pulling QueryPipeline");
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
     transform->setQuota(quota);
