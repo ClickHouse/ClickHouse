@@ -51,7 +51,7 @@ KeeperStateManager::KeeperStateManager(
     , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     getLogsPathFromConfig(config_prefix, config, standalone_keeper),
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
 
