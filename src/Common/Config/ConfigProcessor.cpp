@@ -230,8 +230,19 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
 
-    if (config_root->nodeName() != with_root->nodeName())
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+    std::string config_root_node_name = config_root->nodeName();
+    std::string merged_root_node_name = with_root->nodeName();
+
+    /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
+    /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
+
+    if (config_root_node_name == merged_root_node_name
+        || ((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
+            && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
+    {
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
+            " It must be <" + config_root->nodeName() + ">");
+    }
 
     mergeRecursive(config, config_root, with_root);
 }
