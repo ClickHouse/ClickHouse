@@ -299,6 +299,7 @@ SRCS(
     h3EdgeAngle.cpp
     h3EdgeLengthM.cpp
     h3GetBaseCell.cpp
+    h3GetFaces.cpp
     h3GetResolution.cpp
     h3HexAreaM2.cpp
     h3IndexesAreNeighbors.cpp
