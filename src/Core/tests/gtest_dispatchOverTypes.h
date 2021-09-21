@@ -1,5 +1,5 @@
-#pragma once
 #include <gtest/gtest.h>
+#include <common/extended_types.h>
 #include <Core/dispatchOverTypes.h>
 
 using namespace DB;

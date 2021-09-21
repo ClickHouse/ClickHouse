@@ -1070,9 +1070,9 @@ public:
                 + ". Must be ColumnUInt8 or ColumnConstUInt8.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        auto call = [&]<class T0, class T1>(TypePair<T0, T1>)
+        auto call = [&]<class Left, class Right>(TypePair<Left, Right>)
         {
-            res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count);
+            res = executeTyped<Left, Right>(cond_col, arguments, result_type, input_rows_count);
             return res != nullptr;
         };
 
@@ -1087,7 +1087,7 @@ public:
 
         constexpr Dispatch d { ._int = true, ._float = true, ._decimal = true };
 
-        if (!(callOnBasicTypes<d>(left_id, right_id, std::move(call))
+        if (!(dispatchOverTypes<d>(left_id, right_id, std::move(call))
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))
             || (res = executeGenericArray(cond_col, arguments, result_type))

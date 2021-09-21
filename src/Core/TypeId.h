@@ -10,18 +10,6 @@ template <TypeIndex index> struct ReverseTypeIdT : std::false_type {};
 template <TypeIndex index> struct ReverseDataTypeIdT : std::false_type {};
 }
 
-class DataTypeArray;
-class DataTypeDate;
-class DataTypeDate32;
-class DataTypeString;
-class DataTypeFixedString;
-class DataTypeUUID;
-class DataTypeDateTime;
-class DataTypeDateTime64;
-template <typename T> class DataTypeEnum;
-template <typename T> class DataTypeNumber;
-template <is_decimal T> class DataTypeDecimal;
-
 /**
  * Obtain TypeIndex value from real type if possible.
  *
@@ -56,10 +44,29 @@ template <TypeIndex index> using ReverseDataTypeId = typename detail::ReverseDat
 
 template <TypeIndex index> constexpr bool HasReverseTypeId = detail::ReverseTypeIdT<index>::value;
 
+class DataTypeArray;
+class DataTypeDate;
+class DataTypeDate32;
+class DataTypeString;
+class DataTypeFixedString;
+class DataTypeUUID;
+class DataTypeDateTime;
+class DataTypeDateTime64;
+template <typename T> class DataTypeEnum;
+template <typename T> class DataTypeNumber;
+template <is_decimal T> class DataTypeDecimal;
+struct Array;
+
+#define RD_TYPEID_MAP(_A, _B) \
+    template <> struct detail::ReverseDataTypeIdT<TypeIndex::_A> : std::true_type { using T = _B; };
+
+#define R_TYPEID_MAP(_A, _B) \
+    template <> struct detail::ReverseTypeIdT<TypeIndex::_A> : std::true_type { using T = _B; };
+
 #define TYPEID_MAP(_A, _B) \
     template <> inline constexpr TypeIndex TypeId<_A> = TypeIndex::_A; \
-    template <> struct detail::ReverseTypeIdT<TypeIndex::_A> : std::true_type { using T = _A; }; \
-    template <> struct detail::ReverseDataTypeIdT<TypeIndex::_A> : std::true_type { using T = _B; };
+    R_TYPEID_MAP(_A, _A) \
+    RD_TYPEID_MAP(_A, _B)
 
 TYPEID_MAP(UInt8,   DataTypeNumber<UInt8>)
 TYPEID_MAP(UInt16,  DataTypeNumber<UInt16>)
@@ -89,18 +96,23 @@ TYPEID_MAP(String, DataTypeString)
 
 TYPEID_MAP(UUID, DataTypeUUID)
 
-struct Array;
 TYPEID_MAP(Array, DataTypeArray)
 
 /// Special cases:
-template <> struct detail::ReverseTypeIdT<TypeIndex::Enum8> : std::true_type { using T = Int8; };
-template <> struct detail::ReverseTypeIdT<TypeIndex::Enum16> : std::true_type { using T = Int16; };
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::Enum8> : std::true_type { using T = DataTypeEnum<Int8>; };
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::Enum16> : std::true_type { using T = DataTypeEnum<Int16>; };
 
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::FixedString> : std::true_type { using T = DataTypeFixedString; };
+R_TYPEID_MAP(Enum8, Int8)
+R_TYPEID_MAP(Enum16, Int16)
 
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::Date> : std::true_type { using T = DataTypeDate; };
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::Date32> : std::true_type { using T = DataTypeDate32; };
-template <> struct detail::ReverseDataTypeIdT<TypeIndex::DateTime> : std::true_type { using T = DataTypeDateTime; };
+RD_TYPEID_MAP(Enum8, DataTypeEnum<Int8>)
+RD_TYPEID_MAP(Enum16, DataTypeEnum<Int16>)
+
+RD_TYPEID_MAP(FixedString, DataTypeFixedString)
+
+RD_TYPEID_MAP(Date, DataTypeDate)
+RD_TYPEID_MAP(Date32, DataTypeDate32)
+RD_TYPEID_MAP(DateTime, DataTypeDateTime)
+
+R_TYPEID_MAP(Date, UInt16)
+R_TYPEID_MAP(Date32, Int32)
+R_TYPEID_MAP(DateTime, UInt32)
 }

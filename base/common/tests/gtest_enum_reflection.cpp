@@ -1,5 +1,3 @@
-#pragma once
-
 #include <gtest/gtest.h>
 #include <common/EnumReflection.h>
 
@@ -16,14 +14,13 @@ TEST(EnumReflection, enumPrinting)
     EXPECT_EQ(fmt::format("{} value", Foo::Bar), "Bar value");
 }
 
-template <int I>
-constexpr int foo() { return I; }
+template <Foo I> constexpr int foo() { return static_cast<int>(I); }
 
 TEST(EnumReflection, enumIteration)
 {
     int sum = 0;
 
-    static_for<Foo>([&sum](auto constant) { sum += foo<constant>(); });
+    static_for<Foo>([&sum](auto constant) { sum += foo<constant>(); return false; });
 
     EXPECT_EQ(sum, 10);
 }

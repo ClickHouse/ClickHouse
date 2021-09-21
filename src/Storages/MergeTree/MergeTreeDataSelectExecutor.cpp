@@ -769,6 +769,9 @@ struct DataSkippingIndexAndCondition
     std::atomic_size_t granules_dropped{0};
     std::atomic_size_t total_parts{0};
     std::atomic_size_t parts_dropped{0};
+
+    DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+        : index(index_), condition(condition_) { }
 };
 }
 

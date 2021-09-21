@@ -126,21 +126,24 @@ struct ConvertImpl
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
 
+    using ColVecFrom = typename FromDataType::ColumnType;
+    using ColVecTo = typename ToDataType::ColumnType;
+
+    static constexpr bool from_is_decimal_like = dt::is_decimal_like<FromDataType>;
+    static constexpr bool to_is_decimal_like = dt::is_decimal_like<ToDataType>;
+
+    static constexpr bool from_is_number = dt::is_number<FromDataType>;
+    static constexpr bool to_is_number = dt::is_number<ToDataType>;
+
+    static constexpr bool from_is_decimal_like_or_number = dt::is_decimal_like_or_number<FromDataType>;
+    static constexpr bool to_is_decimal_like_or_number = dt::is_decimal_like_or_number<ToDataType>;
+
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
-
-        using ColVecFrom = typename FromDataType::ColumnType;
-        using ColVecTo = typename ToDataType::ColumnType;
-
-        constexpr bool from_is_decimal = dt::is_decimal_like<FromDataType>;
-        constexpr bool to_is_decimal = dt::is_decimal_like<ToDataType>;
-
-        constexpr bool from_is_number = dt::is_number<FromDataType>;
-        constexpr bool to_is_number = dt::is_number<ToDataType>;
 
         if (std::is_same_v<Name, NameToUnixTimestamp>)
         {
@@ -151,7 +154,7 @@ struct ConvertImpl
 
         if constexpr (dt::is_decimal<FromDataType> || dt::is_decimal<ToDataType>)
         {
-            if constexpr (!dt::is_decimal_like_or_number<FromDataType> || !dt::is_decimal_like_or_number<ToDataType>)
+            if constexpr (!from_is_decimal_like_or_number || !to_is_decimal_like_or_number)
             {
                 throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -162,7 +165,7 @@ struct ConvertImpl
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
 
-            if constexpr (to_is_decimal)
+            if constexpr (to_is_decimal_like)
             {
                 UInt32 scale;
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
@@ -200,18 +203,18 @@ struct ConvertImpl
                 }
                 else
                 {
-                    if constexpr (from_is_decimal || to_is_decimal)
+                    if constexpr (from_is_decimal_like || to_is_decimal_like)
                     {
                         if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                         {
                             ToFieldType result;
                             bool convert_result = false;
 
-                            if constexpr (from_is_decimal && to_is_decimal)
+                            if constexpr (from_is_decimal_like && to_is_decimal_like)
                                 convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
-                            else if constexpr (from_is_decimal && to_is_number)
+                            else if constexpr (from_is_decimal_like && to_is_number)
                                 convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
-                            else if constexpr (from_is_number && to_is_decimal)
+                            else if constexpr (from_is_number && to_is_decimal_like)
                                 convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
 
                             if (convert_result)
@@ -224,11 +227,11 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (from_is_decimal && to_is_decimal)
+                            if constexpr (from_is_decimal_like && to_is_decimal_like)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                            else if constexpr (from_is_decimal && to_is_number)
+                            else if constexpr (from_is_decimal_like && to_is_number)
                                 vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                            else if constexpr (from_is_number && to_is_decimal)
+                            else if constexpr (from_is_number && to_is_decimal_like)
                                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                             else
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -1675,9 +1678,9 @@ private:
 
         auto call = [&]<class To, class From, class Tag>(TypePair<To, From>, Tag)
         {
-            if constexpr (dt::is_decimal_like<From>)
+            if constexpr (dt::is_decimal_like<To>)
             {
-                if constexpr (std::is_same_v<From, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<To, DataTypeDateTime64>)
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
@@ -1696,7 +1699,7 @@ private:
                 result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count, scale);
             }
-            else if constexpr (dt::is_date_or_datetime<From> && std::is_same_v<To, DataTypeDateTime64>)
+            else if constexpr (dt::is_date_or_datetime<To> && std::is_same_v<From, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
 

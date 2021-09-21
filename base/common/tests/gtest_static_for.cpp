@@ -1,5 +1,3 @@
-#pragma once
-
 #include <array>
 #include <gtest/gtest.h>
 #include <common/static_for.h>

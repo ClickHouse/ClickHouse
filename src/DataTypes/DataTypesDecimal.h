@@ -55,11 +55,13 @@ class DataTypeDateTime64;
 
 namespace dt
 {
-template <class T>
-concept is_decimal = std::is_same_v<T, DataTypeDecimal32>
-    || std::is_same_v<T, DataTypeDecimal64>
-    || std::is_same_v<T, DataTypeDecimal128>
-    || std::is_same_v<T, DataTypeDecimal256>;
+namespace detail
+{
+    template <class T> inline constexpr bool is_decimal = false;
+    template <class T> inline constexpr bool is_decimal<DataTypeDecimal<T>> = true;
+}
+
+template <class T> concept is_decimal = detail::is_decimal<T>;
 
 /// Most template code treats DateTime64 as Decimal (so we could perform decimal operations on it), but
 /// explicit semantics is better (so we can differentiate between DataTypeDecimals and DataTypeDateTime64.
@@ -69,6 +71,8 @@ concept is_decimal_like = is_decimal<T> || std::is_same_v<T, DataTypeDateTime64>
 template <class T>
 concept has_arithmetic_field = is_arithmetic_v<typename T::FieldType>;
 }
+
+template <class T> using FieldType = typename T::FieldType;
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
@@ -109,11 +113,12 @@ inline UInt32 getDecimalScale(const dt::is_decimal_like auto & data_type)
 
 namespace detail
 {
-template <class From, class To, class Ret,
-    class FromFieldType = typename From::FieldType,
-    class ToFieldType = typename To::FieldType>
-inline Ret convertDecimals(const FromFieldType& value, UInt32 scale_from, UInt32 scale_to, ToFieldType & result)
+template <class From, class To, class Ret>
+inline Ret convertDecimals(const FieldType<From>& value, UInt32 scale_from, UInt32 scale_to, FieldType<To> & result)
 {
+    using FromFieldType = FieldType<From>;
+    using ToFieldType = FieldType<To>;
+
     constexpr size_t from_field_size = sizeof(FromFieldType);
     constexpr size_t to_field_size = sizeof(ToFieldType);
     constexpr bool throw_exception = std::is_void_v<Ret>;
@@ -156,23 +161,23 @@ inline Ret convertDecimals(const FromFieldType& value, UInt32 scale_from, UInt32
 
     result = static_cast<ToNative>(converted_value);
 
-    return true;
+    if constexpr(!throw_exception)
+        return true;
 }
 
-template <class From, class To, class ReturnType,
-    class FromFieldType = typename From::FieldType,
-    class ToFieldType = typename To::FieldType>
-inline ReturnType convertFromDecimal(const FromFieldType & value, UInt32 scale, ToFieldType & result)
+template <class From, class To, class Ret>
+inline Ret convertFromDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
-    return DecimalUtils::convertToImpl<ToFieldType, FromFieldType, ReturnType>(value, scale, result);
+    return DecimalUtils::convertToImpl<FieldType<To>, FieldType<From>, Ret>(value, scale, result);
 }
 
-template <class From, class To, class Ret,
-    class FromField = typename From::FieldType,
-    class ToField = typename To::FieldType,
-    class ToNative = typename To::NativeType>
-inline Ret convertToDecimal(const FromField & value, UInt32 scale, ToField & result)
+template <class From, class To, class Ret>
+inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
+    using FromField = FieldType<From>;
+    using ToField = FieldType<To>;
+    using ToNative = typename ToField::NativeType;
+
     constexpr bool throw_exception = std::is_void_v<Ret>;
 
     if constexpr (is_floating_point<FromField>)
@@ -202,7 +207,9 @@ inline Ret convertToDecimal(const FromField & value, UInt32 scale, ToField & res
         }
 
         result = static_cast<ToNative>(out);
-        return true;
+
+        if constexpr(!throw_exception)
+            return true;
     }
     else if constexpr (is_big_int_v<FromField>)
         return convertDecimals<DataTypeDecimal256, To, Ret>(static_cast<Int256>(value), 0, scale, result);
@@ -213,53 +220,46 @@ inline Ret convertToDecimal(const FromField & value, UInt32 scale, ToField & res
 }
 }
 
-template <dt::is_decimal_like FromDataType, dt::is_decimal_like ToDataType,
-    class Ret = typename ToDataType::FieldType>
-inline Ret convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
+template <dt::is_decimal_like From, dt::is_decimal_like To>
+inline FieldType<To> convertDecimals(const FieldType<From> & value, UInt32 scale_from, UInt32 scale_to)
 {
-    Ret result;
-    detail::convertDecimals<FromDataType, ToDataType, void>(value, scale_from, scale_to, result);
+    FieldType<To> result;
+    detail::convertDecimals<From, To, void>(value, scale_from, scale_to, result);
     return result;
 }
 
-template <dt::is_decimal_like FromDataType, dt::is_decimal_like ToDataType,
-    class FromField = typename FromDataType::FieldType,
-    class ToField = typename ToDataType::FieldType>
-inline bool tryConvertDecimals(const FromField & value, UInt32 scale_from, UInt32 scale_to, ToField & result)
+template <dt::is_decimal_like From, dt::is_decimal_like To>
+inline bool tryConvertDecimals(const FieldType<From> & value, UInt32 scale_from, UInt32 scale_to, FieldType<To> & result)
 {
-    return convertDecimalsImpl<FromDataType, ToDataType, bool>(value, scale_from, scale_to, result);
+    return detail::convertDecimals<From, To, bool>(value, scale_from, scale_to, result);
 }
 
-template <dt::is_decimal_like FromDataType, dt::has_arithmetic_field ToDataType,
-    class ToField = typename ToDataType::FieldType>
-inline ToField convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+template <dt::is_decimal_like From, dt::is_number To>
+inline FieldType<To> convertFromDecimal(const FieldType<From> & value, UInt32 scale)
 {
-    ToField result;
-    detail::convertFromDecimal<FromDataType, ToDataType, void>(value, scale, result);
+    FieldType<To> result;
+    detail::convertFromDecimal<From, To, void>(value, scale, result);
     return result;
 }
 
-template <dt::is_decimal_like FromDataType, dt::has_arithmetic_field ToDataType>
-inline bool tryConvertFromDecimal(
-    const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+template <dt::is_decimal_like From, dt::has_arithmetic_field To>
+inline bool tryConvertFromDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
-    return detail::convertFromDecimal<FromDataType, ToDataType, bool>(value, scale, result);
+    return detail::convertFromDecimal<From, To, bool>(value, scale, result);
 }
 
-template <dt::has_arithmetic_field FromDataType, dt::is_decimal_like ToDataType,
-    class ToField = typename ToDataType::FieldType>
-inline ToField convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+template <dt::has_arithmetic_field From, dt::is_decimal_like To>
+inline FieldType<To> convertToDecimal(const FieldType<From> & value, UInt32 scale)
 {
-    ToField result;
-    detail::convertToDecimal<FromDataType, ToDataType, void>(value, scale, result);
+    FieldType<To> result;
+    detail::convertToDecimal<From, To, void>(value, scale, result);
     return result;
 }
 
-template <dt::has_arithmetic_field FromDataType, dt::is_decimal_like ToDataType>
-inline bool tryConvertToDecimal(
-    const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+template <dt::has_arithmetic_field From, dt::is_decimal_like To>
+inline bool tryConvertToDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
-    return detail::convertToDecimal<FromDataType, ToDataType, bool>(value, scale, result);
+    return detail::convertToDecimal<From, To, bool>(value, scale, result);
 }
 
 template <typename T>

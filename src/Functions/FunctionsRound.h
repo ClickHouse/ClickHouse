@@ -576,12 +576,11 @@ public:
 
         ColumnPtr res;
 
-        auto call = [&]<class DataType>(TypePair<void, DataType>)
+        auto call = [&]<class T>(TypePair<void, T>)
         {
-            if constexpr (IsDataTypeNumber<DataType> || data_types::is_decimal<DataType>)
+            if constexpr (dt::is_number<T> || dt::is_decimal_like<T>)
             {
-                using FieldType = typename DataType::FieldType;
-                res = Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
+                res = Dispatcher<FieldType<T>, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
                 return true;
             }
             return false;
@@ -599,7 +598,7 @@ public:
         if (!dispatchOverDataType(column.type->getTypeId(), std::move(call)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of argument of function {}",
-                column.name. getName());
+                column.name, getName());
 
         return res;
     }

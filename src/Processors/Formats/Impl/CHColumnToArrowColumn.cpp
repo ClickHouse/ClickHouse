@@ -10,7 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -395,6 +395,34 @@ namespace DB
         }
     }
 
+    template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
+    static void fillArrowArrayWithDecimalColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        const String & format_name,
+        size_t start,
+        size_t end)
+    {
+        const auto & column = assert_cast<const typename DataType::ColumnType &>(*write_column);
+        ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
+        arrow::Status status;
+
+        for (size_t value_i = start; value_i < end; ++value_i)
+        {
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+            {
+                FieldType element = FieldType(column.getElement(value_i).value);
+                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+            }
+
+            checkStatus(status, write_column->getName(), format_name);
+        }
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
     static void fillArrowArray(
         const String & column_name,
         ColumnPtr & column,
@@ -459,7 +487,7 @@ namespace DB
         {
             auto fill_decimal = [&]<class To>(TypePair<void, To>)
             {
-                if constexpr (data_types::is_decimal<To> && !std::is_same_v<To, DataTypeDecimal256>)
+                if constexpr (dt::is_decimal<To> && !std::is_same_v<To, DataTypeDecimal256>)
                 {
                     fillArrowArrayWithDecimalColumnData<To, Int128, arrow::Decimal128, arrow::Decimal128Builder>(
                         column, null_bytemap, array_builder, format_name, start, end);
@@ -497,34 +525,6 @@ namespace DB
                     ErrorCodes::UNKNOWN_TYPE
                 };
         }
-    }
-
-    template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
-    static void fillArrowArrayWithDecimalColumnData(
-        ColumnPtr write_column,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        arrow::ArrayBuilder * array_builder,
-        const String & format_name,
-        size_t start,
-        size_t end)
-    {
-        const auto & column = assert_cast<const typename DataType::ColumnType &>(*write_column);
-        ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
-        arrow::Status status;
-
-        for (size_t value_i = start; value_i < end; ++value_i)
-        {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-            {
-                FieldType element = FieldType(column.getElement(value_i).value);
-                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
-            }
-
-            checkStatus(status, write_column->getName(), format_name);
-        }
-        checkStatus(status, write_column->getName(), format_name);
     }
 
     static std::shared_ptr<arrow::DataType> getArrowTypeForLowCardinalityIndexes(ColumnPtr indexes_column)
@@ -565,9 +565,9 @@ namespace DB
 
             auto create_arrow_type = [&]<class To>(TypePair<void, To>)
             {
-                if constexpr(data_types::is_decimal<To>)
+                if constexpr(dt::is_decimal<To>)
                 {
-                    const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
+                    const auto & decimal_type = assert_cast<const To *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
                     return true;
                 }
@@ -578,7 +578,7 @@ namespace DB
             if (!dispatchOverDataType(column_type->getTypeId(), std::move(create_arrow_type)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert type {} to arrow type",
-                    column_type->getFamilyName()};
+                    column_type->getFamilyName());
 
             return arrow_type;
         }

@@ -1,6 +1,6 @@
 #include <Core/Defines.h>
 
-#include "Common/hex.h"
+#include <common/hex.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>

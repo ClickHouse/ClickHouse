@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/Visitor.h>
-#include <Core/TypeListNumber.h>
+#include <common/TypeLists.h>
 
 namespace DB::GatherUtils
 {

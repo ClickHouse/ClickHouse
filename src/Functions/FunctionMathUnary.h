@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>

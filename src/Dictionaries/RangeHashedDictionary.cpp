@@ -1,7 +1,7 @@
 #include "RangeHashedDictionary.h"
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/TypeList.h>
+#include <common/TypeList.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Dictionaries/DictionaryFactory.h>

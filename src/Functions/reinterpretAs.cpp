@@ -326,7 +326,7 @@ private:
 
         using ColumnType = typename Type::ColumnType;
 
-        if constexpr (data_types::is_decimal_or_dt64<Type>)
+        if constexpr (dt::is_decimal_like<Type>)
             return ColumnType::create(column_size, type.getScale());
         else
             return ColumnType::create(column_size);

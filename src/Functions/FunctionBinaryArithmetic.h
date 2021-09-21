@@ -33,7 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/TypeList.h>
+#include <common/TypeList.h>
 #include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -187,10 +187,9 @@ enum class OpCase { Vector, LeftConstant, RightConstant };
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
 
-template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
 struct BinaryOperation
 {
-    using ResultType = OpResultType;
     static const constexpr bool allow_fixed_string = false;
 
     template <OpCase op_case>
@@ -759,9 +758,9 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * const col_left, const auto * const col_right,
         size_t col_left_size) const
     {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
+        using T0 = FieldType<LeftDataType>;
+        using T1 = FieldType<RightDataType>;
+        using ResultType = FieldType<ResultDataType>;
 
         using NativeResultType = NativeType<ResultType>;
         using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
@@ -771,7 +770,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         static constexpr const bool left_is_decimal = is_decimal<T0>;
         static constexpr const bool right_is_decimal = is_decimal<T1>;
-        static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
+        static constexpr const bool result_is_decimal = dt::is_decimal_like<ResultDataType>;
 
         typename ColVecResult::MutablePtr col_res = nullptr;
 
@@ -787,7 +786,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultType scale_a = [&]
         {
-            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
+            if constexpr (dt::is_decimal_like<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
             {
@@ -948,44 +947,41 @@ public:
 
         DataTypePtr type_res;
 
-        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(),
+            [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> ||
-                          std::is_same_v<DataTypeFixedString, RightDataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, Left> || std::is_same_v<DataTypeFixedString, Right>)
             {
                 if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                     return false;
-                else if constexpr (std::is_same_v<LeftDataType, RightDataType>)
+                else if constexpr (std::is_same_v<Left, Right>)
                 {
                     if (left.getN() == right.getN())
                     {
-                        type_res = std::make_shared<LeftDataType>(left.getN());
+                        type_res = std::make_shared<Left>(left.getN());
                         return true;
                     }
                 }
             }
             else
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using ResultDataType = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    if constexpr (dt::is_decimal_like<Left> && dt::is_decimal_like<Right>)
                     {
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
-                    else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
-                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<LeftDataType>,
-                            LeftDataType, RightDataType>>();
-                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
-                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
-                    else if constexpr (IsDataTypeDecimal<RightDataType>)
-                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                    else if constexpr ((dt::is_decimal_like<Left> && IsFloatingPoint<Right>) ||
+                        (dt::is_decimal_like<Right> && IsFloatingPoint<Left>))
+                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<Left>,
+                            Left, Right>>();
+                    else if constexpr (dt::is_decimal_like<Left>)
+                        type_res = std::make_shared<Left>(left.getPrecision(), left.getScale());
+                    else if constexpr (dt::is_decimal_like<Right>)
+                        type_res = std::make_shared<Right>(right.getPrecision(), right.getScale());
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
                     {
                         // Special case for DateTime: binary OPS should reuse timezone
@@ -993,9 +989,9 @@ public:
                         // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
 
                         const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeDateTime>)
+                        if constexpr (std::is_same_v<Right, DataTypeDateTime>)
                             tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
+                        if constexpr (std::is_same_v<Left, DataTypeDateTime>)
                             tz = &left;
                         type_res = std::make_shared<ResultDataType>(*tz);
                     }
@@ -1115,9 +1111,9 @@ public:
     {
         using Result = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
 
-        using LeftField = typename Left::FieldType;
-        using RightField = typename Right::FieldType;
-        using ResultField = typename ResultDataType::FieldType;
+        using LeftField = FieldType<Left>;
+        using RightField = FieldType<Right>;
+        using ResultField = FieldType<Result>;
 
         using ColVecLeft = ColumnVectorOrDecimal<LeftField>;
         using ColVecRight = ColumnVectorOrDecimal<RightField>;
@@ -1134,9 +1130,9 @@ public:
         const ColVecLeft * const col_left = checkAndGetColumn<ColVecLeft>(col_left_raw);
         const ColVecRight * const col_right = checkAndGetColumn<ColVecRight>(col_right_raw);
 
-        if constexpr (data_types::is_decimal_or_dt64<Left> || data_types::is_decimal_or_dt64<Right>)
+        if constexpr (dt::is_decimal_like<Left> || dt::is_decimal_like<Right>)
         {
-            return executeNumericWithDecimal<Left, Right, ResultDataType>(
+            return executeNumericWithDecimal<Left, Right, Result>(
                 left, right,
                 col_left_const, col_right_const,
                 col_left, col_right,
@@ -1144,16 +1140,16 @@ public:
         }
         else
         {
-            using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
+            using OpImpl = BinaryOperationImpl<LeftField, RightField, Op<LeftField, RightField>, ResultField>;
 
             /// non-vector result
             if (col_left_const && col_right_const)
             {
                 const auto res = OpImpl::process(
-                    col_left_const->template getValue<T0>(),
-                    col_right_const->template getValue<T1>());
+                    col_left_const->template getValue<LeftField>(),
+                    col_right_const->template getValue<LeftField>());
 
-                return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
+                return Result().createColumnConst(col_left_const->size(), toField(res));
             }
 
             typename ColVecResult::MutablePtr col_res = ColVecResult::create();
@@ -1171,7 +1167,7 @@ public:
             }
             else if (col_left_const && col_right)
             {
-                const T0 value = col_left_const->template getValue<T0>();
+                const LeftField value = col_left_const->template getValue<LeftField>();
 
                 OpImpl::template process<OpCase::LeftConstant>(
                     &value,
@@ -1181,7 +1177,7 @@ public:
             }
             else if (col_left && col_right_const)
             {
-                const T1 value = col_right_const->template getValue<T1>();
+                const RightField value = col_right_const->template getValue<RightField>();
 
                 OpImpl::template process<OpCase::RightConstant>(
                     col_left->getData().data(),
@@ -1223,13 +1219,10 @@ public:
         const auto * const right_generic = right_argument.type.get();
         ColumnPtr res;
 
-        const bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
+        const bool valid = castBothTypes(left_generic, right_generic,
+            [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> ||
-                std::is_same_v<DataTypeFixedString, RightDataType>)
+           if constexpr (std::is_same_v<DataTypeFixedString, Left> || std::is_same_v<DataTypeFixedString, Right>)
             {
                 if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                     return false;
@@ -1270,7 +1263,7 @@ public:
                 using OpSpec = Op<typename Left::FieldType, typename Right::FieldType>;
 
                 return !std::is_same_v<ResultDataType, InvalidType>
-                    && !data_type::is_decimal_or_dt64<ResultDataType>
+                    && !dt::is_decimal_like<ResultDataType>
                     && OpSpec::compilable;
             }
         });
@@ -1291,7 +1284,7 @@ public:
 
                 constexpr bool valid =
                     !std::is_same_v<ResultDataType, InvalidType>
-                    && !data_types::is_decimal_or_dt64<ResultDataType>
+                    && !dt::is_decimal_like<ResultDataType>
                     && OpSpec::compilable;
 
                 if constexpr (valid)

@@ -90,9 +90,9 @@ IProcessor::Status LimitTransform::prepare(
             case IProcessor::Status::NeedData:
                 return;
             default:
-                throw Exception(
-                        "Unexpected status for LimitTransform::preparePair : " + IProcessor::statusToName(status),
-                        ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected status for LimitTransform::preparePair: {}",
+                    status);
         }
     };
 

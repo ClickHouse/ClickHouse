@@ -10,8 +10,8 @@ template <class T> concept is_enum = std::is_enum_v<T>;
 template <is_enum E>
 constexpr bool static_for(auto && f)
 {
-    return static_for<magic_enum::enum_values<E>()>(
-        std::forward<decltype(f)>(f));
+    constexpr auto arr = CTArray(magic_enum::enum_values<E>());
+    return static_for<arr>(std::forward<decltype(f)>(f));
 }
 
 /// Enable printing enum values as strings via fmt + magic_enum
