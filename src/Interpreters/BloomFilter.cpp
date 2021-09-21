@@ -1,9 +1,11 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -124,6 +126,14 @@ DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(data_type.get()))
+    {
+        if (!typeid_cast<const DataTypeMap *>(map_type->getKeyType().get()))
+            return getPrimitiveType(map_type->getKeyType());
+        else
+            throw Exception("Unexpected key type " + data_type->getName() + " of bloom filter index for map.", ErrorCodes::BAD_ARGUMENTS);
+    }
+
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
         return getPrimitiveType(nullable_type->getNestedType());
 
@@ -137,6 +147,9 @@ ColumnPtr BloomFilter::getPrimitiveColumn(const ColumnPtr & column)
 {
     if (const auto * array_col = typeid_cast<const ColumnArray *>(column.get()))
         return getPrimitiveColumn(array_col->getDataPtr());
+
+    if (const auto * map_col = typeid_cast<const ColumnMap *>(column.get()))
+        return getPrimitiveColumn(map_col->getNestedData().getColumnPtr(0));
 
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(column.get()))
         return getPrimitiveColumn(nullable_col->getNestedColumnPtr());
