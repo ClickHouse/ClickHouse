@@ -38,6 +38,7 @@ namespace ErrorCodes
 namespace
 {
     const auto RESCHEDULE_MS = 500;
+    const auto BACKOFF_TRESHOLD = 32000;
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
 }
 
@@ -54,40 +55,48 @@ StorageFileLog::StorageFileLog(
     , path(getContext()->getUserFilesPath() + "/" + relative_path_)
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
+    , milliseconds_to_wait(RESCHEDULE_MS)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    if (std::filesystem::is_regular_file(path))
+    try
     {
-        auto normal_path = std::filesystem::path(path).lexically_normal().native();
-        file_status[normal_path] = FileContext{};
-        file_names.push_back(normal_path);
-    }
-    else if (std::filesystem::is_directory(path))
-    {
-        path_is_directory = true;
-        /// Just consider file with depth 1
-        for (const auto & dir_entry : std::filesystem::directory_iterator{path})
+        if (std::filesystem::is_regular_file(path))
         {
-            if (dir_entry.is_regular_file())
+            auto normal_path = std::filesystem::path(path).lexically_normal().native();
+            file_statuses[normal_path] = FileContext{};
+            file_names.push_back(normal_path);
+        }
+        else if (std::filesystem::is_directory(path))
+        {
+            path_is_directory = true;
+            /// Just consider file with depth 1
+            for (const auto & dir_entry : std::filesystem::directory_iterator{path})
             {
-                auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
-                file_status[normal_path] = FileContext{};
-                file_names.push_back(normal_path);
+                if (dir_entry.is_regular_file())
+                {
+                    auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
+                    file_statuses[normal_path] = FileContext{};
+                    file_names.push_back(normal_path);
+                }
             }
         }
+        else
+        {
+            throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
+
+        auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        task = std::make_shared<TaskContext>(std::move(thread));
     }
-    else
+    catch (...)
     {
-        throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
-
-    auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
-    task = std::make_shared<TaskContext>(std::move(thread));
 }
 
 Pipe StorageFileLog::read(
@@ -101,7 +110,7 @@ Pipe StorageFileLog::read(
 {
     std::lock_guard<std::mutex> lock(status_mutex);
 
-    updateFileStatus();
+    updateFileStatuses();
 
     /// No files to parse
     if (file_names.empty())
@@ -155,7 +164,6 @@ size_t StorageFileLog::getPollMaxBatchSize() const
 {
     size_t batch_size = filelog_settings->filelog_poll_max_batch_size.changed ? filelog_settings->filelog_poll_max_batch_size.value
                                                                               : getContext()->getSettingsRef().max_block_size.value;
-
     return std::min(batch_size, getMaxBlockSize());
 }
 
@@ -211,11 +219,16 @@ void StorageFileLog::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                auto file_status_no_update = streamToViews();
-                if (file_status_no_update)
+                if (streamToViews())
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
+                    if (milliseconds_to_wait < BACKOFF_TRESHOLD)
+                        milliseconds_to_wait *= 2;
                     break;
+                }
+                else
+                {
+                    milliseconds_to_wait = RESCHEDULE_MS;
                 }
 
                 auto ts = std::chrono::steady_clock::now();
@@ -225,7 +238,7 @@ void StorageFileLog::threadFunc()
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
-                updateFileStatus();
+                updateFileStatuses();
             }
         }
     }
@@ -236,7 +249,7 @@ void StorageFileLog::threadFunc()
 
     // Wait for attached views
     if (!task->stream_cancelled)
-        task->holder->scheduleAfter(RESCHEDULE_MS);
+        task->holder->scheduleAfter(milliseconds_to_wait);
 }
 
 
@@ -304,7 +317,7 @@ bool StorageFileLog::streamToViews()
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
         formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileStatus();
+    return updateFileStatuses();
 }
 
 void registerStorageFileLog(StorageFactory & factory)
@@ -365,15 +378,15 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
-bool StorageFileLog::updateFileStatus()
+bool StorageFileLog::updateFileStatuses()
 {
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
-    auto error = directory_watch->hasError();
-    if (error)
-        LOG_INFO(log, "Error happened during watching directory {}.", directory_watch->getPath());
+    auto error = directory_watch->getErrorAndReset();
+    if (error.has_error)
+        LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
-    auto events = directory_watch->getEvents();
+    auto events = directory_watch->getEventsAndReset();
 
     for (const auto & event : events)
     {
@@ -384,7 +397,7 @@ bool StorageFileLog::updateFileStatus()
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
                 if (std::filesystem::is_regular_file(normal_path))
                 {
-                    file_status[event.path] = FileContext{};
+                    file_statuses[event.path] = FileContext{};
                     file_names.push_back(normal_path);
                 }
                 break;
@@ -393,9 +406,9 @@ bool StorageFileLog::updateFileStatus()
             case Poco::DirectoryWatcher::DW_ITEM_MODIFIED: {
                 auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
-                if (std::filesystem::is_regular_file(normal_path) && file_status.contains(normal_path))
+                if (std::filesystem::is_regular_file(normal_path) && file_statuses.contains(normal_path))
                 {
-                    file_status[normal_path].status = FileStatus::UPDATED;
+                    file_statuses[normal_path].status = FileStatus::UPDATED;
                 }
                 break;
             }
@@ -405,9 +418,9 @@ bool StorageFileLog::updateFileStatus()
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM: {
                 auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
-                if (std::filesystem::is_regular_file(normal_path) && file_status.contains(normal_path))
+                if (std::filesystem::is_regular_file(normal_path) && file_statuses.contains(normal_path))
                 {
-                    file_status[normal_path].status = FileStatus::REMOVED;
+                    file_statuses[normal_path].status = FileStatus::REMOVED;
                 }
             }
         }
@@ -415,9 +428,9 @@ bool StorageFileLog::updateFileStatus()
     std::vector<String> valid_files;
     for (const auto & file_name : file_names)
     {
-        if (file_status.at(file_name).status == FileStatus::REMOVED)
+        if (file_statuses.at(file_name).status == FileStatus::REMOVED)
         {
-            file_status.erase(file_name);
+            file_statuses.erase(file_name);
         }
         else
         {

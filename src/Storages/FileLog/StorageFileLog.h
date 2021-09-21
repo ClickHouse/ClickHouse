@@ -52,7 +52,7 @@ public:
     const auto & getFormatName() const { return format_name; }
 
     auto & getFileNames() { return file_names; }
-    auto & getFileStatus() { return file_status; }
+    auto & getFileStatuses() { return file_statuses; }
 
 protected:
     StorageFileLog(
@@ -78,13 +78,15 @@ private:
     };
 
     using NameToFile = std::unordered_map<String, FileContext>;
-    NameToFile file_status;
+    NameToFile file_statuses;
 
     std::vector<String> file_names;
 
     std::mutex status_mutex;
 
     std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
+
+    uint64_t milliseconds_to_wait;
 
     // Stream thread
     struct TaskContext
@@ -108,7 +110,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    bool updateFileStatus();
+    bool updateFileStatuses();
 };
 
 }
