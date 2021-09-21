@@ -159,6 +159,8 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     {
         const auto & column = block.getByName(index_columns[col]).column;
 
+        size_t current_position = *pos;
+
         if (column->getDataType() == TypeIndex::Map)
         {
             //update for the key of Map type
@@ -169,8 +171,8 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
             for (size_t i = 0; i < rows_read; ++i)
             {
-                size_t element_start_row = column_array.getOffsets()[*pos - 1];
-                size_t elements_size = column_array.getOffsets()[*pos] - element_start_row;
+                size_t element_start_row = column_array.getOffsets()[current_position - 1];
+                size_t elements_size = column_array.getOffsets()[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; row_num++)
                 {
@@ -178,22 +180,21 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
                     columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
                 }
 
-                *pos += 1;
+                current_position += 1;
             }
         }
         else
         {
             for (size_t i = 0; i < rows_read; ++i)
             {
-                auto ref = column->getDataAt(*pos + i);
+                auto ref = column->getDataAt(current_position + i);
                 columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
             }
-
-            *pos += rows_read;
         }
-
     }
+
     granule->has_elems = true;
+    *pos += rows_read;
 }
 
 
