@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel
+
 set -eu
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -49,7 +51,7 @@ rm ${user_files_path}/logs/e.txt
 
 # the max value of reschedule time is 32s, so 40s should
 # always be enough to finish streamToViews
-for _ in {1..400}
+for _ in {1..150}
 do
 	sleep 0.1
 done
@@ -57,10 +59,11 @@ done
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
 echo  111, 111 >> ${user_files_path}/logs/c.txt
+truncate ${user_files_path}/logs/d.txt --size 0
 
 # the max value of reschedule time is 32s, so 40s should
 # always be enough to finish streamToViews
-for _ in {1..400}
+for _ in {1..150}
 do
 	sleep 0.1
 done
