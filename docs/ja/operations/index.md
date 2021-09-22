@@ -25,4 +25,4 @@ ClickHouse操作マニュアルの以下の主要部:
 -   [設定](settings/index.md)
 -   [ユーティリ](utilities/index.md)
 
-{## [元の記事](https://clickhouse.tech/docs/en/operations/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/operations/) ##}
