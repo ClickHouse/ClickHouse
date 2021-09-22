@@ -28,6 +28,7 @@ SRCS(
     Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
+    Executors/StreamingFormatExecutor.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
     Formats/IOutputFormat.cpp
@@ -58,12 +59,8 @@ SRCS(
     Formats/Impl/MySQLOutputFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
-    Formats/Impl/ORCBlockInputFormat.cpp
-    Formats/Impl/ORCBlockOutputFormat.cpp
     Formats/Impl/ParallelFormattingOutputFormat.cpp
     Formats/Impl/ParallelParsingInputFormat.cpp
-    Formats/Impl/ParquetBlockInputFormat.cpp
-    Formats/Impl/ParquetBlockOutputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
