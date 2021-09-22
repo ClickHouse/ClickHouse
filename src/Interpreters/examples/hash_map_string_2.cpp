@@ -659,9 +659,10 @@ int main(int argc, char ** argv)
     if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>          (data, "StringRef_CompareAlwaysTrue");
     if (!m || m == 101) bench<StringRef_CompareAlmostAlwaysTrue>    (data, "StringRef_CompareAlmostAlwaysTrue");
 
+    if (!m || m == 111) bench<StringRef>                            (data, "StringRef");
+
     /// 10 > 8, 9
     /// 1, 2, 5 - bad
-
 
     return 0;
 }

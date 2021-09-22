@@ -103,13 +103,20 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
+    static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
+        "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+
+    if (!database_engines.contains(engine_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
+
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
         "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
 
     if (engine_define->engine->arguments && !engine_may_have_arguments)
-        throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have arguments", engine_name);
 
     bool has_unexpected_element = engine_define->engine->parameters || engine_define->partition_by ||
                                   engine_define->primary_key || engine_define->order_by ||
@@ -117,8 +124,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializedPostgreSQL";
 
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
-        throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
-                        ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST,
+                        "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
@@ -176,12 +183,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             if (create.uuid == UUIDHelpers::Nil)
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseOrdinary>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                    context, database_name, metadata_path, uuid, mysql_database_name,
+                    std::move(mysql_pool), std::move(client), std::move(materialize_mode_settings));
             else
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseAtomic>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                    context, database_name, metadata_path, uuid, mysql_database_name,
+                    std::move(mysql_pool), std::move(client), std::move(materialize_mode_settings));
         }
         catch (...)
         {
@@ -304,7 +311,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-                context, metadata_path, uuid, engine_define, create.attach,
+                context, metadata_path, uuid, create.attach,
                 database_name, postgres_database_name, connection_info,
                 std::move(postgresql_replica_settings));
     }
