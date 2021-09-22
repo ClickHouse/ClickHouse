@@ -122,36 +122,61 @@ static bool isConditionGood(const ASTPtr & condition)
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
-    if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
+    const auto * func = node->as<ASTFunction>();
+
+    if (func && func->name == "and")
     {
-        for (const auto & elem : func_and->arguments->children)
+        for (const auto & elem : func->arguments->children)
             analyzeImpl(res, elem, is_final);
     }
     else
     {
-        Condition cond;
-        cond.node = node;
+        const auto * func_tuple = func->arguments->children[0]->as<ASTFunction>();
+        if (func_tuple && func_tuple->name == "tuple")
+        {
 
-        collectIdentifiersNoSubqueries(node, cond.identifiers);
+            const auto * value_tuple = func->arguments->children[1]->as<ASTLiteral>();
+            int index = 0;
 
-        cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
 
-        cond.viable =
-            /// Condition depend on some column. Constant expressions are not moved.
-            !cond.identifiers.empty()
-            && !cannotBeMoved(node, is_final)
-            /// Do not take into consideration the conditions consisting only of the first primary key column
-            && !hasPrimaryKeyAtoms(node)
-            /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
-            && isSubsetOfTableColumns(cond.identifiers)
-            /// Do not move conditions involving all queried columns.
-            && cond.identifiers.size() < queried_columns.size();
+            auto & tuple = value_tuple->value.safeGet<Tuple>();
+            for (auto column : func_tuple->arguments->children)
+            {
+                const auto & sign_column_name = std::make_shared<ASTIdentifier>(column->as<ASTIdentifier>()->name());
+                const auto & fetch_sign_value = std::make_shared<ASTLiteral>(tuple.at(index));
 
-        if (cond.viable)
-            cond.good = isConditionGood(node);
+                auto func_node = makeASTFunction("equals", sign_column_name, fetch_sign_value);
+                analyzeImpl(res, func_node, is_final);
+                index++;
+            }
+        }
+        else
+        {
+            Condition cond;
+            cond.node = node;
 
-        res.emplace_back(std::move(cond));
+            collectIdentifiersNoSubqueries(node, cond.identifiers);
+
+            cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
+
+            cond.viable =
+                /// Condition depend on some column. Constant expressions are not moved.
+                !cond.identifiers.empty()
+                && !cannotBeMoved(node, is_final)
+                /// Do not take into consideration the conditions consisting only of the first primary key column
+                && !hasPrimaryKeyAtoms(node)
+                /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
+                && isSubsetOfTableColumns(cond.identifiers)
+                /// Do not move conditions involving all queried columns.
+                && cond.identifiers.size() < queried_columns.size();
+
+            if (cond.viable)
+                cond.good = isConditionGood(node);
+
+            res.emplace_back(std::move(cond));
+        }
     }
+
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
