@@ -161,13 +161,7 @@ protected:
         columns.reserve(column_names_and_types.size());
 
         for (const auto & elem : column_names_and_types)
-        {
-            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
+            columns.emplace_back(getColumnFromBlock(buffer.data, elem));
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);

@@ -127,9 +127,9 @@ world
 
 数组用方括号包裹、逗号分隔的形式表示(例如`[11,22,33]`)。数组中的数字项按上述规则进行格式化。`日期`和`日期时间`类型用单引号包裹。字符串用单引号包裹，遵循上述转义规则。
 
-[NULL](https://clickhouse.tech/docs/zh/sql-reference/syntax/)将输出为`\N`。
+[NULL](https://clickhouse.com/docs/zh/sql-reference/syntax/)将输出为`\N`。
 
-[Nested](https://clickhouse.tech/docs/zh/sql-reference/data-types/nested-data-structures/nested/)结构的每个元素都表示为数组。
+[Nested](https://clickhouse.com/docs/zh/sql-reference/data-types/nested-data-structures/nested/)结构的每个元素都表示为数组。
 
 示例：
 
@@ -931,7 +931,7 @@ FixedString 被简单地表示为字节序列。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-另见：[input_format_values_interpret_expressions](https://clickhouse.tech/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.tech/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
+另见：[input_format_values_interpret_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
 
 ## Vertical {#vertical}
 
@@ -1325,7 +1325,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
-这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.tech/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.tech/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
+这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
 
 ### 示例：
 查询如下：
@@ -1344,14 +1344,14 @@ SELECT * FROM line_as_string;
 ## Regexp {#regexp}
 每一列输入数据根据正则表达式解析。使用`Regexp`格式时，可以使用如下设置：
 
--  `format_regexp`，[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
-- `format_regexp_escaping_rule`，[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
-  - CSV(规则相同于[CSV](https://clickhouse.tech/docs/zh/interfaces/formats/#csv))
-  - JSON(相同于[JSONEachRow](https://clickhouse.tech/docs/zh/interfaces/formats/#jsoneachrow))
-  - Escaped(相同于[TSV](https://clickhouse.tech/docs/zh/interfaces/formats/#tabseparated))
-  - Quoted(相同于[Values](https://clickhouse.tech/docs/zh/interfaces/formats/#data-format-values))
+-  `format_regexp`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
+- `format_regexp_escaping_rule`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
+  - CSV(规则相同于[CSV](https://clickhouse.com/docs/zh/interfaces/formats/#csv))
+  - JSON(相同于[JSONEachRow](https://clickhouse.com/docs/zh/interfaces/formats/#jsoneachrow))
+  - Escaped(相同于[TSV](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparated))
+  - Quoted(相同于[Values](https://clickhouse.com/docs/zh/interfaces/formats/#data-format-values))
   - Raw(将整个子匹配项进行提取，不转义)
-- `format_regexp_skip_unmatched`，[UInt8](https://clickhouse.tech/docs/zh/sql-reference/data-types/int-uint/)类型。当`format_regexp`表达式没有匹配到结果时是否抛出异常。可为0或1。
+- `format_regexp_skip_unmatched`，[UInt8](https://clickhouse.com/docs/zh/sql-reference/data-types/int-uint/)类型。当`format_regexp`表达式没有匹配到结果时是否抛出异常。可为0或1。
 
 ### 用法 {#usage-1}
 `format_regexp`设置会应用于每一行输入数据。正则表达式的子匹配项数必须等于输入数据期望得到的列数。
@@ -1391,7 +1391,7 @@ SELECT * FROM imp_regex_table;
 
 ## RawBLOB {#rawblob}
 这种格式下，所有输入数据视为一个值。该格式仅适用于仅有一String类型的列的表。输出时，使用二进制格式输出。当输出结果不唯一时，输出是有歧义的，并且不能通过该输出还原原数据。
-下面是`RawBLOB`与[TabSeparatedRaw](https://clickhouse.tech/docs/zh/interfaces/formats/#tabseparatedraw)的对比：
+下面是`RawBLOB`与[TabSeparatedRaw](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparatedraw)的对比：
 
 `RawBloB`:
 
@@ -1405,7 +1405,7 @@ SELECT * FROM imp_regex_table;
 - 每行的值通过制表符分隔。
 - 每行最后的值得后面有换行符。
 
-下面是`RawBLOB`与[RowBinary](https://clickhouse.tech/docs/zh/interfaces/formats/#rowbinary)的对比：
+下面是`RawBLOB`与[RowBinary](https://clickhouse.com/docs/zh/interfaces/formats/#rowbinary)的对比：
 
 `RawBloB`:
 
@@ -1436,8 +1436,8 @@ f9725a22f9191e064120d718e26862a9  -
 格式架构为架构文件名和此文件中消息类型的组合，用冒号分隔,例如 `schemafile.proto:MessageType`.
 如果文件具有格式的标准扩展名(例如, `Protobuf`格式的架构文件标准扩展名为`.proto`),它可以被省略，在这种情况下，格式模式如下所示 `schemafile:MessageType`.
 
-如果您通过[Client](../interfaces/cli.md) 在 [交互模式](https://clickhouse.tech/docs/zh/interfaces/cli/#cli_usage)下输入或输出数据，格式架构中指定的文件名可以使用绝对路径或客户端当前目录的相对路径。
-如果在[批处理模式](https://clickhouse.tech/docs/zh/interfaces/cli/#cli_usage)下使用客户端，则由于安全原因，架构的路径必须使用相对路径。
+如果您通过[Client](../interfaces/cli.md) 在 [交互模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下输入或输出数据，格式架构中指定的文件名可以使用绝对路径或客户端当前目录的相对路径。
+如果在[批处理模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下使用客户端，则由于安全原因，架构的路径必须使用相对路径。
 
 如果您通过 HTTP接口](../interfaces/http.md)输入或输出数据，格式架构中指定的文件名应该位于服务器设置的[format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)指定的目录中。
 
@@ -1453,4 +1453,4 @@ f9725a22f9191e064120d718e26862a9  -
 
 
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/formats/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/formats/) <!--hide-->
