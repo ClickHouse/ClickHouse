@@ -29,6 +29,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB
@@ -200,6 +201,13 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
             ErrorCodes::ILLEGAL_COLUMN);
+
+    /// Normalize ASTs to be compatible with InterpreterCreateQuery.
+    FunctionNameNormalizer normalizer;
+    if (column.default_desc.expression)
+        normalizer.visit(column.default_desc.expression.get());
+    if (column.ttl)
+        normalizer.visit(column.ttl.get());
 
     auto insert_it = columns.cend();
 
