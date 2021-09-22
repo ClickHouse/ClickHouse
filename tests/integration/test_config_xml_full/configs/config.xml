@@ -546,7 +546,7 @@
     -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.tech/docs/en/operations/table_engines/distributed/
+         https://clickhouse.com/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -682,7 +682,7 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
+         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
     <!--
@@ -705,7 +705,7 @@
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
     <!--
     <macros>
@@ -792,7 +792,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.tech/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -801,7 +801,7 @@
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
         <!--
-            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
                 event_date + INTERVAL 1 WEEK
                 event_date + INTERVAL 7 DAY DELETE
@@ -915,7 +915,7 @@
     </crash_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.tech/docs/en/dicts/internal_dicts/
+         See https://clickhouse.com/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -939,7 +939,7 @@
     </top_level_domains_lists>
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
+         https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 

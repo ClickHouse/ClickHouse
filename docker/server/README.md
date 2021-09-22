@@ -6,7 +6,7 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It currently powers [Yandex.Metrica](https://metrica.yandex.com/), world’s [second largest](http://w3techs.com/technologies/overview/traffic_analysis/all) web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on-the-fly, directly from non-aggregated data. This system was successfully implemented at [CERN’s LHCb experiment](https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/) to store and process metadata on 10bn events with over 1000 attributes per event registered in 2011.
 
-For more information and documentation see https://clickhouse.tech/.
+For more information and documentation see https://clickhouse.com/.
 
 ## How to use this image
 
@@ -22,14 +22,14 @@ By default ClickHouse will be accessible only via docker network. See the [netwo
 $ docker run -it --rm --link some-clickhouse-server:clickhouse-server clickhouse/clickhouse-client --host clickhouse-server
 ```
 
-More information about [ClickHouse client](https://clickhouse.tech/docs/en/interfaces/cli/).
+More information about [ClickHouse client](https://clickhouse.com/docs/en/interfaces/cli/).
 
 ### connect to it using curl
 
 ```bash
 echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --link some-clickhouse-server:clickhouse-server curlimages/curl 'http://clickhouse-server:8123/?query=' -s --data-binary @-
 ```
-More information about [ClickHouse HTTP Interface](https://clickhouse.tech/docs/en/interfaces/http/).
+More information about [ClickHouse HTTP Interface](https://clickhouse.com/docs/en/interfaces/http/).
 
 ### stopping / removing the containter
 
@@ -90,9 +90,9 @@ $ docker run -d \
 
 ## Configuration
 
-Container exposes 8123 port for [HTTP interface](https://clickhouse.tech/docs/en/interfaces/http_interface/) and 9000 port for [native client](https://clickhouse.tech/docs/en/interfaces/tcp/).
+Container exposes 8123 port for [HTTP interface](https://clickhouse.com/docs/en/interfaces/http_interface/) and 9000 port for [native client](https://clickhouse.com/docs/en/interfaces/tcp/).
 
-ClickHouse configuration represented with a file "config.xml" ([documentation](https://clickhouse.tech/docs/en/operations/configuration_files/))
+ClickHouse configuration represented with a file "config.xml" ([documentation](https://clickhouse.com/docs/en/operations/configuration_files/))
 
 ### Start server instance with custom configuration
 ```bash
