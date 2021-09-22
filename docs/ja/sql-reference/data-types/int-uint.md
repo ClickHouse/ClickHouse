@@ -24,4 +24,4 @@ toc_title: "UInt8\u3001UInt16\u3001UInt32\u3001UInt64\u3001Int8\u3001Int16\u3001
 -   UInt32-\[0:4294967295\]
 -   UInt64-\[0:18446744073709551615\]
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/int_uint/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/int_uint/) <!--hide-->

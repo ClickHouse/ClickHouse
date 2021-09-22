@@ -104,7 +104,7 @@ def adjust_markdown_html(content):
         for p in div.find_all('p'):
             p_class = p.attrs.get('class')
             if is_admonition and p_class and ('admonition-title' in p_class):
-                p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
+                p.attrs['class'] = p_class + ['alert-heading', 'display-4', 'text-reset', 'mb-2']
 
         if is_admonition:
             div.attrs['role'] = 'alert'
@@ -144,6 +144,7 @@ def build_website(args):
             'docs',
             'public',
             'node_modules',
+            'src',
             'templates',
             'locale',
             '.gitkeep'
@@ -181,7 +182,8 @@ def get_css_in(args):
         f"'{args.website_dir}/css/base.css'",
         f"'{args.website_dir}/css/blog.css'",
         f"'{args.website_dir}/css/docs.css'",
-        f"'{args.website_dir}/css/highlight.css'"
+        f"'{args.website_dir}/css/highlight.css'",
+        f"'{args.website_dir}/css/main.css'"
     ]
 
 
@@ -194,7 +196,8 @@ def get_js_in(args):
         f"'{args.website_dir}/js/base.js'",
         f"'{args.website_dir}/js/index.js'",
         f"'{args.website_dir}/js/docsearch.js'",
-        f"'{args.website_dir}/js/docs.js'"
+        f"'{args.website_dir}/js/docs.js'",
+        f"'{args.website_dir}/js/main.js'"
     ]
 
 
@@ -212,10 +215,12 @@ def minify_file(path, css_digest, js_digest):
         content = minify_html(content)
         content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
         content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
-    elif path.endswith('.css'):
-        content = cssmin.cssmin(content)
-    elif path.endswith('.js'):
-        content = jsmin.jsmin(content)
+# TODO: restore cssmin
+#     elif path.endswith('.css'):
+#         content = cssmin.cssmin(content)
+# TODO: restore jsmin    
+#     elif path.endswith('.js'):
+#         content = jsmin.jsmin(content)
     with open(path, 'wb') as f:
         f.write(content.encode('utf-8'))
 
@@ -237,7 +242,7 @@ def minify_website(args):
 
     js_in = get_js_in(args)
     js_out = f'{args.output_dir}/js/base.js'
-    if args.minify:
+    if args.minify and False:  # TODO: return closure
         js_in = [js[1:-1] for js in js_in]
         closure_args = [
             '--js', *js_in, '--js_output_file', js_out,
