@@ -174,6 +174,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         try
         {
+            storage.queue.initialize(zookeeper);
+
             storage.queue.load(zookeeper);
 
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);

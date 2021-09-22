@@ -58,4 +58,4 @@ ClickHouse中的查询可以分为几种类型:
 
 默认值：1
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
