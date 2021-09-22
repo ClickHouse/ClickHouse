@@ -21,16 +21,17 @@ namespace ErrorCodes
 }
 
 static const auto WAIT_MS = 10;
-static const auto WAIT_THRESHOLD_MS = 10000;
 
-ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(const String & url_,
-                                                                 ContextPtr context_,
-                                                                 size_t buf_size_)
+
+ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
+    const String & url_, ContextPtr context_, size_t buf_size_, size_t backoff_threshold_, size_t max_tries_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
+    , backoff_threshold_ms(backoff_threshold_)
+    , max_tries(max_tries_)
 {
 }
 
@@ -75,31 +76,35 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     }
 
     WriteBufferFromOwnString error_msg;
-    while (milliseconds_to_wait < WAIT_THRESHOLD_MS)
+    for (size_t i = 0; (i < max_tries) && !successful_read && !next_result; ++i)
     {
-        try
+        while (milliseconds_to_wait < backoff_threshold_ms)
         {
-            if (!impl)
+            try
             {
-                impl = initialize();
-                next_result = impl->hasPendingData();
-                if (next_result)
-                    break;
+                if (!impl)
+                {
+                    impl = initialize();
+                    next_result = impl->hasPendingData();
+                    if (next_result)
+                        break;
+                }
+
+                next_result = impl->next();
+                successful_read = true;
+                break;
             }
+            catch (const Poco::Exception & e)
+            {
+                LOG_WARNING(log, "Read attempt failed for url: {}. Error: {}", url, e.what());
+                error_msg << fmt::format("Error: {}\n", e.what());
 
-            next_result = impl->next();
-            successful_read = true;
-            break;
+                sleepForMilliseconds(milliseconds_to_wait);
+                milliseconds_to_wait *= 2;
+                impl.reset();
+            }
         }
-        catch (const Poco::Exception & e)
-        {
-            LOG_WARNING(log, "Read attempt failed for url: {}. Error: {}", url, e.what());
-            error_msg << fmt::format("Error: {}\n", e.what());
-
-            sleepForMilliseconds(milliseconds_to_wait);
-            milliseconds_to_wait *= 2;
-            impl.reset();
-        }
+        milliseconds_to_wait = WAIT_MS;
     }
 
     if (!successful_read)
