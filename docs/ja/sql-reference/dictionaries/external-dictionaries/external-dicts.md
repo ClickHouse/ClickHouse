@@ -59,4 +59,4 @@ toc_title: "\u4E00\u822C\u7684\u306A\u8AAC\u660E"
 -   [辞書キーとフィールド](external-dicts-dict-structure.md)
 -   [外部辞書を操作するための関数](../../../sql-reference/functions/ext-dict-functions.md)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->
