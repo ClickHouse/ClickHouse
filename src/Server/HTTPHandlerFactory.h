@@ -103,7 +103,7 @@ public:
         });
     }
 
-    /// Handle POST or GET with params
+    /// Handle POST or GET with params or OPTIONS queries
     void allowPostAndGetParamsAndOptionsRequest()
     {
         addFilter([](const auto & request)
