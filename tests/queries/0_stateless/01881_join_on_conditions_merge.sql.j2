@@ -80,6 +80,7 @@ SELECT * FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t
 SELECT '--';
 -- length(t1.key2) == length(t2.key2) is expression for columns from both tables, it works because it part of joining key
 SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND length(t1.key2) == length(t2.key2) AND t1.key != '333';
+SELECT 't22', * FROM t1 INNER JOIN t22 ON t1.id == t22.id AND (toUInt8(t1.key) > 222 OR toUInt8(t1.key2) >2) AND (t22.idd>3 OR t22.key2='BBB');
 
 
 {% endfor -%}
