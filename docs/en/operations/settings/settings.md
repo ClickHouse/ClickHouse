@@ -3604,6 +3604,18 @@ Possible values:
 
 Default value: `1000`.
 
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function), and [or](../../sql-reference/functions/logical-functions.md#logical-or-function) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+
+Possible values:
+
+-   `enable` — Enables short-circuit function evaluation for functions that are suitable for it (can throw an exception or computationally heavy).
+-   `force_enable` — Enables short-circuit function evaluation for all functions.
+-   `disable` — Disables short-circuit function evaluation.
+
+Default value: `enable`.
+
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
 Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
@@ -3629,7 +3641,6 @@ Result:
 ┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
 │                                              1 │
 └────────────────────────────────────────────────┘
-
 ```
 
 Query:
@@ -3647,7 +3658,6 @@ Exception: Regexp length too large.
 **See Also**
 
 -   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
-
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 

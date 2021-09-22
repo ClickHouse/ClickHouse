@@ -3396,6 +3396,18 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `1000`.
 
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+
+Возможные значения:
+
+-   `enable` — по короткой схеме вычисляются функции, которые подходят для этого (могут сгенерировать исключение или требуют сложных вычислений).
+-   `force_enable` — все функции вычисляются по короткой схеме.
+-   `disable` — вычисление функций по короткой схеме отключено.
+
+Значение по умолчанию: `enable`.
+
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
 Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
