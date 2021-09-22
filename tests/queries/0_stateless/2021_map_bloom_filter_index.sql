@@ -15,7 +15,7 @@ SELECT * FROM map_test WHERE map['K0'] = 'V0';
 SELECT 'Equals with non existing key';
 SELECT * FROM map_test WHERE map['K2'] = 'V2';
 
-SELECT 'Equals with default value';
+SELECT 'Equals with non existing key and default value';
 SELECT * FROM map_test WHERE map['K3'] = '';
 
 SELECT 'Not equals with existing key';
@@ -24,7 +24,7 @@ SELECT * FROM map_test WHERE map['K0'] != 'V0';
 SELECT 'Not equals with non existing key';
 SELECT * FROM map_test WHERE map['K2'] != 'V2';
 
-SELECT 'Not equals with default value';
+SELECT 'Not equals with non existing key and default value';
 SELECT * FROM map_test WHERE map['K3'] != '';
 
 DROP TABLE map_test;
