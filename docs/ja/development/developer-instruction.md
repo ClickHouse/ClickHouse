@@ -236,11 +236,11 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
 # コードの作成 {#writing-code}
 
-の説明ClickHouse建築で、できるだけ早く送ってくださhttps://clickhouse.tech/docs/en/開発/アーキテクチャ/
+の説明ClickHouse建築で、できるだけ早く送ってくださhttps://clickhouse.com/docs/en/開発/アーキテクチャ/
 
-コードのスタイルガイド:https://clickhouse.tech/docs/en/開発/スタイル/
+コードのスタイルガイド:https://clickhouse.com/docs/en/開発/スタイル/
 
-筆記試験：https://clickhouse.tech/docs/en/development/tests/
+筆記試験：https://clickhouse.com/docs/en/development/tests/
 
 タスクのリスト：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
