@@ -17,7 +17,7 @@ class DateLUT : private boost::noncopyable
 {
 public:
     /// Return singleton DateLUTImpl instance for the default time zone.
-    static ALWAYS_INLINE const DateLUTImpl & instance()  // -V1071
+    static ALWAYS_INLINE const DateLUTImpl & instance()
     {
         const auto & date_lut = getInstance();
         return *date_lut.default_impl.load(std::memory_order_acquire);
@@ -32,6 +32,7 @@ public:
 
         return date_lut.getImplementation(time_zone);
     }
+
     static void setDefaultTimezone(const std::string & time_zone)
     {
         auto & date_lut = getInstance();

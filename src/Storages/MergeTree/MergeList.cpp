@@ -8,12 +8,13 @@
 namespace DB
 {
 
-MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part)
-    : table_id{table_id_}
+MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
+    : database{database_}
+    , table{table_}
     , partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
-    , result_part_info{future_part.part_info}
+    , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
     , merge_type{future_part.merge_type}
@@ -32,7 +33,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMerg
     if (!future_part.parts.empty())
     {
         source_data_version = future_part.parts[0]->info.getDataVersion();
-        is_mutation = (result_part_info.getDataVersion() != source_data_version);
+        is_mutation = (result_data_version != source_data_version);
     }
 
     /// Each merge is executed into separate background processing pool thread
@@ -59,8 +60,8 @@ MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMerg
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;
-    res.database = table_id.getDatabaseName();
-    res.table = table_id.getTableName();
+    res.database = database;
+    res.table = table;
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;

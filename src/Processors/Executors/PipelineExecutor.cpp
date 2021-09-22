@@ -1,15 +1,14 @@
+#include <Processors/Executors/PipelineExecutor.h>
 #include <queue>
 #include <IO/WriteBufferFromString.h>
-#include <Common/EventCounter.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
-#include <Common/MemoryTracker.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/printPipeline.h>
+#include <Common/EventCounter.h>
+#include <ext/scope_guard.h>
+#include <Common/CurrentThread.h>
 #include <Processors/ISource.h>
+#include <Common/setThreadName.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -45,8 +44,6 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
-        if (process_list_element)
-            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -59,12 +56,6 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 
         throw;
     }
-}
-
-PipelineExecutor::~PipelineExecutor()
-{
-    if (process_list_element)
-        process_list_element->removePipelineExecutor(this);
 }
 
 void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
@@ -399,9 +390,6 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
-    if (num_threads < 1)
-        num_threads = 1;
-
     try
     {
         executeImpl(num_threads);
@@ -752,7 +740,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     bool finished_flag = false;
 
-    SCOPE_EXIT_SAFE(
+    SCOPE_EXIT(
         if (!finished_flag)
         {
             finish();
@@ -778,9 +766,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
                 );
 
                 try

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/// Information about roles enabled for a user at some specific time.
+/// Information about a role.
 struct EnabledRolesInfo
 {
     boost::container::flat_set<UUID> current_roles;

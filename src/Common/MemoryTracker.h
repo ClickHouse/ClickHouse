@@ -14,12 +14,12 @@
 /// outside of try/catch block of thread functions. ALLOW_ALLOCATIONS_IN_SCOPE cancels effect of
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-#include <common/scope_guard.h>
-extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+#include <ext/scope_guard.h>
+extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
-        bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
-        memory_tracker_always_throw_logical_error_on_allocation = val; \
-        SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+        bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \
+        _memory_tracker_always_throw_logical_error_on_allocation = val; \
+        SCOPE_EXIT({ _memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
@@ -58,12 +58,12 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    void updatePeak(Int64 will_be, bool log_memory_usage);
+    void updatePeak(Int64 will_be);
     void logMemoryUsage(Int64 current) const;
 
 public:
-    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
     ~MemoryTracker();
 
@@ -72,10 +72,6 @@ public:
     /** Call the following functions before calling of corresponding operations with memory allocators.
       */
     void alloc(Int64 size);
-
-    void allocNoThrow(Int64 size);
-
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded);
 
     void realloc(Int64 old_size, Int64 new_size)
     {
@@ -212,7 +208,7 @@ public:
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {
-            return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);
+            return counter > 0 && current_level >= level && (!fault_injection || (fault_injection && block_fault_injections));
         }
     };
 };

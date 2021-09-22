@@ -22,9 +22,6 @@ public:
 
     void setLevel(Poco::Message::Priority priority_) { priority = priority_; }
 
-    // Poco::Logger::parseLevel returns ints
-    void setLevel(int level) { priority = static_cast<Poco::Message::Priority>(level); }
-
     void open() override
     {
         if (pChannel)

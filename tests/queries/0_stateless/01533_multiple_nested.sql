@@ -33,20 +33,20 @@ SELECT col1.a FROM nested FORMAT Null;
 
 -- 4 files: (col1.size0, col1.a) x2
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
-    AND event_date >= yesterday() AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 SYSTEM DROP MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
 
 -- 6 files: (col3.size0, col3.n2.size1, col3.n2.s) x2
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col3.n2.s FROM %nested%'))
-    AND event_date >= yesterday() AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 DROP TABLE nested;
 
@@ -59,7 +59,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
-INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * x), y + x), range(number % 17))), range(number % 19)) FROM numbers(100000);
+INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * x), y + x), range(number % 17))), range(number % 19)) FROM numbers(1000000);
 SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) FROM nested GROUP BY id % 10;
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;

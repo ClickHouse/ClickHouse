@@ -9,8 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Functions/IFunctionImpl.h>
 
 namespace DB
 {
@@ -35,13 +34,12 @@ public:
     static constexpr size_t max_shingle_size = 25;
     static constexpr size_t max_num_hashes = 25;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringHash>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringHash>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
