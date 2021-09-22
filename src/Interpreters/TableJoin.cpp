@@ -1,5 +1,7 @@
 #include <Interpreters/TableJoin.h>
 
+#include <Common/Exception.h>
+#include <common/types.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Block.h>
@@ -148,9 +150,12 @@ void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
 {
     if (from == nullptr)
         return;
+
     if (to == nullptr)
+    {
         to = from;
-    else if (const auto * func = (to)->as<ASTFunction>(); func && func->name == "or")
+    }
+    else if (const auto * func = to->as<ASTFunction>(); func && func->name == "or")
     {
         /// already have `or` in condition, just add new argument
         func->arguments->children.push_back(from);
@@ -165,9 +170,27 @@ void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
 /// from's conditions added to to's ones
 void addConditionsToClause(TableJoin::JoinOnClause & to, const TableJoin::JoinOnClause & from)
 {
+    bool has_left = to.on_filter_condition_left || from.on_filter_condition_left;
+    bool has_right = to.on_filter_condition_right || from.on_filter_condition_right;
+    /// Cannot join conditions for left and right table via OR.
+    /// Currently all rows that don't hold condition from left(/right) table are filtered
+    if (has_left && has_right)
+    {
+        /// Format for debug
+        const auto & all_conds = {to.on_filter_condition_left, from.on_filter_condition_left,
+                                  to.on_filter_condition_right, from.on_filter_condition_right};
+        std::vector<String> conditions_str;
+        for (const auto & cond : all_conds)
+        {
+            if (cond != nullptr)
+                conditions_str.push_back(queryToString(cond));
+        }
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported JOIN ON conditions: '{}'", fmt::join(conditions_str, " OR "));
+    }
     joinASTbyOR(to.on_filter_condition_left, from.on_filter_condition_left);
     joinASTbyOR(to.on_filter_condition_right, from.on_filter_condition_right);
 }
+
 }
 
 bool operator<(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
@@ -182,11 +205,10 @@ void TableJoin::optimizeClauses()
         std::sort(std::begin(clauses), std::end(clauses));
 
         auto to_it = clauses.begin();
-        auto from_it = to_it + 1;
 
-        for (; from_it != clauses.end(); ++from_it)
+        for (auto from_it = to_it + 1; from_it != clauses.end(); ++from_it)
         {
-            if (! equalTableColumns(*from_it,*to_it))
+            if (!equalTableColumns(*from_it, *to_it))
             {
                 if (++to_it != from_it)
                 {
