@@ -11,7 +11,6 @@
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_SECURE_MS 100
 #define DBMS_DEFAULT_SEND_TIMEOUT_SEC 300
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC 300
-#define DBMS_DEFAULT_DRAIN_TIMEOUT_SEC 3
 /// Timeouts for hedged requests.
 #define DBMS_DEFAULT_HEDGED_CONNECTION_TIMEOUT_MS 100
 #define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_MS 2000
@@ -71,7 +70,6 @@
 
 /// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
-#define DBMS_MIN_REVISION_WITH_SCALARS 54429
 
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
@@ -127,9 +125,6 @@
 
 /// Default limit on recursion depth of recursive descend parser.
 #define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
-
-/// Default limit on query size.
-#define DBMS_DEFAULT_MAX_QUERY_SIZE 262144
 
 /// Max depth of hierarchical dictionary
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000

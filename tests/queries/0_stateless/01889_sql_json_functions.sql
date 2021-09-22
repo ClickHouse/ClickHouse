@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SELECT '--JSON_VALUE--';
 SELECT JSON_VALUE('$', '{"hello":1}'); -- root is a complex object => default value (empty string)
 SELECT JSON_VALUE('$.hello', '{"hello":1}');

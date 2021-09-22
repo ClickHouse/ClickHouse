@@ -80,8 +80,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isInteger(arguments[0]))

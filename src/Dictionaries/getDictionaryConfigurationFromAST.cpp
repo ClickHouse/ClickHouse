@@ -181,9 +181,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (const auto & child : children)
+    for (size_t index = 0; index != children.size(); ++index)
     {
-        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -402,9 +402,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (const auto & child : children)
+    for (size_t i = 0; i != children.size(); ++i)
     {
-        const ASTPair * pair = child->as<const ASTPair>();
+        const ASTPair * pair = children[i]->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
@@ -496,6 +496,9 @@ void checkAST(const ASTCreateQuery & query)
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
 
+    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
+
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
 
@@ -509,6 +512,8 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
+
+    /// Range can be empty
 }
 
 void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
