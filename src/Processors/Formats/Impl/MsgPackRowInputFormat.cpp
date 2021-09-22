@@ -71,7 +71,7 @@ static bool checkAndInsertNullable(IColumn & column, DataTypePtr type, InsertFun
 template <typename InsertFunc>
 static bool checkAndInsertLowCardinality(IColumn & column, DataTypePtr type, InsertFunc insert_func)
 {
-    if (type->getTypeId() == TypeIndex::LowCardinality)
+    if (type->lowCardinality())
     {
         auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
