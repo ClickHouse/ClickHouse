@@ -101,6 +101,8 @@ private:
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
+    void init();
+
     void threadFunc();
 
     size_t getPollMaxBatchSize() const;
