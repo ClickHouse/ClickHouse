@@ -1328,7 +1328,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                         auto common_type_maybe_nullable
                             = key_expr_type_is_nullable ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type)) : common_type;
                         ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type, ""}};
+                            {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
                         FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
                         auto func_cast = func_builder_cast->build(arguments);
 
