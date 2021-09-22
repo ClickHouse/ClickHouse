@@ -46,6 +46,7 @@ public:
     /// pushing
     explicit QueryPipeline(Chain chain);
     explicit QueryPipeline(std::shared_ptr<SinkToStorage> sink);
+    explicit QueryPipeline(std::shared_ptr<IOutputFormat> format);
 
     /// completed
     QueryPipeline(
@@ -92,7 +93,7 @@ public:
     void setProcessListElement(QueryStatus * elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota);
-    bool tryGetResultRowsAndBytes(size_t & result_rows, size_t & result_bytes) const;
+    bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
     void addStorageHolder(StoragePtr storage);
 

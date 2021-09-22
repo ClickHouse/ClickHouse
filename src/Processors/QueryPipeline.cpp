@@ -307,6 +307,38 @@ QueryPipeline::QueryPipeline(Chain chain)
     input = &chain.getInputPort();
 }
 
+QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
+{
+    auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
+    auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
+    auto & format_extremes = format->getPort(IOutputFormat::PortKind::Extremes);
+
+    if (!totals)
+    {
+        auto source = std::make_shared<NullSource>(format_totals.getHeader());
+        totals = &source->getPort();
+        processors.emplace_back(std::move(source));
+    }
+
+    if (!extremes)
+    {
+        auto source = std::make_shared<NullSource>(format_extremes.getHeader());
+        extremes = &source->getPort();
+        processors.emplace_back(std::move(source));
+    }
+
+    connect(*totals, format_totals);
+    connect(*extremes, format_extremes);
+
+    input = &format_main;
+    totals = nullptr;
+    extremes = nullptr;
+
+    output_format = format.get();
+
+    processors.emplace_back(std::move(format));
+}
+
 static void drop(OutputPort *& port, Processors & processors)
 {
     if (!port)
@@ -489,7 +521,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 }
 
 
-bool QueryPipeline::tryGetResultRowsAndBytes(size_t & result_rows, size_t & result_bytes) const
+bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
 {
     if (!output_format)
         return false;

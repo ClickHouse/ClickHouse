@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
+#include <DataStreams/materializeBlock.h>
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>
@@ -183,11 +184,11 @@ Pipe StorageExecutable::read(
             inputs[i].addTransform(std::move(transform));
         }
 
-        auto out = FormatFactory::instance().getOutputFormat(format, *write_buffer, inputs[i].getHeader(), context);
-        out->setAutoFlush();
-        inputs[i].setOutputFormat(std::move(out));
-
         auto pipeline = std::make_shared<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(inputs[i])));
+
+        auto out = FormatFactory::instance().getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()), context);
+        out->setAutoFlush();
+        pipeline->complete(std::move(out));
 
         ShellCommandSource::SendDataTask task = [pipeline, write_buffer, is_executable_pool]()
         {
