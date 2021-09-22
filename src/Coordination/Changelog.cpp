@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CORRUPTED_DATA;
+    extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int LOGICAL_ERROR;
 }
@@ -79,30 +80,45 @@ public:
     ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
         : filepath(filepath_)
         , file_buf(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY))
-        , buf(file_buf, /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append)
         , start_index(start_index_)
     {
+        auto compression_method = chooseCompressionMethod(filepath_, "");
+        if (compression_method != CompressionMethod::Zstd && compression_method != CompressionMethod::None)
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported coordination log serialization format {}", toContentEncodingName(compression_method));
+        }
+        else if (compression_method == CompressionMethod::Zstd)
+        {
+            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(file_buf, /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
+        }
+        else
+        {
+            /// no compression, only file buffer
+        }
     }
 
 
     void appendRecord(ChangelogRecord && record)
     {
-        writeIntBinary(computeRecordChecksum(record), buf);
+        writeIntBinary(computeRecordChecksum(record), getBuffer());
 
-        writeIntBinary(record.header.version, buf);
-        writeIntBinary(record.header.index, buf);
-        writeIntBinary(record.header.term, buf);
-        writeIntBinary(record.header.value_type, buf);
-        writeIntBinary(record.header.blob_size, buf);
+        writeIntBinary(record.header.version, getBuffer());
+        writeIntBinary(record.header.index, getBuffer());
+        writeIntBinary(record.header.term, getBuffer());
+        writeIntBinary(record.header.value_type, getBuffer());
+        writeIntBinary(record.header.blob_size, getBuffer());
 
         if (record.header.blob_size != 0)
-            buf.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+            getBuffer().write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
     }
 
     void flush(bool force_fsync)
     {
-        /// Flush compressed data to WriteBufferFromFile working_buffer
-        buf.next();
+        if (compressed_buffer)
+        {
+            /// Flush compressed data to WriteBufferFromFile working_buffer
+            compressed_buffer->next();
+        }
 
         /// Flush working buffer to file system
         file_buf.next();
@@ -118,9 +134,16 @@ public:
     }
 
 private:
+    WriteBuffer & getBuffer()
+    {
+        if (compressed_buffer)
+            return *compressed_buffer;
+        return file_buf;
+    }
+
     std::string filepath;
     WriteBufferFromFile file_buf;
-    ZstdDeflatingAppendableWriteBuffer buf;
+    std::unique_ptr<WriteBuffer> compressed_buffer;
     uint64_t start_index;
 };
 
