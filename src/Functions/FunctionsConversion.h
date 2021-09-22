@@ -1741,7 +1741,8 @@ private:
 
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
-                if (!dispatchOverDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag()))
+                if (!dispatchOverDataType<DISPATCH_OVER_ALL, DataTypeDateTime64>(
+                        from_type->getTypeId(), call, ConvertDefaultBehaviorTag()))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument of function {}",
                         arguments[0].type->getName(), getName());
@@ -1754,16 +1755,19 @@ private:
 
         if constexpr (to_string_or_fixed_string)
         {
-            done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+                from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
         else
         {
             /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
             /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
             if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+                done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+                    from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
             else
-                done = dispatchOverDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+                done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+                    from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
 
         if (!done)
@@ -1965,7 +1969,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 
@@ -1974,7 +1978,7 @@ struct UnknownMonotonicity
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { false };
+        return { .is_monotonic = false };
     }
 };
 
@@ -2000,13 +2004,13 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { true, true, true };
+            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
 
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
         if (std::is_floating_point_v<T>)
-            return {true, true, true};
+            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true};
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
@@ -2021,7 +2025,7 @@ struct ToNumberMonotonicity
                 && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
                 && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
                 && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
-                return { true };
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2046,10 +2050,10 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
 
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2058,14 +2062,14 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
 
             if (!to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2082,10 +2086,14 @@ struct ToNumberMonotonicity
                 return {};
 
             if (to_is_unsigned)
-                return {true};
+                return { .is_monotonic = true };
             else
+            {
                 // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
-                return {(T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0)};
+                const bool is_monotonic = (T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0);
+
+                return { .is_monotonic = is_monotonic};
+            }
         }
 
         __builtin_unreachable();
@@ -2100,7 +2108,7 @@ struct ToDateMonotonicity
     {
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
         else if (
             (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
             || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
@@ -2108,7 +2116,7 @@ struct ToDateMonotonicity
             || !type.isValueRepresentedByNumber())
             return {};
         else
-            return {true, true, true};
+            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
     }
 };
 
@@ -2119,7 +2127,7 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
         else
             return {};
     }
@@ -2134,7 +2142,7 @@ struct ToStringMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        IFunction::Monotonicity positive(true, true);
+        IFunction::Monotonicity positive = { .is_monotonic = true, .is_positive = true};
         IFunction::Monotonicity not_monotonic;
 
         const auto * type_ptr = &type;
@@ -2563,7 +2571,8 @@ private:
         {
             ColumnPtr result_column;
 
-            bool res = dispatchOverDataType<ToDataType>(from_type_index, [&]<class Left, class Right>(TypePair<Left, Right>)
+            bool res = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(from_type_index,
+                [&]<class Left, class Right>(TypePair<Left, Right>)
             {
                 if constexpr (dt::is_number<Left> && dt::is_number<Right>)
                 {
@@ -2647,7 +2656,8 @@ private:
         {
             ColumnPtr result_column;
 
-            bool res = dispatchOverDataType<ToDataType>(type_index, [&]<class To, class From>(TypePair<To, From>)
+            bool res = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(type_index,
+                [&]<class To, class From>(TypePair<To, From>)
             {
                 if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal<To>)
                 {

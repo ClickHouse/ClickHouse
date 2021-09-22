@@ -707,16 +707,16 @@ public:
         if (monday_first_mode)
         {
             // Rounds down a date to the nearest Monday.
-            first_day = toFirstDayNumOfWeek(first_day);
-            this_day = toFirstDayNumOfWeek(i);
+            first_day = LUTIndex(toFirstDayNumOfWeek(first_day));
+            this_day = LUTIndex(toFirstDayNumOfWeek(i));
         }
         else
         {
             // Rounds down a date to the nearest Sunday.
             if (toDayOfWeek(first_day) != 7)
-                first_day = ExtendedDayNum(first_day - toDayOfWeek(first_day));
+                first_day = LUTIndex(ExtendedDayNum(first_day - toDayOfWeek(first_day)));
             if (toDayOfWeek(i) != 7)
-                this_day = ExtendedDayNum(i - toDayOfWeek(i));
+                this_day = LUTIndex(ExtendedDayNum(i - toDayOfWeek(i)));
         }
         yw.second = (this_day - first_day) / 7 + 1;
         return yw;

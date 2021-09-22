@@ -138,10 +138,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return Monotonicity(
-            true,  // is_monotonic
-            true,  // is_positive
-            true); // is_always_monotonic
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
     }
 
 private:
@@ -174,9 +171,12 @@ public:
 
         constexpr Dispatch d { ._int = true };
 
+        // FIXME Can't use dispatchOverDataType as underlying trait
+        // ExecutableFunctionFrom...::executeImpl() produces error while trying to
+        // instantiate enum
         const bool built = dispatchOverType<d>(from_type->getTypeId(), [&]<class T>(TypePair<void, T>)
         {
-            using FromDay = FunctionBaseFromModifiedJulianDay<Name, T, nullOnErrors>;
+            using FromDay = FunctionBaseFromModifiedJulianDay<Name, DataTypeNumber<T>, nullOnErrors>;
             base = std::make_unique<FromDay>(argument_types, return_type);
             return true;
         });

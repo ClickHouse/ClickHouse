@@ -1020,7 +1020,7 @@ public:
         {
             if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr (dt::is_string<Left> && dt::is_string<Right>)
+                if constexpr (dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
                 {
                     if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                         return false;
@@ -1035,8 +1035,8 @@ public:
                     return false;
                 else if constexpr (!IsIntegral<Right>)
                     return false;
-                else if constexpr (std::is_same_v<DataTypeFixedString, Left>)
-                    type_res = std::make_shared<Right>(left.getN());
+                else if constexpr (dt::is_fixed_string<Left>)
+                    type_res = std::make_shared<Left>(left.getN());
                 else
                     type_res = std::make_shared<DataTypeString>();
                 return true;
@@ -1254,8 +1254,8 @@ public:
         }
         else if (col_right_const)
         {
-            const T1 value = col_right_const->template getValue<T1>();
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            const RightField value = col_right_const->template getValue<RightField>();
+            if constexpr (dt::is_fixed_string<Left>)
             {
                 OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
             }

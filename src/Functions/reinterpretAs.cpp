@@ -2,7 +2,7 @@
 #include <Functions/castTypeToEither.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -112,15 +112,11 @@ public:
 
         ColumnPtr result;
 
-        if (!callOnTwoTypeIndexes(from_type->getTypeId(), result_type->getTypeId(), [&](const auto & types)
+        auto call = [&]<class From, class To>(TypePair<From, To>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using FromType = typename Types::LeftType;
-            using ToType = typename Types::RightType;
-
             /// Place this check before std::is_same_v<FromType, ToType> because same FixedString
             /// types does not necessary have the same byte size fixed value.
-            if constexpr (std::is_same_v<ToType, DataTypeFixedString>)
+            if constexpr (dt::is_fixed_string<To>)
             {
                 const IColumn & src = *arguments[0].column;
                 MutableColumnPtr dst = result_type->createColumn();
@@ -136,13 +132,13 @@ public:
 
                 return true;
             }
-            else if constexpr (std::is_same_v<FromType, ToType>)
+            else if constexpr (std::is_same_v<From, To>)
             {
                 result = arguments[0].column;
 
                 return true;
             }
-            else if constexpr (std::is_same_v<ToType, DataTypeString>)
+            else if constexpr (dt::is_string<To>)
             {
                 const IColumn & src = *arguments[0].column;
                 MutableColumnPtr dst = result_type->createColumn();
@@ -154,21 +150,21 @@ public:
 
                 return true;
             }
-            else if constexpr (CanBeReinterpretedAsNumeric<ToType>)
+            else if constexpr (CanBeReinterpretedAsNumeric<To>)
             {
-                using ToColumnType = typename ToType::ColumnType;
-                using ToFieldType = typename ToType::FieldType;
+                using ToColumnType = typename To::ColumnType;
+                using ToFieldType = FieldType<To>;
 
-                if constexpr (std::is_same_v<FromType, DataTypeString>)
+                if constexpr (dt::is_string<From>)
                 {
                     const auto * col_from = assert_cast<const ColumnString *>(arguments[0].column.get());
 
-                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
+                    auto col_res = numericColumnCreateHelper<To>(static_cast<const To&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from->getChars();
                     const ColumnString::Offsets & offsets_from = col_from->getOffsets();
                     size_t size = offsets_from.size();
-                    typename ToColumnType::Container & vec_res = col_res->getData();
+                    typename To::Container & vec_res = col_res->getData();
                     vec_res.resize(size);
 
                     size_t offset = 0;
@@ -186,11 +182,11 @@ public:
 
                     return true;
                 }
-                else if constexpr (std::is_same_v<FromType, DataTypeFixedString>)
+                else if constexpr (dt::is_fixed_string<From>)
                 {
                     const auto * col_from_fixed = assert_cast<const ColumnFixedString *>(arguments[0].column.get());
 
-                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
+                    auto col_res = numericColumnCreateHelper<To>(static_cast<const To&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from_fixed->getChars();
                     size_t step = col_from_fixed->getN();
@@ -212,16 +208,16 @@ public:
 
                     return true;
                 }
-                else if constexpr (CanBeReinterpretedAsNumeric<FromType>)
+                else if constexpr (CanBeReinterpretedAsNumeric<From>)
                 {
-                    using From = typename FromType::FieldType;
-                    using To = typename ToType::FieldType;
+                    using FromField = typename From::FieldType;
+                    using ToField = typename To::FieldType;
 
-                    using FromColumnType = ColumnVectorOrDecimal<From>;
+                    using FromColumnType = ColumnVectorOrDecimal<FromField>;
 
                     const auto * column_from = assert_cast<const FromColumnType*>(arguments[0].column.get());
 
-                    auto column_to = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
+                    auto column_to = numericColumnCreateHelper<To>(static_cast<const To&>(*result_type.get()));
 
                     auto & from = column_from->getData();
                     auto & to = column_to->getData();
@@ -229,7 +225,7 @@ public:
                     size_t size = from.size();
                     to.resize_fill(size);
 
-                    static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+                    constexpr size_t copy_size = std::min(sizeof(FromField), sizeof(ToField));
 
                     for (size_t i = 0; i < size; ++i)
                         memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
@@ -241,18 +237,19 @@ public:
             }
 
             return false;
-        }))
-        {
+        };
+
+        if (!dispatchOverDataTypes(from_type->getTypeId(), result_type->getTypeId(), std::move(call)))
             throw Exception("Cannot reinterpret " + from_type->getName() + " as " + result_type->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
 
         return result;
     }
 private:
     template <typename T>
     static constexpr auto CanBeReinterpretedAsNumeric =
-        IsDataTypeDecimalOrNumber<T> ||
+        dt::is_decimal_like<T> ||
+        dt::is_number<T> ||
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
         std::is_same_v<T, DataTypeUUID>;

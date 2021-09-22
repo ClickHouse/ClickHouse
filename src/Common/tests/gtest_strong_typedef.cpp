@@ -29,6 +29,23 @@ TEST(StrongTypedefSuite, Map)
     int_unorderd_set.insert(Int(2));
 }
 
+TEST(StrongTypedefSuite, ZeroAssignment)
+{
+    STRONG_TYPEDEF(int, Int)
+
+    Int a;
+    Int b = {};
+    Int c(0);
+    Int d = Int(0);
+
+    EXPECT_EQ(a, 0);
+    EXPECT_EQ(b, 0);
+    EXPECT_EQ(c, 0);
+    EXPECT_EQ(d, 0);
+
+    STRONG_TYPEDEF(int, Int)
+}
+
 TEST(StrongTypedefSuite, CopyAndMoveCtor)
 {
     STRONG_TYPEDEF(int, Int)

@@ -20,7 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <Core/TypeListNumber.h>
+#include <common/TypeLists.h>
 #include <Interpreters/castColumn.h>
 #include <common/range.h>
 

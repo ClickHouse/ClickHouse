@@ -634,7 +634,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    date = DayNum(DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day()));
     return ReturnType(true);
 }
 

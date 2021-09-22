@@ -2,8 +2,7 @@
 #include <gtest/gtest.h>
 #include <common/static_for.h>
 
-template <int I>
-constexpr int foo() { return I; }
+template <int I> constexpr int foo() { return I; }
 
 TEST(StaticFor, Basic)
 {

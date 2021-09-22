@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Common/hex.h>
+#include <common/hex.h>
 
 namespace DB
 {

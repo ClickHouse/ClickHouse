@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnsNumber.h>

@@ -1840,7 +1840,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         /// We check the monotonicity of each function on a specific range.
         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
         IFunction::Monotonicity monotonicity = single_point
-            ? IFunction::Monotonicity{true}
+            ? IFunction::Monotonicity{.is_monotonic = true}
             : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)

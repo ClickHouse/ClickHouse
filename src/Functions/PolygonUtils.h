@@ -2,7 +2,7 @@
 
 #include <common/types.h>
 #include <Core/Defines.h>
-#include <Core/TypeListNumber.h>
+#include <common/TypeLists.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>

@@ -24,10 +24,7 @@ constexpr bool dispatchOverType(TypeIndex type, auto && f)
     return detail::dispatch<D, T, ReverseTypeId>(type, std::forward<decltype(f)>(f));
 }
 
-/**
- * Same as dispatchOverType, but invokes @p f with
- * <tt>TypePair<ReverseTypeId<MATCHED_TYPE_LEFT>, ReverseTypeId<MATCHED_TYPE_RIGHT>></tt>.
- */
+/// Same as dispatchOverType, but invokes @p f with matched type for @p left and @p right
 template <Dispatch D = DISPATCH_OVER_ALL>
 constexpr bool dispatchOverTypes(TypeIndex type, TypeIndex other, auto && f)
 {
@@ -35,7 +32,7 @@ constexpr bool dispatchOverTypes(TypeIndex type, TypeIndex other, auto && f)
 }
 
 /// Same as dispatchOverType, but @p f is invoked with ReverseDataTypeId
-template <class T = void>
+template <Dispatch D = DISPATCH_OVER_ALL, class T = void>
 constexpr bool dispatchOverDataType(TypeIndex type, auto && f, auto && ... args)
 {
     using F = decltype(f);
@@ -45,12 +42,13 @@ constexpr bool dispatchOverDataType(TypeIndex type, auto && f, auto && ... args)
         return f(type_pair, args...);
     };
 
-    return detail::dispatch<DISPATCH_OVER_ALL, T, ReverseDataTypeId>(type, std::move(capture_args));
+    return detail::dispatch<D, T, ReverseDataTypeId>(type, std::move(capture_args));
 }
 
 /// Same as dispatchOverDataType, but @p f is invoked with data types for @p left and @p right
+template <Dispatch D = DISPATCH_OVER_ALL>
 constexpr bool dispatchOverDataTypes(TypeIndex left, TypeIndex right, auto && f)
 {
-    return detail::dispatch<DISPATCH_OVER_ALL, ReverseDataTypeId>(left, right, std::forward<decltype(f)>(f));
+    return detail::dispatch<D, ReverseDataTypeId>(left, right, std::forward<decltype(f)>(f));
 }
 }
