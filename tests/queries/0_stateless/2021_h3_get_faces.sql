@@ -1,8 +1,10 @@
+-- Tags: no-unbundled, no-fasttest
+
 DROP TABLE IF EXISTS h3_indexes;
 
 CREATE TABLE h3_indexes (h3_index UInt64) ENGINE = Memory;
 
- -- test H3 indexes from: https://github.com/uber/h3-java/blob/master/src/test/java/com/uber/h3core/TestInspection.java#L86
+-- test H3 indexes from: https://github.com/uber/h3-java/blob/master/src/test/java/com/uber/h3core/TestInspection.java#L86
 
 INSERT INTO h3_indexes VALUES (stringToH3('0x85283473fffffffL'));
 INSERT INTO h3_indexes VALUES (stringToH3('85283473fffffff'));
