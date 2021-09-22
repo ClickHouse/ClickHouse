@@ -817,13 +817,13 @@ class TestSuite:
 
 
 stop_time = None
-exit_code = multiprocessing.Value("i", 0)
-server_died = multiprocessing.Event()
-stop_tests_triggered_lock = multiprocessing.Lock()
-stop_tests_triggered = multiprocessing.Event()
-queue = multiprocessing.Queue(maxsize=1)
-multiprocessing_manager = multiprocessing.Manager()
-restarted_tests = multiprocessing_manager.list()
+exit_code = None
+server_died = None
+stop_tests_triggered_lock = None
+stop_tests_triggered = None
+queue = None
+multiprocessing_manager = None
+restarted_tests = None
 
 # def run_tests_array(all_tests: List[str], num_tests: int, test_suite: TestSuite):
 def run_tests_array(all_tests_with_params):
@@ -1308,6 +1308,15 @@ def get_additional_client_options_url(args):
 
 
 if __name__ == '__main__':
+    stop_time = None
+    exit_code = multiprocessing.Value("i", 0)
+    server_died = multiprocessing.Event()
+    stop_tests_triggered_lock = multiprocessing.Lock()
+    stop_tests_triggered = multiprocessing.Event()
+    queue = multiprocessing.Queue(maxsize=1)
+    multiprocessing_manager = multiprocessing.Manager()
+    restarted_tests = multiprocessing_manager.list()
+
     # Move to a new process group and kill it at exit so that we don't have any
     # infinite tests processes left
     # (new process group is required to avoid killing some parent processes)
