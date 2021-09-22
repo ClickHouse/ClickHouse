@@ -512,32 +512,37 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (function->name == "arrayElement")
         {
+            /** Try to parse arrayElement for mapKeys index.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
+              * we return default value for arrayElement.
+              *
+              * We cannot skip keys that does not exist in map if comparison is with default type value because
+              * that way we skip necessary granules where map key does not exists.
+              */
+            if (value_field == value_type->getDefault())
+                return false;
+
             const auto & col_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
 
-            if (header.has(col_name))
+            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
+
+            if (header.has(map_keys_index_column_name))
             {
-                size_t position = header.getPositionByName(col_name);
+                size_t position = header.getPositionByName(map_keys_index_column_name);
                 const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto * map_type = typeid_cast<const DataTypeMap *>(index_type.get());
-                if (map_type)
+                out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+
+                auto & argument = function->arguments.get()->children[1];
+
+                if (const auto * literal = argument->as<ASTLiteral>())
                 {
-                    out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-
-                    auto & argument = function->arguments.get()->children[1];
-
-                    if (const auto * literal = argument->as<ASTLiteral>())
-                    {
-                        auto element_key = literal->value;
-                        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
-                    }
-                    else
-                    {
-                        return false;
-                    }
-
+                    auto element_key = literal->value;
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
                     return true;
                 }
+
+                return false;
             }
         }
     }
