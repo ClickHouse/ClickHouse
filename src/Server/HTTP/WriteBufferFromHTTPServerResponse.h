@@ -36,7 +36,6 @@ private:
     HTTPServerResponse & response;
 
     bool is_http_method_head;
-    bool add_cors_header = false;
     unsigned keep_alive_timeout = 0;
     bool compress = false;
     CompressionMethod compression_method;
@@ -101,13 +100,6 @@ public:
     void setCompressionLevel(int level)
     {
         compression_level = level;
-    }
-
-    /// Turn CORS on or off.
-    /// The setting has any effect only if HTTP headers haven't been sent yet.
-    void addHeaderCORS(bool enable_cors)
-    {
-        add_cors_header = enable_cors;
     }
 
     /// Don't send HTTP headers with progress more frequently.
