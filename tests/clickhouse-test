@@ -1265,7 +1265,7 @@ def main(args):
             print("\n{0:72}: ".format(test_result.case_name))
             # replace it with lowercase to avoid parsing retried tests as failed
             for status in TestStatus:
-                test_result.status = test_result.status.value.replace(status.value, status.value.lower())
+                test_result.description = test_result.description.replace(status.value, status.value.lower())
             print(test_result.description)
 
     if total_tests_run == 0:
