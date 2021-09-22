@@ -81,7 +81,6 @@ void StorageFileLog::init()
     }
     else if (std::filesystem::is_directory(path))
     {
-        path_is_directory = true;
         /// Just consider file with depth 1
         for (const auto & dir_entry : std::filesystem::directory_iterator{path})
         {

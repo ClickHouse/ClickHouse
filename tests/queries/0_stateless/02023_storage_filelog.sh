@@ -47,18 +47,22 @@ cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
 mv ${user_files_path}/logs/a.txt ${user_files_path}/logs/e.txt
 rm ${user_files_path}/logs/e.txt
 
-for i in 1 2 3 4 5
+# the max value of reschedule time is 32s, so 40s should
+# always be enough to finish streamToViews
+for _ in {1..400}
 do
-	sleep 1
+	sleep 0.1
 done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
 echo  111, 111 >> ${user_files_path}/logs/c.txt
 
-for i in 1 2 3 4 5
+# the max value of reschedule time is 32s, so 40s should
+# always be enough to finish streamToViews
+for _ in {1..400}
 do
-	sleep 1
+	sleep 0.1
 done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"

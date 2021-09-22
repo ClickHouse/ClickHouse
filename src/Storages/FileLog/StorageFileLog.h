@@ -66,7 +66,6 @@ protected:
 private:
     std::unique_ptr<FileLogSettings> filelog_settings;
     const String path;
-    bool path_is_directory = false;
 
     const String format_name;
     Poco::Logger * log;
