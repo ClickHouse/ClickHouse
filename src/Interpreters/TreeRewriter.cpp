@@ -563,11 +563,18 @@ class DNF
         {
             if (function->name == "and")
             {
-                const auto * func_args = function->arguments->as<ASTExpressionList>();
+                auto * func_args = function->arguments->as<ASTExpressionList>();
                 if (!func_args)
                 {
                     return node;
                 }
+
+                ASTs distr_lst;
+                for (const auto & arg : func_args->children)
+                {
+                    distr_lst.push_back(distribute(arg));
+                }
+                func_args->children = distr_lst;
 
                 auto or_child = std::find_if(func_args->children.begin(), func_args->children.end(), [](ASTPtr arg)
                     {
