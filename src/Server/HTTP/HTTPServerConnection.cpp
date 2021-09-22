@@ -1,7 +1,6 @@
 #include <Server/HTTP/HTTPServerConnection.h>
 
 #include <Poco/Net/NetException.h>
-#include "Server/HTTP/HTTPResponse.h"
 
 namespace DB
 {
