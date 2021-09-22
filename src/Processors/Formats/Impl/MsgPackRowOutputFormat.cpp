@@ -139,9 +139,9 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         {
             const auto & map_column = assert_cast<const ColumnMap &>(column);
             const auto & nested_column = map_column.getNestedColumn();
-            const auto & nested_data = map_column.getNestedData();
-            const auto & key_column = nested_data.getColumns()[0];
-            const auto & value_column = nested_data.getColumns()[1];
+            const auto & key_value_columns = map_column.getNestedData().getColumns();
+            const auto & key_column = key_value_columns[0];
+            const auto & value_column = key_value_columns[1];
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             const auto & offsets = nested_column.getOffsets();
