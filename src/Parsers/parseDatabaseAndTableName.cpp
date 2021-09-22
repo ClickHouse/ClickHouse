@@ -75,6 +75,17 @@ bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_st
     return true;
 }
 
+bool parseDatabaseASTPtr(IParser::Pos & pos, Expected & expected, ASTPtr & database)
+{
+    ParserToken s_dot(TokenType::Dot);
+    ParserIdentifier identifier_parser(true);
+
+    if (!identifier_parser.parse(pos, database, expected))
+        return false;
+
+    return true;
+}
+
 
 bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
 {

@@ -505,9 +505,9 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         }
         settings.ostr << indent_str << backQuoteIfNeed(getTable());
     }
-    else if (alter_object == AlterObjectType::DATABASE && !database.empty())
+    else if (alter_object == AlterObjectType::DATABASE && !getDatabase().empty())
     {
-        settings.ostr << indent_str << backQuoteIfNeed(database);
+        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
     }
 
     formatOnCluster(settings);
