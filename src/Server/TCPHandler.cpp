@@ -310,7 +310,20 @@ void TCPHandler::runImpl()
                 CompletedPipelineExecutor executor(state.io.pipeline);
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
-                    executor.setCancelCallback([this]() { return isQueryCancelled(); }, interactive_delay / 1000);
+                {
+                    auto callback = [this]()
+                    {
+                        if (isQueryCancelled())
+                            return true;
+
+                        sendProgress();
+                        sendLogs();
+
+                        return false;
+                    };
+
+                    executor.setCancelCallback(callback, interactive_delay / 1000);
+                }
                 executor.execute();
             }
 
