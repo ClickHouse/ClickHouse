@@ -339,7 +339,7 @@ static inline void dumpDataForTables(
                 pipeline.getHeader(), mysql_input_stream_settings);
             auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
             Pipe pipe(std::move(input));
-            pipe.addTransform(std::move(counting));
+            pipe.addTransform(counting);
             pipeline.complete(std::move(pipe));
 
             Stopwatch watch;

@@ -275,6 +275,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
 
+        assert(views_data != nullptr);
         views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
             out.getInputHeader(),
