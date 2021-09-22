@@ -1,6 +1,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPipeline.h>
+#include <Common/setThreadName.h>
+#include <common/scope_guard_safe.h>
 #include <iostream>
 
 namespace DB
@@ -32,17 +34,29 @@ void CompletedPipelineExecutor::execute()
         bool is_done = false;
         std::mutex mutex;
         std::exception_ptr exception;
+        auto thread_group = CurrentThread::getGroup();
+
         ThreadFromGlobalPool thread([&]()
         {
+            setThreadName("QueryPipelineEx");
+
             try
             {
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
+
                 executor.execute(pipeline.getNumThreads());
-                std::lock_guard lock(mutex);
             }
             catch (...)
             {
                 exception = std::current_exception();
             }
+            std::lock_guard lock(mutex);
             is_done = true;
         });
 
