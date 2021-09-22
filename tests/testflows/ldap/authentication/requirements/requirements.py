@@ -1966,7 +1966,7 @@ to result in contacting the [LDAP] server to verify user's username and password
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 
 [Anonymous Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-AnonymousAuthenticationMechanismOfSimpleBind
 [Unauthenticated Authentication Mechanism of Simple Bind]: https://ldapwiki.com/wiki/Simple%20Authentication#section-Simple+Authentication-UnauthenticatedAuthenticationMechanismOfSimpleBind
@@ -1977,7 +1977,7 @@ to result in contacting the [LDAP] server to verify user's username and password
 [CA]: https://en.wikipedia.org/wiki/Certificate_authority
 [TLS]: https://en.wikipedia.org/wiki/Transport_Layer_Security
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub]: https://github.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/authentication/requirements/requirements.md

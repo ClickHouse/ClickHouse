@@ -770,17 +770,17 @@ RQ_SRS_018_ClickHouse_Map_DataType_Functions_MapValues = Requirement(
         'SELECT mapValues(a) from table_map;\n'
         '```\n'
         '\n'
-        '[Nested]: https://clickhouse.tech/docs/en/sql-reference/data-types/nested-data-structures/nested/\n'
-        '[length]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#array_functions-length\n'
-        '[empty]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#function-empty\n'
-        '[notEmpty]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#function-notempty\n'
-        '[CAST]: https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast\n'
-        '[Tuple]: https://clickhouse.tech/docs/en/sql-reference/data-types/tuple/\n'
-        '[Tuple(Array,Array)]: https://clickhouse.tech/docs/en/sql-reference/data-types/tuple/\n'
-        '[Array]: https://clickhouse.tech/docs/en/sql-reference/data-types/array/ \n'
-        '[String]: https://clickhouse.tech/docs/en/sql-reference/data-types/string/\n'
-        '[Integer]: https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/\n'
-        '[ClickHouse]: https://clickhouse.tech\n'
+        '[Nested]: https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested/\n'
+        '[length]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#array_functions-length\n'
+        '[empty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-empty\n'
+        '[notEmpty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-notempty\n'
+        '[CAST]: https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast\n'
+        '[Tuple]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n'
+        '[Tuple(Array,Array)]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/\n'
+        '[Array]: https://clickhouse.com/docs/en/sql-reference/data-types/array/ \n'
+        '[String]: https://clickhouse.com/docs/en/sql-reference/data-types/string/\n'
+        '[Integer]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/\n'
+        '[ClickHouse]: https://clickhouse.com\n'
         '[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/map_type/requirements/requirements.md \n'
         '[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/map_type/requirements/requirements.md\n'
         '[Git]: https://git-scm.com/\n'
@@ -1409,17 +1409,17 @@ For example,
 SELECT mapValues(a) from table_map;
 ```
 
-[Nested]: https://clickhouse.tech/docs/en/sql-reference/data-types/nested-data-structures/nested/
-[length]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#array_functions-length
-[empty]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#function-empty
-[notEmpty]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/#function-notempty
-[CAST]: https://clickhouse.tech/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast
-[Tuple]: https://clickhouse.tech/docs/en/sql-reference/data-types/tuple/
-[Tuple(Array,Array)]: https://clickhouse.tech/docs/en/sql-reference/data-types/tuple/
-[Array]: https://clickhouse.tech/docs/en/sql-reference/data-types/array/ 
-[String]: https://clickhouse.tech/docs/en/sql-reference/data-types/string/
-[Integer]: https://clickhouse.tech/docs/en/sql-reference/data-types/int-uint/
-[ClickHouse]: https://clickhouse.tech
+[Nested]: https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested/
+[length]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#array_functions-length
+[empty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-empty
+[notEmpty]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/#function-notempty
+[CAST]: https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast
+[Tuple]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/
+[Tuple(Array,Array)]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple/
+[Array]: https://clickhouse.com/docs/en/sql-reference/data-types/array/ 
+[String]: https://clickhouse.com/docs/en/sql-reference/data-types/string/
+[Integer]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint/
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/map_type/requirements/requirements.md 
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/map_type/requirements/requirements.md
 [Git]: https://git-scm.com/

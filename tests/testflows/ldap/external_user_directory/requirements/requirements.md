@@ -795,15 +795,15 @@ to result in contacting the [LDAP] server to verify user's username and password
 
 ## References
 
-* **Access Control and Account Management**: https://clickhouse.tech/docs/en/operations/access-rights/
+* **Access Control and Account Management**: https://clickhouse.com/docs/en/operations/access-rights/
 * **LDAP**: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 
 [SRS]: #srs
-[Access Control and Account Management]: https://clickhouse.tech/docs/en/operations/access-rights/
+[Access Control and Account Management]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS-007 ClickHouse Authentication of Users via LDAP]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [Git]: https://git-scm.com/

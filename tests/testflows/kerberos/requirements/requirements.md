@@ -274,7 +274,7 @@ version: 1.0
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 * **Revision History:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
 * **Git:** https://git-scm.com/
@@ -282,7 +282,7 @@ version: 1.0
 
 [Kerberos]: https://en.wikipedia.org/wiki/Kerberos_(protocol)
 [SPNEGO]: https://en.wikipedia.org/wiki/SPNEGO
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub]: https://gitlab.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
