@@ -5,4 +5,4 @@ toc_folder_title: Geo
 ---
 
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/) <!--hide-->

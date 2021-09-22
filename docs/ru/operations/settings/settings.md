@@ -3122,7 +3122,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Значение по умолчанию: `1800`.
 
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
@@ -3139,7 +3139,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
@@ -3333,7 +3333,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)).
 
 Возможные значения:
 
@@ -3375,6 +3375,18 @@ SETTINGS index_granularity = 8192 │
 -   Положительное целое число.
 
 Значение по умолчанию: `1000`.
+
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+
+Возможные значения:
+
+-   `enable` — по короткой схеме вычисляются функции, которые подходят для этого (могут сгенерировать исключение или требуют сложных вычислений).
+-   `force_enable` — все функции вычисляются по короткой схеме.
+-   `disable` — вычисление функций по короткой схеме отключено.
+
+Значение по умолчанию: `enable`.
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
