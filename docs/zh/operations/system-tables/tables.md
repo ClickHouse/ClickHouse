@@ -55,4 +55,4 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 `system.tables` 表被用于 `SHOW TABLES` 的查询实现中。
 
-[原文](https://clickhouse.tech/docs/zh/operations/system-tables/tables) <!--hide-->
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/tables) <!--hide-->

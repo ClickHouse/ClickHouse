@@ -571,6 +571,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
     rewritten_alter_query->database = mapped_to_database;
     rewritten_alter_query->table = alter_query.table;
+    rewritten_alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
     rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTExpressionList>());
 
     String default_after_column;
