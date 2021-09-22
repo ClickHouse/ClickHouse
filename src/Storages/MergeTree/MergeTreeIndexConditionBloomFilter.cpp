@@ -577,7 +577,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
         return true;
     }
 
-    if (function_name == "mapContains")
+    if (function_name == "mapContains" || function_name == "has")
     {
         const auto & col_name = assert_cast<ASTIdentifier *>(key_ast.get())->name();
         auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
