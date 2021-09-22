@@ -1,7 +1,7 @@
 Equals with existing key
 0	{'K0':'V0'}
 Equals with non existing key
-Equals with default value
+Equals with non existing key and default value
 0	{'K0':'V0'}
 1	{'K1':'V1'}
 Not equals with existing key
@@ -9,4 +9,4 @@ Not equals with existing key
 Not equals with non existing key
 0	{'K0':'V0'}
 1	{'K1':'V1'}
-Not equals with default value
+Not equals with non existing key and default value
