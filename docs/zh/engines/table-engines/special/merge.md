@@ -60,4 +60,4 @@
 
 如果 `WHERE/PREWHERE` 子句包含了带 `_table` 的条件，并且没有依赖其他的列（如作为表达式谓词链接的一个子项或作为整个的表达式），这些条件的作用会像索引一样。这些条件会在那些可能被读数据的表的表名上执行，并且读操作只会在那些满足了该条件的表上去执行。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/merge/) <!--hide-->
