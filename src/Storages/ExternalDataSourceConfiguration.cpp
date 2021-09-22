@@ -43,21 +43,20 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     host = conf.host;
     port = conf.port;
     username = conf.username;
-    password = conf.username;
+    password = conf.password;
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
 }
 
 
-std::optional<std::tuple<ExternalDataSourceConfiguration, EngineArgs>>
-getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine)
+std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     ExternalDataSourceConfiguration configuration;
-    EngineArgs non_common_args;
+    StorageSpecificArgs non_common_args;
 
     if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
     {
@@ -118,7 +117,8 @@ getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool i
             }
         }
 
-        return std::make_tuple(configuration, non_common_args);
+        ExternalDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
+        return source_config;
     }
     return std::nullopt;
 }
@@ -226,14 +226,13 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
 }
 
 
-std::optional<std::tuple<URLBasedDataSourceConfiguration, EngineArgs>>
-getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     URLBasedDataSourceConfiguration configuration;
-    EngineArgs non_common_args;
+    StorageSpecificArgs non_common_args;
 
     if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
     {
@@ -298,7 +297,8 @@ getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Storage requires {}", configuration.url.empty() ? "url" : "format");
 
-        return std::make_tuple(configuration, non_common_args);
+        URLBasedDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
+        return source_config;
     }
     return std::nullopt;
 }

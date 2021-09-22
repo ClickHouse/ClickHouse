@@ -1122,6 +1122,18 @@ def test_remove_table_from_replication(started_cluster):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
+def test_predefined_connection_configuration(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute(f'CREATE TABLE test_table (key integer PRIMARY KEY, value integer)')
+
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    check_tables_are_synchronized("test_table");
+    drop_materialized_db()
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
