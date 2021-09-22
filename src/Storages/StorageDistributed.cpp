@@ -785,8 +785,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             && command.type != AlterCommand::Type::COMMENT_COLUMN
             && command.type != AlterCommand::Type::RENAME_COLUMN)
 
-            throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -1332,7 +1333,12 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
-        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
+        String storage_policy = "default";
+        if (engine_args.size() >= 5)
+        {
+            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
+            storage_policy = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)

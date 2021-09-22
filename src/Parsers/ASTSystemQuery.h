@@ -15,7 +15,7 @@ class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
 
-    enum class Type
+    enum class Type : UInt64
     {
         UNKNOWN,
         SHUTDOWN,
@@ -39,6 +39,8 @@ public:
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
         RELOAD_MODELS,
+        RELOAD_FUNCTION,
+        RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
@@ -59,6 +61,8 @@ public:
         FLUSH_DISTRIBUTED,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
+        START_THREAD_FUZZER,
+        STOP_THREAD_FUZZER,
         END
     };
 
@@ -67,6 +71,7 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_model;
+    String target_function;
     String database;
     String table;
     String replica;

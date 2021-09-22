@@ -1,3 +1,5 @@
+-- Tags: shard
+
 DROP TABLE IF EXISTS limit_by;
 CREATE TABLE limit_by (Num UInt32, Name String) ENGINE = Memory;
 

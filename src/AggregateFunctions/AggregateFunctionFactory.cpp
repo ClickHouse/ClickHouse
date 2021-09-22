@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -159,13 +160,32 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
+        const std::string & combinator_name = combinator->getName();
+
         if (combinator->isForInternalUsageOnly())
-            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function combinator '{}' is only for internal usage",
+                combinator_name);
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator->getName());
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
-        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        String nested_name = name.substr(0, name.size() - combinator_name.size());
+        /// Nested identical combinators (i.e. uniqCombinedIfIf) is not
+        /// supported (since they even don't work -- silently).
+        ///
+        /// But non-identical does supported and works, for example
+        /// uniqCombinedIfMergeIf, it is useful in case when the underlying
+        /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
+        /// need to filter aggregation result based on another column for
+        /// example.
+        if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
+        }
+
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 

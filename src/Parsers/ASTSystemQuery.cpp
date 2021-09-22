@@ -3,106 +3,41 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+#include <magic_enum.hpp>
 
 namespace DB
 {
 
-
-namespace ErrorCodes
+namespace
 {
-    extern const int LOGICAL_ERROR;
-}
-
-
-const char * ASTSystemQuery::typeToString(Type type)
-{
-    switch (type)
+    std::vector<std::string> getTypeIndexToTypeName()
     {
-        case Type::SHUTDOWN:
-            return "SHUTDOWN";
-        case Type::KILL:
-            return "KILL";
-        case Type::SUSPEND:
-            return "SUSPEND";
-        case Type::DROP_DNS_CACHE:
-            return "DROP DNS CACHE";
-        case Type::DROP_MARK_CACHE:
-            return "DROP MARK CACHE";
-        case Type::DROP_UNCOMPRESSED_CACHE:
-            return "DROP UNCOMPRESSED CACHE";
-        case Type::DROP_MMAP_CACHE:
-            return "DROP MMAP CACHE";
-#if USE_EMBEDDED_COMPILER
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-            return "DROP COMPILED EXPRESSION CACHE";
-#endif
-        case Type::STOP_LISTEN_QUERIES:
-            return "STOP LISTEN QUERIES";
-        case Type::START_LISTEN_QUERIES:
-            return "START LISTEN QUERIES";
-        case Type::RESTART_REPLICAS:
-            return "RESTART REPLICAS";
-        case Type::RESTART_REPLICA:
-            return "RESTART REPLICA";
-        case Type::RESTORE_REPLICA:
-            return "RESTORE REPLICA";
-        case Type::DROP_REPLICA:
-            return "DROP REPLICA";
-        case Type::SYNC_REPLICA:
-            return "SYNC REPLICA";
-        case Type::FLUSH_DISTRIBUTED:
-            return "FLUSH DISTRIBUTED";
-        case Type::RELOAD_DICTIONARY:
-            return "RELOAD DICTIONARY";
-        case Type::RELOAD_DICTIONARIES:
-            return "RELOAD DICTIONARIES";
-        case Type::RELOAD_MODEL:
-            return "RELOAD MODEL";
-        case Type::RELOAD_MODELS:
-            return "RELOAD MODELS";
-        case Type::RELOAD_EMBEDDED_DICTIONARIES:
-            return "RELOAD EMBEDDED DICTIONARIES";
-        case Type::RELOAD_CONFIG:
-            return "RELOAD CONFIG";
-        case Type::RELOAD_SYMBOLS:
-            return "RELOAD SYMBOLS";
-        case Type::STOP_MERGES:
-            return "STOP MERGES";
-        case Type::START_MERGES:
-            return "START MERGES";
-        case Type::STOP_TTL_MERGES:
-            return "STOP TTL MERGES";
-        case Type::START_TTL_MERGES:
-            return "START TTL MERGES";
-        case Type::STOP_MOVES:
-            return "STOP MOVES";
-        case Type::START_MOVES:
-            return "START MOVES";
-        case Type::STOP_FETCHES:
-            return "STOP FETCHES";
-        case Type::START_FETCHES:
-            return "START FETCHES";
-        case Type::STOP_REPLICATED_SENDS:
-            return "STOP REPLICATED SENDS";
-        case Type::START_REPLICATED_SENDS:
-            return "START REPLICATED SENDS";
-        case Type::STOP_REPLICATION_QUEUES:
-            return "STOP REPLICATION QUEUES";
-        case Type::START_REPLICATION_QUEUES:
-            return "START REPLICATION QUEUES";
-        case Type::STOP_DISTRIBUTED_SENDS:
-            return "STOP DISTRIBUTED SENDS";
-        case Type::START_DISTRIBUTED_SENDS:
-            return "START DISTRIBUTED SENDS";
-        case Type::FLUSH_LOGS:
-            return "FLUSH LOGS";
-        case Type::RESTART_DISK:
-            return "RESTART DISK";
-        default:
-            throw Exception("Unknown SYSTEM query command", ErrorCodes::LOGICAL_ERROR);
+        constexpr std::size_t types_size = magic_enum::enum_count<ASTSystemQuery::Type>();
+
+        std::vector<std::string> type_index_to_type_name;
+        type_index_to_type_name.resize(types_size);
+
+        auto entries = magic_enum::enum_entries<ASTSystemQuery::Type>();
+        for (const auto & [entry, str] : entries)
+        {
+            auto str_copy = String(str);
+            std::replace(str_copy.begin(), str_copy.end(), '_', ' ');
+            type_index_to_type_name[static_cast<UInt64>(entry)] = std::move(str_copy);
+        }
+
+        return type_index_to_type_name;
     }
 }
 
+const char * ASTSystemQuery::typeToString(Type type)
+{
+    /** During parsing if SystemQuery is not parsed properly it is added to Expected variants as description check IParser.h.
+      * Description string must be statically allocated.
+      */
+    static std::vector<std::string> type_index_to_type_name = getTypeIndexToTypeName();
+    const auto & type_name = type_index_to_type_name[static_cast<UInt64>(type)];
+    return type_name.data();
+}
 
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
