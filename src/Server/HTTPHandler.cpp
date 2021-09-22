@@ -25,6 +25,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include "common/logger_useful.h"
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -111,10 +112,11 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Process options request. Usefull for CORS.
+    /// Process options request. Useful for CORS.
     void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
     {
-        /// If answer for options request was not defined, return 501 to client.
+        /// If response for options request was not defined, return 501 to client.
+        /// TODO should it be here?
         if (!config.has("http_options_response"))
         {
             response.setStatusAndReason(HTTPResponse::HTTP_NOT_IMPLEMENTED);
@@ -129,12 +131,17 @@ namespace
             {
                 if (config_key == "header" || config_key.starts_with("header["))
                 {
-                    response.add(config.getString("http_options_response." + config_key + ".name", "Empty header"),
-                                 config.getString("http_options_response." + config_key + ".value", ""));
-                    response.setKeepAlive(false);
+                    /// If there is empty header name, it will not be processed and message about it will be in logs
+                    if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                        LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                    else 
+                        response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                                     config.getString("http_options_response." + config_key + ".value", ""));
+
                 }
             }
-            response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+            response.setKeepAlive(false);
+            response.setStatusAndReason(HTTPResponse::HTTP_OK);
             response.send();
         }
     }
