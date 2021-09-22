@@ -71,10 +71,12 @@ public:
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(hindex, faces.get());
 
-            for(int i = 0 ; i < max_faces ; i++) {
+            for (int i = 0; i < max_faces; i++)
+            {
                 // valid icosahedron faces are represented by integers 0-19
                 auto iface = faces.get()[i];
-                if ( iface >= 0 && iface <= 19) {
+                if (iface >= 0 && iface <= 19)
+                {
                     ++current_offset;
                     dst_data.insert(iface);
                 }
