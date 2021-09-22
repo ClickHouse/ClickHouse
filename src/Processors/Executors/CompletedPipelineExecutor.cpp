@@ -13,6 +13,48 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct CompletedPipelineExecutor::Data
+{
+    PipelineExecutorPtr executor;
+    std::exception_ptr exception;
+    std::atomic_bool is_finished = false;
+    std::atomic_bool has_exception = false;
+    ThreadFromGlobalPool thread;
+    Poco::Event finish_event;
+
+    ~Data()
+    {
+        if (thread.joinable())
+            thread.join();
+    }
+};
+
+static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+{
+    setThreadName("QueryPipelineEx");
+
+    try
+    {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
+        data.executor->execute(num_threads);
+    }
+    catch (...)
+    {
+        data.exception = std::current_exception();
+        data.has_exception = true;
+    }
+
+    data.is_finished = true;
+    data.finish_event.set();
+}
+
 CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     if (!pipeline.completed())
@@ -31,55 +73,43 @@ void CompletedPipelineExecutor::execute()
 
     if (interactive_timeout_ms)
     {
-        bool is_done = false;
-        std::mutex mutex;
-        std::exception_ptr exception;
-        auto thread_group = CurrentThread::getGroup();
+        data = std::make_unique<Data>();
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
 
-        ThreadFromGlobalPool thread([&]()
+        auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
-            setThreadName("QueryPipelineEx");
+            threadFunction(*data, thread_group, pipeline.getNumThreads());
+        };
 
-            try
-            {
-                if (thread_group)
-                    CurrentThread::attachTo(thread_group);
+        data->thread = ThreadFromGlobalPool(std::move(func));
 
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-                );
-
-                executor.execute(pipeline.getNumThreads());
-            }
-            catch (...)
-            {
-                exception = std::current_exception();
-            }
-            std::lock_guard lock(mutex);
-            is_done = true;
-        });
-
+        while (!data->is_finished)
         {
-            std::condition_variable condvar;
-            std::unique_lock lock(mutex);
-            while (!is_done)
-            {
-                condvar.wait_for(lock, std::chrono::milliseconds(interactive_timeout_ms), [&]() { return is_done; });
+            if (data->finish_event.tryWait(interactive_timeout_ms))
+                break;
 
-                if (is_cancelled_callback())
-                {
-                    executor.cancel();
-                    is_done = true;
-                }
-            }
+            if (is_cancelled_callback())
+                data->executor->cancel();
         }
-        thread.join();
-        if (exception)
-            std::rethrow_exception(exception);
+
+        if (data->has_exception)
+            std::rethrow_exception(data->exception);
     }
     else
         executor.execute(pipeline.getNumThreads());
+}
+
+CompletedPipelineExecutor::~CompletedPipelineExecutor()
+{
+    try
+    {
+        if (data && data->executor)
+            data->executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("PullingAsyncPipelineExecutor");
+    }
 }
 
 }
