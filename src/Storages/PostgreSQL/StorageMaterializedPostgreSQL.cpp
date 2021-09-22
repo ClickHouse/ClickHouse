@@ -471,22 +471,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
-        bool has_settings = args.storage_def->settings;
-        auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-
-        if (has_settings)
-            postgresql_replication_settings->loadFromQuery(*args.storage_def);
-
-        if (engine_args.size() != 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage MaterializedPostgreSQL requires 5 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'. Got {}",
-                            engine_args.size());
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getContext());
-
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);

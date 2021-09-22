@@ -242,7 +242,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
                 if (cluster_description.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value arguement or named collection parameter");
+                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
             }
             else
             {
@@ -288,7 +288,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
                 if (cluster_description.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value arguement or named collection parameter");
+                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
             }
             else
             {

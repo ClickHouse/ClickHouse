@@ -374,13 +374,6 @@ def test_predefined_connection_configuration(started_cluster):
     create_mysql_table(conn, table_name)
 
     node1.query('''
-
-# Regression for (k, v) IN ((k, v))
-def test_mysql_in(started_cluster):
-    table_name = 'test_mysql_in'
-    node1.query(f'DROP TABLE IF EXISTS {table_name}')
-
-    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
         DROP TABLE IF EXISTS test_table;
         CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
         ENGINE MySQL(mysql1);
@@ -425,7 +418,17 @@ def test_mysql_in(started_cluster):
     ''')
     assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
 
-=======
+
+# Regression for (k, v) IN ((k, v))
+def test_mysql_in(started_cluster):
+    table_name = 'test_mysql_in'
+    node1.query(f'DROP TABLE IF EXISTS {table_name}')
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query('''
         CREATE TABLE {}
         (
             id UInt32,
@@ -445,7 +448,7 @@ def test_mysql_in(started_cluster):
 
     drop_mysql_table(conn, table_name)
     conn.close()
->>>>>>> d3c46ebe883f732aef733de201f602432f8de987
+
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
