@@ -69,7 +69,7 @@ protected:
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
 
-    void clearTerminal();
+    static void clearTerminal();
     void showClientVersion();
 
     using ProgramOptionsDescription = boost::program_options::options_description;
