@@ -171,7 +171,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.database);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)

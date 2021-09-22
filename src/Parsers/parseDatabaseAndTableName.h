@@ -14,4 +14,6 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
 
 bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_str);
 
+bool parseDatabaseASTPtr(IParser::Pos & pos, Expected & expected, ASTPtr & database);
+
 }

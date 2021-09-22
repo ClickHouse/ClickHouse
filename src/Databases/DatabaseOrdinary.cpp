@@ -168,7 +168,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->database = database_name;
+                create_query->setDatabase(database_name);
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
@@ -187,7 +187,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 data.global_context = getContext();
                 TableLoadingDependenciesVisitor visitor{data};
                 visitor.visit(ast);
-                QualifiedTableName qualified_name{database_name, create_query->table};
+                QualifiedTableName qualified_name{database_name, create_query->getTable()};
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
