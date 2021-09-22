@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-bool MergeTreeReverseSelectProcessor::getNewTask()
+bool MergeTreeReverseSelectProcessor::getNewTaskImpl()
 try
 {
     if (chunks.empty() && all_mark_ranges.empty())

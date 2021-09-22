@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -7,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
-#include <variant>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 
 namespace DB
@@ -41,14 +43,16 @@ public:
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
@@ -56,14 +60,16 @@ public:
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
 
     ~RemoteQueryExecutor();
 
@@ -115,7 +121,8 @@ private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
         const Scalars & scalars_, const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_);
+        QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_);
 
     Block header;
     Block totals;
@@ -135,6 +142,8 @@ private:
     QueryProcessingStage::Enum stage;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
+
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
 
     std::function<std::shared_ptr<IConnections>()> create_connections;
     /// Hold a shared reference to the connection pool so that asynchronous connection draining will
@@ -202,6 +211,8 @@ private:
     bool setPartUUIDs(const std::vector<UUID> & uuids);
 
     void processReadTaskRequest();
+
+    void processMergeTreeReadTaskRequest(PartitionReadRequest request);
 
     /// Cancell query and restart it with info about duplicated UUIDs
     /// only for `allow_experimental_query_deduplication`.

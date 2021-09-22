@@ -184,6 +184,8 @@ private:
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
+
+    std::optional<MergeTreeReadTaskCallback> read_task_callback;
 };
 
 struct MergeTreeDataSelectAnalysisResult

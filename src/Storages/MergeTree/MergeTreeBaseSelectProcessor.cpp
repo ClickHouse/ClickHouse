@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -33,7 +34,8 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
-    const Names & virt_column_names_)
+    const Names & virt_column_names_,
+    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
     : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -45,6 +47,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
+    , read_task_callback(read_task_callback_)
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -67,6 +70,57 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
         prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
         prewhere_actions->need_filter = prewhere_info->need_filter;
+    }
+}
+
+
+bool MergeTreeBaseSelectProcessor::getNewTask()
+{
+    while (true)
+    {
+        bool res = getNewTaskImpl();
+
+        if (!read_task_callback.has_value() || !res)
+            return res;
+
+        String partition_id = task->data_part->info.partition_id;
+        String part_name;
+        String projection_name;
+
+        if (task->data_part->isProjectionPart())
+        {
+            part_name = task->data_part->getParentPart()->name;
+            projection_name  = task->data_part->name;
+        }
+        else
+        {
+            part_name = task->data_part->name;
+            projection_name = "";
+        }
+
+        PartBlockRange block_range
+        {
+            .begin = task->data_part->info.min_block,
+            .end = task->data_part->info.max_block
+        };
+
+        PartitionReadRequest request
+        {
+            .partition_id = std::move(partition_id),
+            .part_name = std::move(part_name),
+            .projection_name = std::move(projection_name),
+            .block_range = std::move(block_range),
+            .mark_ranges = std::move(task->mark_ranges)
+        };
+
+        auto responce = read_task_callback.value()(std::move(request));
+
+        task->mark_ranges = std::move(responce.mark_ranges);
+
+        if (responce.denied)
+            continue;
+
+        return true;
     }
 }
 

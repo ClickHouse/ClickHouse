@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/RequestResponse.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
 
@@ -30,7 +31,8 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-        const Names & virt_column_names_ = {});
+        const Names & virt_column_names_ = {},
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
@@ -43,10 +45,13 @@ public:
         const Block & sample_block);
 
 protected:
-    Chunk generate() final;
 
     /// Creates new this->task, and initializes readers.
-    virtual bool getNewTask() = 0;
+    bool getNewTask();
+
+    Chunk generate() final;
+
+    virtual bool getNewTaskImpl() = 0;
 
     virtual Chunk readFromPart();
 
@@ -90,6 +95,8 @@ protected:
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
+
+    std::optional<MergeTreeReadTaskCallback> read_task_callback;
 };
 
 }

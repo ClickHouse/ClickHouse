@@ -25,6 +25,8 @@
 
 #include <Compression/ICompressionCodec.h>
 
+#include <Storages/MergeTree/RequestResponse.h>
+
 #include <atomic>
 #include <optional>
 
@@ -66,6 +68,8 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
+    PartitionReadRequest request;
+    PartitionReadResponce response;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -163,6 +167,8 @@ public:
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     void sendReadTaskResponse(const String &);
+
+    void sendMergeTreeReadTaskResponce(const PartitionReadResponce & response);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -316,6 +322,7 @@ private:
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     BlockStreamProfileInfo receiveProfileInfo() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
 
     void initInputBuffers();
     void initBlockInput();

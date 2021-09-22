@@ -94,6 +94,11 @@ public:
         throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
+    void sendMergeTreeReadTaskResponce(PartitionReadResponce) override
+    {
+        throw Exception("sendMergeTreeReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
+    }
+
     Packet receivePacket() override;
 
     Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;

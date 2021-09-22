@@ -288,6 +288,16 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> PartitionReadResponce
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                // std::cout << "MergeTreeReadTaskCallback" << std::endl;
+
+                sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+            });
+
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 
@@ -760,6 +770,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
+
+void TCPHandler::sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
+
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -1094,6 +1113,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
     String response;
     readStringBinary(response, *in);
+    return response;
+}
+
+
+PartitionReadResponce TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return {};
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponce response;
+    response.deserialize(*in);
     return response;
 }
 

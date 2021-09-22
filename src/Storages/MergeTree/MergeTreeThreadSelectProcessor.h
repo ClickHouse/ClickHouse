@@ -27,8 +27,8 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
-
-        const Names & virt_column_names_);
+        const Names & virt_column_names_,
+        std::optional<MergeTreeReadTaskCallback> read_task_callback_);
 
     String getName() const override { return "MergeTreeThread"; }
 
@@ -36,7 +36,7 @@ public:
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
-    bool getNewTask() override;
+    bool getNewTaskImpl() override;
 
 private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])

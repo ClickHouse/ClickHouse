@@ -21,12 +21,13 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     const MergeTreeReaderSettings & reader_settings_,
-    const Names & virt_column_names_)
+    const Names & virt_column_names_,
+    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
     :
     MergeTreeBaseSelectProcessor{
         pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, read_task_callback_},
     thread{thread_},
     pool{pool_}
 {
@@ -46,7 +47,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectProcessor::getNewTask()
+bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
 

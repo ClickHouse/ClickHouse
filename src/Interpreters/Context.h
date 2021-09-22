@@ -15,6 +15,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <common/types.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -141,6 +142,8 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
+using MergeTreeReadTaskCallback = std::function<PartitionReadResponce(PartitionReadRequest)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -211,6 +214,8 @@ private:
 
     /// Fields for distributed s3 function
     std::optional<ReadTaskCallback> next_task_callback;
+
+    std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -843,6 +848,9 @@ public:
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
+    void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
     /// Background executors related methods
     void initializeBackgroundExecutors();

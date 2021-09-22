@@ -13,6 +13,8 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include "IServer.h"
 
 
@@ -191,6 +193,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
+    PartitionReadResponce receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -223,6 +226,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
+    void sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

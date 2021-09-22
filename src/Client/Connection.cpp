@@ -571,6 +571,15 @@ void Connection::sendReadTaskResponse(const String & response)
     out->next();
 }
 
+
+void Connection::sendMergeTreeReadTaskResponce(const PartitionReadResponce & response)
+{
+    std::cout << "sendMergeTreeReadTaskResponce" << std::endl;
+    writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out);
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -840,6 +849,10 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
+            case Protocol::Server::MergeTreeReadTaskRequest:
+                res.request = receivePartitionReadRequest();
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -969,6 +982,13 @@ BlockStreamProfileInfo Connection::receiveProfileInfo() const
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);
     return profile_info;
+}
+
+PartitionReadRequest Connection::receivePartitionReadRequest() const
+{
+    PartitionReadRequest request;
+    request.deserialize(*in);
+    return request;
 }
 
 

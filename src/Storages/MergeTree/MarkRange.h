@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <set>
 
 
 namespace DB
@@ -17,9 +18,13 @@ struct MarkRange
 
     MarkRange() = default;
     MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
+
+    bool operator==(const MarkRange & rhs) const
+    {
+      return begin == rhs.begin && end == rhs.end;
+    }
 };
 
 using MarkRanges = std::deque<MarkRange>;
-
 
 }

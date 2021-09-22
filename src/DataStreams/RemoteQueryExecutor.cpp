@@ -37,17 +37,20 @@ namespace ErrorCodes
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_, const Block & header_, ContextPtr context_,
     const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
     : header(header_), query(query_), context(context_), scalars(scalars_)
     , external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , parallel_reading_coordinator(parallel_reading_coordinator_)
 {}
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_, parallel_reading_coordinator_)
 {
     create_connections = [this, &connection, throttler]()
     {
@@ -59,8 +62,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_, parallel_reading_coordinator_)
 {
     create_connections = [this, connection_ptr, throttler]()
     {
@@ -73,9 +77,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , parallel_reading_coordinator(parallel_reading_coordinator_), pool(pool_)
 {
     create_connections = [this, connections_, throttler]() mutable {
         return std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -86,9 +92,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , parallel_reading_coordinator(parallel_reading_coordinator_), pool(pool_)
 {
     create_connections = [this, throttler]()->std::shared_ptr<IConnections>
     {
@@ -333,6 +341,9 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
+        case Protocol::Server::MergeTreeReadTaskRequest:
+            processMergeTreeReadTaskRequest(packet.request);
+            break;
         case Protocol::Server::ReadTaskRequest:
             processReadTaskRequest();
             break;
@@ -420,6 +431,16 @@ void RemoteQueryExecutor::processReadTaskRequest()
         throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
     auto response = (*task_iterator)();
     connections->sendReadTaskResponse(response);
+}
+
+void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest request)
+{
+    if (!parallel_reading_coordinator)
+        throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    // std::cout << "RemoteQueryExecutor::processMergeTreeReadTaskRequest" << std::endl;
+    auto response = parallel_reading_coordinator->handleRequest(std::move(request));
+    connections->sendMergeTreeReadTaskResponce(response);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)

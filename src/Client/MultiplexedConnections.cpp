@@ -178,6 +178,17 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
     current_connection->sendReadTaskResponse(response);
 }
 
+
+void MultiplexedConnections::sendMergeTreeReadTaskResponce(PartitionReadResponce response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendMergeTreeReadTaskResponce(response);
+}
+
+
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
@@ -233,6 +244,7 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
+            case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
@@ -312,6 +324,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
+        case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:

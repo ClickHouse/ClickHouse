@@ -79,6 +79,7 @@ namespace Protocol
             ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
                                       /// This is such an inverted logic, where server sends requests
                                       /// And client returns back response
+            MergeTreeReadTaskRequest = 14,
             MAX = ReadTaskRequest,
         };
 
@@ -102,7 +103,8 @@ namespace Protocol
                 "Log",
                 "TableColumns",
                 "PartUUIDs",
-                "ReadTaskRequest"
+                "ReadTaskRequest",
+                "MergeTreeReadTaskRequest"
             };
             return packet <= MAX
                 ? data[packet]
@@ -139,6 +141,7 @@ namespace Protocol
             Scalar = 7,              /// A block of data (compressed or not).
             IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,     /// TODO:
+            MergeTreeReadTaskResponse = 10,
 
             MAX = ReadTaskResponse,
         };
@@ -156,6 +159,7 @@ namespace Protocol
                 "Scalar",
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
+                "MergeTreeReadTaskResponse"
             };
             return packet <= MAX
                 ? data[packet]
