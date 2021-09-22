@@ -49,4 +49,4 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/tuple/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/tuple/) <!--hide-->
