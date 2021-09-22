@@ -8,4 +8,4 @@ Other settings are described in the «[设置](../settings/index.md#settings)» 
 
 在研究设置之前，请阅读 [配置文件](../configuration-files.md#configuration_files) 部分和注意使用替换（的 `incl` 和 `optional` 属性）。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/) <!--hide-->

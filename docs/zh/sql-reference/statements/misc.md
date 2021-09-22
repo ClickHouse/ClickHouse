@@ -376,4 +376,4 @@ USE db
 当前数据库用于搜索表，如果数据库没有在查询中明确定义与表名之前的点。
 使用HTTP协议时无法进行此查询，因为没有会话的概念。
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/misc/) <!--hide-->
