@@ -4,7 +4,9 @@
 
 #if USE_H3
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -46,16 +48,18 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 1, getName());
 
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = arguments[0].column.get();
 
-        auto dst = ColumnVector<UInt8>::create();
+        auto dst = ColumnArray::create(ColumnUInt8::create());
         auto & dst_data = dst->getData();
-        dst_data.resize(input_rows_count);
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
+        auto current_offset = 0;
 
         for (const auto row : collections::range(0, input_rows_count))
         {
@@ -67,12 +71,15 @@ public:
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(hindex, faces.get());
 
-            int total_faces = 0;
             for(int i = 0 ; i < max_faces ; i++) {
                 // valid icosahedron faces are represented by integers 0-19
-                if (faces.get()[i] >= 0 && faces.get()[i] <= 19) total_faces++;
+                auto iface = faces.get()[i];
+                if ( iface >= 0 && iface <= 19) {
+                    ++current_offset;
+                    dst_data.insert(iface);
+                }
             }
-            dst_data[row] = total_faces;
+            dst_offsets[row] = current_offset;
         }
 
         return dst;
