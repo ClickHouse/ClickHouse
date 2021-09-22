@@ -6,7 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
-#include <span>
+#include <magic_enum.hpp>
 #include <common/EnumReflection.h>
 
 namespace ErrorCodes
@@ -70,16 +70,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     bool found = false;
 
-    // If query is executed on single replica, we want to parse input like FLUSH DISTRIBUTED
-    // If query is executed on cluster, we also want to parse serialized input like FLUSH_DISTRIBUTED
-    for (const auto & [entry, str] : magic_enum::enum_entries<Type>())
+    for (const auto & type : magic_enum::enum_values<Type>())
     {
-        String underscore_to_space(str);
-        std::replace(underscore_to_space.begin(), underscore_to_space.end(), '_', ' ');
-
-        if (ParserKeyword(underscore_to_space).ignore(pos, expected) || ParserKeyword(str).ignore(pos, expected))
+        if (ParserKeyword{ASTSystemQuery::typeToString(type)}.ignore(pos, expected))
         {
-            res->type = entry;
+            res->type = type;
             found = true;
             break;
         }
@@ -120,6 +115,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
 
                 if (!tryGetIdentifierNameInto(model, res->target_model))
+                    return false;
+            }
+
+            break;
+        }
+        case Type::RELOAD_FUNCTION:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->target_function = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+            {
+                ParserIdentifier function_parser;
+                ASTPtr function;
+                String target_function;
+
+                if (!function_parser.parse(pos, function, expected))
+                    return false;
+
+                if (!tryGetIdentifierNameInto(function, res->target_function))
                     return false;
             }
 
