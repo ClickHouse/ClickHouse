@@ -78,4 +78,4 @@ SET profile = 'web'
 
 その `web` プロファイルは通常のプロファイルです。 `SET` クエリまたはHTTPクエリでURLパラメータを使用する。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->
