@@ -2833,6 +2833,43 @@ Possible values:
 
 Default value: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+
+Default value: `\N`.
+
+**Examples**
+
+Query
+
+```sql
+SELECT * from csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+\N
+\N
+```
+
+Query
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
@@ -3306,7 +3343,7 @@ Result:
 └─────┘
 ```
 
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) or [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) with identical argument to [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
@@ -3323,7 +3360,7 @@ Query:
 
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
@@ -3566,3 +3603,91 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
+```
+
+Result:
+
+```text
+Exception: Regexp length too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+
+Possible values:
+
+-   Positive integer.
+-   0 - The length is not limited.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Result:
+
+```text
+Exception: Total regexp lengths too large.
+```
+
+**See Also**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
