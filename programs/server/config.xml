@@ -62,7 +62,9 @@
         -->
     </logger>
 
-    <http_options_response>
+    <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
+    <!-- It is off by default. Next headers are obligate for CORS.-->
+    <!-- http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
@@ -79,7 +81,7 @@
             <name>Access-Control-Max-Age</name>
             <value>86400</value>
         </header>
-    </http_options_response>
+    </http_options_response -->
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.

@@ -115,16 +115,10 @@ namespace
     /// Process options request. Useful for CORS.
     void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
     {
-        /// If response for options request was not defined, return 501 to client.
-        /// TODO should it be here?
-        if (!config.has("http_options_response"))
+        /// If there is information for options request in cofing, fill response.
+        /// For this purpose find all headers related to http_options_response and add them with their values to response
+        if (config.has("http_options_response"))
         {
-            response.setStatusAndReason(HTTPResponse::HTTP_NOT_IMPLEMENTED);
-            response.send();
-        }
-        else
-        {
-            /// otherwise fill response.
             Strings config_keys;
             config.keys("http_options_response", config_keys);
             for (const std::string & config_key : config_keys)
@@ -141,7 +135,7 @@ namespace
                 }
             }
             response.setKeepAlive(false);
-            response.setStatusAndReason(HTTPResponse::HTTP_OK);
+            response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
             response.send();
         }
     }
