@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
-
 set -e
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none

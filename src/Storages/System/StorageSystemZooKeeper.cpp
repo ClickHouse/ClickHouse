@@ -15,7 +15,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
-#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -97,12 +96,12 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context)
             auto stream = interpreter_subquery->execute().getInputStream();
             SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
             Set set(limites, true, context->getSettingsRef().transform_null_in);
-            set.setHeader(stream->getHeader().getColumnsWithTypeAndName());
+            set.setHeader(stream->getHeader());
 
             stream->readPrefix();
             while (Block block = stream->read())
             {
-                set.insertFromBlock(block.getColumnsWithTypeAndName());
+                set.insertFromBlock(block);
             }
             set.finishInsert();
             stream->readSuffix();

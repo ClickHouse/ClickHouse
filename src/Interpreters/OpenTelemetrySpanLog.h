@@ -27,8 +27,7 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
         : OpenTelemetrySpan(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases();
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 

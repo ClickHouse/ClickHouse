@@ -72,7 +72,7 @@ public:
         return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -97,7 +97,7 @@ public:
         const DataTypePtr & key_type,
         size_t level) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>

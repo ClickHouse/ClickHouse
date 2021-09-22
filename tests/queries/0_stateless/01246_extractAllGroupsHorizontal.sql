@@ -5,11 +5,9 @@ SELECT extractAllGroupsHorizontal('hello', 123);  --{serverError 43} invalid arg
 SELECT extractAllGroupsHorizontal(123, 'world');  --{serverError 43}  invalid argument type
 SELECT extractAllGroupsHorizontal('hello world', '((('); --{serverError 427}  invalid re
 SELECT extractAllGroupsHorizontal('hello world', materialize('\\w+')); --{serverError 44} non-cons needle
-SELECT extractAllGroupsHorizontal('hello world', '\\w+');  -- { serverError 36 } 0 groups
-SELECT extractAllGroupsHorizontal('hello world', '(\\w+)') SETTINGS regexp_max_matches_per_row = 0;  -- { serverError 128 } to many groups matched per row
-SELECT extractAllGroupsHorizontal('hello world', '(\\w+)') SETTINGS regexp_max_matches_per_row = 1;  -- { serverError 128 } to many groups matched per row
 
-SELECT extractAllGroupsHorizontal('hello world', '(\\w+)') SETTINGS regexp_max_matches_per_row = 1000000 FORMAT Null; -- users now can set limit bigger than previous 1000 matches per row
+SELECT '0 groups, zero matches';
+SELECT extractAllGroupsHorizontal('hello world', '\\w+');  -- { serverError 36 }
 
 SELECT '1 group, multiple matches, String and FixedString';
 SELECT extractAllGroupsHorizontal('hello world', '(\\w+)');

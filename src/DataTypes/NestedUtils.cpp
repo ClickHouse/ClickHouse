@@ -34,15 +34,41 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
 }
 
 
-/** Name can be treated as compound if it contains dot (.) in the middle.
+/** Name can be treated as compound if and only if both parts are simple identifiers.
   */
 std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    auto idx = name.find_first_of('.');
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
+    const char * begin = name.data();
+    const char * pos = begin;
+    const char * end = begin + name.size();
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
         return {name, {}};
 
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos >= end || *pos != '.')
+        return {name, {}};
+
+    const char * first_end = pos;
+    ++pos;
+    const char * second_begin = pos;
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
+        return {name, {}};
+
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos != end)
+        return {name, {}};
+
+    return {{ begin, first_end }, { second_begin, end }};
 }
 
 
@@ -209,18 +235,6 @@ void validateArraySizes(const Block & block)
             }
         }
     }
-}
-
-std::unordered_set<String> getAllTableNames(const Block & block)
-{
-    std::unordered_set<String> nested_table_names;
-    for (auto & name : block.getNames())
-    {
-        auto nested_table_name = Nested::extractTableName(name);
-        if (!nested_table_name.empty())
-            nested_table_names.insert(nested_table_name);
-    }
-    return nested_table_names;
 }
 
 }

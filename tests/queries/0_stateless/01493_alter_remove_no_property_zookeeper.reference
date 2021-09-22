@@ -1,0 +1,4 @@
+CREATE TABLE default.no_prop_table\n(\n    `some_column` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.no_prop_table\n(\n    `some_column` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.r_no_prop_table\n(\n    `some_column` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/01493_r_no_prop_table\', \'1\')\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.r_no_prop_table\n(\n    `some_column` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/01493_r_no_prop_table\', \'1\')\nORDER BY tuple()\nSETTINGS index_granularity = 8192

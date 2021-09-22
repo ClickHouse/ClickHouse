@@ -13,7 +13,6 @@
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
 #include <common/arithmeticOverflow.h>
-#include <common/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
@@ -36,7 +35,10 @@
 
 #include <double-conversion/double-conversion.h>
 
-static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
+
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
+
 
 namespace DB
 {
@@ -380,7 +382,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (is_decimal<T>)
+    if constexpr (IsDecimalNumber<T>)
     {
         readIntText<check_overflow>(x.value, buf);
     }
@@ -401,6 +403,7 @@ bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
   * Differs in following:
   * - for numbers starting with zero, parsed only zero;
   * - symbol '+' before number is not supported;
+  * - symbols :;<=>? are parsed as some numbers.
   */
 template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
@@ -434,12 +437,15 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        unsigned char value = *buf.position() - '0';
+        /// This check is suddenly faster than
+        ///  unsigned char c = *buf.position() - '0';
+        ///  if (c < 10)
+        /// for unknown reason on Xeon E5645.
 
-        if (value < 10)
+        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             res *= 10;
-            res += value;
+            res += *buf.position() & 0x0F;
             ++buf.position();
         }
         else
@@ -566,43 +572,27 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
     /// Optimistic path, when whole value is in buffer.
     if (!buf.eof() && buf.position() + 10 <= buf.buffer().end())
     {
-        char * pos = buf.position();
+        UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
+        buf.position() += 5;
 
-        /// YYYY-MM-DD
-        /// YYYY-MM-D
-        /// YYYY-M-DD
-        /// YYYY-M-D
-
-        /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
-
-        UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
-        pos += 5;
-
-        if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 month = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
+        UInt8 month = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
         {
-            month = month * 10 + pos[1] - '0';
-            pos += 3;
+            month = month * 10 + buf.position()[1] - '0';
+            buf.position() += 3;
         }
         else
-            pos += 2;
+            buf.position() += 2;
 
-        if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 day = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
+        UInt8 day = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
         {
-            day = day * 10 + pos[1] - '0';
-            pos += 2;
+            day = day * 10 + buf.position()[1] - '0';
+            buf.position() += 2;
         }
         else
-            pos += 1;
+            buf.position() += 1;
 
-        buf.position() = pos;
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
@@ -626,22 +616,6 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    LocalDate local_date;
-
-    if constexpr (throw_exception)
-        readDateTextImpl<ReturnType>(local_date, buf);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf))
-        return false;
-    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
-    return ReturnType(true);
-}
-
 
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
@@ -653,22 +627,12 @@ inline void readDateText(DayNum & date, ReadBuffer & buf)
     readDateTextImpl<void>(date, buf);
 }
 
-inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf)
-{
-    readDateTextImpl<void>(date, buf);
-}
-
 inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
 {
     return readDateTextImpl<bool>(date, buf);
 }
 
 inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
-{
-    return readDateTextImpl<bool>(date, buf);
-}
-
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
 {
     return readDateTextImpl<bool>(date, buf);
 }
@@ -915,35 +879,25 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap64(x);
 }
 
-template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
-{
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        auto & item = x.items[std::size(x.items) - i - 1];
-        readBinaryBigEndian(item, buf);
-    }
-}
-
 
 /// Generic methods to read value in text tab-separated format.
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, void>
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-inline void readText(is_integer auto & x, ReadBuffer & buf)
-{
-    if constexpr (std::is_same_v<decltype(x), bool &>)
-        readBoolText(x, buf);
-    else
-        readIntText(x, buf);
-}
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
 
-inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
-{
-    return tryReadIntText(x, buf);
-}
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadFloatText(x, buf); }
 
+inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
@@ -1152,10 +1106,12 @@ inline bool tryParse(T & res, const char * data, size_t size)
 }
 
 template <typename T>
-inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+inline std::enable_if_t<!is_integer_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-template <is_integer T>
-inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);
     if (buf.eof())

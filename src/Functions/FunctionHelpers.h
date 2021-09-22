@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -68,13 +67,13 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-Field toField(const T & x)
+inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
 {
     return Field(NearestFieldType<T>(x));
 }
 
-template <is_decimal T>
-Field toField(const T & x, UInt32 scale)
+template <typename T>
+inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
 {
     return Field(NearestFieldType<T>(x, scale));
 }
@@ -82,8 +81,6 @@ Field toField(const T & x, UInt32 scale)
 
 Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
-/// Returns nested column with corrected type if nullable
-ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col);
 
 /// Returns the copy of a given columns in which each column is replaced with its respective nested
 /// column if it is nullable.
@@ -172,5 +169,4 @@ struct NullPresence
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
-bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 }

@@ -73,7 +73,7 @@ struct TreeRewriterResult
     /// Results of scalar sub queries
     Scalars scalars;
 
-    explicit TreeRewriterResult(
+    TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
         const StorageMetadataPtr & metadata_snapshot_ = {},
@@ -84,6 +84,7 @@ struct TreeRewriterResult
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
+    Names getExpandedAliases() const { return {expanded_aliases.begin(), expanded_aliases.end()}; }
     const Scalars & getScalars() const { return scalars; }
 };
 

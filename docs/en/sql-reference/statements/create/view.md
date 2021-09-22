@@ -50,9 +50,6 @@ When creating a materialized view with `TO [db].[table]`, you must not use `POPU
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
 !!! important "Important"
-    Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in `SELECT`'s result ClickHouse will use a default value, even if column is not `Nullable`. A safe practice would be to add aliases for every column when using Materialized views.
-
-!!! important "Important"
     Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
 If you specify `POPULATE`, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
@@ -80,7 +77,7 @@ CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [
 
 Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
 
-Live views are triggered by insert into the innermost table specified in the query.
+Live views are triggered by insert into the innermost table specified in the query. 
 
 Live views work similarly to how a query in a distributed table works. But instead of combining partial results from different servers they combine partial result from current data with partial result from the new data. When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
 
@@ -169,7 +166,7 @@ You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRE
 
 ### WITH TIMEOUT Clause {#live-view-with-timeout}
 
-When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view.
+When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
@@ -213,7 +210,7 @@ WATCH lv
 └─────────────────────┴──────────┘
 ```
 
-You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause.
+You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause. 
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
@@ -232,7 +229,7 @@ WATCH lv
 ```
 
 ```
-Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist..
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist.. 
 ```
 
 ### Usage {#live-view-usage}

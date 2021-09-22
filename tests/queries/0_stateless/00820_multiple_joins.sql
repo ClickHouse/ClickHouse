@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 DROP TABLE IF EXISTS table3;
 DROP TABLE IF EXISTS table5;
-DROP TABLE IF EXISTS table_set;
 
 CREATE TABLE table1 (a UInt32) ENGINE = Memory;
 CREATE TABLE table2 (a UInt32, b UInt32) ENGINE = Memory;
@@ -77,18 +76,6 @@ join table3 as t3 on t2_b = t3_b;
 --join table2 as t2 on t1_t2_x = t2.a
 --join table3 as t3 on t1_t3_x = t2_t3_x;
 
-
-CREATE TABLE table_set ( x UInt32 ) ENGINE = Set;
-INSERT INTO table_set VALUES (0), (1), (2);
-
-select count()
-from table1 as t1
-join table2 as t2 on t1.a = t2.a
-join table3 as t3 on t2.b = t3.b
-join table5 as t5 on t3.c = t5.c
-WHERE t1.a in table_set;
-
-DROP TABLE table_set;
 DROP TABLE table1;
 DROP TABLE table2;
 DROP TABLE table3;
