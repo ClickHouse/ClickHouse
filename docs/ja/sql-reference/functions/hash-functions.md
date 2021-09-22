@@ -481,4 +481,4 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/hash_functions/) <!--hide-->

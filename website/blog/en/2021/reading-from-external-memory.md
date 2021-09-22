@@ -49,6 +49,7 @@ This figure shows results for Intel Optane SSD.
 Minimal latency is 12 microseconds whih is 10 times lower than those of NVMe SSD. Average latency is 1000 lower than those of HDD. There is quite large variation for small block read latency: even though the average time is quite low and close to minimal latency the maximum latency and even 99 percentile are significantly worse. If somebody looks at these results and wishes to create an Intel Optane-based service with 12 microsecond latency for reads they would have to install larger number of Intel Optane drives or consider providing more realistic timings.
 
 When latency is so small overheads of context switching and interrupt handling become noticeable. One can use polling mode to gain some improvement. In this mode the Linux kernel monitors the completion queue instead of switching to some other job and relying on hardware interrupt with interrupt handler to notify about completion. Clearly, it is considerable to use the polling mode only when hardware response is expected to arrive fast enough.
+
 ![Intel Optane single read latency in polling mode](https://blog-images.clickhouse.tech/en/2021/reading-from-external-memory/optane-single-hipri-read.png)
 
 The figure above shows results for reading from Intel Optane in polling mode. The polling mode is used when an application calls preadv2(2) system call with RWF\_HIGHPRI flag. Compared to usual pread(2) the polling mode lowers the maximum latency by a factor of two for block sizes up to 256 kilobytes.
