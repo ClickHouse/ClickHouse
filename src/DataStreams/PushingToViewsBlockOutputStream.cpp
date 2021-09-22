@@ -32,11 +32,14 @@ namespace ErrorCodes
 
 struct ViewsData
 {
+    /// Separate information for every view.
     std::list<ViewRuntimeData> views;
+    /// Some common info about source storage.
     ContextPtr context;
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
+    /// This value is actually only for logs.
     size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
@@ -55,68 +58,14 @@ struct ViewsData
 
 using ViewsDataPtr = std::shared_ptr<ViewsData>;
 
+/// Copies data inserted into table for every dependent table.
 class CopyingDataToViewsTransform final : public IProcessor
 {
 public:
-    CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data)
-        : IProcessor({header}, OutputPorts(data->views.size(), header))
-        , input(inputs.front())
-        , views_data(std::move(data))
-    {
-        if (views_data->views.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyingDataToViewsTransform cannot have zero outputs");
-    }
+    CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data);
 
     String getName() const override { return "CopyingDataToViewsTransform"; }
-
-    Status prepare() override
-    {
-        bool all_can_push = true;
-        for (auto & output : outputs)
-        {
-            if (output.isFinished())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push data to view because output port is finished");
-
-            if (!output.canPush())
-                all_can_push = false;
-        }
-
-        if (!all_can_push)
-            return Status::PortFull;
-
-        if (input.isFinished())
-        {
-            for (auto & output : outputs)
-                output.finish();
-
-            return Status::Finished;
-        }
-
-        input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
-
-        auto data = input.pullData();
-        if (data.exception)
-        {
-            if (!views_data->has_exception)
-            {
-                views_data->first_exception = data.exception;
-                views_data->has_exception = true;
-            }
-
-            for (auto & output : outputs)
-                output.pushException(data.exception);
-        }
-        else
-        {
-            for (auto & output : outputs)
-                output.push(data.chunk.clone());
-        }
-
-        return Status::PortFull;
-    }
-
+    Status prepare() override;
     InputPort & getInputPort() { return input; }
 
 private:
@@ -124,27 +73,40 @@ private:
     ViewsDataPtr views_data;
 };
 
-static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context);
-
-static std::exception_ptr addStorageToException(std::exception_ptr ptr, const StorageID & storage)
+/// For source chunk, execute view query over it.
+class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
-    try
-    {
-        std::rethrow_exception(std::move(ptr));
-    }
-    catch (DB::Exception & exception)
-    {
-        exception.addMessage("while inserting into {}", storage.getNameForLogs());
-        return std::current_exception();
-    }
-    catch (...)
-    {
-        return std::current_exception();
-    }
+public:
+    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_, ViewsDataPtr views_data_);
 
-    __builtin_unreachable();
-}
+    String getName() const override { return "ExecutingInnerQueryFromView"; }
 
+protected:
+    void transform(Chunk & chunk) override;
+
+private:
+    ViewsDataPtr views_data;
+    ViewRuntimeData & view;
+};
+
+/// Insert into LiveView.
+class PushingToLiveViewSink final : public SinkToStorage
+{
+public:
+    PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_);
+    String getName() const override { return "PushingToLiveViewSink"; }
+    void consume(Chunk chunk) override;
+
+private:
+    StorageLiveView & live_view;
+    StoragePtr storage_holder;
+    ContextPtr context;
+};
+
+/// For every view, collect exception.
+/// Has single output with empty header.
+/// If any exception happen before view processing, pass it.
+/// Othervise return any exception from any view.
 class FinalizingViewsTransform final : public IProcessor
 {
     struct ExceptionStatus
@@ -153,119 +115,14 @@ class FinalizingViewsTransform final : public IProcessor
         bool is_first = false;
     };
 
-    static InputPorts initPorts(std::vector<Block> headers)
-    {
-        InputPorts res;
-        for (auto & header : headers)
-            res.emplace_back(std::move(header));
-
-        return res;
-    }
+    static InputPorts initPorts(std::vector<Block> headers);
 
 public:
-    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data)
-        : IProcessor(initPorts(std::move(headers)), {Block()})
-        , output(outputs.front())
-        , views_data(std::move(data))
-    {
-        statuses.resize(views_data->views.size());
-    }
+    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data);
 
     String getName() const override { return "FinalizingViewsTransform"; }
-
-    Status prepare() override
-    {
-        if (output.isFinished())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
-
-        if (!output.canPush())
-            return Status::PortFull;
-
-        size_t num_finished = 0;
-        size_t pos = 0;
-        for (auto & input : inputs)
-        {
-            auto i = pos;
-            ++pos;
-
-            if (input.isFinished())
-            {
-                ++num_finished;
-                continue;
-            }
-
-            input.setNeeded();
-            if (input.hasData())
-            {
-                auto data = input.pullData();
-                //std::cerr << "********** FinalizingViewsTransform got input " << i << " has exc " << bool(data.exception) << std::endl;
-                if (data.exception)
-                {
-                    if (views_data->has_exception && views_data->first_exception == data.exception)
-                        statuses[i].is_first = true;
-                    else
-                        statuses[i].exception = data.exception;
-
-                    if (i == 0 && statuses[0].is_first)
-                    {
-                        output.pushData(std::move(data));
-                        return Status::PortFull;
-                    }
-                }
-
-                if (input.isFinished())
-                    ++num_finished;
-            }
-        }
-
-        if (num_finished == inputs.size())
-        {
-            if (!statuses.empty())
-                return Status::Ready;
-
-            if (any_exception)
-                output.pushException(std::move(any_exception));
-
-            output.finish();
-            return Status::Finished;
-        }
-
-        return Status::NeedData;
-    }
-
-    void work() override
-    {
-        size_t i = 0;
-        for (auto & view : views_data->views)
-        {
-            auto & status = statuses[i];
-            ++i;
-
-            if (status.exception)
-            {
-                if (!any_exception)
-                    any_exception = status.exception;
-
-                view.setException(addStorageToException(std::move(status.exception), view.table_id));
-            }
-            else
-            {
-                view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
-
-                LOG_TRACE(
-                    &Poco::Logger::get("PushingToViews"),
-                    "Pushing ({}) from {} to {} took {} ms.",
-                    views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
-                    views_data->source_storage_id.getNameForLogs(),
-                    view.table_id.getNameForLogs(),
-                    view.runtime_stats->elapsed_ms);
-            }
-        }
-
-        logQueryViews(views_data->views, views_data->context);
-
-        statuses.clear();
-    }
+    Status prepare() override;
+    void work() override;
 
 private:
     OutputPort & output;
@@ -274,33 +131,8 @@ private:
     std::exception_ptr any_exception;
 };
 
-class PushingToLiveViewSink final : public SinkToStorage
-{
-public:
-    PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_)
-        : SinkToStorage(header)
-        , live_view(live_view_)
-        , storage_holder(std::move(storage_holder_))
-        , context(std::move(context_))
-    {
-    }
 
-    String getName() const override { return "PushingToLiveViewSink"; }
-
-    void consume(Chunk chunk) override
-    {
-        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-        StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-        CurrentThread::updateProgressIn(local_progress);
-    }
-
-private:
-    StorageLiveView & live_view;
-    StoragePtr storage_holder;
-    ContextPtr context;
-};
-
-Chain buildPushingToViewsDrain(
+Chain buildPushingToViewsChain(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -336,6 +168,7 @@ Chain buildPushingToViewsDrain(
     /// We need special context for materialized views insertions
     ContextMutablePtr select_context;
     ContextMutablePtr insert_context;
+    ViewsDataPtr views_data;
     if (!dependencies.empty())
     {
         select_context = Context::createCopy(context);
@@ -352,10 +185,11 @@ Chain buildPushingToViewsDrain(
             insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
         if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
+
+        views_data = std::make_shared<ViewsData>(select_context, table_id, metadata_snapshot, storage);
     }
 
     std::vector<Chain> chains;
-    auto views_data = std::make_shared<ViewsData>(context, table_id, metadata_snapshot, storage);
 
     for (const auto & database_table : dependencies)
     {
@@ -434,27 +268,24 @@ Chain buildPushingToViewsDrain(
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
-            out = buildPushingToViewsDrain(
+            out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
         else
-            out = buildPushingToViewsDrain(
+            out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
 
         views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
             out.getInputHeader(),
             database_table,
-            dependent_table,
-            dependent_metadata_snapshot,
-            select_context,
             nullptr,
             std::move(runtime_stats)});
 
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-                storage_header, views_data->views.back(), views_data->source_storage_id, views_data->source_metadata_snapshot, views_data->source_storage);
+                storage_header, views_data->views.back(), views_data);
             executing_inner_query->setRuntimeData(view_thread_status, elapsed_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
@@ -470,9 +301,9 @@ Chain buildPushingToViewsDrain(
         }
     }
 
-    size_t num_views = views_data->views.size();
-    if (num_views != 0)
+    if (views_data)
     {
+        size_t num_views = views_data->views.size();
         const Settings & settings = context->getSettingsRef();
         if (settings.parallel_view_processing)
             views_data->max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), num_views) : num_views;
@@ -530,19 +361,19 @@ Chain buildPushingToViewsDrain(
     return result_chain;
 }
 
-static void process(Block & block, ViewRuntimeData & view, const StorageID & source_storage_id, const StorageMetadataPtr & source_metadata_snapshot, const StoragePtr & source_storage)
+static void process(Block & block, ViewRuntimeData & view, const ViewsData & views_data)
 {
-    const auto & context = view.context;
+    const auto & context = views_data.context;
 
     /// We create a table with the same name as original table and the same alias columns,
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
     local_context->addViewSource(StorageValues::create(
-        source_storage_id,
-        source_metadata_snapshot->getColumns(),
+        views_data.source_storage_id,
+        views_data.source_metadata_snapshot->getColumns(),
         block,
-        source_storage->getVirtuals()));
+        views_data.source_storage->getVirtuals()));
 
     /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
     ///
@@ -596,13 +427,6 @@ static void process(Block & block, ViewRuntimeData & view, const StorageID & sou
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);
 }
 
-void ExecutingInnerQueryFromViewTransform::transform(Chunk & chunk)
-{
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    process(block, view, source_storage_id, source_metadata_snapshot, source_storage);
-    chunk.setColumns(block.getColumns(), block.rows());
-}
-
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
@@ -627,6 +451,229 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+
+CopyingDataToViewsTransform::CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data)
+    : IProcessor({header}, OutputPorts(data->views.size(), header))
+    , input(inputs.front())
+    , views_data(std::move(data))
+{
+    if (views_data->views.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyingDataToViewsTransform cannot have zero outputs");
+}
+
+IProcessor::Status CopyingDataToViewsTransform::prepare()
+{
+    bool all_can_push = true;
+    for (auto & output : outputs)
+    {
+        if (output.isFinished())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push data to view because output port is finished");
+
+        if (!output.canPush())
+            all_can_push = false;
+    }
+
+    if (!all_can_push)
+        return Status::PortFull;
+
+    if (input.isFinished())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
+    input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData;
+
+    auto data = input.pullData();
+    if (data.exception)
+    {
+        if (!views_data->has_exception)
+        {
+            views_data->first_exception = data.exception;
+            views_data->has_exception = true;
+        }
+
+        for (auto & output : outputs)
+            output.pushException(data.exception);
+    }
+    else
+    {
+        for (auto & output : outputs)
+            output.push(data.chunk.clone());
+    }
+
+    return Status::PortFull;
+}
+
+
+ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
+    const Block & header,
+    ViewRuntimeData & view_,
+    std::shared_ptr<ViewsData> views_data_)
+    : ExceptionKeepingTransform(header, view_.sample_block)
+    , views_data(std::move(views_data_))
+    , view(view_)
+{
+}
+
+void ExecutingInnerQueryFromViewTransform::transform(Chunk & chunk)
+{
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+    process(block, view, *views_data);
+    chunk.setColumns(block.getColumns(), block.rows());
+}
+
+
+PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_)
+    : SinkToStorage(header)
+    , live_view(live_view_)
+    , storage_holder(std::move(storage_holder_))
+    , context(std::move(context_))
+{
+}
+
+void PushingToLiveViewSink::consume(Chunk chunk)
+{
+    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
+    StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+    CurrentThread::updateProgressIn(local_progress);
+}
+
+
+FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data)
+    : IProcessor(initPorts(std::move(headers)), {Block()})
+    , output(outputs.front())
+    , views_data(std::move(data))
+{
+    statuses.resize(views_data->views.size());
+}
+
+InputPorts FinalizingViewsTransform::initPorts(std::vector<Block> headers)
+{
+    InputPorts res;
+    for (auto & header : headers)
+        res.emplace_back(std::move(header));
+
+    return res;
+}
+
+IProcessor::Status FinalizingViewsTransform::prepare()
+{
+    if (output.isFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
+
+    if (!output.canPush())
+        return Status::PortFull;
+
+    size_t num_finished = 0;
+    size_t pos = 0;
+    for (auto & input : inputs)
+    {
+        auto i = pos;
+        ++pos;
+
+        if (input.isFinished())
+        {
+            ++num_finished;
+            continue;
+        }
+
+        input.setNeeded();
+        if (input.hasData())
+        {
+            auto data = input.pullData();
+            //std::cerr << "********** FinalizingViewsTransform got input " << i << " has exc " << bool(data.exception) << std::endl;
+            if (data.exception)
+            {
+                if (views_data->has_exception && views_data->first_exception == data.exception)
+                    statuses[i].is_first = true;
+                else
+                    statuses[i].exception = data.exception;
+
+                if (i == 0 && statuses[0].is_first)
+                {
+                    output.pushData(std::move(data));
+                    return Status::PortFull;
+                }
+            }
+
+            if (input.isFinished())
+                ++num_finished;
+        }
+    }
+
+    if (num_finished == inputs.size())
+    {
+        if (!statuses.empty())
+            return Status::Ready;
+
+        if (any_exception)
+            output.pushException(std::move(any_exception));
+
+        output.finish();
+        return Status::Finished;
+    }
+
+    return Status::NeedData;
+}
+
+static std::exception_ptr addStorageToException(std::exception_ptr ptr, const StorageID & storage)
+{
+    try
+    {
+        std::rethrow_exception(std::move(ptr));
+    }
+    catch (DB::Exception & exception)
+    {
+        exception.addMessage("while inserting into {}", storage.getNameForLogs());
+        return std::current_exception();
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    __builtin_unreachable();
+}
+
+void FinalizingViewsTransform::work()
+{
+    size_t i = 0;
+    for (auto & view : views_data->views)
+    {
+        auto & status = statuses[i];
+        ++i;
+
+        if (status.exception)
+        {
+            if (!any_exception)
+                any_exception = status.exception;
+
+            view.setException(addStorageToException(std::move(status.exception), view.table_id));
+        }
+        else
+        {
+            view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
+
+            LOG_TRACE(
+                &Poco::Logger::get("PushingToViews"),
+                "Pushing ({}) from {} to {} took {} ms.",
+                views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
+                views_data->source_storage_id.getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                view.runtime_stats->elapsed_ms);
+        }
+    }
+
+    logQueryViews(views_data->views, views_data->context);
+
+    statuses.clear();
 }
 
 }
