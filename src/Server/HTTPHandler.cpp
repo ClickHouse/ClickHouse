@@ -749,7 +749,7 @@ void HTTPHandler::processQuery(
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on or config has http_options_response,
     /// which means that there are some headers to be sent, and the client passed Origin header.
-    if ((settings.add_http_cors_header || config.has("http_options_response")) && !request.get("Origin", "").empty())
+    if (settings.add_http_cors_header && config.has("http_options_response") && !request.get("Origin", "").empty())
         tryAddHeadersFromConfig(response, config);
 
     auto append_callback = [context] (ProgressCallback callback)
