@@ -1,3 +1,4 @@
+Map bloom filter mapKeys
 Equals with existing key
 0	{'K0':'V0'}
 Equals with non existing key
@@ -10,3 +11,32 @@ Not equals with non existing key
 0	{'K0':'V0'}
 1	{'K1':'V1'}
 Not equals with non existing key and default value
+IN with existing key
+0	{'K0':'V0'}
+IN with non existing key
+IN with non existing key and default value
+0	{'K0':'V0'}
+1	{'K1':'V1'}
+NOT IN with existing key
+1	{'K1':'V1'}
+NOT IN with non existing key
+0	{'K0':'V0'}
+1	{'K1':'V1'}
+NOT IN with non existing key and default value
+Map bloom filter mapValues
+IN with existing key
+0	{'K0':'V0'}
+IN with non existing key
+IN with non existing key and default value
+0	{'K0':'V0'}
+1	{'K1':'V1'}
+NOT IN with existing key
+1	{'K1':'V1'}
+NOT IN with non existing key
+0	{'K0':'V0'}
+1	{'K1':'V1'}
+NOT IN with non existing key and default value
+MapContains with existing key
+0	{'K0':'V0'}
+MapContains with non existing key
+MapContains with non existing key and default value
