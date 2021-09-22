@@ -63,40 +63,45 @@ StorageFileLog::StorageFileLog(
 
     try
     {
-        if (std::filesystem::is_regular_file(path))
-        {
-            auto normal_path = std::filesystem::path(path).lexically_normal().native();
-            file_statuses[normal_path] = FileContext{};
-            file_names.push_back(normal_path);
-        }
-        else if (std::filesystem::is_directory(path))
-        {
-            path_is_directory = true;
-            /// Just consider file with depth 1
-            for (const auto & dir_entry : std::filesystem::directory_iterator{path})
-            {
-                if (dir_entry.is_regular_file())
-                {
-                    auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
-                    file_statuses[normal_path] = FileContext{};
-                    file_names.push_back(normal_path);
-                }
-            }
-        }
-        else
-        {
-            throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
-
-        auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
-        task = std::make_shared<TaskContext>(std::move(thread));
+        init();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+void StorageFileLog::init()
+{
+    if (std::filesystem::is_regular_file(path))
+    {
+        auto normal_path = std::filesystem::path(path).lexically_normal().native();
+        file_statuses[normal_path] = FileContext{};
+        file_names.push_back(normal_path);
+    }
+    else if (std::filesystem::is_directory(path))
+    {
+        path_is_directory = true;
+        /// Just consider file with depth 1
+        for (const auto & dir_entry : std::filesystem::directory_iterator{path})
+        {
+            if (dir_entry.is_regular_file())
+            {
+                auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
+                file_statuses[normal_path] = FileContext{};
+                file_names.push_back(normal_path);
+            }
+        }
+    }
+    else
+    {
+        throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
+
+    auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+    task = std::make_shared<TaskContext>(std::move(thread));
 }
 
 Pipe StorageFileLog::read(
