@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH -DUSE_BASE64
 )
 
 ADDINCL(
@@ -15,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    contrib/restricted/turbo_base64
     GLOBAL contrib/restricted/murmurhash
 )
 
@@ -31,6 +32,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/turbo_base64
     contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
