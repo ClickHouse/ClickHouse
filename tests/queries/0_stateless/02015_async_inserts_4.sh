@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-url="${CLICKHOUSE_URL}&async_insert_mode=1&wait_for_async_insert=1"
+url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_02015_allowed"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_02015_denied"
