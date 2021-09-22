@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Santa Clara on May 4, 2017'
-image: 'https://blog-images.clickhouse.tech/en/2017/clickhouse-meetup-in-santa-clara-may-4-2017/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2017/clickhouse-meetup-in-santa-clara-may-4-2017/main.jpg'
 date: '2017-05-11'
 tags: ['meetup', 'Santa Clara', 'Bay Area', 'California', 'USA', 'America', 'events']
 ---
