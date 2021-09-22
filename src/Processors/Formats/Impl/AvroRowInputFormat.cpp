@@ -35,6 +35,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #include <avro/Compiler.hh>
 #include <avro/DataFile.hh>
@@ -178,7 +179,20 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    const WhichDataType target = removeLowCardinality(target_type);
+    if (target_type->lowCardinality())
+    {
+        const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
+        auto dict_deserialize = createDeserializeFn(root_node, lc_type->getDictionaryType());
+        return [dict_deserialize](IColumn & column, avro::Decoder & decoder)
+        {
+            auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
+            auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
+            dict_deserialize(*tmp_column, decoder);
+            lc_column.insertFromFullColumn(*tmp_column, 0);
+        };
+    }
+
+    const WhichDataType target = WhichDataType(target_type);
 
     switch (root_node->type())
     {
@@ -599,7 +613,7 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(*in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
     file_reader_ptr->init();
 }
@@ -748,7 +762,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
-    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
+    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
     , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
@@ -758,16 +772,16 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
 
 bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (in->eof())
     {
         return false;
     }
     // skip tombstone records (kafka messages with null value)
-    if (in.available() == 0)
+    if (in->available() == 0)
     {
         return false;
     }
-    SchemaId schema_id = readConfluentSchemaId(in);
+    SchemaId schema_id = readConfluentSchemaId(*in);
     const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder, ext);
     decoder->drain();
@@ -777,7 +791,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
 void AvroConfluentRowInputFormat::syncAfterError()
 {
     // skip until the end of current kafka message
-    in.tryIgnore(in.available());
+    in->tryIgnore(in->available());
 }
 
 const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId schema_id)
