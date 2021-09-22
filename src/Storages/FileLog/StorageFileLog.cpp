@@ -432,7 +432,7 @@ bool StorageFileLog::updateFileStatuses()
     std::vector<String> valid_files;
     for (const auto & file_name : file_names)
     {
-        if (file_statuses.at(file_name).status == FileStatus::REMOVED)
+        if (file_statuses.at(file_name).status == FileStatus::REMOVED || file_statuses.at(file_name).status == FileStatus::BROKEN)
         {
             file_statuses.erase(file_name);
         }
