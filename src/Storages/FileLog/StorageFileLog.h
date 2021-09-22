@@ -28,7 +28,8 @@ public:
         BEGIN,
         NO_CHANGE,
         UPDATED,
-        REMOVED
+        REMOVED,
+        BROKEN
     };
 
     using Files = std::vector<String>;
