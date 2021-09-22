@@ -35,7 +35,6 @@ String formatNameForLogs(const String & postgres_database_name, const String & p
     return postgres_database_name + '.' + postgres_table_name;
 }
 
->>>>>>> d3c46ebe883f732aef733de201f602432f8de987
 }
 
 #endif

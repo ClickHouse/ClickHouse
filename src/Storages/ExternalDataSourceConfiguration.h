@@ -47,20 +47,25 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 };
 
 
-using EngineArgs = std::vector<std::pair<String, DB::Field>>;
+using StorageSpecificArgs = std::vector<std::pair<String, DB::Field>>;
 
-/* If storage engine's configuration was define via named_collections,
- * return all options in ExternalDataSource::Configuration struct.
+struct ExternalDataSourceConfig
+{
+    ExternalDataSourceConfiguration configuration;
+    StorageSpecificArgs specific_args;
+};
+
+/* If there is a storage engine's configuration specified in the named_collections,
+ * this function returns valid for usage ExternalDataSourceConfiguration struct
+ * otherwise std::nullopt is returned.
  *
- * Also check if engine arguments have key-value defined configuration options:
- * ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
- * In this case they will override values defined in config.
+ * If any configuration options are provided as key-value engine arguments, they will override
+ * configuration values, i.e. ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
  *
- * If there are key-value arguments apart from common: `host`, `port`, `username`, `password`, `database`,
- * i.e. storage-specific arguments, then return them back in a set: ExternalDataSource::EngineArgs.
+ * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
+ * is returned in EngineArgs struct.
  */
-std::optional<std::tuple<ExternalDataSourceConfiguration, EngineArgs>>
-getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
+std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
 
 ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
@@ -99,7 +104,12 @@ struct StorageS3Configuration : URLBasedDataSourceConfiguration
     String secret_access_key;
 };
 
-std::optional<std::tuple<URLBasedDataSourceConfiguration, EngineArgs>>
-getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
+struct URLBasedDataSourceConfig
+{
+    URLBasedDataSourceConfiguration configuration;
+    StorageSpecificArgs specific_args;
+};
+
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
 
 }
