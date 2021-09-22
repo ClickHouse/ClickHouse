@@ -25,7 +25,6 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
 
     query_context = session.makeQueryContext();
     query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
-    query_context->setCurrentQueryId("");
     if (send_progress)
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 }
@@ -76,6 +75,7 @@ void LocalConnection::sendQuery(
         state->after_send_progress.restart();
 
     next_packet_type.reset();
+    query_context->setCurrentQueryId(query_id_);
     CurrentThread::QueryScope query_scope_holder(query_context);
 
     try
@@ -322,7 +322,7 @@ Packet LocalConnection::receivePacket()
     }
 
     if (!next_packet_type)
-        poll();
+        poll(0);
 
     if (!next_packet_type)
     {

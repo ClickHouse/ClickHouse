@@ -60,7 +60,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -300,8 +299,11 @@ void LocalServer::cleanup()
 {
     connection.reset();
 
-    global_context->shutdown();
-    global_context.reset();
+    if (global_context)
+    {
+        global_context->shutdown();
+        global_context.reset();
+    }
 
     status.reset();
 
@@ -450,7 +452,7 @@ try
     cleanup();
     return Application::EXIT_OK;
 }
-catch (const Exception & e)
+catch (...)
 {
     try
     {
@@ -464,8 +466,9 @@ catch (const Exception & e)
     if (!ignore_error)
         std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
+    auto code = getCurrentExceptionCode();
     /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
+    return code ? code : -1;
 }
 
 
