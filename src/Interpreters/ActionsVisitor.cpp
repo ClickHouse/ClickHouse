@@ -37,6 +37,8 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -854,17 +856,21 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    FunctionOverloadResolverPtr function_builder;
-    try
+    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+
+    if (!function_builder)
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.getContext());
-    }
-    catch (Exception & e)
-    {
-        auto hints = AggregateFunctionFactory::instance().getHints(node.name);
-        if (!hints.empty())
-            e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
-        throw;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+        }
+        catch (Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node.name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
+            throw;
+        }
     }
 
     Names argument_names;

@@ -582,7 +582,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto * queue = context->getAsynchronousInsertQueue();
         const bool async_insert = queue
             && insert_query && !insert_query->select
-            && insert_query->hasInlinedData() && settings.async_insert_mode;
+            && insert_query->hasInlinedData() && settings.async_insert;
 
         if (async_insert)
         {

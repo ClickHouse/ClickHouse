@@ -399,7 +399,7 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
                       const Block & block_right, const Names & key_names_right, const String & condition_name_right)
 {
-    checkTypesOfKeys(block_left, key_names_left,block_right,key_names_right);
+    checkTypesOfKeys(block_left, key_names_left, block_right, key_names_right);
     checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
 }
 
