@@ -31,6 +31,8 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
+        MATERIALIZE_COLUMN,
+
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
@@ -68,6 +70,8 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+
+        MODIFY_DATABASE_SETTING,
     };
 
     Type type = NO_TYPE;
@@ -208,7 +212,15 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    enum class AlterObjectType
+    {
+        TABLE,
+        DATABASE,
+        LIVE_VIEW,
+        UNKNOWN,
+    };
+
+    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;
 

@@ -2186,6 +2186,53 @@ defaultRoles()
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+## getServerPort {#getserverport}
+
+Возвращает номер порта сервера. Если порт не используется сервером, генерируется исключение.
+
+**Синтаксис**
+
+``` sql
+getServerPort(port_name)
+```
+
+**Аргументы**
+
+-   `port_name` — имя порта сервера. [String](../../sql-reference/data-types/string.md#string). Возможные значения:
+
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
+
+**Возвращаемое значение**
+
+-   Номер порта сервера.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT getServerPort('tcp_port');
+```
+
+Результат:
+
+``` text
+┌─getServerPort('tcp_port')─┐
+│ 9000                      │
+└───────────────────────────┘
+```
+
 ## queryID {#query-id}
 
 Возвращает идентификатор текущего запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `query_id`.

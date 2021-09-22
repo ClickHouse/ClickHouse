@@ -51,6 +51,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name_) + ")"))
     , is_materialized_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -64,6 +65,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(storage_metadata);
 
     String replication_identifier = remote_database_name + "_" + remote_table_name_;
+    replication_settings->materialized_postgresql_tables_list = remote_table_name_;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             replication_identifier,
             remote_database_name,
@@ -71,20 +74,35 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             connection_info,
             getContext(),
             is_attach,
-            replication_settings->materialized_postgresql_max_block_size.value,
-            /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false);
+            *replication_settings,
+            /* is_materialized_postgresql_database */false);
+
+    if (!is_attach)
+    {
+        replication_handler->addStorage(remote_table_name, this);
+        /// Start synchronization preliminary setup immediately and throw in case of failure.
+        /// It should be guaranteed that if MaterializedPostgreSQL table was created successfully, then
+        /// its nested table was also created.
+        replication_handler->startSynchronization(/* throw_on_error */ true);
+    }
 }
 
 
 /// For the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
 /// In this case this storage can't be used for read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(table_id_)
 {
 }
 
@@ -92,9 +110,14 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & t
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        StoragePtr nested_storage_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(nested_storage_->getStorageID())
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(true)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -120,7 +143,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context);
+    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "", table_id.table_name);
 }
 
 
@@ -160,9 +183,13 @@ StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 
 void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
+    if (tryGetNested())
+        return;
+
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
     auto table_id = getStorageID();
     auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
+    LOG_DEBUG(log, "Creating clickhouse table for postgresql table {}", table_id.getNameForLogs());
 
     try
     {
@@ -201,23 +228,12 @@ StoragePtr StorageMaterializedPostgreSQL::prepare()
 void StorageMaterializedPostgreSQL::startup()
 {
     /// replication_handler != nullptr only in case of single table engine MaterializedPostgreSQL.
-    if (replication_handler)
+    if (replication_handler && is_attach)
     {
         replication_handler->addStorage(remote_table_name, this);
-
-        if (is_attach)
-        {
-            /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
-            /// then check for nested table -- it should already be created.
-            replication_handler->startup();
-        }
-        else
-        {
-            /// Start synchronization preliminary setup immediately and throw in case of failure.
-            /// It should be guaranteed that if MaterializedPostgreSQL table was created successfully, then
-            /// its nested table was also created.
-            replication_handler->startSynchronization(/* throw_on_error */ true);
-        }
+        /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
+        /// then check for nested table -- it should already be created.
+        replication_handler->startup();
     }
 }
 
@@ -463,9 +479,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         if (engine_args.size() != 5)
-            throw Exception("Storage MaterializedPostgreSQL requires 5 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage MaterializedPostgreSQL requires 5 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'. Got {}",
+                            engine_args.size());
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getContext());

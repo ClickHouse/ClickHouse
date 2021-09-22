@@ -22,7 +22,7 @@ public:
 
     void loadObjects(ContextPtr context);
     void storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast);
-    void removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name1);
+    void removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name);
 
 private:
 

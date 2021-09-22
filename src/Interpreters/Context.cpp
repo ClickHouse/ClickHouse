@@ -50,6 +50,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
@@ -57,6 +58,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
@@ -74,10 +76,12 @@
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
+#include <common/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
@@ -100,6 +104,13 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+
+
+    extern const Metric DelayedInserts;
+    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundFetchesPoolTask;
+
 }
 
 namespace DB
@@ -118,6 +129,8 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 
@@ -133,6 +146,7 @@ struct ContextSharedPart
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
+    mutable std::mutex external_user_defined_executable_functions_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
@@ -161,6 +175,7 @@ struct ContextSharedPart
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
+    String user_scripts_path;                               /// Path to the directory with user provided scripts.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -170,11 +185,13 @@ struct ContextSharedPart
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
+    mutable std::optional<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
+    scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -221,6 +238,11 @@ struct ContextSharedPart
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
+    /// Background executors for *MergeTree tables
+    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
+    MergeTreeBackgroundExecutorPtr moves_executor;
+    MergeTreeBackgroundExecutorPtr fetch_executor;
+
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
@@ -231,6 +253,7 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
@@ -290,6 +313,13 @@ struct ContextSharedPart
 
         DatabaseCatalog::shutdown();
 
+        if (merge_mutate_executor)
+            merge_mutate_executor->wait();
+        if (fetch_executor)
+            fetch_executor->wait();
+        if (moves_executor)
+            moves_executor->wait();
+
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
             auto lock = std::lock_guard(mutex);
@@ -315,10 +345,12 @@ struct ContextSharedPart
             /// But they cannot be created before storages since they may required table as a source,
             /// but at least they can be preserved for storage termination.
             dictionaries_xmls.reset();
+            user_defined_executable_functions_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
+            external_user_defined_executable_functions_loader.reset();
             models_repository_guard.reset();
             external_models_loader.reset();
             buffer_flush_schedule_pool.reset();
@@ -409,11 +441,6 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
 
-void Context::copyFrom(const ContextPtr & other)
-{
-    *this = *other;
-}
-
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
@@ -464,6 +491,12 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
+String Context::getUserScriptsPath() const
+{
+    auto lock = getLock();
+    return shared->user_scripts_path;
+}
+
 std::vector<String> Context::getWarnings() const
 {
     auto lock = getLock();
@@ -493,6 +526,9 @@ void Context::setPath(const String & path)
 
     if (shared->dictionaries_lib_path.empty())
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
+
+    if (shared->user_scripts_path.empty())
+        shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -570,6 +606,12 @@ void Context::setDictionariesLibPath(const String & path)
     shared->dictionaries_lib_path = path;
 }
 
+void Context::setUserScriptsPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_scripts_path = path;
+}
+
 void Context::addWarningMessage(const String & msg)
 {
     auto lock = getLock();
@@ -624,7 +666,6 @@ ConfigurationPtr Context::getUsersConfig()
     auto lock = getLock();
     return shared->users_config;
 }
-
 
 void Context::setUser(const UUID & user_id_)
 {
@@ -927,7 +968,6 @@ void Context::addQueryAccessInfo(
     if (!view_name.empty())
         query_access_info.views.emplace(view_name);
 }
-
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
@@ -1290,6 +1330,18 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
     return *shared->external_dictionaries_loader;
 }
 
+const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader() const
+{
+    return const_cast<Context *>(this)->getExternalUserDefinedExecutableFunctionsLoader();
+}
+
+ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
+{
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    if (!shared->external_user_defined_executable_functions_loader)
+        shared->external_user_defined_executable_functions_loader.emplace(getGlobalContext());
+    return *shared->external_user_defined_executable_functions_loader;
+}
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
@@ -1355,6 +1407,13 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     }
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
+
+void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+{
+    getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
+    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
 }
 
 #if USE_NLP
@@ -1628,6 +1687,14 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+UInt32 Context::getZooKeeperSessionUptime() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->expired())
+        return 0;
+    return shared->zookeeper->getSessionUptime();
 }
 
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
@@ -2053,6 +2120,16 @@ std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
         return {};
 
     return shared->system_logs->opentelemetry_span_log;
+}
+
+std::shared_ptr<SessionLog> Context::getSessionLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->session_log;
 }
 
 
@@ -2689,6 +2766,95 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
+{
+    return shared->async_insert_queue.get();
+}
+
+void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+{
+    using namespace std::chrono;
+
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+    shared->async_insert_queue = ptr;
+}
+
+void Context::initializeBackgroundExecutors()
+{
+    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
+
+    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        getSettingsRef().background_pool_size,
+        getSettingsRef().background_pool_size,
+        CurrentMetrics::BackgroundPoolTask
+    );
+
+    shared->moves_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MOVE,
+        getSettingsRef().background_move_pool_size,
+        getSettingsRef().background_move_pool_size,
+        CurrentMetrics::BackgroundMovePoolTask
+    );
+
+
+    shared->fetch_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::FETCH,
+        getSettingsRef().background_fetches_pool_size,
+        getSettingsRef().background_fetches_pool_size,
+        CurrentMetrics::BackgroundFetchesPoolTask
+    );
+}
+
+
+MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+{
+    return shared->merge_mutate_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
+{
+    return shared->moves_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
+{
+    return shared->fetch_executor;
+}
+
+
+ReadSettings Context::getReadSettings() const
+{
+    ReadSettings res;
+
+    std::string_view read_method_str = settings.local_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<ReadMethod>(read_method_str))
+        res.local_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", read_method_str);
+
+    res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.remote_fs_backoff_threshold = settings.remote_fs_read_backoff_threshold;
+    res.remote_fs_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+
+    res.local_fs_buffer_size = settings.max_read_buffer_size;
+    res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
+    res.priority = settings.read_priority;
+
+    res.mmap_cache = getMMappedFileCache().get();
+
+    return res;
 }
 
 }

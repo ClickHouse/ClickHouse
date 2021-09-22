@@ -11,6 +11,7 @@ PEERDIR(
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
+    ASTBackupQuery.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
     ASTColumnsTransformers.cpp
@@ -53,6 +54,7 @@ SRCS(
     ASTRolesOrUsersSet.cpp
     ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
+    ASTSelectIntersectExceptQuery.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
     ASTSetQuery.cpp
@@ -91,6 +93,7 @@ SRCS(
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
     ParserAlterQuery.cpp
+    ParserBackupQuery.cpp
     ParserCase.cpp
     ParserCheckQuery.cpp
     ParserCreateDataTypeQuery.cpp
@@ -146,6 +149,7 @@ SRCS(
     TokenIterator.cpp
     formatAST.cpp
     formatSettingName.cpp
+    getInsertQuery.cpp
     iostream_debug_helpers.cpp
     makeASTForLogicalFunction.cpp
     obfuscateQueries.cpp
