@@ -26,4 +26,4 @@ ClickHouseを操作するための幅広いサードパーティのライブラ�
 -   [統合](third-party/integrations.md)
 -   [視界面](third-party/gui.md)
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/) <!--hide-->

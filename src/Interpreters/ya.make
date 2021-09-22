@@ -60,9 +60,11 @@ SRCS(
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
+    ExternalUserDefinedExecutableFunctionsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     FunctionNameNormalizer.cpp
+    GatherFunctionQuantileVisitor.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -165,9 +167,11 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
-    UserDefinedFunctionFactory.cpp
-    UserDefinedFunctionsVisitor.cpp
-    UserDefinedObjectsLoader.cpp
+    UserDefinedExecutableFunction.cpp
+    UserDefinedExecutableFunctionFactory.cpp
+    UserDefinedSQLFunctionFactory.cpp
+    UserDefinedSQLFunctionVisitor.cpp
+    UserDefinedSQLObjectsLoader.cpp
     WindowDescription.cpp
     ZooKeeperLog.cpp
     addMissingDefaults.cpp

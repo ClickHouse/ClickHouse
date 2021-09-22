@@ -79,4 +79,4 @@ SELECT * FROM url_engine_table
     -   インデックス。
     -   複製。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

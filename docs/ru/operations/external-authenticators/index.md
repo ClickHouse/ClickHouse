@@ -13,4 +13,4 @@ ClickHouse поддерживает аутентификацию и управл
 - [LDAP](./ldap.md#external-authenticators-ldap) [аутентификатор](./ldap.md#ldap-external-authenticator) и [каталог](./ldap.md#ldap-external-user-directory)
 - Kerberos [аутентификатор](./kerberos.md#external-authenticators-kerberos)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/external-authenticators/index/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/operations/external-authenticators/index/) <!--hide-->
