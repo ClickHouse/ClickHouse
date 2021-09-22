@@ -228,9 +228,9 @@ TEST(CoordinationTest, ChangelogTestFile)
     auto entry = getLogEntry("hello world", 77);
     changelog.append(entry);
     changelog.end_of_append_batch(0, 0);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
     for (const auto & p : fs::directory_iterator("./logs"))
-        EXPECT_EQ(p.path(), "./logs/changelog_1_5.bin.zst");
+        EXPECT_EQ(p.path(), "./logs/changelog_1_5.bin.zstd");
 
     changelog.append(entry);
     changelog.append(entry);
@@ -239,8 +239,8 @@ TEST(CoordinationTest, ChangelogTestFile)
     changelog.append(entry);
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 }
 
 TEST(CoordinationTest, ChangelogReadWrite)
@@ -319,8 +319,8 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 7);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(1, 0);
@@ -333,8 +333,8 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     }
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 
     size_t logs_count = 0;
     for (const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
@@ -346,9 +346,9 @@ TEST(CoordinationTest, ChangelogTestAppendAfterRead)
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 11);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
 
     logs_count = 0;
     for (const auto & _ [[maybe_unused]]: fs::directory_iterator("./logs"))
@@ -378,7 +378,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     EXPECT_EQ(changelog.start_index(), 3);
     EXPECT_EQ(changelog.next_slot(), 4);
     EXPECT_EQ(changelog.last_entry()->get_term(), 20);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
 
     auto e1 = getLogEntry("hello world", 30);
     changelog.append(e1);
@@ -390,13 +390,13 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     changelog.append(e4);
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 
     changelog.compact(6);
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 
     EXPECT_EQ(changelog.size(), 1);
     EXPECT_EQ(changelog.start_index(), 7);
@@ -513,13 +513,13 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     }
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     EXPECT_EQ(changelog.size(), 33);
 
@@ -531,14 +531,14 @@ TEST(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog.next_slot(), 8);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     DB::KeeperLogStore changelog_read("./logs", 5, true);
     changelog_read.init(1, 0);
@@ -561,13 +561,13 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
     }
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     EXPECT_EQ(changelog.size(), 33);
 
@@ -579,14 +579,14 @@ TEST(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_EQ(changelog.next_slot(), 12);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     DB::KeeperLogStore changelog_read("./logs", 5, true);
     changelog_read.init(1, 0);
@@ -609,13 +609,13 @@ TEST(CoordinationTest, ChangelogTestWriteAtAllFiles)
     }
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     EXPECT_EQ(changelog.size(), 33);
 
@@ -627,14 +627,14 @@ TEST(CoordinationTest, ChangelogTestWriteAtAllFiles)
     EXPECT_EQ(changelog.next_slot(), 2);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 }
 
 TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
@@ -650,14 +650,14 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     }
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 35);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_36_40.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_36_40.bin.zstd"));
 
 
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
@@ -668,14 +668,14 @@ TEST(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     changelog_reader.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog_reader.size(), 36);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin.zstd"));
 }
 
 
@@ -693,15 +693,15 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     }
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 35);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
-    DB::WriteBufferFromFile plain_buf("./logs/changelog_11_15.bin.zst", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    DB::WriteBufferFromFile plain_buf("./logs/changelog_11_15.bin.zstd", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(0);
 
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
@@ -711,14 +711,14 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_EQ(changelog_reader.size(), 10);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 90);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     auto entry = getLogEntry("h", 7777);
     changelog_reader.append(entry);
@@ -726,14 +726,14 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_EQ(changelog_reader.size(), 11);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin.zstd"));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin.zstd"));
 
     DB::KeeperLogStore changelog_reader2("./logs", 5, true);
     changelog_reader2.init(1, 0);
@@ -755,18 +755,18 @@ TEST(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     }
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin.zstd"));
 
-    DB::WriteBufferFromFile plain_buf("./logs/changelog_1_20.bin.zst", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    DB::WriteBufferFromFile plain_buf("./logs/changelog_1_20.bin.zstd", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(140);
 
     DB::KeeperLogStore changelog_reader("./logs", 20, true);
     changelog_reader.init(1, 0);
 
     EXPECT_EQ(changelog_reader.size(), 0);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin.zstd"));
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
@@ -794,16 +794,16 @@ TEST(CoordinationTest, ChangelogTestLostFiles)
     }
     changelog.end_of_append_batch(0, 0);
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin.zstd"));
 
-    fs::remove("./logs/changelog_1_20.bin.zst");
+    fs::remove("./logs/changelog_1_20.bin.zstd");
 
     DB::KeeperLogStore changelog_reader("./logs", 20, true);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_20.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_20.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin.zstd"));
 }
 
 TEST(CoordinationTest, SnapshotableHashMapSimple)
@@ -1319,7 +1319,7 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     }
 
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin.zstd"));
 
     DB::KeeperLogStore changelog_1("./logs", 10, true);
     changelog_1.init(0, 50);
@@ -1332,8 +1332,8 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
         changelog_1.end_of_append_batch(0, 0);
     }
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin.zstd"));
 
     DB::KeeperLogStore changelog_2("./logs", 7, true);
     changelog_2.init(98, 55);
@@ -1349,11 +1349,11 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
 
     changelog_2.compact(105);
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_111_117.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_118_124.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_111_117.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_118_124.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin.zstd"));
 
     DB::KeeperLogStore changelog_3("./logs", 5, true);
     changelog_3.init(116, 3);
@@ -1367,14 +1367,14 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_3.compact(125);
-    EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin.zst"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin.zst"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin.zstd"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin.zstd"));
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_132_136.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_137_141.bin.zst"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin.zst"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_132_136.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_137_141.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin.zstd"));
 }
 
 TEST(CoordinationTest, TestSessionExpiryQueue)
