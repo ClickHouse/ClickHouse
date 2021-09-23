@@ -63,7 +63,6 @@ public:
             UInt8 res = isPentagon(data[row]);
             dst_data[row] = res;
         }
-
         return dst;
     }
 };
