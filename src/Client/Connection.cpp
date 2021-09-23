@@ -130,10 +130,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
+        /// disconnect() will reset the socket, get timeouts before.
+        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
+            e.displayText(), getDescription(),
+            socket->getReceiveTimeout().totalMilliseconds(),
+            socket->getSendTimeout().totalMilliseconds());
+
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
