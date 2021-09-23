@@ -10,11 +10,11 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
 {
-
 
 class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
@@ -42,6 +42,8 @@ public:
         unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+
+    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     friend class PostgreSQLBlockOutputStream;
