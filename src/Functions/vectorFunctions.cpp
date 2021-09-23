@@ -1025,7 +1025,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (getReturnTypeImpl(arguments)->isNullable()) {
+        if (getReturnTypeImpl(arguments)->isNullable())
+        {
             return DataTypeNullable(std::make_shared<DataTypeNothing>())
                    .createColumnConstWithDefaultValue(input_rows_count);
         }
