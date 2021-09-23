@@ -14,11 +14,11 @@ namespace DB
 
 class StorageEmbeddedRocksDB;
 
-class EmbeddedRocksDBSource : public SourceWithProgress
+class EmbeddedRocksDBBlockInputStream : public SourceWithProgress
 {
 
 public:
-    EmbeddedRocksDBSource(
+    EmbeddedRocksDBBlockInputStream(
         StorageEmbeddedRocksDB & storage_,
         const Block & header,
         size_t max_block_size_);
