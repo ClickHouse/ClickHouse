@@ -3396,6 +3396,18 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `1000`.
 
+## log_queries_probability {#log-queries-probability}
+
+Позволяет пользователю записывать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов в секунду.
+
+Возможные значения:
+
+-   0 — запросы не регистрируются в системных таблицах.
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равном `0.5`, примерно половина запросов регистрируется в системных таблицах.
+-   1 — все запросы регистрируются в системных таблицах.
+
+Значение по умолчанию: `1`.
+
 ## short_circuit_function_evaluation {#short-circuit-function-evaluation}
 
 Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
@@ -3433,7 +3445,6 @@ SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp
 ┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
 │                                              1 │
 └────────────────────────────────────────────────┘
-
 ```
 
 Запрос:
@@ -3451,7 +3462,6 @@ Exception: Regexp length too large.
 **См. также**
 
 -   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
-
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
