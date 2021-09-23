@@ -60,29 +60,30 @@ public:
         auto & dst_data = dst->getData();
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
-        auto current_offset = 0;
 
-        for (size_t row = 0 ; row < input_rows_count ; row++)
+        auto current_offset = 0;
+        std::vector<int> faces;
+
+        for (size_t row = 0; row < input_rows_count; row++)
         {
             int max_faces = maxFaceCount(data[row]);
-            std::unique_ptr<int> faces(new int(max_faces));
 
+            faces.resize(max_faces);
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
-            getIcosahedronFaces(data[row], faces.get());
+            getIcosahedronFaces(data[row], faces.data());
 
             for (int i = 0; i < max_faces; i++)
             {
                 // valid icosahedron faces are represented by integers 0-19
-                auto iface = faces.get()[i];
-                if (iface >= 0 && iface <= 19)
+                if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    dst_data.insert(iface);
+                    dst_data.insert(faces[i]);
                 }
             }
             dst_offsets[row] = current_offset;
+            faces.clear();
         }
-
         return dst;
     }
 };
