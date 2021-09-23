@@ -3,6 +3,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -155,13 +156,40 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
-        const auto & column = block.getByName(index_columns[col]).column;
-        for (size_t i = 0; i < rows_read; ++i)
+        const auto & column_with_type = block.getByName(index_columns[col]);
+        const auto & column = column_with_type.column;
+        size_t current_position = *pos;
+
+        if (isArray(column_with_type.type))
         {
-            auto ref = column->getDataAt(*pos + i);
-            columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+            const auto & column_array = assert_cast<const ColumnArray &>(*column);
+            const auto & column_offsets = column_array.getOffsets();
+            const auto & column_key = column_array.getData();
+
+            for (size_t i = 0; i < rows_read; ++i)
+            {
+                size_t element_start_row = column_offsets[current_position - 1];
+                size_t elements_size = column_offsets[current_position] - element_start_row;
+
+                for (size_t row_num = 0; row_num < elements_size; row_num++)
+                {
+                    auto ref = column_key.getDataAt(element_start_row + row_num);
+                    columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+                }
+
+                current_position += 1;
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < rows_read; ++i)
+            {
+                auto ref = column->getDataAt(current_position + i);
+                columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+            }
         }
     }
+
     granule->has_elems = true;
     *pos += rows_read;
 }
@@ -202,6 +230,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
+             || element.function == RPNElement::FUNCTION_HAS
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
@@ -251,7 +280,8 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+             || element.function == RPNElement::FUNCTION_NOT_EQUALS
+             || element.function == RPNElement::FUNCTION_HAS)
         {
             rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
@@ -378,6 +408,15 @@ bool MergeTreeConditionFullText::atomFromAST(
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
 
+        if (func_name == "has")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_HAS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            stringToBloomFilter(const_value.get<String>(), token_extractor, *out.bloom_filter);
+
+            return true;
+        }
         if (func_name == "notEquals")
         {
             out.key_column = key_column_num;
@@ -837,10 +876,18 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
 void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    for (const auto & data_type : index.data_types)
+    for (const auto & index_data_type : index.data_types)
     {
-        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
-            throw Exception("Bloom filter index can be used only with `String` or `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
+        WhichDataType data_type(index_data_type);
+
+        if (data_type.isArray())
+        {
+            const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
+            data_type = WhichDataType(array_type.getNestedType());
+        }
+
+        if (!data_type.isString() && !data_type.isFixedString())
+            throw Exception("Bloom filter index can be used only with `String`, `FixedString` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type == NgramTokenExtractor::getName())
