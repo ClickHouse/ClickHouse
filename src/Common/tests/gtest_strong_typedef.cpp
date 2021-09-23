@@ -42,8 +42,6 @@ TEST(StrongTypedefSuite, ZeroAssignment)
     EXPECT_EQ(b, 0);
     EXPECT_EQ(c, 0);
     EXPECT_EQ(d, 0);
-
-    STRONG_TYPEDEF(int, Int)
 }
 
 TEST(StrongTypedefSuite, CopyAndMoveCtor)

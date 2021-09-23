@@ -30,7 +30,7 @@ TEST(StaticFor, WithConstexprStop)
     {
         sum += foo<constant>();
 
-        if constexpr (constant < 5) //NOLINT
+        if constexpr (constant < 4) //NOLINT
             return false; //NOLINT
         else
             return true;

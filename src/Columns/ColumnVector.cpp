@@ -430,13 +430,13 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
     {
         for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
             if (!*filt_pos)
-                *data_pos = 0;
+                *data_pos = T(0);
     }
     else
     {
         for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
             if (*filt_pos)
-                *data_pos = 0;
+                *data_pos = T(0);
     }
 }
 

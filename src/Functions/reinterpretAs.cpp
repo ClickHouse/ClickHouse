@@ -33,6 +33,55 @@ namespace ErrorCodes
 
 namespace
 {
+void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
+{
+    size_t rows = src.size();
+    ColumnFixedString::Chars & data_to = dst.getChars();
+    data_to.resize_fill(n * rows);
+
+    ColumnFixedString::Offset offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        StringRef data = src.getDataAt(i);
+
+        std::memcpy(&data_to[offset], data.data, std::min(n, data.size));
+        offset += n;
+    }
+}
+
+void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
+{
+    size_t rows = src.size();
+    ColumnFixedString::Chars & data_to = dst.getChars();
+    data_to.resize(n * rows);
+
+    memcpy(data_to.data(), src.getRawData().data, data_to.size());
+}
+
+void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
+{
+    size_t rows = src.size();
+    ColumnString::Chars & data_to = dst.getChars();
+    ColumnString::Offsets & offsets_to = dst.getOffsets();
+    offsets_to.resize(rows);
+
+    ColumnString::Offset offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        StringRef data = src.getDataAt(i);
+
+        /// Cut trailing zero bytes.
+        while (data.size && data.data[data.size - 1] == 0)
+            --data.size;
+
+        data_to.resize(offset + data.size + 1);
+        memcpy(&data_to[offset], data.data, data.size);
+        offset += data.size;
+        data_to[offset] = 0;
+        ++offset;
+        offsets_to[i] = offset;
+    }
+}
 
 /** Performs byte reinterpretation similar to reinterpret_cast.
  *
@@ -106,6 +155,56 @@ public:
         return to_type;
     }
 
+private:
+    template <typename T>
+    static constexpr auto CanBeReinterpretedAsNumeric =
+        dt::is_decimal_like<T> ||
+        dt::is_number<T> ||
+        std::is_same_v<T, DataTypeDate> ||
+        std::is_same_v<T, DataTypeDateTime> ||
+        std::is_same_v<T, DataTypeUUID>;
+
+    static bool canBeReinterpretedAsNumeric(const WhichDataType & type)
+    {
+        return type.isUInt() ||
+            type.isInt() ||
+            type.isDate() ||
+            type.isDateTime() ||
+            type.isDateTime64() ||
+            type.isFloat() ||
+            type.isUUID() ||
+            type.isDecimal();
+    }
+
+    template <typename Type>
+    static typename Type::ColumnType::MutablePtr numericColumnCreateHelper(const Type & type)
+    {
+        size_t column_size = 0;
+
+        using ColumnType = typename Type::ColumnType;
+
+        if constexpr (dt::is_decimal_like<Type>)
+            return ColumnType::create(column_size, type.getScale());
+        else
+            return ColumnType::create(column_size);
+    }
+
+    template <typename FromContainer, typename ToContainer>
+    static void reinterpretImpl(const FromContainer & from, ToContainer & to)
+    {
+        using From = typename FromContainer::value_type;
+        using To = typename ToContainer::value_type;
+
+        size_t size = from.size();
+        to.resize_fill(size);
+
+        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
+        for (size_t i = 0; i < size; ++i)
+            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+    }
+
+public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         auto from_type = arguments[0].type;
@@ -245,104 +344,7 @@ public:
 
         return result;
     }
-private:
-    template <typename T>
-    static constexpr auto CanBeReinterpretedAsNumeric =
-        dt::is_decimal_like<T> ||
-        dt::is_number<T> ||
-        std::is_same_v<T, DataTypeDate> ||
-        std::is_same_v<T, DataTypeDateTime> ||
-        std::is_same_v<T, DataTypeUUID>;
 
-    static bool canBeReinterpretedAsNumeric(const WhichDataType & type)
-    {
-        return type.isUInt() ||
-            type.isInt() ||
-            type.isDate() ||
-            type.isDateTime() ||
-            type.isDateTime64() ||
-            type.isFloat() ||
-            type.isUUID() ||
-            type.isDecimal();
-    }
-
-    static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
-    {
-        size_t rows = src.size();
-        ColumnFixedString::Chars & data_to = dst.getChars();
-        data_to.resize_fill(n * rows);
-
-        ColumnFixedString::Offset offset = 0;
-        for (size_t i = 0; i < rows; ++i)
-        {
-            StringRef data = src.getDataAt(i);
-
-            std::memcpy(&data_to[offset], data.data, std::min(n, data.size));
-            offset += n;
-        }
-    }
-
-    static void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
-    {
-        size_t rows = src.size();
-        ColumnFixedString::Chars & data_to = dst.getChars();
-        data_to.resize(n * rows);
-
-        memcpy(data_to.data(), src.getRawData().data, data_to.size());
-    }
-
-    static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
-    {
-        size_t rows = src.size();
-        ColumnString::Chars & data_to = dst.getChars();
-        ColumnString::Offsets & offsets_to = dst.getOffsets();
-        offsets_to.resize(rows);
-
-        ColumnString::Offset offset = 0;
-        for (size_t i = 0; i < rows; ++i)
-        {
-            StringRef data = src.getDataAt(i);
-
-            /// Cut trailing zero bytes.
-            while (data.size && data.data[data.size - 1] == 0)
-                --data.size;
-
-            data_to.resize(offset + data.size + 1);
-            memcpy(&data_to[offset], data.data, data.size);
-            offset += data.size;
-            data_to[offset] = 0;
-            ++offset;
-            offsets_to[i] = offset;
-        }
-    }
-
-    template <typename Type>
-    static typename Type::ColumnType::MutablePtr numericColumnCreateHelper(const Type & type)
-    {
-        size_t column_size = 0;
-
-        using ColumnType = typename Type::ColumnType;
-
-        if constexpr (dt::is_decimal_like<Type>)
-            return ColumnType::create(column_size, type.getScale());
-        else
-            return ColumnType::create(column_size);
-    }
-
-    template <typename FromContainer, typename ToContainer>
-    static void reinterpretImpl(const FromContainer & from, ToContainer & to)
-    {
-        using From = typename FromContainer::value_type;
-        using To = typename ToContainer::value_type;
-
-        size_t size = from.size();
-        to.resize_fill(size);
-
-        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
-
-        for (size_t i = 0; i < size; ++i)
-            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
-    }
 };
 
 template <typename ToDataType, typename Name>

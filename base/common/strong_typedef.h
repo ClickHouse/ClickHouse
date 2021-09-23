@@ -4,11 +4,10 @@
 #include <utility>
 
 /**
- * Type that disables implicit C++ conversions.
- *
- * E.g. If you have StrongTypedefInt a, you can't initialize a = 0;
+ * Type that defeats implicit C++ conversions
+ * E.g. If you have StrongTypedefInt a, you can't initialize a = 0,
  */
-template <typename T, typename Tag>
+template <class T, class Tag>
 struct StrongTypedef
 {
 private:
@@ -42,13 +41,17 @@ public:
     constexpr StrongTypedef & operator=(const Self &) = default;
     constexpr StrongTypedef & operator=(Self &&) = default;
 
-    constexpr operator const T & () const { return t; } //NOLINT Allow implicit conversions to underlying type
+    //NOLINTNEXTLINE Allow implicit conversions to underlying type, you would need to change a lot of code otherwise
+    constexpr operator const T & () const { return t; }
     constexpr operator T & () { return t; } //NOLINT
 
-    // How great would the world be if we could just use <=>
-
+    // How great would the world be if we could just use <=> or use =default.
     constexpr bool operator<(const Self& other) const { return t < other.t; }
+    constexpr bool operator>(const Self& other) const { return t > other.t; }
     constexpr bool operator==(const Self& other) const { return t == other.t; }
+    constexpr bool operator!=(const Self& other) const { return t != other.t; }
+    constexpr bool operator>=(const Self& other) const { return t >= other.t; }
+    constexpr bool operator<=(const Self& other) const { return t <= other.t; }
 
     constexpr T & toUnderType() { return t; }
     constexpr const T & toUnderType() const { return t; }
@@ -56,7 +59,7 @@ public:
 
 namespace std
 {
-    template <typename T, typename Tag>
+    template <class T, class Tag>
     struct hash<StrongTypedef<T, Tag>>
     {
         size_t operator()(const StrongTypedef<T, Tag> & x) const

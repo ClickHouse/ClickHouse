@@ -169,12 +169,11 @@ public:
 
         FunctionBasePtr base;
 
-        constexpr Dispatch d { ._int = true };
-
         // FIXME Can't use dispatchOverDataType as underlying trait
         // ExecutableFunctionFrom...::executeImpl() produces error while trying to
         // instantiate enum
-        const bool built = dispatchOverType<d>(from_type->getTypeId(), [&]<class T>(TypePair<void, T>)
+        const bool built = dispatchOverType<Dispatch { ._int = true }>(from_type->getTypeId(),
+            [&]<class T>(TypePair<void, T>)
         {
             using FromDay = FunctionBaseFromModifiedJulianDay<Name, DataTypeNumber<T>, nullOnErrors>;
             base = std::make_unique<FromDay>(argument_types, return_type);

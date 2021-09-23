@@ -227,12 +227,14 @@ private:
 
     inline LUTIndex toLUTIndex(DayNum d) const
     {
-        return LUTIndex{(d + daynum_offset_epoch) & date_lut_mask};
+        const UInt32 added = d.toUnderType() + daynum_offset_epoch;
+        return LUTIndex(added & date_lut_mask);
     }
 
     inline LUTIndex toLUTIndex(ExtendedDayNum d) const
     {
-        return LUTIndex{static_cast<UInt32>(d + daynum_offset_epoch) & date_lut_mask};
+        const UInt32 added = d.toUnderType() + daynum_offset_epoch;
+        return LUTIndex(added & date_lut_mask);
     }
 
     inline LUTIndex toLUTIndex(Time t) const

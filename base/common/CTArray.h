@@ -20,6 +20,11 @@ struct CTArray
 
     constexpr T operator[](size_t i) const { return storage[i]; }
 
+    constexpr bool contains(T value) const
+    {
+        return std::find(storage, storage + N, value) != storage + N;
+    }
+
     static constexpr size_t size = N;
 
     T storage[N];

@@ -75,7 +75,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
     __builtin_unreachable();
 }
 
-std::optional<IntervalKind::Kind> tryParse(std::string_view kind)
+std::optional<IntervalKind::Kind> IntervalKind::tryParse(std::string_view kind)
 {
     if (kind.empty()) return std::nullopt;
 

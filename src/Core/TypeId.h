@@ -6,8 +6,8 @@ namespace DB
 {
 namespace detail
 {
-template <TypeIndex index> struct ReverseTypeIdT : std::false_type {};
-template <TypeIndex index> struct ReverseDataTypeIdT : std::false_type {};
+template <TypeIndex> struct ReverseTypeIdT : std::false_type {};
+template <TypeIndex> struct ReverseDataTypeIdT : std::false_type {};
 }
 
 /**
@@ -43,6 +43,7 @@ template <TypeIndex index> using ReverseTypeId = typename detail::ReverseTypeIdT
 template <TypeIndex index> using ReverseDataTypeId = typename detail::ReverseDataTypeIdT<index>::T;
 
 template <TypeIndex index> constexpr bool HasReverseTypeId = detail::ReverseTypeIdT<index>::value;
+template <TypeIndex index> constexpr bool HasReverseDataTypeId = detail::ReverseDataTypeIdT<index>::value;
 
 class DataTypeArray;
 class DataTypeDate;
@@ -115,4 +116,8 @@ RD_TYPEID_MAP(DateTime, DataTypeDateTime)
 R_TYPEID_MAP(Date, UInt16)
 R_TYPEID_MAP(Date32, Int32)
 R_TYPEID_MAP(DateTime, UInt32)
+
+#undef R_TYPEID_MAP
+#undef RD_TYPEID_MAP
+#undef TYPEID_MAP
 }

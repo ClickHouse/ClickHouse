@@ -148,8 +148,8 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
 
     const auto & date_lut = DateLUT::instance();
 
-    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
-    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+    min_date = DayNum(date_lut.YYYYMMDDToDayNum(min_yyyymmdd));
+    max_date = DayNum(date_lut.YYYYMMDDToDayNum(max_yyyymmdd));
 
     auto min_month = date_lut.toNumYYYYMM(min_date);
     auto max_month = date_lut.toNumYYYYMM(max_date);

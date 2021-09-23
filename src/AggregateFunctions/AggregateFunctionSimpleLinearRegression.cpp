@@ -3,7 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <Core/TypeListNumber.h>
+#include <common/TypeLists.h>
 
 
 namespace DB

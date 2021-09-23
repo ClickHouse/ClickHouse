@@ -74,7 +74,7 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 
 OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_name)
 {
-    trace_id = 0;
+    trace_id = UUID(0);
 
     if (!CurrentThread::isInitialized())
     {
@@ -169,7 +169,7 @@ static T readHex(const char * data)
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
-    trace_id = 0;
+    trace_id = UUID(0);
 
     // Version 00, which is the only one we can parse, is fixed width. Use this
     // fact for an additional sanity check.
@@ -200,7 +200,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
 
     ++data;
     UInt128 trace_id_128 = readHex<UInt128>(data);
-    trace_id = trace_id_128;
+    trace_id = UUID(trace_id_128);
     data += 32;
 
     if (*data != '-')

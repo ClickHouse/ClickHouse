@@ -936,7 +936,7 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 {
     UUID tmp;
     readUUIDText(tmp, rb);
-    x = tmp.toUnderType();
+    x = tmp;
 }
 
 
@@ -988,7 +988,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
     if (!tryReadUUIDText(tmp, rb))
         return false;
 
-    x = tmp.toUnderType();
+    x = tmp;
     return true;
 }
 

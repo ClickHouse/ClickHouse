@@ -128,7 +128,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     in >> "primary key: " >> primary_key >> "\n";
 
     if (in.eof())
-        data_format_version = 0;
+        data_format_version = MergeTreeDataFormatVersion(0);
     else if (checkString("data format version: ", in))
         in >> data_format_version.toUnderType() >> "\n";
 

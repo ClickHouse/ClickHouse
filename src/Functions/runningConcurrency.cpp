@@ -167,10 +167,9 @@ public:
             }
         };
 
-        constexpr Dispatch d { ._datetime = true };
         const TypeIndex index = WhichDataType(*arguments[0].type).idx;
 
-        if (!dispatchOverDataType<d>(index, std::move(call)))
+        if (!dispatchOverDataType<Dispatch{ ._datetime = true }>(index, std::move(call)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Arguments for function {} must be Date, DateTime, or DateTime64",
                 getName());
