@@ -1186,7 +1186,6 @@ MutateTask::MutateTask(
 
 bool MutateTask::execute()
 {
-
     switch (state)
     {
         case State::NEED_PREPARE:

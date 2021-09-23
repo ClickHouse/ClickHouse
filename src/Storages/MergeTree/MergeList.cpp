@@ -12,7 +12,7 @@ namespace DB
 
 MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr)
 {
-    // Each merge is executed into separate background processing pool thread
+    // Each step of merge or mutation is executed into separate thread in global pool
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {

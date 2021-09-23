@@ -8,15 +8,15 @@ CREATE TABLE table_with_single_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY key;
 
-INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(10000000);
+INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(30000000);
+
+OPTIMIZE TABLE table_with_single_pk final;
 
 ALTER TABLE table_with_single_pk DELETE WHERE key % 77 = 0 SETTINGS mutations_sync = 1;
 
 SYSTEM FLUSH LOGS;
-
 
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes
@@ -38,10 +38,11 @@ CREATE TABLE table_with_multi_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY (key1, key2, key3)
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY (key1, key2, key3);
 
-INSERT INTO table_with_multi_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
+INSERT INTO table_with_multi_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(30000000);
+
+OPTIMIZE TABLE table_with_multi_pk final;
 
 ALTER TABLE table_with_multi_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
@@ -69,10 +70,11 @@ CREATE TABLE table_with_function_pk
     value String
   )
 ENGINE = MergeTree
-ORDER BY (cast(value as UInt64), key2)
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY (cast(value as UInt64), key2);
 
-INSERT INTO table_with_function_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
+INSERT INTO table_with_function_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(30000000);
+
+OPTIMIZE TABLE table_with_function_pk final;
 
 ALTER TABLE table_with_function_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
@@ -98,10 +100,11 @@ CREATE TABLE table_without_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY tuple();
 
-INSERT INTO table_without_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
+INSERT INTO table_without_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(30000000);
+
+OPTIMIZE TABLE table_without_pk final;
 
 ALTER TABLE table_without_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
