@@ -36,6 +36,12 @@ public:
 
     StorageID getStorageID() override;
 
+    void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
+    {
+        txn_holder = std::move(txn_holder_);
+        txn = std::move(txn_);
+    }
+
 private:
 
     void prepare();
@@ -73,6 +79,9 @@ private:
     IExecutableTask::TaskResultCallback task_result_callback;
 
     MergeTaskPtr merge_task{nullptr};
+
+    MergeTreeTransactionHolder txn_holder;
+    MergeTreeTransactionPtr txn;
 };
 
 

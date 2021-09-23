@@ -857,6 +857,8 @@ bool StorageMergeTree::merge(
     auto task = std::make_shared<MergePlainMergeTreeTask>(
         *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, [](bool){});
 
+    task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+
     executeHere(task);
 
     return true;
@@ -1033,13 +1035,17 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
+    /// FIXME Transactions: do not begin transaction if we don't need it
+    auto txn = TransactionLog::instance().beginTransaction();
+    MergeTreeTransactionHolder autocommit{txn, true};
+
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
-        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock, nullptr);
+        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock, txn);
         if (!merge_entry)
         {
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
@@ -1050,6 +1056,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (merge_entry)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        task->setCurrentTransaction(std::move(autocommit), std::move(txn));
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
