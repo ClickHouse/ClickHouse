@@ -51,18 +51,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const ColumnUInt64 * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        const typename ColumnVector<UInt64>::Container & data = column->getData();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0 ; row < input_rows_count ; row++)
         {
-            const UInt64 hindex = col_hindex->getUInt(row);
-
-            UInt8 res = isPentagon(hindex);
-
+            UInt8 res = isPentagon(data[row]);
             dst_data[row] = res;
         }
 
