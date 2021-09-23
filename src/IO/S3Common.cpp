@@ -280,7 +280,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_ERROR(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
+        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
