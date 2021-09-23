@@ -3378,7 +3378,7 @@ SETTINGS index_granularity = 8192 │
 
 ## log_queries_probability {#log-queries-probability}
 
-Позволяет пользователю записать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов за секунду.
+Позволяет пользователю записывать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов в секунду.
 
 Возможные значения:
 
