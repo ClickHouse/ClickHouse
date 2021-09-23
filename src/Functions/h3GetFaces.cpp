@@ -57,7 +57,7 @@ public:
         const auto & data = column->getData();
 
         auto dst = ColumnArray::create(ColumnUInt8::create());
-        auto & dst_data = dst->getData();
+        auto & dst_data = reinterpret_cast<ColumnUInt8 &>(dst->getData());
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
 
