@@ -84,7 +84,7 @@ void CreatingSetsTransform::init()
     is_initialized = true;
 
     if (subquery.set)
-        subquery.set->setHeader(getInputPort().getHeader());
+        subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
 
     watch.restart();
     startSubquery();
@@ -97,7 +97,7 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
     if (!done_with_set)
     {
-        if (!subquery.set->insertFromBlock(block))
+        if (!subquery.set->insertFromBlock(block.getColumnsWithTypeAndName()))
             done_with_set = true;
     }
 

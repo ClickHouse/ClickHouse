@@ -39,6 +39,8 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
     FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
@@ -216,7 +218,6 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
-    buildId.cpp
     byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
@@ -247,7 +248,6 @@ SRCS(
     divide/divide.cpp
     divide/divideImpl.cpp
     dumpColumnStructure.cpp
-    e.cpp
     empty.cpp
     encodeXMLComponent.cpp
     encrypt.cpp
@@ -288,6 +288,7 @@ SRCS(
     geohashesInBox.cpp
     getMacro.cpp
     getScalar.cpp
+    getServerPort.cpp
     getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
@@ -303,6 +304,7 @@ SRCS(
     h3IndexesAreNeighbors.cpp
     h3IsValid.cpp
     h3ToChildren.cpp
+    h3ToGeoBoundary.cpp
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
@@ -311,7 +313,7 @@ SRCS(
     hasThreadFuzzer.cpp
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
-    hostName.cpp
+    hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -340,6 +342,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    lemmatize.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -357,6 +360,7 @@ SRCS(
     map.cpp
     match.cpp
     materialize.cpp
+    mathConstants.cpp
     minus.cpp
     modulo.cpp
     moduloOrZero.cpp
@@ -397,7 +401,6 @@ SRCS(
     nullIf.cpp
     padString.cpp
     partitionId.cpp
-    pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
@@ -440,6 +443,7 @@ SRCS(
     registerFunctionsNull.cpp
     registerFunctionsRandom.cpp
     registerFunctionsReinterpret.cpp
+    registerFunctionsSnowflake.cpp
     registerFunctionsString.cpp
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
@@ -473,14 +477,17 @@ SRCS(
     s2RectIntersection.cpp
     s2RectUnion.cpp
     s2ToGeo.cpp
+    serverConstants.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
+    snowflake.cpp
     sqrt.cpp
     startsWith.cpp
+    stem.cpp
     stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
@@ -493,15 +500,14 @@ SRCS(
     subtractWeeks.cpp
     subtractYears.cpp
     svg.cpp
+    synonyms.cpp
     tan.cpp
     tanh.cpp
-    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
     timeSlot.cpp
     timeSlots.cpp
-    timezone.cpp
     timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
@@ -561,11 +567,10 @@ SRCS(
     tuple.cpp
     tupleElement.cpp
     tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
-    uptime.cpp
     validateNestedArraySizes.cpp
-    version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
     visitParamExtractFloat.cpp

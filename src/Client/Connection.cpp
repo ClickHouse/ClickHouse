@@ -130,10 +130,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
+        /// disconnect() will reset the socket, get timeouts before.
+        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
+            e.displayText(), getDescription(),
+            socket->getReceiveTimeout().totalMilliseconds(),
+            socket->getSendTimeout().totalMilliseconds());
+
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -413,7 +419,12 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+    /// Query is not executed within sendQuery() function.
+    ///
+    /// And what this means that temporary timeout (via TimeoutSetter) is not
+    /// enough, since next query can use timeout from the previous query in this case.
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
 
     if (settings)
     {
@@ -580,6 +591,12 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
+    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
+    /// dedicated revision after introducing scalars, so this will still break some versions with
+    /// revision 54428.
+    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
+        return;
+
     if (data.empty())
         return;
 

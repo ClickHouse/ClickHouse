@@ -88,7 +88,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             -   `ALTER CLEAR INDEX`
         -   `ALTER CONSTRAINT`
             -   `ALTER ADD CONSTRAINT`
-            
+
             -   `ALTER DROP CONSTRAINT`
         -   `ALTER TTL`
         -   `ALTER MATERIALIZE TTL`
@@ -471,4 +471,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 `ADMIN OPTION` 权限允许用户将他们的角色分配给其它用户
 
-[原始文档](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->

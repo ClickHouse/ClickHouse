@@ -315,9 +315,10 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : root_path(root_path_),
     session_timeout(session_timeout_),
-    operation_timeout(std::min(operation_timeout_, session_timeout_)),
-    zk_log(std::move(zk_log_))
+    operation_timeout(std::min(operation_timeout_, session_timeout_))
 {
+    std::atomic_store(&zk_log, std::move(zk_log_));
+
     if (!root_path.empty())
     {
         if (root_path.back() == '/')
@@ -386,6 +387,7 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
+                socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -538,7 +540,7 @@ void ZooKeeper::sendThread()
 
     try
     {
-        while (!expired)
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_sent = out->count();
 
@@ -570,7 +572,7 @@ void ZooKeeper::sendThread()
                         info.request->has_watch = true;
                     }
 
-                    if (expired)
+                    if (requests_queue.isClosed())
                     {
                         break;
                     }
@@ -615,7 +617,7 @@ void ZooKeeper::receiveThread()
     try
     {
         Int64 waited = 0;
-        while (!expired)
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_received = in->count();
 
@@ -638,7 +640,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait))
             {
-                if (expired)
+                if (requests_queue.isClosed())
                     break;
 
                 receiveEvent();
@@ -838,12 +840,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 
     auto expire_session_if_not_expired = [&]
     {
-        std::lock_guard lock(push_request_mutex);
-        if (!expired)
-        {
-            expired = true;
+        /// No new requests will appear in queue after close()
+        bool was_already_closed = requests_queue.close();
+        if (!was_already_closed)
             active_session_metric_increment.destroy();
-        }
     };
 
     try
@@ -1016,17 +1016,15 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             }
         }
 
-        /// We must serialize 'pushRequest' and 'finalize' (from sendThread, receiveThread) calls
-        ///  to avoid forgotten operations in the queue when session is expired.
-        /// Invariant: when expired, no new operations will be pushed to the queue in 'pushRequest'
-        ///  and the queue will be drained in 'finalize'.
-        std::lock_guard lock(push_request_mutex);
-
-        if (expired)
+        if (requests_queue.isClosed())
             throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+        {
+            if (requests_queue.isClosed())
+                throw Exception("Session expired", Error::ZSESSIONEXPIRED);
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+        }
     }
     catch (...)
     {
@@ -1212,9 +1210,16 @@ void ZooKeeper::close()
 }
 
 
+void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+{
+    /// logOperationIfNeeded(...) uses zk_log and can be called from different threads, so we have to use atomic shared_ptr
+    std::atomic_store(&zk_log, std::move(zk_log_));
+}
+
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize)
 {
-    if (!zk_log)
+    auto maybe_zk_log = std::atomic_load(&zk_log);
+    if (!maybe_zk_log)
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;
@@ -1247,9 +1252,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     {
         elem.type = log_type;
         elem.event_time = event_time;
-        elem.address = socket.peerAddress();
+        elem.address = socket_address;
         elem.session_id = session_id;
-        zk_log->add(elem);
+        maybe_zk_log->add(elem);
     }
 }
 

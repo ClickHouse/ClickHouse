@@ -3,6 +3,7 @@
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -406,6 +407,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
+{
+    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>

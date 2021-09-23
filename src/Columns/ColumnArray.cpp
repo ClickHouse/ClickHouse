@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -550,6 +551,34 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
+
+void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
+{
+    auto & offsets_data = getOffsets();
+    if (mask.size() < offsets_data.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
+    offsets_data.resize(mask.size());
+    UInt64 last_offset = offsets_data[from];
+    while (index >= 0)
+    {
+        offsets_data[index] = last_offset;
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            --from;
+            last_offset = offsets_data[from];
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
 
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const

@@ -4,7 +4,10 @@ import sys
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
+GRPC_PORT = 9100
+NODE_IP = '10.5.172.77' # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+DEFAULT_ENCODING = 'utf-8'
 
 
 # Use grpcio-tools to generate *pb2.py files from *.proto.
@@ -23,12 +26,10 @@ import clickhouse_grpc_pb2_grpc
 
 # Utilities
 
-node_ip = '10.5.172.77' # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-grpc_port = 9100
-node_ip_with_grpc_port = node_ip + ':' + str(grpc_port)
+node_ip_with_grpc_port = NODE_IP + ':' + str(GRPC_PORT)
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', ipv4_address=node_ip, main_configs=['configs/grpc_config.xml', 'configs/server-key.pem', 'configs/server-cert.pem', 'configs/ca-cert.pem'])
+node = cluster.add_instance('node', ipv4_address=NODE_IP, main_configs=['configs/grpc_config.xml', 'configs/server-key.pem', 'configs/server-cert.pem', 'configs/ca-cert.pem'])
 
 def create_secure_channel():
     ca_cert = open(os.path.join(config_dir, 'ca-cert.pem'), 'rb').read()
@@ -59,7 +60,7 @@ def query(query_text, channel):
     result = stub.ExecuteQuery(query_info)
     if result and result.HasField('exception'):
         raise Exception(result.exception.display_text)
-    return result.output
+    return result.output.decode(DEFAULT_ENCODING)
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():

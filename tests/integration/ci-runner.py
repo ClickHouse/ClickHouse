@@ -125,13 +125,13 @@ def clear_ip_tables_and_restart_daemons():
     logging.info("Dump iptables after run %s", subprocess.check_output("iptables -L", shell=True))
     try:
         logging.info("Killing all alive docker containers")
-        subprocess.check_output("docker kill $(docker ps -q)", shell=True)
+        subprocess.check_output("timeout -s 9 10m docker kill $(docker ps -q)", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker kill excepted: " + str(err))
 
     try:
         logging.info("Removing all docker containers")
-        subprocess.check_output("docker rm $(docker ps -a -q) --force", shell=True)
+        subprocess.check_output("timeout -s 9 10m docker rm $(docker ps -a -q) --force", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
 
@@ -207,11 +207,11 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def get_images_names():
-        return ["yandex/clickhouse-integration-tests-runner", "yandex/clickhouse-mysql-golang-client",
-                "yandex/clickhouse-mysql-java-client", "yandex/clickhouse-mysql-js-client",
-                "yandex/clickhouse-mysql-php-client", "yandex/clickhouse-postgresql-java-client",
-                "yandex/clickhouse-integration-test", "yandex/clickhouse-kerberos-kdc",
-                "yandex/clickhouse-integration-helper", ]
+        return ["clickhouse/integration-tests-runner", "clickhouse/mysql-golang-client",
+                "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
+                "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
+                "clickhouse/integration-test", "clickhouse/kerberos-kdc",
+                "clickhouse/integration-helper", ]
 
 
     def _can_run_with(self, path, opt):
@@ -264,7 +264,7 @@ class ClickhouseIntegrationTestsRunner:
         out_file = "all_tests.txt"
         out_file_full = "all_tests_full.txt"
         cmd = "cd {repo_path}/tests/integration && " \
-            "./runner --tmpfs {image_cmd} ' --setup-plan' " \
+            "timeout -s 9 1h ./runner --tmpfs {image_cmd} ' --setup-plan' " \
             "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' " \
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
                 repo_path=repo_path, image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
@@ -343,7 +343,7 @@ class ClickhouseIntegrationTestsRunner:
         image_cmd = ''
         if self._can_run_with(os.path.join(repo_path, "tests/integration", "runner"), '--docker-image-version'):
             for img in self.get_images_names():
-                if img == "yandex/clickhouse-integration-tests-runner":
+                if img == "clickhouse/integration-tests-runner":
                     runner_version = self.get_single_image_version()
                     logging.info("Can run with custom docker image version %s", runner_version)
                     image_cmd += ' --docker-image-version={} '.format(runner_version)
@@ -375,6 +375,24 @@ class ClickhouseIntegrationTestsRunner:
             if (not path in old_snapshot) or (old_snapshot[path] != new_snapshot[path]):
                 res.add(path)
         return res
+
+    def try_run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
+        try:
+            return self.run_test_group(repo_path, test_group, tests_in_group, num_tries, num_workers)
+        except Exception as e:
+            logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
+            counters = {
+                "ERROR": [],
+                "PASSED": [],
+                "FAILED": [],
+                "SKIPPED": [],
+                "FLAKY": [],
+            }
+            tests_times = defaultdict(float)
+            for test in tests_in_group:
+                counters["ERROR"].append(test)
+                tests_times[test] = 0
+            return counters, tests_times, []
 
     def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
@@ -419,7 +437,7 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner --tmpfs {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
                 repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
             log_basename = test_group_str + "_" + str(i) + ".log"
@@ -507,7 +525,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
+            counters, tests_times, log_paths = self.try_run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -583,7 +601,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
+            group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))
