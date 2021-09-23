@@ -1,7 +1,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
-#include <Storages/RocksDB/EmbeddedRocksDBSource.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <rocksdb/db.h>
 
@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
 }
 
-EmbeddedRocksDBSource::EmbeddedRocksDBSource(
+EmbeddedRocksDBBlockInputStream::EmbeddedRocksDBBlockInputStream(
             StorageEmbeddedRocksDB & storage_,
             const Block & header,
             size_t max_block_size_)
@@ -25,7 +25,7 @@ EmbeddedRocksDBSource::EmbeddedRocksDBSource(
     primary_key_pos = header.getPositionByName(storage.primary_key);
 }
 
-Chunk EmbeddedRocksDBSource::generate()
+Chunk EmbeddedRocksDBBlockInputStream::generate()
 {
     if (!iterator)
     {
