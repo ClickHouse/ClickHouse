@@ -1933,6 +1933,20 @@ Possible values:
 
 Default value: `0`.
 
+## optimize_trivial_count_query (optimize-trivial-count-query)
+
+Enables or disables optimization by metadata for trivial query `SELECT count() FROM table`. If row-level security is set, disable trivial count query optimization.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+   
+Default value: `1`.
+
+**See also:**
+-   [optimize_functions_to_subcolumns](#optimize-trivial-count-query)
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
