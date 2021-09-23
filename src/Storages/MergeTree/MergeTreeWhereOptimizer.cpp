@@ -131,21 +131,30 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
     }
     else
     {
-        const auto * func_tuple = func->arguments->children[0]->as<ASTFunction>();
+        ASTFunction * func_tuple = nullptr;
+        if(func && func->name == "equals")
+            func_tuple = func->arguments->children[0]->as<ASTFunction>();
+
         if (func_tuple && func_tuple->name == "tuple")
         {
-
             const auto * value_tuple = func->arguments->children[1]->as<ASTLiteral>();
+            auto & tuple = value_tuple->value.safeGet<Tuple>();
+
             int index = 0;
 
-
-            auto & tuple = value_tuple->value.safeGet<Tuple>();
-            for (auto column : func_tuple->arguments->children)
+            for (auto child : func_tuple->arguments->children)
             {
-                const auto & sign_column_name = std::make_shared<ASTIdentifier>(column->as<ASTIdentifier>()->name());
+                const auto * child_func = child->as<ASTFunction>();
                 const auto & fetch_sign_value = std::make_shared<ASTLiteral>(tuple.at(index));
+                std::shared_ptr<IAST> fetch_sign_column = nullptr;
 
-                auto func_node = makeASTFunction("equals", sign_column_name, fetch_sign_value);
+                // tuple in tuple like (a, (b,c)) = (1, (2,3))
+                if (child_func && child_func->name == "tuple")
+                    fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+                else
+                    fetch_sign_column = std::make_shared<ASTIdentifier>(child->as<ASTIdentifier>()->name());
+
+                auto func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
                 analyzeImpl(res, func_node, is_final);
                 index++;
             }
