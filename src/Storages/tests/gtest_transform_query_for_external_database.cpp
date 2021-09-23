@@ -219,3 +219,33 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "WHERE column > 2 AND (apply_id = 1 OR table2.num = 1) AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
 }
+
+TEST(TransformQueryForExternalDatabase, NoStrict)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)",
+          R"(SELECT "field" FROM "test"."table")");
+}
+
+TEST(TransformQueryForExternalDatabase, Strict)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", true);
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field = '1'",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = '1')");
+    check(state, 1,
+          "SELECT field FROM table WHERE field IN ('1', '2')",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IN ('1', '2'))");
+    check(state, 1,
+          "SELECT field FROM table WHERE field LIKE '%test%'",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" LIKE '%test%')");
+
+    /// removeUnknownSubexpressionsFromWhere() takes place
+    EXPECT_THROW(check(state, 1, "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)", ""), Exception);
+    /// !isCompatible() takes place
+    EXPECT_THROW(check(state, 1, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
+}
