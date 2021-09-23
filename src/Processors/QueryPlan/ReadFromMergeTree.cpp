@@ -71,7 +71,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     bool sample_factor_column_queried_,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     Poco::Logger * log_,
-    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_)
+    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
+    bool enable_parallel_reading)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         metadata_snapshot_->getSampleBlockForColumns(real_column_names_, data_.getVirtuals(), data_.getStorageID()),
         getPrewhereInfo(query_info_),
@@ -105,7 +106,8 @@ ReadFromMergeTree::ReadFromMergeTree(
         output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
     }
 
-    read_task_callback = context->getMergeTreeReadTaskCallback();
+    if (enable_parallel_reading)
+        read_task_callback = context->getMergeTreeReadTaskCallback();
 }
 
 Pipe ReadFromMergeTree::readFromPool(

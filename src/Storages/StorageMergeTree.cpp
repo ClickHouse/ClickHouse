@@ -194,7 +194,8 @@ void StorageMergeTree::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
+    if (auto plan = reader.read(
+        column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, /**enable_parallel_reading=*/false))
         query_plan = std::move(*plan);
 }
 

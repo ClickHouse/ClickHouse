@@ -97,7 +97,8 @@ public:
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_,
-        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
+        bool enable_parallel_reading
     );
 
     String getName() const override { return "ReadFromMergeTree"; }

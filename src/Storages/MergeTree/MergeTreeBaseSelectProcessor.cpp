@@ -79,7 +79,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
     while (true)
     {
         bool res = getNewTaskImpl();
-
+        
         if (!read_task_callback.has_value() || !res)
             return res;
 
