@@ -2,6 +2,8 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
+#include <Storages/ExternalDataSourceConfiguration.h>
+
 
 namespace DB
 {
@@ -13,19 +15,20 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
-        ContextPtr,
+        ContextPtr context,
         const std::string & /* default_database */,
         bool /* created_from_ddl */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
+        auto configuration = getExternalDataSourceConfiguration(config, config_prefix, context);
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
-            config.getString(config_prefix + ".host", ""),
-            config.getUInt(config_prefix + ".port", 0),
-            config.getString(config_prefix + ".user", ""),
-            config.getString(config_prefix + ".password", ""),
+            configuration.host,
+            configuration.port,
+            configuration.username,
+            configuration.password,
             config.getString(config_prefix + ".method", ""),
-            config.getString(config_prefix + ".db", ""),
+            configuration.database,
             config.getString(config_prefix + ".collection"),
             sample_block);
     };
