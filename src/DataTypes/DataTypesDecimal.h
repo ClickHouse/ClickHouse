@@ -37,6 +37,7 @@ public:
     static constexpr std::string_view family_name = "Decimal";
 
     const char * getFamilyName() const override { return family_name.data(); }
+    std::string doGetName() const override { return fmt::to_string(*this); }
     TypeIndex getTypeId() const override { return TypeId<T>; }
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
@@ -67,12 +68,7 @@ template <class T> concept is_decimal = detail::is_decimal<T>;
 /// explicit semantics is better (so we can differentiate between DataTypeDecimals and DataTypeDateTime64.
 template <class T>
 concept is_decimal_like = is_decimal<T> || std::is_same_v<T, DataTypeDateTime64>;
-
-template <class T>
-concept has_arithmetic_field = is_arithmetic_v<typename T::FieldType>;
 }
-
-template <class T> using FieldType = typename T::FieldType;
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
@@ -161,7 +157,7 @@ inline Ret convertDecimals(const FieldType<From>& value, UInt32 scale_from, UInt
 
     result = static_cast<ToNative>(converted_value);
 
-    if constexpr(!throw_exception)
+    if constexpr (!throw_exception)
         return true;
 }
 
@@ -208,7 +204,9 @@ inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldTy
 
         result = static_cast<ToNative>(out);
 
-        if constexpr(!throw_exception)
+        if constexpr (throw_exception)
+            return;
+        else
             return true;
     }
     else if constexpr (is_big_int_v<FromField>)
@@ -274,6 +272,6 @@ struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {
     auto format(const T & p, auto & ctx) -> decltype(ctx.out())
     {
-        return format_to(ctx.out(), "Decimal({}, {})", p.precision, p.scale);
+        return format_to(ctx.out(), "Decimal({}, {})", p.getPrecision(), p.getScale());
     }
 };

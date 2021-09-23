@@ -205,9 +205,7 @@ private:
         const TypeIndex left_index = col_left.type->getTypeId();
         const TypeIndex right_index = col_right.type->getTypeId();
 
-        constexpr Dispatch d { ._int = true, ._float = true };
-
-        if (!dispatchOverTypes<d>(left_index, right_index, std::move(call)))
+        if (!dispatchOverTypes<Dispatch{ .ints = true, .floats = true }>(left_index, right_index, std::move(call)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of argument of function {}",
                 col_left.column->getName(), getName());

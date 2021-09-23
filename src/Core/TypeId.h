@@ -6,8 +6,8 @@ namespace DB
 {
 namespace detail
 {
-template <TypeIndex> struct ReverseTypeIdT : std::false_type {};
-template <TypeIndex> struct ReverseDataTypeIdT : std::false_type {};
+template <TypeIndex> struct ReverseTypeId : std::false_type {};
+template <TypeIndex> struct ReverseDataTypeId : std::false_type {};
 }
 
 /**
@@ -29,7 +29,8 @@ template <class T> inline constexpr TypeIndex TypeId = TypeIndex::Nothing;
  *
  * @example ReverseTypeId<TypeIndex::UInt8> == UInt8
  */
-template <TypeIndex index> using ReverseTypeId = typename detail::ReverseTypeIdT<index>::T;
+template <TypeIndex index> using ReverseTypeId = typename detail::ReverseTypeId<index>::T;
+template <TypeIndex index> constexpr bool HasReverseTypeId = detail::ReverseTypeId<index>::value;
 
 /**
  * Obtain data type from TypeIndex if possible.
@@ -40,10 +41,8 @@ template <TypeIndex index> using ReverseTypeId = typename detail::ReverseTypeIdT
  * @example ReverseDataTypeId<TypeIndex::UInt8> == DataTypeNumber<UInt8>
  * @example ReverseDataTypeId<TypeIndex::UUID> == DataTypeUUID
  */
-template <TypeIndex index> using ReverseDataTypeId = typename detail::ReverseDataTypeIdT<index>::T;
-
-template <TypeIndex index> constexpr bool HasReverseTypeId = detail::ReverseTypeIdT<index>::value;
-template <TypeIndex index> constexpr bool HasReverseDataTypeId = detail::ReverseDataTypeIdT<index>::value;
+template <TypeIndex index> using ReverseDataTypeId = typename detail::ReverseDataTypeId<index>::T;
+template <TypeIndex index> constexpr bool HasReverseDataTypeId = detail::ReverseDataTypeId<index>::value;
 
 class DataTypeArray;
 class DataTypeDate;
@@ -59,10 +58,10 @@ template <is_decimal T> class DataTypeDecimal;
 struct Array;
 
 #define RD_TYPEID_MAP(_A, _B) \
-    template <> struct detail::ReverseDataTypeIdT<TypeIndex::_A> : std::true_type { using T = _B; };
+    template <> struct detail::ReverseDataTypeId<TypeIndex::_A> : std::true_type { using T = _B; };
 
 #define R_TYPEID_MAP(_A, _B) \
-    template <> struct detail::ReverseTypeIdT<TypeIndex::_A> : std::true_type { using T = _B; };
+    template <> struct detail::ReverseTypeId<TypeIndex::_A> : std::true_type { using T = _B; };
 
 #define TYPEID_MAP(_A, _B) \
     template <> inline constexpr TypeIndex TypeId<_A> = TypeIndex::_A; \

@@ -133,7 +133,7 @@ public:
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
 
-        if (!dispatchOverType<Dispatch{ ._int = true, ._decimal = true }>(dec_type_idx, std::move(call)))
+        if (!dispatchOverType<Dispatch{ .ints = true, .decimals = true }>(dec_type_idx, std::move(call)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Wrong call for {} with {}",
                 getName(), src_column.type->getName());

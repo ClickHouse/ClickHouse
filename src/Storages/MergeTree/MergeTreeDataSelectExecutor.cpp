@@ -695,7 +695,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date
-            && minmax_idx_condition->alwaysUnknownOrTrue() 
+            && minmax_idx_condition->alwaysUnknownOrTrue()
             && partition_pruner->isUseless())
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Neither MinMax index by columns ({}) nor partition expression is used and setting "
@@ -1515,7 +1515,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & part_or_projection : prev_parts)
     {
         const auto * part = part_or_projection->isProjectionPart()
-            ? part_or_projection->getParentPart() 
+            ? part_or_projection->getParentPart()
             : part_or_projection.get();
 
         if (part_values && !part_values->contains(part->name))

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <common/TypePair.h>
 #include <common/static_for.h>
 
 namespace DB
 {
-struct Dispatch { bool _int = false , _float = false, _decimal = false, _datetime = false; }; //NOLINT
-constexpr Dispatch DISPATCH_OVER_ALL = {._int = true, ._float = true, ._decimal = true, ._datetime = true };
+struct Dispatch { bool ints = false , floats = false, decimals = false, datetimes = false, other = false; };
+
+constexpr Dispatch DISPATCH_ALL = { true, true, true, true };
+constexpr Dispatch DISPATCH_ALL_DT = { true, true, true, true, true };
 }
 
 namespace DB::detail
@@ -24,6 +27,8 @@ constexpr auto Decimals = MakeCTArray(
     TypeIndex::Decimal32, TypeIndex::Decimal64, TypeIndex::Decimal128, TypeIndex::Decimal256);
 
 constexpr auto DateTimes = MakeCTArray(TypeIndex::Date, TypeIndex::Date32, TypeIndex::DateTime, TypeIndex::DateTime64);
+
+constexpr auto Other = MakeCTArray(TypeIndex::String, TypeIndex::FixedString, TypeIndex::UUID);
 
 /**
  * If functor returns @c false in static_for, iteration will always continue.
@@ -55,20 +60,24 @@ constexpr DispatchRet static_for_with_ret(returns_on_elem<Container[0], Dispatch
 template <Dispatch D, class F>
 constexpr bool call(F && functor)
 {
-    if constexpr(D._int)
+    if constexpr (D.ints)
         if (auto [match, ret] = static_for_with_ret<Ints>(std::forward<F>(functor)); match)
             return ret;
 
-    if constexpr(D._float)
+    if constexpr (D.floats)
         if (auto [match, ret] = static_for_with_ret<Floats>(std::forward<F>(functor)); match)
             return ret;
 
-    if constexpr(D._decimal)
+    if constexpr (D.decimals)
         if (auto [match, ret] = static_for_with_ret<Decimals>(std::forward<F>(functor)); match)
             return ret;
 
-    if constexpr(D._datetime)
+    if constexpr (D.datetimes)
         if (auto [match, ret] = static_for_with_ret<DateTimes>(std::forward<F>(functor)); match)
+            return ret;
+
+    if constexpr (D.other)
+        if (auto [match, ret] = static_for_with_ret<Other>(std::forward<F>(functor)); match)
             return ret;
 
     return false;

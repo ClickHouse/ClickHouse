@@ -292,6 +292,14 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 };
 
+template <class T> using FieldType = typename T::FieldType;
+template <class T> using ColumnType = typename T::ColumnType;
+
+namespace dt
+{
+template <class T>
+concept has_arithmetic_field = is_arithmetic_v<FieldType<T>>;
+}
 
 /// Some sugar to check data type of IDataType
 struct WhichDataType

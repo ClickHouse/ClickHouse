@@ -565,7 +565,7 @@ namespace DB
 
             auto create_arrow_type = [&]<class To>(TypePair<void, To>)
             {
-                if constexpr(dt::is_decimal<To>)
+                if constexpr (dt::is_decimal<To>)
                 {
                     const auto & decimal_type = assert_cast<const To *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());

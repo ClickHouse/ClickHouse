@@ -263,7 +263,7 @@ public:
                     const ColumnString::Chars & data_from = col_from->getChars();
                     const ColumnString::Offsets & offsets_from = col_from->getOffsets();
                     size_t size = offsets_from.size();
-                    typename To::Container & vec_res = col_res->getData();
+                    typename ToColumnType::Container & vec_res = col_res->getData();
                     vec_res.resize(size);
 
                     size_t offset = 0;

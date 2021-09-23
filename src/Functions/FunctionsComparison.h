@@ -684,7 +684,7 @@ private:
                 return (res = DecimalComparison<Left, Right, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        constexpr Dispatch d = {._int = true, ._decimal = true, ._datetime = true };
+        constexpr Dispatch d = {.ints = true, .decimals = true, .datetimes = true };
 
         if (!dispatchOverTypes<d>(left_number, right_number, std::move(call)))
             throw Exception(ErrorCodes::LOGICAL_ERROR,

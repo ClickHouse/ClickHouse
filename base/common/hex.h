@@ -4,15 +4,15 @@
 
 /// Maps 0..15 to 0..9A..F or 0..9a..f correspondingly.
 
-constexpr std::string_view hex_digit_to_char_uppercase_table = "0123456789ABCDEF";
-constexpr std::string_view hex_digit_to_char_lowercase_table = "0123456789abcdef";
+constexpr inline std::string_view hex_digit_to_char_uppercase_table = "0123456789ABCDEF";
+constexpr inline std::string_view hex_digit_to_char_lowercase_table = "0123456789abcdef";
 
 constexpr char hexDigitUppercase(unsigned char c) { return hex_digit_to_char_uppercase_table[c]; }
 constexpr char hexDigitLowercase(unsigned char c) { return hex_digit_to_char_lowercase_table[c]; }
 
 /// Maps 0..255 to 00..FF or 00..ff correspondingly
 
-constexpr std::string_view hex_byte_to_char_uppercase_table =
+constexpr inline std::string_view hex_byte_to_char_uppercase_table =
     "000102030405060708090A0B0C0D0E0F"
     "101112131415161718191A1B1C1D1E1F"
     "202122232425262728292A2B2C2D2E2F"
@@ -30,7 +30,7 @@ constexpr std::string_view hex_byte_to_char_uppercase_table =
     "E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF"
     "F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF";
 
-constexpr std::string_view hex_byte_to_char_lowercase_table =
+constexpr inline std::string_view hex_byte_to_char_lowercase_table =
     "000102030405060708090a0b0c0d0e0f"
     "101112131415161718191a1b1c1d1e1f"
     "202122232425262728292a2b2c2d2e2f"
@@ -58,7 +58,7 @@ inline void writeHexByteLowercase(UInt8 byte, void * out)
     memcpy(out, &hex_byte_to_char_lowercase_table[static_cast<size_t>(byte) * 2], 2);
 }
 
-constexpr std::string_view bin_byte_to_char_table =
+constexpr inline std::string_view bin_byte_to_char_table =
     "0000000000000001000000100000001100000100000001010000011000000111"
     "0000100000001001000010100000101100001100000011010000111000001111"
     "0001000000010001000100100001001100010100000101010001011000010111"
@@ -144,7 +144,7 @@ std::string getHexUIntLowercase(TUInt uint_)
 
 /// Maps 0..9, A..F, a..f to 0..15. Other chars are mapped to implementation specific value.
 
-constexpr std::string_view hex_char_to_digit_table =
+constexpr inline std::string_view hex_char_to_digit_table = {
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
@@ -160,7 +160,7 @@ constexpr std::string_view hex_char_to_digit_table =
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
-    "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff";
+    "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff", 256};
 
 constexpr UInt8 unhex(char c) { return hex_char_to_digit_table[static_cast<UInt8>(c)]; }
 

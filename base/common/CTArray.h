@@ -1,34 +1,39 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
-#include <utility>
 
-/// Compile-time array that can be used as a template argument
+/// Compile-time array that can be used as a template argument.
 template <class T, size_t N>
 struct CTArray
 {
-    constexpr CTArray(const T(&ref)[N]) //NOLINT
-    {
-        std::copy_n(ref, N, storage);
-    }
-
-    constexpr explicit CTArray(const std::array<T, N> & arr)
-    {
-        std::copy_n(arr.begin(), N, storage);
-    }
+    constexpr explicit CTArray(const std::array<T, N> & arr) { storage = arr; }
 
     constexpr T operator[](size_t i) const { return storage[i]; }
 
+    constexpr auto begin() const { return storage.begin(); }
+    constexpr auto end() const { return storage.end(); }
+
     constexpr bool contains(T value) const
     {
-        return std::find(storage, storage + N, value) != storage + N;
+        return std::find(begin(), end(), value) != end();
     }
 
     static constexpr size_t size = N;
 
-    T storage[N];
+    std::array<T, N> storage;
 };
+
+template <class T, size_t N, size_t U>
+constexpr CTArray<T, N + U> operator||(const CTArray<T, N> & arr, const CTArray<T, U> & other)
+{
+    std::array<T, N + U> st;
+    std::copy_n(arr.begin(), N, st.begin());
+    std::copy_n(other.begin(), U, st.begin() + N);
+
+    return CTArray<T, N + U>(st);
+}
 
 constexpr auto MakeCTArray(auto arg, auto ...args)
 {

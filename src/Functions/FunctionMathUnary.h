@@ -156,7 +156,7 @@ private:
             return res != nullptr;
         };
 
-        constexpr Dispatch d { ._int = true, ._float = true, ._decimal = true };
+        constexpr Dispatch d { .ints = true, .floats = true, .decimals = true };
 
         if (!dispatchOverType<d>(col.type->getTypeId(), std::move(call)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,

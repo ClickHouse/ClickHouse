@@ -145,21 +145,20 @@ struct ConvertImpl
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
-        if (std::is_same_v<Name, NameToUnixTimestamp>)
+        if constexpr (std::is_same_v<Name, NameToUnixTimestamp>)
         {
             if (isDateOrDate32(named_from.type))
                 throw Exception("Illegal type " + named_from.type->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        if constexpr (dt::is_decimal<FromDataType> || dt::is_decimal<ToDataType>)
-        {
-            if constexpr (!from_is_decimal_like_or_number || !to_is_decimal_like_or_number)
+        if constexpr (
+            (dt::is_decimal<FromDataType> && !to_is_decimal_like_or_number)
+            || (dt::is_decimal<ToDataType> && !from_is_decimal_like_or_number))
             {
                 throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
             }
-        }
 
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
@@ -1741,7 +1740,7 @@ private:
 
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
-                if (!dispatchOverDataType<DISPATCH_OVER_ALL, DataTypeDateTime64>(
+                if (!dispatchOverDataType<DISPATCH_ALL_DT, DataTypeDateTime64>(
                         from_type->getTypeId(), call, ConvertDefaultBehaviorTag()))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument of function {}",
@@ -1755,7 +1754,7 @@ private:
 
         if constexpr (to_string_or_fixed_string)
         {
-            done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+            done = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(
                 from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
         else
@@ -1763,10 +1762,10 @@ private:
             /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
             /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
             if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+                done = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(
                     from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
             else
-                done = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(
+                done = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(
                     from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
 
@@ -2571,7 +2570,7 @@ private:
         {
             ColumnPtr result_column;
 
-            bool res = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(from_type_index,
+            bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(from_type_index,
                 [&]<class Left, class Right>(TypePair<Left, Right>)
             {
                 if constexpr (dt::is_number<Left> && dt::is_number<Right>)
@@ -2656,7 +2655,7 @@ private:
         {
             ColumnPtr result_column;
 
-            bool res = dispatchOverDataType<DISPATCH_OVER_ALL, ToDataType>(type_index,
+            bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(type_index,
                 [&]<class To, class From>(TypePair<To, From>)
             {
                 if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal<To>)

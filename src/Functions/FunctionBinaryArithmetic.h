@@ -1399,7 +1399,7 @@ public:
         {
             if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr(dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
+                if constexpr (dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
                 {
                     if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                         return false;

@@ -1085,7 +1085,7 @@ public:
         if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
             right_id = right_array->getNestedType()->getTypeId();
 
-        constexpr Dispatch d { ._int = true, ._float = true, ._decimal = true };
+        constexpr Dispatch d { .ints = true, .floats = true, .decimals = true };
 
         if (!(dispatchOverTypes<d>(left_id, right_id, std::move(call))
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))

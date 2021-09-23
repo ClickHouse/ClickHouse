@@ -1,137 +1,147 @@
 #include <gtest/gtest.h>
 #include <Core/dispatchOverTypes.h>
 #include <common/EnumReflection.h>
-
-#include <Core/Field.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeString.h>
+#include <common/TypeName.h>
 
 using namespace DB;
-using namespace DB::detail;
 
-// Emulating type checker
 template <class L, class R>
-void check()
+void checkForward()
 {
-    if constexpr(!std::is_same_v<L, R>)
-        FAIL() << fmt::format("Type mismatch: expected {}, found {}",
-            typeid(L).name(), typeid(R).name());
+    if constexpr (!std::is_same_v<L, R>)
+        FAIL() << fmt::format("Type mismatch: expected {}, found {}", TypeName<L>, TypeName<R>);
     else
         SUCCEED();
 }
 
-/*
- * For every element in TypeIndex that can be invoked with ReverseTypeId<> check that invoking
- * dispatchOverType succeeds and:
- * - Produced type in inner lambda equals ReverseTypeId<element> (direct transform, 1).
- * - TypeId on produced type returns the initial TypeIndex element (backward transform, 2).
- *
- * For every element in TypeIndex that can be invoked with ReverseDataTypeId<> check that invoking
- * dispatchOverDataType succeeds and:
- * - Produced type in inner lambda equals ReverseDataTypeId<element> (direct transform, 3).
- *
- * Tests are intentionally made runtime (instead of using static_asserts) as type mismatch in compile time is just
- * "static assertion failed".
- */
-GTEST_TEST(DispatchOverType, TypeAndDataType)
+template <class T>
+constexpr void checkBackward(TypeIndex index)
 {
-    static_for<TypeIndex>([](auto type_index_value)
-    {
-        if constexpr(HasReverseTypeId<type_index_value>)
-            EXPECT_TRUE(dispatchOverType(type_index_value, [type_index_value]<class Type>(TypePair<void, Type>)
-            {
-                check<Type, ReverseTypeId<type_index_value>>(); /// 1
-                EXPECT_EQ(TypeId<Type>, type_index_value); /// 2
-                return true;
-            }));
+    constexpr TypeIndex real = TypeId<T>;
 
-        if constexpr(HasReverseDataTypeId<type_index_value>)
-            EXPECT_TRUE(dispatchOverDataType(type_index_value, [type_index_value]<class Type>(TypePair<void, Type>)
+    // special cases listed in TypeId.h:102
+    if (index == TypeIndex::Enum8)
+        EXPECT_EQ(real, TypeIndex::Int8);
+    else if (index == TypeIndex::Enum16)
+        EXPECT_EQ(real, TypeIndex::Int16);
+    else if (index == TypeIndex::Date)
+        EXPECT_EQ(real, TypeIndex::UInt16);
+    else if (index == TypeIndex::Date32)
+        EXPECT_EQ(real, TypeIndex::Int32);
+    else if (index == TypeIndex::DateTime)
+        EXPECT_EQ(real, TypeIndex::UInt32);
+    else
+        EXPECT_EQ(index, real);
+}
+
+TEST(DispatchOverType, Type)
+{
+    int types_with_reverse_typeid = 0;
+    int call_count = 0;
+
+    static_for<TypeIndex>([&](auto index)
+    {
+        if constexpr (HasReverseTypeId<index>)
+        {
+            ++types_with_reverse_typeid;
+
+            const bool was_called = dispatchOverType(index, [&]<class T>(TypePair<void, T>)
             {
-                check<Type, ReverseDataTypeId<type_index_value>>(); /// 3
+                checkForward<T, ReverseTypeId<index>>();
+                checkBackward<T>(index);
+
+                ++call_count;
+
                 return true;
-            }));
+            });
+
+            /// String, UUID, and Array have ReverseTypeId but are not checked while dispatching on types
+            if constexpr (
+                index != TypeIndex::String
+                && index != TypeIndex::Array
+                && index != TypeIndex::UUID)
+                EXPECT_TRUE(was_called);
+            else
+                EXPECT_FALSE(was_called);
+        }
 
         return false;
     });
+
+    /// Same as line 54
+    EXPECT_EQ(call_count, types_with_reverse_typeid - 3);
 }
 
-GTEST_TEST(DispatchOverType, TypesAndDataTypes)
+TEST(DispatchOverType, DataType)
 {
-    static_for<TypeIndex>([](auto left)
+    int types_with_reverse_datatypeid = 0;
+    int call_count = 0;
+
+    static_for<TypeIndex>([&](auto index)
     {
-        static_for<TypeIndex>([left](auto right)
+        if constexpr (HasReverseDataTypeId<index>)
         {
-            if constexpr(HasReverseTypeId<left> && HasReverseTypeId<right>)
-                EXPECT_TRUE(dispatchOverTypes(left, right,
-                    [left, right]<class Left, class Right>(TypePair<Left, Right>)
-                {
-                    check<Left, ReverseTypeId<left>>();
-                    check<Right, ReverseTypeId<right>>();
+            ++types_with_reverse_datatypeid;
 
-                    EXPECT_EQ(TypeId<Left>, left);
-                    EXPECT_EQ(TypeId<Right>, right);
+            EXPECT_EQ(dispatchOverDataType(index, [&]<class T>(TypePair<void, T>)
+            {
+                ++call_count;
+                checkForward<T, ReverseDataTypeId<index>>();
+                return true;
+            }), index != TypeIndex::Array);
+        }
 
-                    return true;
-                }));
-
-            if constexpr(HasReverseDataTypeId<left> && HasReverseDataTypeId<right>)
-                EXPECT_TRUE(dispatchOverDataTypes(left, right,
-                    [left, right]<class Left, class Right>(TypePair<Left, Right>)
-                {
-                    check<Left, ReverseDataTypeId<left>>();
-                    check<Right, ReverseDataTypeId<right>>();
-
-                    return true;
-                }));
-
-            return false;
-        });
+        return false;
     });
+
+    /// Array is not matched while iterating over datatypes
+    EXPECT_EQ(call_count, types_with_reverse_datatypeid - 1);
 }
 
-TEST(DispatchOverType, NoMatch)
+TEST(DispatchOverType, Types)
 {
-    constexpr Dispatch d { ._float = true };
-    constexpr Dispatch empty { };
+    using namespace ::DB::detail;
+    constexpr CTArray all = Ints || Floats || Decimals || DateTimes;
 
-    EXPECT_FALSE(dispatchOverType<d>(TypeIndex::Int8, [](auto) { return true; })); // no type match
-    EXPECT_FALSE(dispatchOverType<empty>(TypeIndex::Int8, [](auto) { return true; })); //no iteration
-
-    EXPECT_FALSE(dispatchOverDataType<d>(TypeIndex::Int8, [](auto) { return true; })); // no type match
-    EXPECT_FALSE(dispatchOverDataType<empty>(TypeIndex::Int8, [](auto) { return true; })); //no iteration
+    for (TypeIndex left : all)
+        for (TypeIndex right : all)
+            EXPECT_TRUE(dispatchOverTypes(left, right, [left, right]<class Left, class Right>(TypePair<Left, Right>)
+            {
+                checkBackward<Left>(left);
+                checkBackward<Right>(right);
+                return true;
+            }));
 }
 
-template <Dispatch d, CTArray a>
+template <Dispatch D, CTArray arr>
 void checkWithConstraints()
 {
     static_for<TypeIndex>([](auto type)
     {
-        constexpr bool expected = a.contains(type);
+        if constexpr(HasReverseTypeId<type> && !D.other) // FixedString in Other cannot be passed to ReverseTypeId
+            EXPECT_EQ(dispatchOverType<D>(type, [](auto) { return true; }), arr.contains(type));
 
-        if constexpr(HasReverseTypeId<type>)
-            EXPECT_EQ(dispatchOverType<d>(type, [](auto) { return true; }), expected);
-
-        if constexpr(HasReverseDataTypeId<type>)
-            EXPECT_EQ(dispatchOverDataType<d>(type, [](auto) { return true; }), expected);
+        if constexpr (HasReverseDataTypeId<type>)
+            EXPECT_EQ(dispatchOverDataType<D>(type, [](auto) { return true; }), arr.contains(type));
 
         return false;
     });
 }
 
+// Check that for each type constrained with Dispatch dispatch functor gets called (and does not get called for any
+// type not satisfying constraints).
 TEST(DispatchOverType, MatchWithConstraints)
 {
-    checkWithConstraints<Dispatch{ ._int = true }, Ints>();
-    checkWithConstraints<Dispatch{ ._float = true }, Floats>();
-    checkWithConstraints<Dispatch{ ._decimal = true }, Decimals>();
-    checkWithConstraints<Dispatch{ ._datetime = true }, DateTimes>();
+    using namespace ::DB::detail;
+    checkWithConstraints<Dispatch{ .ints = true }, Ints>();
+    checkWithConstraints<Dispatch{ .floats = true }, Floats>();
+    checkWithConstraints<Dispatch{ .decimals = true }, Decimals>();
+    checkWithConstraints<Dispatch{ .datetimes = true }, DateTimes>();
+    checkWithConstraints<Dispatch{ .other = true }, Other>();
+
+    checkWithConstraints<Dispatch{ .ints = true, .floats = true }, Ints || Floats>();
+    checkWithConstraints<Dispatch{ .decimals = true, .other = true }, Decimals || Other>();
+
+    checkWithConstraints<DISPATCH_ALL, Ints || Floats || Decimals || DateTimes>();
+    checkWithConstraints<DISPATCH_ALL_DT, Ints || Floats || Decimals || DateTimes || Other>();
 }

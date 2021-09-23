@@ -17,7 +17,7 @@ struct AggregateFunctionStateData;
 template <class T> constexpr inline std::string_view TypeName;
 
 #define TN_MAP(_A) \
-    template <> constexpr inline std::string_view TypeName<_A> = "_A";
+    template <> constexpr inline std::string_view TypeName<_A> = #_A;
 
 TN_MAP(UInt8)
 TN_MAP(UInt16)

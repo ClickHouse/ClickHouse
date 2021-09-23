@@ -26,7 +26,7 @@ namespace
     thread_local size_t write_trace_iteration = 0;
 #endif
 
-    void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
+    void writeTraceInfo(TraceType trace_type, int /* sig */, [[maybe_unused]] siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -52,8 +52,6 @@ namespace
                 }
             }
         }
-#else
-        UNUSED(info);
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -78,7 +76,11 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
+    [[maybe_unused]] const UInt64 thread_id,
+    [[maybe_unused]] const int clock_type,
+    [[maybe_unused]] UInt32 period,
+    [[maybe_unused]] const int pause_signal_)
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
@@ -145,11 +147,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         throw;
     }
 #else
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
