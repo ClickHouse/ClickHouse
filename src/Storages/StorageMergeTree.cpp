@@ -937,7 +937,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         if (!commands->empty())
         {
             bool is_partition_affected = false;
-            for (const auto & command : commands)
+            for (const auto & command : *commands)
             {
                 if (command.partition == nullptr)
                 {
