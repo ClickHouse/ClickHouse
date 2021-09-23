@@ -1,4 +1,4 @@
--- Tags: no-debug, no-parallel
+-- Tags: no-debug, no-parallel, no-fasttest
 
 DROP TABLE IF EXISTS table_with_single_pk;
 
