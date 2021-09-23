@@ -265,8 +265,6 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 
 bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::cerr << "MergeTreeConditionFullText::mayBeTrueOnGranule" << std::endl;
-
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
