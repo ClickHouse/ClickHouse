@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallely
+-- Tags: distributed, no-parallel
 DROP DATABASE IF EXISTS 02028_db ON CLUSTER test_shard_localhost;
 CREATE DATABASE 02028_db ON CLUSTER test_shard_localhost;
 USE 02028_db;
