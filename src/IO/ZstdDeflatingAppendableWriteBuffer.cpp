@@ -151,10 +151,14 @@ void ZstdDeflatingAppendableWriteBuffer::finishImpl()
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 {
     /// HACK: https://github.com/facebook/zstd/issues/2090#issuecomment-620158967
-    out.nextIfAtEnd();
     static const char empty_block[3] = {0x01, 0x00, 0x00};
+
+    if (out.buffer().size() - out.offset() < sizeof(empty_block))
+        out.next();
+
     std::memcpy(out.buffer().begin() + out.offset(), empty_block, sizeof(empty_block));
-    out.position() = out.buffer().begin() + sizeof(empty_block);
+
+    out.position() = out.buffer().begin() + out.offset() + sizeof(empty_block);
 }
 
 }
