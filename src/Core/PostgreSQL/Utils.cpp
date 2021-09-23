@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 namespace postgres
 {
@@ -17,6 +18,11 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " password=" << DB::quote << password
         << " connect_timeout=10";
     return std::make_pair(out.str(), host + ':' + DB::toString(port));
+}
+
+String getConnectionForLog(const String & host, UInt16 port)
+{
+    return host + ":" + DB::toString(port);
 }
 
 String formatNameForLogs(const String & postgres_database_name, const String & postgres_table_name)
