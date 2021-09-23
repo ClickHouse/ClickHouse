@@ -1,6 +1,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
@@ -11,6 +12,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 struct PlusName { static constexpr auto name = "plus"; };
@@ -1022,6 +1025,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (getReturnTypeImpl(arguments)->isNullable()) {
+            return DataTypeNullable(std::make_shared<DataTypeNothing>())
+                   .createColumnConstWithDefaultValue(input_rows_count);
+        }
+
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.executeImpl(arguments, DataTypePtr(), input_rows_count),
                                          dot.getReturnTypeImpl(arguments), {}};
