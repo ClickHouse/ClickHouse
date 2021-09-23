@@ -76,6 +76,7 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
+        String null_representation = "\\N";
     } csv;
 
     struct Custom

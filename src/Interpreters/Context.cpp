@@ -2777,8 +2777,8 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 {
     using namespace std::chrono;
 
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout) == 0ms)
-        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
 
     shared->async_insert_queue = ptr;
 }
@@ -2843,6 +2843,9 @@ ReadSettings Context::getReadSettings() const
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.remote_fs_backoff_threshold = settings.remote_fs_read_backoff_threshold;
+    res.remote_fs_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
