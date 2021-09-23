@@ -1,5 +1,5 @@
 #include <Storages/ColumnsDescription.h>
-#include <Functions/registerFunctions.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <gtest/gtest.h>
 
@@ -21,7 +21,7 @@ TEST(ColumnsDescription, Normalize)
 `c` String	DEFAULT	cast(a, 'String')
 )";
 
-    registerFunctions();
+    tryRegisterFunctions();
 
     ASSERT_EQ(ColumnsDescription::parse(columns), ColumnsDescription::parse(columns_normalized));
 }
