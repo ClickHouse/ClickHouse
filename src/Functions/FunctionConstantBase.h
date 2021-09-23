@@ -1,35 +1,37 @@
+#pragma once
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <common/DateLUT.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
-namespace
-{
 
-/** Returns the server time zone.
-  */
-class FunctionTimezone : public IFunction
+/// Base class for constant functions
+template<typename Derived, typename T, typename ColumnT>
+class FunctionConstantBase : public IFunction
 {
 public:
-    static constexpr auto name = "timezone";
-    static FunctionPtr create(ContextPtr context)
+
+    /// For server-level constants (uptime(), version(), etc)
+    explicit FunctionConstantBase(ContextPtr context, T && constant_value_)
+        : is_distributed(context->isDistributed())
+        , constant_value(std::forward<T>(constant_value_))
     {
-        return std::make_shared<FunctionTimezone>(context->isDistributed());
     }
 
-    explicit FunctionTimezone(bool is_distributed_) : is_distributed(is_distributed_)
+    /// For real constants (pi(), e(), etc)
+    explicit FunctionConstantBase(const T & constant_value_)
+        : is_distributed(false)
+        , constant_value(constant_value_)
     {
     }
 
     String getName() const override
     {
-        return name;
+        return Derived::name;
     }
+
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -37,29 +39,26 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return std::make_shared<DataTypeString>();
+        return std::make_shared<ColumnT>();
     }
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Some functions may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, DateLUT::instance().getTimeZone());
+        return ColumnT().createColumnConst(input_rows_count, constant_value);
     }
+
 private:
     bool is_distributed;
+    const T constant_value;
 };
 
 }
 
-void registerFunctionTimezone(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionTimezone>();
-    factory.registerAlias("timeZone", "timezone");
-}
-
-}
