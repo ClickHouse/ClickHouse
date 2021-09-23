@@ -379,7 +379,6 @@ void StorageEmbeddedRocksDB::initDB()
     rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 }
 
-
 Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -394,13 +393,12 @@ Pipe StorageEmbeddedRocksDB::read(
     FieldVectorPtr keys;
     bool all_scan = false;
 
-    auto primary_key_data_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
+    Block sample_block = metadata_snapshot->getSampleBlock();
+    auto primary_key_data_type = sample_block.getByName(primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)
     {
-        auto reader = std::make_shared<EmbeddedRocksDBBlockInputStream>(
-                *this, metadata_snapshot, max_block_size);
-        return Pipe(std::make_shared<SourceFromInputStream>(reader));
+        return Pipe(std::make_shared<EmbeddedRocksDBBlockInputStream>(*this, sample_block, max_block_size));
     }
     else
     {
@@ -435,7 +433,6 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
 {
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
-
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
