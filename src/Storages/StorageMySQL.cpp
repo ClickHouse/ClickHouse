@@ -304,7 +304,6 @@ void registerStorageMySQL(StorageFactory & factory)
         if (!mysql_settings.connection_pool_size)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
-        std::cerr << "user: " << configuration.username << ", pass: " << configuration.password << std::endl;
         mysqlxx::PoolWithFailover pool(
             configuration.database, configuration.addresses,
             configuration.username, configuration.password,
