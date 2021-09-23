@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 drop table if exists test_table;
 
 create table test_table (col String, col_nullable Nullable(String)) engine MergeTree order by col;
