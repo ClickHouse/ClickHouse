@@ -801,11 +801,31 @@ ClickHouse может парсить только базовый формат `Y
 
 Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
-Возможное значение:
+Возможные значения:
 
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
