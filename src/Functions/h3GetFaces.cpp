@@ -53,7 +53,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const ColumnUInt64 * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        const typename ColumnVector<UInt64>::Container & data = column->getData();
 
         auto dst = ColumnArray::create(ColumnUInt8::create());
         auto & dst_data = dst->getData();
@@ -61,15 +62,13 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0 ; row < input_rows_count ; row++)
         {
-            const UInt64 hindex = col_hindex->getUInt(row);
-
-            int max_faces = maxFaceCount(hindex);
+            int max_faces = maxFaceCount(data[row]);
             std::unique_ptr<int> faces(new int(max_faces));
 
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
-            getIcosahedronFaces(hindex, faces.get());
+            getIcosahedronFaces(data[row], faces.get());
 
             for (int i = 0; i < max_faces; i++)
             {
