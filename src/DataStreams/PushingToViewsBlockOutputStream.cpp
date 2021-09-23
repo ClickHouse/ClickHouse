@@ -147,8 +147,8 @@ Chain buildPushingToViewsChain(
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
-    auto storage_header = //no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
-                                          metadata_snapshot->getSampleBlock();
+    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
+                                         : metadata_snapshot->getSampleBlock();
 
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
@@ -275,8 +275,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
 
-        assert(views_data != nullptr);
-        views_data->views.emplace_back(ViewRuntimeData{
+        views_data->views.emplace_back(ViewRuntimeData{ //-V614
             std::move(query),
             out.getInputHeader(),
             database_table,
