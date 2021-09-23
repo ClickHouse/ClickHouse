@@ -1,6 +1,6 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
-#include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSource.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -398,7 +398,7 @@ Pipe StorageEmbeddedRocksDB::read(
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)
     {
-        return Pipe(std::make_shared<EmbeddedRocksDBBlockInputStream>(*this, sample_block, max_block_size));
+        return Pipe(std::make_shared<EmbeddedRocksDBSource>(*this, sample_block, max_block_size));
     }
     else
     {

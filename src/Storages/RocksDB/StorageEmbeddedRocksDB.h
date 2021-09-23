@@ -23,7 +23,7 @@ class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRoc
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSink;
-    friend class EmbeddedRocksDBBlockInputStream;
+    friend class EmbeddedRocksDBSource;
 public:
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
