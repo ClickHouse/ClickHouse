@@ -17,6 +17,7 @@ ALTER TABLE table_with_single_pk DELETE WHERE key % 77 = 0 SETTINGS mutations_sy
 
 SYSTEM FLUSH LOGS;
 
+
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes
 SELECT
