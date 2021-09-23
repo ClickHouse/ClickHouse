@@ -18,6 +18,7 @@
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace Aws::S3
 {
@@ -140,6 +141,8 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
     bool supportsPartitionBy() const override;
+
+    static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
 
 private:
 
