@@ -93,7 +93,7 @@ def build_for_lang(lang, args):
             site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
-            strict=False,  # TODO: fix issues and return True
+            strict=True,
             theme=theme_cfg,
             copyright='©2016–2021 ClickHouse, Inc.',
             use_directory_urls=True,
