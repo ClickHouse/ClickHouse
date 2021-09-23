@@ -28,6 +28,7 @@ SRCS(
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
+    AsynchronousInsertQueue.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -64,6 +65,7 @@ SRCS(
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     FunctionNameNormalizer.cpp
+    GatherFunctionQuantileVisitor.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp

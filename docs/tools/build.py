@@ -203,6 +203,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
+    args.minify = False  # TODO remove
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
