@@ -3,6 +3,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -157,22 +158,20 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
-        const auto & column = block.getByName(index_columns[col]).column;
-
+        const auto & column_with_type = block.getByName(index_columns[col]);
+        const auto & column = column_with_type.column;
         size_t current_position = *pos;
 
-        if (column->getDataType() == TypeIndex::Map)
+        if (isArray(column_with_type.type))
         {
-            //update for the key of Map type
-            auto * column_map = assert_cast<ColumnMap *>(const_cast<IColumn *>(column.get()));
-            auto & column_array = assert_cast<ColumnArray &>(column_map->getNestedColumn());
-            auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
-            auto & column_key = column_tuple.getColumn(0);
+            const auto & column_array = assert_cast<const ColumnArray &>(*column);
+            const auto & column_offsets = column_array.getOffsets();
+            const auto & column_key = column_array.getData();
 
             for (size_t i = 0; i < rows_read; ++i)
             {
-                size_t element_start_row = column_array.getOffsets()[current_position - 1];
-                size_t elements_size = column_array.getOffsets()[current_position] - element_start_row;
+                size_t element_start_row = column_offsets[current_position - 1];
+                size_t elements_size = column_offsets[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; row_num++)
                 {
@@ -233,6 +232,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
+             || element.function == RPNElement::FUNCTION_HAS
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
@@ -282,7 +282,8 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+             || element.function == RPNElement::FUNCTION_NOT_EQUALS
+             || element.function == RPNElement::FUNCTION_HAS)
         {
             rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
@@ -443,6 +444,15 @@ bool MergeTreeConditionFullText::atomFromAST(
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
 
+        if (func_name == "has")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_HAS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            stringToBloomFilter(const_value.get<String>(), token_extractor, *out.bloom_filter);
+
+            return true;
+        }
         if (func_name == "notEquals")
         {
             out.key_column = key_column_num;
@@ -902,19 +912,18 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
 void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    for (const auto & data_type : index.data_types)
+    for (const auto & index_data_type : index.data_types)
     {
-        DataTypePtr index_key_data_type = data_type;
+        WhichDataType data_type(index_data_type);
 
-        if (data_type->getTypeId() == TypeIndex::Map)
+        if (data_type.isArray())
         {
-            DataTypeMap * map_type = assert_cast<DataTypeMap *>(const_cast<IDataType *>(data_type.get()));
-            index_key_data_type = map_type->getKeyType();
+            const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
+            data_type = WhichDataType(array_type.getNestedType());
         }
 
-        if (index_key_data_type->getTypeId() != TypeIndex::String && index_key_data_type->getTypeId() != TypeIndex::FixedString)
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "Bloom filter index can be used only with `String`,`FixedString` or `Map` with key of `String` or `FixedString` type.");
+        if (!data_type.isString() && !data_type.isFixedString())
+            throw Exception("Bloom filter index can be used only with `String`, `FixedString` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type == NgramTokenExtractor::getName())
