@@ -18,6 +18,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/AccessFlags.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int UNKNOWN_FORMAT;
 }
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
@@ -165,6 +167,9 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
+
+    if (!FormatFactory::instance().isInputFormat(insert_query.format))
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
     query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
@@ -324,7 +329,7 @@ void AsynchronousInsertQueue::cleanup()
             }
 
             if (total_removed)
-                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", keys_to_remove.size());
+                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", total_removed);
         }
 
         {

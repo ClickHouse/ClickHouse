@@ -21,9 +21,15 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
 
-    void startupTables() override;
+    bool supportsLoadingInTopologicalOrder() const override { return true; }
+
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
+
+    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     void alterTable(
         ContextPtr context,
@@ -37,8 +43,6 @@ protected:
         const String & table_metadata_path,
         const String & statement,
         ContextPtr query_context);
-
-    void startupTablesImpl(ThreadPool & thread_pool);
 };
 
 }
