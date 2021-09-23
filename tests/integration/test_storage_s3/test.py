@@ -87,7 +87,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
-        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
+        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"])
         cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"],
                              user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
@@ -144,6 +144,59 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     else:
         assert positive
         assert values_csv == get_s3_file_content(started_cluster, bucket, filename)
+
+
+def test_partition_by(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    partition_by = "column3"
+    values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
+    filename = "test_{_partition_id}.csv"
+    put_query = f"""INSERT INTO TABLE FUNCTION
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV', '{table_format}')
+        PARTITION BY {partition_by} VALUES {values}"""
+
+    run_query(instance, put_query)
+
+    assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test_3.csv")
+    assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test_1.csv")
+    assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
+
+
+def test_partition_by_string_column(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "col_num UInt32, col_str String"
+    partition_by = "col_str"
+    values = "(1, 'foo/bar'), (3, 'йцук'), (78, '你好')"
+    filename = "test_{_partition_id}.csv"
+    put_query = f"""INSERT INTO TABLE FUNCTION
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV', '{table_format}')
+        PARTITION BY {partition_by} VALUES {values}"""
+
+    run_query(instance, put_query)
+
+    assert '1,"foo/bar"\n' == get_s3_file_content(started_cluster, bucket, "test_foo/bar.csv")
+    assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, "test_йцук.csv")
+    assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
+
+
+def test_partition_by_const_column(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
+    partition_by = "'88'"
+    values_csv = "1,2,3\n3,2,1\n78,43,45\n"
+    filename = "test_{_partition_id}.csv"
+    put_query = f"""INSERT INTO TABLE FUNCTION
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV', '{table_format}')
+        PARTITION BY {partition_by} VALUES {values}"""
+
+    run_query(instance, put_query)
+
+    assert values_csv == get_s3_file_content(started_cluster, bucket, "test_88.csv")
 
 
 @pytest.mark.parametrize("special", [
@@ -325,6 +378,10 @@ def test_put_get_with_globs(started_cluster):
         started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, unique_prefix, table_format)
     assert run_query(instance, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
+
+    minio = started_cluster.minio_client
+    for obj in list(minio.list_objects(started_cluster.minio_bucket, prefix='{}/'.format(unique_prefix), recursive=True)):
+        minio.remove_object(started_cluster.minio_bucket, obj.object_name)
 
 
 # Test multipart put.
@@ -678,3 +735,18 @@ def test_truncate_table(started_cluster):
     assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
     assert instance.query("SELECT * FROM {}".format(name)) == ""
 
+
+def test_predefined_connection_configuration(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "test_table"
+
+    instance.query("drop table if exists {}".format(name))
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')".format(name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+
+    result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
+    assert result == instance.query("SELECT number FROM numbers(10)")

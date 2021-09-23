@@ -28,6 +28,7 @@ SRCS(
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
+    AsynchronousInsertQueue.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -48,6 +49,7 @@ SRCS(
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
     DictionaryReader.cpp
+    DuplicateOrderByVisitor.cpp
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
@@ -59,9 +61,11 @@ SRCS(
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
+    ExternalUserDefinedExecutableFunctionsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     FunctionNameNormalizer.cpp
+    GatherFunctionQuantileVisitor.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -70,7 +74,9 @@ SRCS(
     InJoinSubqueriesPreprocessor.cpp
     InternalTextLogsQueue.cpp
     InterpreterAlterQuery.cpp
+    InterpreterBackupQuery.cpp
     InterpreterCheckQuery.cpp
+    InterpreterCreateFunctionQuery.cpp
     InterpreterCreateQuery.cpp
     InterpreterCreateQuotaQuery.cpp
     InterpreterCreateRoleQuery.cpp
@@ -79,6 +85,7 @@ SRCS(
     InterpreterCreateUserQuery.cpp
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp
+    InterpreterDropFunctionQuery.cpp
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
@@ -89,6 +96,7 @@ SRCS(
     InterpreterKillQueryQuery.cpp
     InterpreterOptimizeQuery.cpp
     InterpreterRenameQuery.cpp
+    InterpreterSelectIntersectExceptQuery.cpp
     InterpreterSelectQuery.cpp
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
@@ -108,6 +116,7 @@ SRCS(
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
+    Lemmatizers.cpp
     LogicalExpressionsOptimizer.cpp
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
@@ -130,6 +139,7 @@ SRCS(
     QueryNormalizer.cpp
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
+    QueryViewsLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
@@ -140,11 +150,15 @@ SRCS(
     RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
+    SelectIntersectExceptQueryVisitor.cpp
+    Session.cpp
+    SessionLog.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
+    SynonymsExtensions.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -154,6 +168,11 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    UserDefinedExecutableFunction.cpp
+    UserDefinedExecutableFunctionFactory.cpp
+    UserDefinedSQLFunctionFactory.cpp
+    UserDefinedSQLFunctionVisitor.cpp
+    UserDefinedSQLObjectsLoader.cpp
     WindowDescription.cpp
     ZooKeeperLog.cpp
     addMissingDefaults.cpp

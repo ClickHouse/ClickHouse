@@ -13,7 +13,7 @@ left_sha=$2
 # right_pr=$3 not used for now
 right_sha=$4
 
-datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}
+datasets=${CHPC_DATASETS-"hits1 hits10 hits100 values"}
 
 declare -A dataset_paths
 dataset_paths["hits10"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar"

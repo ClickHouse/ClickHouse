@@ -1,7 +1,13 @@
+#include <string>
+
+#include "Common/MemoryTracker.h"
+#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
+#include "IO/CompressionMethod.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
 #include "TestHint.h"
+#include "TestTags.h"
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -100,6 +106,14 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -117,6 +131,7 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -197,7 +212,7 @@ private:
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
-    std::optional<WriteBufferFromFile> out_file_buf;
+    std::unique_ptr<WriteBuffer> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     /// The user could specify special file for server logs (stderr by default)
@@ -524,6 +539,18 @@ private:
     {
         UseSSL use_ssl;
 
+        MainThreadStatus::getInstance();
+
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
+
         registerFormats();
         registerFunctions();
         registerAggregateFunctions();
@@ -749,31 +776,50 @@ private:
                       << connection_parameters.host << ":" << connection_parameters.port
                       << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
-        connection = std::make_unique<Connection>(
-            connection_parameters.host,
-            connection_parameters.port,
-            connection_parameters.default_database,
-            connection_parameters.user,
-            connection_parameters.password,
-            "", /* cluster */
-            "", /* cluster_secret */
-            "client",
-            connection_parameters.compression,
-            connection_parameters.security);
-
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
 
-        if (max_client_network_bandwidth)
+        try
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-            connection->setThrottler(throttler);
-        }
+            connection = std::make_unique<Connection>(
+                connection_parameters.host,
+                connection_parameters.port,
+                connection_parameters.default_database,
+                connection_parameters.user,
+                connection_parameters.password,
+                "", /* cluster */
+                "", /* cluster_secret */
+                "client",
+                connection_parameters.compression,
+                connection_parameters.security);
 
-        connection->getServerVersion(
-            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            if (max_client_network_bandwidth)
+            {
+                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                connection->setThrottler(throttler);
+            }
+
+            connection->getServerVersion(
+                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        }
+        catch (const Exception & e)
+        {
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                std::cerr << std::endl
+                    << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                    << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                    << "and deleting this file will reset the password." << std::endl
+                    << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                    << std::endl;
+            }
+
+            throw;
+        }
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
@@ -987,18 +1033,29 @@ private:
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
+            fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
+                server_version,
+                getExceptionMessage(*server_exception, print_stack_trace, true));
             if (is_interactive)
-                std::cerr << std::endl;
+            {
+                fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
+            }
         }
 
         if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
+            fmt::print(stderr, "Error on processing query: {}\n", client_exception->message());
             if (is_interactive)
             {
                 fmt::print(stderr, "\n");
+            }
+            else
+            {
+                fmt::print(stderr, "(query: {})\n", full_query);
             }
         }
 
@@ -1023,12 +1080,17 @@ private:
 
         bool echo_query = echo_queries;
 
+        /// Test tags are started with "--" so they are interpreted as comments anyway.
+        /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+        /// because we don't want test tags to be echoed.
+        size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
         /// An exception is VALUES format where we also support semicolon in
         /// addition to end of line.
 
-        const char * this_query_begin = all_queries_text.data();
+        const char * this_query_begin = all_queries_text.data() + test_tags_length;
         const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
         while (this_query_begin < all_queries_end)
@@ -1200,13 +1262,17 @@ private:
                     if (!server_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                        fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
+                            test_hint.serverError(),
+                            full_query);
                     }
                     else if (server_exception->code() != test_hint.serverError())
                     {
                         error_matches_hint = false;
-                        std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                                  << "." << std::endl;
+                        fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
+                            test_hint.serverError(),
+                            server_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1215,13 +1281,17 @@ private:
                     if (!client_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                        fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
+                            test_hint.clientError(),
+                            full_query);
                     }
                     else if (client_exception->code() != test_hint.clientError())
                     {
                         error_matches_hint = false;
-                        fmt::print(
-                            stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                        fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
+                            test_hint.clientError(),
+                            client_exception->code(),
+                            full_query);
                     }
                 }
 
@@ -1237,13 +1307,17 @@ private:
             {
                 if (test_hint.clientError())
                 {
-                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
+                        test_hint.clientError(),
+                        full_query);
                     error_matches_hint = false;
                 }
 
                 if (test_hint.serverError())
                 {
-                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
+                        test_hint.serverError(),
+                        full_query);
                     error_matches_hint = false;
                 }
             }
@@ -1452,7 +1526,12 @@ private:
                         "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
@@ -1795,7 +1874,7 @@ private:
     void processInsertQuery()
     {
         const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+        if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(
@@ -1863,10 +1942,42 @@ private:
     {
         /// If INSERT data must be sent.
         auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        /// If query isn't parsed, no information can be got from it.
         if (!parsed_insert_query)
             return;
 
-        if (parsed_insert_query->data)
+        /// If data is got from file (maybe compressed file)
+        if (parsed_insert_query->infile)
+        {
+            /// Get name of this file (path to file)
+            const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
+            const auto in_file = in_file_node.value.safeGet<std::string>();
+
+            std::string compression_method;
+            /// Compression method can be specified in query
+            if (parsed_insert_query->compression)
+            {
+                const auto & compression_method_node = parsed_insert_query->compression->as<ASTLiteral &>();
+                compression_method = compression_method_node.value.safeGet<std::string>();
+            }
+
+            /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+            /// Buffer for reading from file is created and wrapped with appropriate compression method
+            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+
+            /// Now data is ready to be sent on server.
+            try
+            {
+                sendDataFrom(*in_buffer, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from file");
+                throw;
+            }
+        }
+        /// If query already has data to sent
+        else if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
@@ -1944,8 +2055,21 @@ private:
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;
-        while (executor.pull(block))
+        while (true)
         {
+            try
+            {
+                if (!executor.pull(block))
+                {
+                    break;
+                }
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("(in query: {})", full_query));
+                throw;
+            }
+
             /// Check if server send Log packet
             receiveLogs();
 
@@ -2219,7 +2343,10 @@ private:
             if (!pager.empty())
             {
                 signal(SIGPIPE, SIG_IGN);
-                pager_cmd = ShellCommand::execute(pager, true);
+
+                ShellCommand::Config config(pager);
+                config.pipe_stdin_only = true;
+                pager_cmd = ShellCommand::execute(config);
                 out_buf = &pager_cmd->in;
             }
             else
@@ -2238,8 +2365,18 @@ private:
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
-                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &*out_file_buf;
+                    std::string compression_method;
+                    if (query_with_output->compression)
+                    {
+                        const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                        compression_method = compression_method_node.value.safeGet<std::string>();
+                    }
+
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        chooseCompressionMethod(out_file, compression_method),
+                        /* compression level = */ 3
+                    );
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)
@@ -2259,9 +2396,9 @@ private:
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
             if (!need_render_progress)
-                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
             else
-                block_out_stream = context->getOutputStream(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
             block_out_stream->writePrefix();
         }
@@ -2573,6 +2710,7 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
+            ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
         ;
 
         Settings cmd_settings;

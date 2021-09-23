@@ -17,8 +17,24 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_REQUEST_PARAMETER;
+}
+
 namespace
 {
+    void processError(HTTPServerResponse & response, const std::string & message)
+    {
+        response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+
+        if (!response.sent())
+            *response.send() << message << std::endl;
+
+        LOG_WARNING(&Poco::Logger::get("LibraryBridge"), message);
+    }
+
     std::shared_ptr<Block> parseColumns(std::string && column_string)
     {
         auto sample_block = std::make_shared<Block>();
@@ -30,9 +46,8 @@ namespace
         return sample_block;
     }
 
-    std::vector<uint64_t> parseIdsFromBinary(const std::string & ids_string)
+    std::vector<uint64_t> parseIdsFromBinary(ReadBuffer & buf)
     {
-        ReadBufferFromString buf(ids_string);
         std::vector<uint64_t> ids;
         readVectorBinary(ids, buf);
         return ids;
@@ -67,13 +82,36 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
     std::string method = params.get("method");
     std::string dictionary_id = params.get("dictionary_id");
-    LOG_TRACE(log, "Library method: '{}', dictionary id: {}", method, dictionary_id);
 
+    LOG_TRACE(log, "Library method: '{}', dictionary id: {}", method, dictionary_id);
     WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
-        if (method == "libNew")
+        bool lib_new = (method == "libNew");
+        if (method == "libClone")
+        {
+            if (!params.has("from_dictionary_id"))
+            {
+                processError(response, "No 'from_dictionary_id' in request URL");
+                return;
+            }
+
+            std::string from_dictionary_id = params.get("from_dictionary_id");
+            bool cloned = false;
+            cloned = SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
+
+            if (cloned)
+            {
+                writeStringBinary("1", out);
+            }
+            else
+            {
+                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead");
+                lib_new = true;
+            }
+        }
+        if (lib_new)
         {
             auto & read_buf = request.getStream();
             params.read(read_buf);
@@ -92,6 +130,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             std::string library_path = params.get("library_path");
             const auto & settings_string = params.get("library_settings");
+
+            LOG_DEBUG(log, "Parsing library settings from binary string");
             std::vector<std::string> library_settings = parseNamesFromBinary(settings_string);
 
             /// Needed for library dictionary
@@ -102,6 +142,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             const auto & attributes_string = params.get("attributes_names");
+
+            LOG_DEBUG(log, "Parsing attributes names from binary string");
             std::vector<std::string> attributes_names = parseNamesFromBinary(attributes_string);
 
             /// Needed to parse block from binary string format
@@ -140,54 +182,63 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
             writeStringBinary("1", out);
         }
-        else if (method == "libClone")
-        {
-            if (!params.has("from_dictionary_id"))
-            {
-                processError(response, "No 'from_dictionary_id' in request URL");
-                return;
-            }
-
-            std::string from_dictionary_id = params.get("from_dictionary_id");
-            LOG_TRACE(log, "Calling libClone from {} to {}", from_dictionary_id, dictionary_id);
-            SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
-            writeStringBinary("1", out);
-        }
         else if (method == "libDelete")
         {
-            SharedLibraryHandlerFactory::instance().remove(dictionary_id);
+            auto deleted = SharedLibraryHandlerFactory::instance().remove(dictionary_id);
+
+            /// Do not throw, a warning is ok.
+            if (!deleted)
+                LOG_WARNING(log, "Cannot delete library for with dictionary id: {}, because such id was not found.", dictionary_id);
+
             writeStringBinary("1", out);
         }
         else if (method == "isModified")
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            if (!library_handler)
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
+
             bool res = library_handler->isModified();
             writeStringBinary(std::to_string(res), out);
         }
         else if (method == "supportsSelectiveLoad")
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            if (!library_handler)
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
+
             bool res = library_handler->supportsSelectiveLoad();
             writeStringBinary(std::to_string(res), out);
         }
         else if (method == "loadAll")
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            if (!library_handler)
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
+
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadAll() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadAll();
 
+            LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
         else if (method == "loadIds")
         {
+            LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
             String ids_string;
-            readString(ids_string, request.getStream());
-            std::vector<uint64_t> ids = parseIdsFromBinary(ids_string);
+            std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            if (!library_handler)
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
+
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadIds() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadIds(ids);
+
+            LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
@@ -219,8 +270,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto block = reader->read();
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            if (!library_handler)
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
+
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadKeys() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadKeys(block.getColumns());
+
+            LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
@@ -228,8 +285,9 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     catch (...)
     {
         auto message = getCurrentExceptionMessage(true);
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
+        LOG_ERROR(log, "Failed to process request for dictionary_id: {}. Error: {}", dictionary_id, message);
 
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
         try
         {
             writeStringBinary(message, out);
@@ -239,8 +297,6 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             tryLogCurrentException(log);
         }
-
-        tryLogCurrentException(log);
     }
 
     try
@@ -254,24 +310,30 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 }
 
 
-void LibraryRequestHandler::processError(HTTPServerResponse & response, const std::string & message)
-{
-    response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
-    if (!response.sent())
-        *response.send() << message << std::endl;
-
-    LOG_WARNING(log, message);
-}
-
-
-void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
+void LibraryExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
+        LOG_TRACE(log, "Request URI: {}", request.getURI());
+        HTMLForm params(getContext()->getSettingsRef(), request);
+
+        if (!params.has("dictionary_id"))
+        {
+            processError(response, "No 'dictionary_id' in request URL");
+            return;
+        }
+
+        std::string dictionary_id = params.get("dictionary_id");
+        auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+        String res;
+        if (library_handler)
+            res = "1";
+        else
+            res = "0";
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
-        const char * data = "Ok.\n";
-        response.sendBuffer(data, strlen(data));
+        LOG_TRACE(log, "Senging ping response: {} (dictionary id: {})", res, dictionary_id);
+        response.sendBuffer(res.data(), res.size());
     }
     catch (...)
     {

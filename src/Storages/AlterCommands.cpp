@@ -312,6 +312,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
     {
         AlterCommand command;
@@ -679,6 +687,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
     while (true)
     {
+        if (from->equals(*to))
+            return true;
+
         auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
@@ -697,9 +708,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
+        if (nullable_to)
         {
-            from = nullable_from->getNestedType().get();
+            from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -840,52 +851,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 }
 
 
-String alterTypeToString(const AlterCommand::Type type)
-{
-    switch (type)
-    {
-    case AlterCommand::Type::ADD_COLUMN:
-        return "ADD COLUMN";
-    case AlterCommand::Type::ADD_CONSTRAINT:
-        return "ADD CONSTRAINT";
-    case AlterCommand::Type::ADD_INDEX:
-        return "ADD INDEX";
-    case AlterCommand::Type::ADD_PROJECTION:
-        return "ADD PROJECTION";
-    case AlterCommand::Type::COMMENT_COLUMN:
-        return "COMMENT COLUMN";
-    case AlterCommand::Type::DROP_COLUMN:
-        return "DROP COLUMN";
-    case AlterCommand::Type::DROP_CONSTRAINT:
-        return "DROP CONSTRAINT";
-    case AlterCommand::Type::DROP_INDEX:
-        return "DROP INDEX";
-    case AlterCommand::Type::DROP_PROJECTION:
-        return "DROP PROJECTION";
-    case AlterCommand::Type::MODIFY_COLUMN:
-        return "MODIFY COLUMN";
-    case AlterCommand::Type::MODIFY_ORDER_BY:
-        return "MODIFY ORDER BY";
-    case AlterCommand::Type::MODIFY_SAMPLE_BY:
-        return "MODIFY SAMPLE BY";
-    case AlterCommand::Type::MODIFY_TTL:
-        return "MODIFY TTL";
-    case AlterCommand::Type::MODIFY_SETTING:
-        return "MODIFY SETTING";
-    case AlterCommand::Type::RESET_SETTING:
-        return "RESET SETTING";
-    case AlterCommand::Type::MODIFY_QUERY:
-        return "MODIFY QUERY";
-    case AlterCommand::Type::RENAME_COLUMN:
-        return "RENAME COLUMN";
-    case AlterCommand::Type::REMOVE_TTL:
-        return "REMOVE TTL";
-    default:
-        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
-    }
-
-}
-
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
@@ -1003,6 +968,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
+
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -1274,6 +1240,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+}
+
+bool AlterCommands::hasSettingsAlterCommand() const
+{
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const
