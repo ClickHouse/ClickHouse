@@ -16,16 +16,6 @@ echo "
     INSERT INTO rocksdb_race SELECT '1_' || toString(number), number FROM numbers(100000);
 " | $CLICKHOUSE_CLIENT -n
 
-function read_thread()
-{
-    while true; do
-        echo "
-            SELECT * FROM rocksdb_race FORMAT Null;
-        " | $CLICKHOUSE_CLIENT -n
-    done
-}
-
-
 function read_stat_thread()
 {
     while true; do
@@ -45,28 +35,14 @@ function truncate_thread()
     done
 }
 
-
-function insert_thread()
-{
-    while true; do
-        echo "
-            INSERT INTO rocksdb_race SELECT '2_' || toString(rand()), number FROM numbers(100000);
-        " | $CLICKHOUSE_CLIENT -n
-    done
-}
-
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_thread;
 export -f read_stat_thread;
 export -f truncate_thread;
 
 TIMEOUT=20
 
-# timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-# timeout $TIMEOUT bash -c read_thread 2> /dev/null &
 timeout $TIMEOUT bash -c read_stat_thread 2> /dev/null &
 timeout $TIMEOUT bash -c truncate_thread 2> /dev/null &
-
 
 wait
 
