@@ -51,8 +51,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnUInt64 * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        const typename ColumnVector<UInt64>::Container & data = column->getData();
+        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        const auto & data = column->getData();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
