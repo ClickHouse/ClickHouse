@@ -810,7 +810,7 @@ If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
@@ -818,23 +818,23 @@ Default value: 2013265920.
 
 ## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
 
-The interval in seconds for ClickHouse to execute the cleanup old temporary directories.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
-Default value: 60.
+Default value: `60` seconds.
 
 ## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
 
-The interval in seconds for ClickHouse to execute the cleanup old parts, WALs, and mutations.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
-Default value: 1.
+Default value: `1` second.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
