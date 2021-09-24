@@ -19,14 +19,10 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
+    session.makeSessionContext();
 
     if (!CurrentThread::isInitialized())
         thread_status.emplace();
-
-    query_context = session.makeQueryContext();
-    query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
-    if (send_progress)
-        query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 }
 
 LocalConnection::~LocalConnection()
@@ -65,6 +61,13 @@ void LocalConnection::sendQuery(
     const ClientInfo *,
     bool)
 {
+    query_context = session.makeQueryContext();
+    query_context->setCurrentQueryId(query_id_);
+    if (send_progress)
+        query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+
+    CurrentThread::QueryScope query_scope_holder(query_context);
+
     state.reset();
     state.emplace();
 
@@ -75,8 +78,6 @@ void LocalConnection::sendQuery(
         state->after_send_progress.restart();
 
     next_packet_type.reset();
-    query_context->setCurrentQueryId(query_id_);
-    CurrentThread::QueryScope query_scope_holder(query_context);
 
     try
     {
@@ -399,7 +400,7 @@ const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
 
 void LocalConnection::sendExternalTablesData(ExternalTablesData &)
 {
-    /// Do nothing.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)

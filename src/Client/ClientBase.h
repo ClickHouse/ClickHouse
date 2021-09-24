@@ -201,6 +201,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
     QueryFuzzer fuzzer;
