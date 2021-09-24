@@ -114,6 +114,8 @@ struct MergeListElement : boost::noncopyable
 
     MergeInfo getInfo() const;
 
+    MergeListElement * ptr() { return this; }
+
     ~MergeListElement();
 };
 

@@ -47,21 +47,21 @@ class MergeProgressCallback
 {
 public:
     MergeProgressCallback(
-        MergeList::Entry & merge_entry_, UInt64 & watch_prev_elapsed_, MergeStageProgress & stage_)
-        : merge_entry(merge_entry_)
+        MergeListElement * merge_list_element_ptr_, UInt64 & watch_prev_elapsed_, MergeStageProgress & stage_)
+        : merge_list_element_ptr(merge_list_element_ptr_)
         , watch_prev_elapsed(watch_prev_elapsed_)
         , stage(stage_)
     {
         updateWatch();
     }
 
-    MergeList::Entry & merge_entry;
+    MergeListElement * merge_list_element_ptr;
     UInt64 & watch_prev_elapsed;
     MergeStageProgress & stage;
 
     void updateWatch()
     {
-        UInt64 watch_curr_elapsed = merge_entry->watch.elapsed();
+        UInt64 watch_curr_elapsed = merge_list_element_ptr->watch.elapsed();
         ProfileEvents::increment(ProfileEvents::MergesTimeMilliseconds, (watch_curr_elapsed - watch_prev_elapsed) / 1000000);
         watch_prev_elapsed = watch_curr_elapsed;
     }
@@ -76,15 +76,15 @@ public:
         }
         updateWatch();
 
-        merge_entry->bytes_read_uncompressed += value.read_bytes;
+        merge_list_element_ptr->bytes_read_uncompressed += value.read_bytes;
         if (stage.is_first)
-            merge_entry->rows_read += value.read_rows;
+            merge_list_element_ptr->rows_read += value.read_rows;
 
         stage.total_rows += value.total_rows_to_read;
         stage.rows_read += value.read_rows;
         if (stage.total_rows > 0)
         {
-            merge_entry->progress.store(
+            merge_list_element_ptr->progress.store(
                 stage.initial_progress + stage.weight * stage.rows_read / stage.total_rows,
                 std::memory_order_relaxed);
         }
