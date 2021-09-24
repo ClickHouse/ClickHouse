@@ -7,7 +7,9 @@ toc_title: External Disks for Storing Data
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely — on [Amazon S3](https://aws.amazon.com/s3/) disks or in the Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)). 
 
-To work with data stored on `Amazon S3` disks use [S3](../engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](../engines/table-engines/integrations/hdfs.md) table engine. 
+To work with data stored on `Amazon S3` disks use [S3](../engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](../engines/table-engines/integrations/hdfs.md) table engine.
+
+To store data on a web server as static files use a disk with type [web](#storing-data-on-webserver).
 
 ## Zero-copy Replication {#zero-copy}
 
@@ -118,6 +120,10 @@ Example of disk configuration:
 
 You can store data on a web server as static files (for example, table's data directory) using a disk with type `web` and run queries on this data. It can be useful for serving public datasets.
 
+The following types of queries are not supported: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) and [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
+
+Supports only for tables of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) and [Log](../engines/table-engines/log-family/log.md) families. To access the data stored on the `web` disk, use the [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
+
 Example of disk configuration:
 
 ``` xml
@@ -142,8 +148,6 @@ Example of disk configuration:
 </yandex>
 ```
 
-You can use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
-
 Required parameters:
 
 -   `type` — `web`. Otherwise the disk is not created.
@@ -154,3 +158,5 @@ Optional parameters:
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
 -   `remote_disk_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
 -   `remote_disk_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
+
+Use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
