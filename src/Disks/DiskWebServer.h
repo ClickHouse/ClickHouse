@@ -185,7 +185,7 @@ private:
 
     struct FileData
     {
-        FileType type;
+        FileType type{};
         size_t size = 0;
     };
 
