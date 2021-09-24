@@ -64,10 +64,10 @@
 
     <mmap_cache_size>1000</mmap_cache_size>
 
-    <path>/var/lib/clickhouse/</path>
+    <path>./</path>
 
-    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <tmp_path>./tmp/</tmp_path>
+    <user_files_path>./user_files/</user_files_path>
     <ldap_servers>
     </ldap_servers>
     <user_directories>
