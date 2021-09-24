@@ -631,7 +631,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     }
     catch (DB::Exception & exception)
     {
-        exception.addMessage("while inserting into {}", storage.getNameForLogs());
+        exception.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::current_exception();
     }
     catch (...)
