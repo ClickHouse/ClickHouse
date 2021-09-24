@@ -95,6 +95,7 @@ void MergePlainMergeTreeTask::prepare()
             future_part,
             metadata_snapshot,
             merge_list_entry.get(),
+            {} /* projection_merge_list_element */,
             table_lock_holder,
             time(nullptr),
             storage.getContext(),
