@@ -997,13 +997,15 @@ bool StorageRabbitMQ::streamToViews()
         looping_task->activateAndSchedule();
     }
 
-    PushingPipelineExecutor executor(block_io.pipeline);
-    executor.start();
-    in->readPrefix();
-    while (auto block = in->read())
-        executor.push(std::move(block));
-    executor.finish();
-    in->readSuffix();
+    {
+        PushingPipelineExecutor executor(block_io.pipeline);
+        in->readPrefix();
+        executor.start();
+        while (auto block = in->read())
+            executor.push(std::move(block));
+        in->readSuffix();
+        executor.finish();
+    }
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

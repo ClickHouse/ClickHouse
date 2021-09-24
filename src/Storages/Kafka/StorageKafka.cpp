@@ -642,19 +642,21 @@ bool StorageKafka::streamToViews()
     // It will be cancelled on underlying layer (kafka buffer)
 
     size_t rows = 0;
-    PushingPipelineExecutor executor(block_io.pipeline);
-
-    in->readPrefix();
-    executor.start();
-
-    while (auto block = in->read())
     {
-        rows += block.rows();
-        executor.push(std::move(block));
-    }
+        PushingPipelineExecutor executor(block_io.pipeline);
 
-    in->readSuffix();
-    executor.finish();
+        in->readPrefix();
+        executor.start();
+
+        while (auto block = in->read())
+        {
+            rows += block.rows();
+            executor.push(std::move(block));
+        }
+
+        in->readSuffix();
+        executor.finish();
+    }
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)
