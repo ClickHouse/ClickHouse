@@ -2,6 +2,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
@@ -21,20 +22,19 @@ FileLogSource::FileLogSource(
     StorageFileLog & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_,
-    const Names & columns,
     size_t max_block_size_,
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    : SourceWithProgress(metadata_snapshot_->getSampleBlockWithVirtuals(storage_.getVirtuals()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
-    , column_names(columns)
     , max_block_size(max_block_size_)
     , poll_time_out(poll_time_out_)
     , non_virtual_header(metadata_snapshot_->getSampleBlockNonMaterialized())
-    , column_names_and_types(metadata_snapshot_->getColumns().getByNames(ColumnsDescription::All, columns, true))
+    , virtual_header(
+          metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 }
@@ -44,53 +44,12 @@ Chunk FileLogSource::generate()
     if (!buffer || buffer->noRecords())
         return {};
 
-    MutableColumns read_columns = non_virtual_header.cloneEmptyColumns();
+    MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+    auto input_format
+        = FormatFactory::instance().getInputFormat(storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
-    InputPort port(input_format->getPort().getHeader(), input_format.get());
-    connect(input_format->getPort(), port);
-    port.setNeeded();
-
-    std::optional<std::string> exception_message;
-    auto read_file_log = [&] {
-        size_t new_rows = 0;
-        while (true)
-        {
-            auto status = input_format->prepare();
-
-            switch (status)
-            {
-                case IProcessor::Status::Ready:
-                    input_format->work();
-                    break;
-
-                case IProcessor::Status::Finished:
-                    input_format->resetParser();
-                    return new_rows;
-
-                case IProcessor::Status::PortFull:
-                {
-                    auto chunk = port.pull();
-
-                    auto chunk_rows = chunk.getNumRows();
-                    new_rows += chunk_rows;
-
-                    auto columns = chunk.detachColumns();
-                    for (size_t i = 0, s = columns.size(); i < s; ++i)
-                    {
-                        read_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-                    }
-                    break;
-                }
-                case IProcessor::Status::NeedData:
-                case IProcessor::Status::Async:
-                case IProcessor::Status::ExpandPipeline:
-                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    };
+    StreamingFormatExecutor executor(non_virtual_header, input_format);
 
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
@@ -100,25 +59,17 @@ Chunk FileLogSource::generate()
     {
         size_t new_rows = 0;
         if (buffer->poll())
-        {
-            try
-            {
-                new_rows = read_file_log();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-        else
-        {
-            /// No records polled, should break out early, since
-            /// file status can not be updated during streamToViews
-            break;
-        }
+            new_rows = executor.execute();
 
         if (new_rows)
         {
+            auto file_name = buffer->getFileName();
+            auto offset = buffer->getOffset();
+            for (size_t i = 0; i < new_rows; ++i)
+            {
+                virtual_columns[0]->insert(file_name);
+                virtual_columns[1]->insert(offset);
+            }
             total_rows = total_rows + new_rows;
         }
         else /// poll succeed, but parse failed
@@ -137,13 +88,11 @@ Chunk FileLogSource::generate()
     if (total_rows == 0)
         return {};
 
-    Columns result_columns;
-    result_columns.reserve(column_names_and_types.size());
+    auto result_columns = executor.getResultColumns();
 
-    for (const auto & elem : column_names_and_types)
+    for (auto & column : virtual_columns)
     {
-        auto index = non_virtual_header.getPositionByName(elem.getNameInStorage());
-        result_columns.emplace_back(std::move(read_columns[index]));
+        result_columns.emplace_back(std::move(column));
     }
 
     return Chunk(std::move(result_columns), total_rows);

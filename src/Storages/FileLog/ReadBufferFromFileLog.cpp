@@ -155,7 +155,10 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
             {
                 throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
             }
-            std::getline(reader, record);
+            UInt64 start_offset = reader.tellg();
+            std::getline(reader, record.data);
+            record.file_name = file_names[i];
+            record.offset = start_offset;
             new_records.emplace_back(record);
             ++read_records_size;
         }
@@ -192,8 +195,8 @@ bool ReadBufferFromFileLog::nextImpl()
     if (!allowed || !hasMorePolledRecords())
         return false;
 
-    auto * new_position = const_cast<char *>(current->data());
-    BufferBase::set(new_position, current->size(), 0);
+    auto * new_position = const_cast<char *>(current->data.data());
+    BufferBase::set(new_position, current->data.size(), 0);
     allowed = false;
 
     ++current;

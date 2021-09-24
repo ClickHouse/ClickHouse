@@ -55,6 +55,10 @@ public:
     auto & getFileNames() { return file_names; }
     auto & getFileStatuses() { return file_statuses; }
 
+    NamesAndTypesList getVirtuals() const override;
+
+    static Names getVirtualColumnNames();
+
 protected:
     StorageFileLog(
         const StorageID & table_id_,
