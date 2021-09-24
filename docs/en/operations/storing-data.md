@@ -142,7 +142,7 @@ Example of disk configuration:
 </yandex>
 ```
 
-You can use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to set the maximum number of retries during a single HTTP read.
+You can use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
 
 Required parameters:
 
