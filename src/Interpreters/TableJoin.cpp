@@ -111,8 +111,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
 
 void TableJoin::resetCollected()
 {
-    clauses = std::vector<JoinOnClause>(1);
-
+    clauses.clear();
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
     original_names.clear();
@@ -235,6 +234,14 @@ void TableJoin::optimizeClauses()
                 MAX_DISJUNCTS);
         }
     }
+}
+
+void TableJoin::addDisjunct()
+{
+    clauses.emplace_back();
+
+    if (getStorageJoin() && clauses.size() > 1)
+        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
@@ -616,6 +623,7 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
                 right_key_name, rtype->second->getName(),
                 ex.message());
         }
+
         if (!allow_right && !common_type->equals(*rtype->second))
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,

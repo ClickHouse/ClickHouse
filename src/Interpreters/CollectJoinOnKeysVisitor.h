@@ -92,6 +92,7 @@ private:
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
     static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
+public:
     static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);
 };
 
