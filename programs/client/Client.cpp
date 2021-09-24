@@ -1078,6 +1078,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             exit(exit_code);
         }
     }
+    send_external_tables = true;
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
