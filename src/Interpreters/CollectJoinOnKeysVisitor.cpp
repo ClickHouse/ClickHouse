@@ -76,11 +76,6 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
     addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right});
 }
 
-void CollectJoinOnKeysMatcher::Data::optimize()
-{
-    analyzed_join.optimizeClauses();
-}
-
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
 {
     if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
