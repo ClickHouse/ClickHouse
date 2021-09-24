@@ -1,5 +1,6 @@
 #  docker build -t clickhouse/fasttest .
 FROM ubuntu:20.04
+FROM clickhouse/test-util
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
@@ -89,5 +90,4 @@ ENV PULL_REQUEST_NUMBER=''
 ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
-COPY ../process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]
