@@ -953,11 +953,11 @@ bool StorageRabbitMQ::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(nullptr, rabbitmq_context, false, true, true);
-    auto chain = interpreter.buildChain(table, table->getInMemoryMetadataPtr(), {});
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
+    auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto column_names = chain.getInputHeader().getNames();
+    auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
     auto block_size = getMaxBlockSize();
@@ -997,8 +997,7 @@ bool StorageRabbitMQ::streamToViews()
         looping_task->activateAndSchedule();
     }
 
-    QueryPipeline pipeline(std::move(chain));
-    PushingPipelineExecutor executor(pipeline);
+    PushingPipelineExecutor executor(block_io.pipeline);
     executor.start();
     in->readPrefix();
     while (auto block = in->read())

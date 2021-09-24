@@ -653,8 +653,8 @@ bool StorageKafka::streamToViews()
         executor.push(std::move(block));
     }
 
-    executor.finish();
     in->readSuffix();
+    executor.finish();
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)
