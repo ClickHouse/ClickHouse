@@ -11,7 +11,6 @@ namespace rocksdb
 {
     class DB;
     class Statistics;
-    class Slice;
 }
 
 
