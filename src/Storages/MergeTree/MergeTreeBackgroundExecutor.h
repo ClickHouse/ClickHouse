@@ -128,7 +128,7 @@ private:
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
-        std::atomic_bool is_currently_deleting{false};
+        bool is_currently_deleting{false};
         /// Actually autoreset=false is needed only for unit test
         /// where multiple threads could remove tasks corresponding to the same storage
         /// This scenario in not possible in reality.
