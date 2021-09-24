@@ -1944,7 +1944,8 @@ Possible values:
    
 Default value: `1`.
 
-**See also:**
+See also:
+
 -   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
