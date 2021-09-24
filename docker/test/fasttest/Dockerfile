@@ -89,4 +89,5 @@ ENV PULL_REQUEST_NUMBER=''
 ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
+COPY ../process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]
