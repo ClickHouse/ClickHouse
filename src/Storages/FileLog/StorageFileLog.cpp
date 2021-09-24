@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -8,6 +10,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -15,15 +18,10 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
-#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <common/sleep.h>
-
-#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
@@ -39,7 +37,7 @@ namespace
 {
     const auto RESCHEDULE_MS = 500;
     const auto BACKOFF_TRESHOLD = 32000;
-    const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
+    const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 }
 
 StorageFileLog::StorageFileLog(
@@ -134,28 +132,45 @@ Pipe StorageFileLog::read(
             *this,
             metadata_snapshot,
             modified_context,
-            column_names,
             getMaxBlockSize(),
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+        pipe.getHeader().getColumnsWithTypeAndName(),
+        metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto actions = std::make_shared<ExpressionActions>(
+        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+
+    pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
+
+    return pipe;
 }
 
 void StorageFileLog::startup()
 {
-    task->holder->activateAndSchedule();
+    if (task)
+    {
+        task->holder->activateAndSchedule();
+    }
 }
 
 
 void StorageFileLog::shutdown()
 {
-    task->stream_cancelled = true;
+    if (task)
+    {
+        task->stream_cancelled = true;
 
-    LOG_TRACE(log, "Waiting for cleanup");
-    task->holder->deactivate();
+        LOG_TRACE(log, "Waiting for cleanup");
+        task->holder->deactivate();
+    }
 }
 
 size_t StorageFileLog::getMaxBlockSize() const
@@ -286,22 +301,31 @@ bool StorageFileLog::streamToViews()
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
-    auto names = block_io.out->getHeader().getNames();
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
             metadata_snapshot,
             new_context,
-            names,
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
             max_streams_number));
     }
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+        pipe.getHeader().getColumnsWithTypeAndName(),
+        block_io.out->getHeader().getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto actions = std::make_shared<ExpressionActions>(
+        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+
+    pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    pipeline.init(std::move(pipe));
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out->getHeader(), "StorageFileLog streamToViews");
 
@@ -384,6 +408,8 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileStatuses()
 {
+    if (!directory_watch)
+        return false;
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     auto error = directory_watch->getErrorAndReset();
@@ -445,5 +471,15 @@ bool StorageFileLog::updateFileStatuses()
     file_names.swap(valid_files);
 
     return events.empty() || file_names.empty();
+}
+
+NamesAndTypesList StorageFileLog::getVirtuals() const
+{
+    return NamesAndTypesList{{"_file_name", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
+}
+
+Names StorageFileLog::getVirtualColumnNames()
+{
+    return {"_file_name", "_offset"};
 }
 }

@@ -37,6 +37,9 @@ public:
 
     bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
+    auto getFileName() const { return current != records.begin() ? (current - 1)->file_name : ""; }
+    auto getOffset() const { return current != records.begin() ? (current - 1)->offset : 0; }
+
 private:
     enum class BufferStatus
     {
@@ -63,7 +66,13 @@ private:
 
     bool allowed = true;
 
-    using Record = std::string;
+    using RecordData = std::string;
+    struct Record
+    {
+        RecordData data;
+        std::string file_name;
+        UInt64 offset;
+    };
     using Records = std::vector<Record>;
 
     Records records;
