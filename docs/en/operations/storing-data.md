@@ -147,7 +147,7 @@ You can use [http_max_single_read_retries](../operations/settings/settings.md#ht
 Required parameters:
 
 -   `type` — `web`. Otherwise the disk is not created.
--   `endpoint` — The endpoint URL in `path` format. Endpoint URL should contain a root path to store data that was obtained using the `clickhouse-static-files-uploader` utility.
+-   `endpoint` — The endpoint URL in `path` format. Endpoint URL must contain a root path to store data that was obtained using the `clickhouse-static-files-uploader` utility.
 
 Optional parameters:
 
