@@ -7,6 +7,7 @@ Build-Depends: debhelper (>= 9),
                ninja-build,
                clang-13,
                llvm-13,
+               lld-13,
                libc6-dev,
                tzdata
 Standards-Version: 3.9.8
