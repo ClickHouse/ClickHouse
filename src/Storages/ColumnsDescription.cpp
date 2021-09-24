@@ -203,11 +203,10 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
             ErrorCodes::ILLEGAL_COLUMN);
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
-    FunctionNameNormalizer normalizer;
     if (column.default_desc.expression)
-        normalizer.visit(column.default_desc.expression.get());
+        FunctionNameNormalizer::visit(column.default_desc.expression.get());
     if (column.ttl)
-        normalizer.visit(column.ttl.get());
+        FunctionNameNormalizer::visit(column.ttl.get());
 
     auto insert_it = columns.cend();
 
