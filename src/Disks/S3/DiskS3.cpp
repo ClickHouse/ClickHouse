@@ -137,18 +137,20 @@ public:
         const String & bucket_,
         DiskS3::Metadata metadata_,
         size_t max_single_read_retries_,
-        size_t buf_size_)
+        size_t buf_size_,
+        bool threadpool_read_ = false)
         : ReadBufferFromRemoteFS(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
+        , threadpool_read(threadpool_read_)
     {
     }
 
     SeekableReadBufferPtr createReadBuffer(const String & path) const override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size, threadpool_read);
     }
 
 private:
@@ -156,6 +158,7 @@ private:
     const String & bucket;
     UInt64 max_single_read_retries;
     size_t buf_size;
+    bool threadpool_read;
 };
 
 DiskS3::DiskS3(
@@ -231,11 +234,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+
     auto s3_impl = std::make_unique<ReadIndirectBufferFromS3>(
         settings->client, bucket, metadata,
-        settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
+        settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size, threadpool_read);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
+    if (threadpool_read)
     {
         auto reader = getThreadPoolReader();
         auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(s3_impl));

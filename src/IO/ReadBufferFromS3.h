@@ -43,7 +43,8 @@ public:
         const String & bucket_,
         const String & key_,
         UInt64 max_single_read_retries_,
-        size_t buffer_size_);
+        size_t buffer_size_,
+        bool use_external_buffer = false);
 
     bool nextImpl() override;
 
@@ -52,6 +53,7 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
+    bool use_external_buffer;
 };
 
 }

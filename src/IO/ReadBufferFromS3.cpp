@@ -31,13 +31,15 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_,
+    UInt64 max_single_read_retries_, size_t buffer_size_, bool use_external_buffer_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , max_single_read_retries(max_single_read_retries_)
     , buffer_size(buffer_size_)
+    , use_external_buffer(use_external_buffer_)
 {
 }
 
@@ -45,11 +47,18 @@ bool ReadBufferFromS3::nextImpl()
 {
     bool next_result = false;
 
+    /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
     if (impl)
     {
-        /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
-        // impl->position() = position();
-        impl->set(working_buffer.begin(), working_buffer.size());
+        if (use_external_buffer)
+        {
+            impl->set(working_buffer.begin(), working_buffer.size());
+        }
+        else
+        {
+            impl->position() = position();
+        }
+
         assert(!impl->hasPendingData());
     }
     else
@@ -94,6 +103,7 @@ bool ReadBufferFromS3::nextImpl()
         }
     }
 
+    std::cerr << "s3 buffer size: " << impl->buffer().size() << std::endl;
     if (!next_result)
         return false;
 
