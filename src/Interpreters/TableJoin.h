@@ -226,11 +226,9 @@ public:
 
     /// if several disjuncts have exactly the same table columns
     ///    we can eliminate redundant disjuncts ORing filter conditions
-    ///    This is vital for queries like t1.key = t2.key AND (t1.a = 1 OR t2.bb > 2)
-    ///    to be compartible with merge joins and to create only one hashmap if hashjoin,
-    ///    because after DNFing it is (t1.key = t2.key AND t1.a = 1) OR (t1.key = t2.key AND t2.bb > 2)
-    ///    and we unable to proceed with mergejoin and have to deal with extra hashmap for hashjoin.
-    ///    Practically we revert DNFing in this case.
+    ///    This is needed for queries like
+    ///    SELECT * FROM t1 INNER ALL JOIN t2 ON (t1.a = t2.a  AND t1.c > 0) OR (t1.a = t2.a AND t1.b > 0);
+    ///    to be compartible with merge joins and to create only one hashmap if hashjoin.
     void optimizeClauses();
     void addDisjunct();
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
