@@ -1613,17 +1613,14 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// try to use more exact type: UInt64
 
-    if (parseNumber(buf, pos->size(), negative, 0, res))
-    {
-        auto literal = std::make_shared<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
-        node = literal;
+    parseNumber(buf, pos->size(), negative, 0, res);
 
-        return true;
-    }
+    auto literal = std::make_shared<ASTLiteral>(res);
+    literal->begin = literal_begin;
+    literal->end = ++pos;
+    node = literal;
 
-    return false;
+    return true;
 }
 
 
