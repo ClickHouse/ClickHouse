@@ -22,18 +22,17 @@ namespace ErrorCodes
 
 static const auto WAIT_MS = 10;
 
-ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(const String & url_,
-                                                                 ContextPtr context_,
-                                                                 size_t buf_size_)
+
+ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
+    const String & url_, ContextPtr context_, size_t buf_size_, size_t backoff_threshold_, size_t max_tries_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
+    , backoff_threshold_ms(backoff_threshold_)
+    , max_tries(max_tries_)
 {
-    const auto & settings = context->getSettingsRef();
-    wait_threshold_ms = settings.remote_disk_read_backoff_threashold;
-    max_tries = settings.remote_disk_read_backoff_max_tries;
 }
 
 
@@ -79,7 +78,7 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     WriteBufferFromOwnString error_msg;
     for (size_t i = 0; (i < max_tries) && !successful_read && !next_result; ++i)
     {
-        while (milliseconds_to_wait < wait_threshold_ms)
+        while (milliseconds_to_wait < backoff_threshold_ms)
         {
             try
             {
