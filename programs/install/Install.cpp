@@ -962,7 +962,7 @@ namespace
             if (isRunning(pid_file))
             {
                 throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after %zu ms",
+                    "The server process still exists after {} tries (delay: {} ms)",
                     num_kill_check_tries, kill_check_delay_ms);
             }
         }
