@@ -41,6 +41,14 @@ EOF
     echo add a comment back
     $CLICKHOUSE_CLIENT --query="ALTER TABLE comment_test_table MODIFY COMMENT 'another comment on a table';"
     get_table_comment_info
+
+    echo detach table
+    $CLICKHOUSE_CLIENT --query="DETACH TABLE comment_test_table NO DELAY;"
+    get_table_comment_info
+
+    echo re-attach table
+    $CLICKHOUSE_CLIENT --query="ATTACH TABLE comment_test_table;"
+    get_table_comment_info
 }
 
 test_table_comments "Null"
@@ -48,3 +56,4 @@ test_table_comments "Memory"
 test_table_comments "MergeTree() ORDER BY k"
 test_table_comments "Log"
 test_table_comments "TinyLog"
+test_table_comments "ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY k"
