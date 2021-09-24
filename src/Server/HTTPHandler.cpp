@@ -125,7 +125,7 @@ bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::La
                 /// If there is empty header name, it will not be processed and message about it will be in logs
                 if (config.getString("http_options_response." + config_key + ".name", "").empty())
                     LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
-                else 
+                else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
                                     config.getString("http_options_response." + config_key + ".value", ""));
 
