@@ -85,17 +85,16 @@ off_t ReadBufferFromRemoteFS::seek([[maybe_unused]] off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET is allowed");
-    /// We already made a seek and adjusted position in ReadIndirectBufferFromRemoteFS.
-    assert(offset_ == static_cast<off_t>(absolute_position));
 
-    current_buf = initialize();
+    // current_buf = initialize();
     return absolute_position;
 }
 
 
 void ReadBufferFromRemoteFS::reset()
 {
-    set(nullptr, 0);
+    current_buf.reset();
+    // set(nullptr, 0);
 }
 
 }
