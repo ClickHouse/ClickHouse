@@ -251,20 +251,22 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
 
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = nested_storage->getStorageID();
+
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(nullptr, insert_context);
-    auto chain = interpreter.buildChain(nested_storage, nested_storage->getInMemoryMetadataPtr(), {});
+    InterpreterInsertQuery interpreter(insert, insert_context);
+    auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
     auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
-    assertBlocksHaveEqualStructure(input->getPort().getHeader(), chain.getInputHeader(), "postgresql replica load from snapshot");
-    QueryPipeline pipeline(std::move(chain));
-    pipeline.complete(Pipe(std::move(input)));
+    assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.pipeline.getHeader(), "postgresql replica load from snapshot");
+    block_io.pipeline.complete(Pipe(std::move(input)));
 
-    CompletedPipelineExecutor executor(pipeline);
+    CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
 
     nested_storage = materialized_storage->prepare();
