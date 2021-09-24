@@ -172,7 +172,8 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     for (auto & table : external_tables)
         data.emplace_back(table.getData(global_context));
 
-    connection->sendExternalTablesData(data);
+    if (send_external_tables)
+        connection->sendExternalTablesData(data);
 }
 
 
@@ -376,7 +377,18 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
-    processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+    try
+    {
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+    }
+    catch (Exception & e)
+    {
+        if (!is_interactive)
+        {
+            e.addMessage("(query: {})", full_query);
+            throw;
+        }
+    }
 
     if (have_error)
         processError(full_query);
@@ -413,7 +425,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 &global_context->getClientInfo(),
                 true);
 
-            sendExternalTables(parsed_query);
+            if (send_external_tables)
+                sendExternalTables(parsed_query);
+
             receiveResult(parsed_query);
 
             break;
@@ -679,7 +693,8 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         &global_context->getClientInfo(),
         true);
 
-    sendExternalTables(parsed_query);
+    if (send_external_tables)
+        sendExternalTables(parsed_query);
 
     /// Receive description of table structure.
     Block sample;
