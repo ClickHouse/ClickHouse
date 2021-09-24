@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS datetime;
 CREATE TABLE datetime (d DateTime('UTC')) ENGINE = Memory;
 INSERT INTO datetime(d) VALUES(toDateTime('2016-06-15 23:00:00', 'UTC'))
 
+SET optimize_syntax_fuse_functions = true;
+
 SELECT quantile(0.2)(d), quantile(0.3)(d) FROM datetime;
 SELECT quantileDeterministic(0.2)(d, 1), quantileDeterministic(0.5)(d, 1) FROM datetime;
 SELECT quantileExact(0.2)(d), quantileExact(0.5)(d) FROM datetime;
@@ -14,7 +16,6 @@ SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)
 
 
 SELECT '---------After fuse result-----------';
-SET optimize_syntax_fuse_functions = true;
 SELECT 'quantile:';
 EXPLAIN SYNTAX SELECT quantile(0.2)(d), quantile(0.3)(d) FROM datetime;
 SELECT quantile(0.2)(d), quantile(0.3)(d) FROM datetime;
@@ -50,6 +51,10 @@ SELECT quantileTDigestWeighted(0.2)(d, 1), quantileTDigestWeighted(0.3)(d, 1), q
 SELECT 'quantileBFloat16:';
 EXPLAIN SYNTAX SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)(d + 1) FROM datetime;
 SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)(d + 1) FROM datetime;
+
+SELECT 'quantileBFloat16Weighted:';
+EXPLAIN SYNTAX SELECT quantileBFloat16Weighted(0.2)(d, 1), quantileBFloat16Weighted(0.3)(d, 1), quantileBFloat16Weighted(0.2)(d, 2) FROM datetime;
+SELECT quantileBFloat16Weighted(0.2)(d, 1), quantileBFloat16Weighted(0.3)(d, 1), quantileBFloat16Weighted(0.2)(d, 2) FROM datetime;
 
 EXPLAIN SYNTAX SELECT quantile(0.2)(d) as k, quantile(0.3)(d) FROM datetime order by quantile(0.2)(d);
 
