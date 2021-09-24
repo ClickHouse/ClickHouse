@@ -1933,9 +1933,9 @@ Possible values:
 
 Default value: `0`.
 
-## optimize_trivial_count_query (#optimize-trivial-count-query)
+## optimize_trivial_count_query {#optimize-trivial-count-query}
 
-Enables or disables optimization by metadata for trivial query `SELECT count() FROM table`. If row-level security is set, disable trivial count query optimization.
+Enables or disables the optimization to trivial query `SELECT count () FROM table` using metadata from MergeTree. If you need to use row-level security, disable trivial count query optimization.
 
 Possible values:
 
