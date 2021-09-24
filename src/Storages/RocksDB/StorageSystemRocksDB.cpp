@@ -103,7 +103,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
         auto statistics = tables[database][table]->getRocksDBStatistics();
         if (!statistics)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB statistics is not avaliable");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB statistics are not available");
 
         for (auto [tick, name] : rocksdb::TickersNameMap)
         {

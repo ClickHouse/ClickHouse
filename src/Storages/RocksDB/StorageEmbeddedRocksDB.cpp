@@ -36,7 +36,6 @@
 #include <rocksdb/convenience.h>
 
 #include <filesystem>
-#include <mutex>
 #include <shared_mutex>
 
 
