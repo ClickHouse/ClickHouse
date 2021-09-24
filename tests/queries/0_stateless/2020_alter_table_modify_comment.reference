@@ -15,6 +15,13 @@ add a comment back
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
+
+re-attach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
+comment=	another comment on a table
+
 engine : Memory
 initial comment
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Memory\nCOMMENT \'Test table with comment\'
@@ -29,6 +36,13 @@ CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\n
 comment=	
 
 add a comment back
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Memory\nCOMMENT \'another comment on a table\'
+comment=	another comment on a table
+
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Memory\nCOMMENT \'another comment on a table\'
+
+re-attach table
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Memory\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
@@ -49,6 +63,13 @@ add a comment back
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'another comment on a table\'
+
+re-attach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'another comment on a table\'
+comment=	another comment on a table
+
 engine : Log
 initial comment
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Log\nCOMMENT \'Test table with comment\'
@@ -63,6 +84,13 @@ CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\n
 comment=	
 
 add a comment back
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Log\nCOMMENT \'another comment on a table\'
+comment=	another comment on a table
+
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Log\nCOMMENT \'another comment on a table\'
+
+re-attach table
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Log\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
@@ -82,4 +110,35 @@ comment=
 add a comment back
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = TinyLog\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
+
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = TinyLog\nCOMMENT \'another comment on a table\'
+
+re-attach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = TinyLog\nCOMMENT \'another comment on a table\'
+comment=	another comment on a table
+
+engine : ReplicatedMergeTree('/clickhouse/2020_alter_table_modify_comment_default', '1') ORDER BY k
+initial comment
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+comment=	Test table with comment
+
+change a comment
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+comment=	Test table with comment
+
+remove a comment
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+comment=	Test table with comment
+
+add a comment back
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+comment=	Test table with comment
+
+detach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+
+re-attach table
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+comment=	Test table with comment
 

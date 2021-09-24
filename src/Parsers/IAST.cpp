@@ -49,10 +49,15 @@ size_t IAST::checkSize(size_t max_size) const
 
 void IAST::reset(IAST *& field)
 {
-    std::find_if(children.begin(), children.end(), [field](const auto & p)
+    const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
     {
        return p.get() == field;
     });
+
+    if (child == children.end())
+        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+
+    children.erase(child);
     field = nullptr;
 }
 
