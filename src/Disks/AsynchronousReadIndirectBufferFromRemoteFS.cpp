@@ -36,6 +36,13 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 {
     IAsynchronousReader::Request request;
 
+    impl->set(impl->buffer().begin(), impl->buffer().size());
+    if (impl->initialized())
+    {
+        impl->position() = impl->buffer().end();
+        assert(!impl->hasPendingData());
+    }
+
     auto remote_fd = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>();
     remote_fd->impl = impl;
 
@@ -51,11 +58,6 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (prefetch_future.valid())
         return;
 
-    if (impl->initialized())
-    {
-        impl->position() = impl->buffer().end(); /// May be should try to do this differently.
-        assert(!impl->hasPendingData());
-    }
     prefetch_future = readNext();
 }
 
@@ -74,17 +76,19 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
-        if (impl->initialized())
-        {
-            impl->position() = position();
-            assert(!impl->hasPendingData());
-        }
+        // if (impl->initialized())
+        // {
+        //     impl->position() = position();
+        //     assert(!impl->hasPendingData());
+        // }
         size = readNext().get();
     }
 
     if (size)
     {
-        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+        //set(working_buffer.begin(), working_buffer.size());
+        swap(*impl);
+        // BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
         impl->absolute_position += working_buffer.size();
     }
 
@@ -138,8 +142,9 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
         prefetch_future = {};
     }
 
-    impl->seek(impl->absolute_position, SEEK_SET);
+    // impl->seek(impl->absolute_position, SEEK_SET);
     pos = working_buffer.end();
+    impl->reset();
 
     return impl->absolute_position;
 }

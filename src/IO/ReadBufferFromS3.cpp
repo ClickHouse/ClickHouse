@@ -48,7 +48,8 @@ bool ReadBufferFromS3::nextImpl()
     if (impl)
     {
         /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
-        impl->position() = position();
+        // impl->position() = position();
+        impl->set(working_buffer.begin(), working_buffer.size());
         assert(!impl->hasPendingData());
     }
     else
