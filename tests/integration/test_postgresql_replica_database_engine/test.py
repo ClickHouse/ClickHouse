@@ -149,12 +149,10 @@ def check_tables_are_synchronized(table_name, order_by='key', postgres_database=
 def started_cluster():
     try:
         cluster.start()
-        conn = get_postgres_conn(ip=cluster.postgres_ip,
-                                 port=cluster.postgres_port)
+        conn = get_postgres_conn(ip=cluster.postgres_ip, port=cluster.postgres_port)
         cursor = conn.cursor()
         create_postgres_db(cursor, 'postgres_database')
-        create_clickhouse_postgres_db(ip=cluster.postgres_ip,
-                                      port=cluster.postgres_port)
+        create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port)
 
         instance.query("DROP DATABASE IF EXISTS test_database")
         yield cluster
@@ -1122,6 +1120,18 @@ def test_remove_table_from_replication(started_cluster):
 
     for i in range(NUM_TABLES):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
+
+
+def test_predefined_connection_configuration(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute(f'CREATE TABLE test_table (key integer PRIMARY KEY, value integer)')
+
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    check_tables_are_synchronized("test_table");
+    drop_materialized_db()
 
 
 if __name__ == '__main__':
