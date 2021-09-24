@@ -61,7 +61,60 @@ For some functions the first argument (the lambda function) can be omitted. In t
 
 ## User Defined Functions {#user-defined-functions}
 
-Custom functions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
+Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
+
+The other option is to create functions using XML configuration. Add the path to a function configuration file inside `user_defined_executable_functions_config` tag. Wildcard symbol `*` may be used inside the path. 
+``` xml
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+```
+Function configuration files are searched inside path specified by `user_files_path` setting.
+
+Function configuration contains:
+
+-   `name` - a function name.
+-   `command` - a command or a script to execute.
+-   `argument` - argument description with the `type` of an argument. Each argument is described in a separate tag.
+-   `format` - The format in which arguments are passed to a command.
+-   `return_type` - the type of a value returned by the function.
+-   `type` - a function type. If it is set to `executable` then single command is started. If it is set to `executable_pool` then several commands are started.
+-   `lifetime` - reload interval in seconds.
+
+A function command must read arguments from STDIN and must output result to STDOUT. It must process arguments in a loop.
+
+**Example**
+The following example creates `my_function`. It gets single argument of type String. `xargs` command listens to STDIN and calls `echo` for every argument.
+```
+<functions>
+    <function>
+        <type>executable</type>
+        <name>my_function</name>
+        <argument>
+            <type>String</type>
+        </argument>
+        <return_type>String</return_type>
+        <format>TabSeparated</format>
+        <command>xargs -I arg echo Processing arg</command>
+        <lifetime>0</lifetime>
+    </function>
+</functions>
+```
+
+Query:
+`my_function` is available in queries.
+
+``` sql
+SELECT number, my_function(toString(number)) FROM numbers(2);
+```
+
+Result:
+
+``` text
+┌─number─┬─my_function(toString(number))─┐
+│      0 │ Processing 0                  │
+│      1 │ Processing 1                  │
+└────────┴───────────────────────────────┘
+```
+
 
 ## Error Handling {#error-handling}
 
