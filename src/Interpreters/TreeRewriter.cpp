@@ -508,8 +508,6 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     out_table_join = table_join;
 }
 
-
-#if 0
 /// Convert to Disjunctive Normal Form https://en.wikipedia.org/wiki/Disjunctive_normal_form
 ///    based on sample https://github.com/ilejn/ndf
 class DNF
@@ -584,24 +582,9 @@ class DNF
                         const auto * f = arg->as<ASTFunction>();
                         if (f && f->name == "or" && f->children.size() == 1)
                         {
-
-                            auto pos = CollectJoinOnKeysMatcher::getTableForIdentifiers(std::make_shared<ASTFunction>(*f), false /* throw_on_table_mix */, data)/* == JoinIdentifierPos::Unknown */;
-                            switch (pos)
-                            {
-                            case JoinIdentifierPos::Unknown:
-                                LOG_TRACE(&Poco::Logger::get("distribute"), "Unknown");
-                                break;
-                            case JoinIdentifierPos::Left:
-                                LOG_TRACE(&Poco::Logger::get("distribute"), "Left");
-                                break;
-                            case JoinIdentifierPos::Right:
-                                LOG_TRACE(&Poco::Logger::get("distribute"), "Right");
-                                break;
-                            case JoinIdentifierPos::NotApplicable:
-                                LOG_TRACE(&Poco::Logger::get("distribute"), "NotApplicable");
-                                break;
-                            }
-
+                            auto pos = CollectJoinOnKeysMatcher::getTableForIdentifiers(std::make_shared<ASTFunction>(*f),
+                                                                                        false /* throw_on_table_mix */,
+                                                                                        data);
                             return pos != JoinIdentifierPos::Left && pos != JoinIdentifierPos::Right;
                         }
                         return false;
@@ -726,7 +709,6 @@ public:
         table_join.converted_to_dnf = node_added;
     }
 };
-#endif
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_join,
@@ -775,7 +757,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
                                     "Cannot get JOIN keys from JOIN ON section: '{}'",
                                     queryToString(table_join.on_expression));
         }
-        data.optimize();
+        analyzed_join.optimizeClauses();
 
         if (is_asof)
         {
@@ -1189,23 +1171,23 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     {
         for (const auto & [name, _] : table_join->columns_from_joined_table)
             all_source_columns_set.insert(name);
-        // DNF().process(*select_query, tables_with_columns);
     }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true);
 
-#if 0
     if (table_join)
     {
         auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
         if (table_join_ast)
         {
-            CollectJoinOnKeysVisitor::Data data{*result.analyzed_join, tables_with_columns[0], tables_with_columns[1], result.aliases, table_join_ast->strictness == ASTTableJoin::Strictness::Asof};
+            CollectJoinOnKeysVisitor::Data data{*result.analyzed_join,
+                 tables_with_columns[0],
+                 tables_with_columns[1],
+                 result.aliases,
+                 table_join_ast->strictness == ASTTableJoin::Strictness::Asof};
             DNF(data).process(*select_query, tables_with_columns);
         }
     }
-#endif
-
 
 /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
