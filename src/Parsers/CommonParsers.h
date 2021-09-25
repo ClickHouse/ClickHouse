@@ -25,17 +25,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-// With this warning, user-defined string literals are unusable
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreserved-identifier"
-
-/// Parsers can use "WORD"_kw instead of ParserKeyword s_word("WORD");
-constexpr ParserKeyword operator "" _kw(const char * keyword, size_t len) { return {{keyword, len}}; }
-
-#pragma GCC diagnostic pop
-#pragma clang diagnostic pop
+// FIXME uncomment With this warning, user-defined string literals are unusable
+//#pragma clang diagnostic push
+//#pragma clang diagnostic ignored "-Wreserved-identifier"
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wreserved-identifier"
+//
+///// Parsers can use "WORD"_kw instead of ParserKeyword s_word("WORD");
+//constexpr ParserKeyword operator "" _kw(const char * keyword, size_t len) { return {{keyword, len}}; }
+//
+//#pragma GCC diagnostic pop
+//#pragma clang diagnostic pop
 
 class ParserToken : public IParserBase
 {

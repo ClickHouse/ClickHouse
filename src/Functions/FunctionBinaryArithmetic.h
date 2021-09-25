@@ -189,9 +189,10 @@ enum class OpCase { Vector, LeftConstant, RightConstant };
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
 
-template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
 struct BinaryOperation
 {
+    using ResultType = OpResultType;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
@@ -1315,14 +1316,15 @@ public:
         }
         else
         {
-            using OpImpl = BinaryOperationImpl<LeftField, RightField, Op<LeftField, RightField>, ResultField>;
+            using OpConcrete = Op<LeftField, RightField>;
+            using OpImpl = BinaryOperationImpl<LeftField, RightField, OpConcrete, ResultField>;
 
             /// non-vector result
             if (col_left_const && col_right_const)
             {
                 const auto res = OpImpl::process(
                     col_left_const->template getValue<LeftField>(),
-                    col_right_const->template getValue<LeftField>());
+                    col_right_const->template getValue<RightField>());
 
                 return Result().createColumnConst(col_left_const->size(), toField(res));
             }
@@ -1440,7 +1442,8 @@ public:
         if (2 != arguments.size())
             return false;
 
-        return castBothTypes(arguments[0].get(), arguments[1].get(), [&]<class Left, class Right>(const Left&, const Right&)
+        return castBothTypes(arguments[0].get(), arguments[1].get(),
+            [&]<class Left, class Right>(const Left&, const Right&)
         {
             if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
                 return false;
@@ -1484,10 +1487,8 @@ public:
                     return true;
                 }
             }
-
             return false;
         });
-
         return result;
     }
 #endif
