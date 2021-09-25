@@ -20,7 +20,21 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         bool /* created_from_ddl */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
-        auto configuration = getExternalDataSourceConfiguration(config, config_prefix, context);
+        ExternalDataSourceConfiguration configuration;
+        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context);
+        if (named_collection)
+        {
+            configuration = *named_collection;
+        }
+        else
+        {
+            configuration.host = config.getString(config_prefix + ".host", "");
+            configuration.port = config.getUInt(config_prefix + ".port", 0);
+            configuration.username = config.getString(config_prefix + ".user", "");
+            configuration.password = config.getString(config_prefix + ".password", "");
+            configuration.database = config.getString(config_prefix + ".db", "");
+        }
+
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
             configuration.host,
