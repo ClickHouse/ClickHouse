@@ -16,6 +16,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
@@ -161,7 +162,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
-    auto exception_handling = std::make_shared<ExceptionHandlingSink>(sink->getOutputPort().getHeader());
+    auto exception_handling = std::make_shared<EmptySink>(sink->getOutputPort().getHeader());
 
     /// Write data
     data->pipe->resize(1);
