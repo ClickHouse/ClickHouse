@@ -26,4 +26,4 @@
             <table>test_table</table>
         </postgres2>
     </named_collections>
-</yandex>
+</clickhouse>
