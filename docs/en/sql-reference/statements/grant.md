@@ -155,6 +155,8 @@ Hierarchy of privileges:
         -   `SYSTEM RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`
             -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     -   `SYSTEM MERGES`
     -   `SYSTEM TTL MERGES`
     -   `SYSTEM FETCHES`
