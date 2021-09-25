@@ -124,7 +124,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
 }
 
 
-ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
+std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
 {
     ExternalDataSourceConfiguration configuration;
@@ -152,25 +152,33 @@ ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Named collection of connection parameters is missing some of the parameters and dictionary parameters are added");
         }
+        return configuration;
     }
-    else
-    {
-        configuration.host = dict_config.getString(dict_config_prefix + ".host", "");
-        configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
-        configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
-        configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
-        configuration.database = dict_config.getString(dict_config_prefix + ".db", "");
-        configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
-        configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
-    }
-    return configuration;
+    return std::nullopt;
 }
 
 
 ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
 {
-    auto common_configuration = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
+    ExternalDataSourceConfiguration common_configuration;
+
+    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
+    if (named_collection)
+    {
+        common_configuration = *named_collection;
+    }
+    else
+    {
+        common_configuration.host = dict_config.getString(dict_config_prefix + ".host", "");
+        common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
+        common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
+        common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
+        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", "");
+        common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
+        common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
+    }
+
     ExternalDataSourcesByPriority configuration
     {
         .database = common_configuration.database,
