@@ -65,6 +65,6 @@ private:
     RocksDBPtr rocksdb_ptr;
     String rocksdb_dir;
 
-    void initDb();
+    void initDB();
 };
 }
