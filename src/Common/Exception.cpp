@@ -534,6 +534,13 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
+ExecutionStatus ExecutionStatus::fromText(const std::string & data)
+{
+    ExecutionStatus status;
+    status.deserializeText(data);
+    return status;
+}
+
 ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)

@@ -34,7 +34,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     : my_server_id(server_id_)
     , my_port(port)
     , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false))
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
@@ -51,7 +51,7 @@ KeeperStateManager::KeeperStateManager(
     , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     getLogsPathFromConfig(config_prefix, config, standalone_keeper),
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
 
