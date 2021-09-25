@@ -71,7 +71,7 @@ public:
     void scheduleMoveTask(ExecutableTaskPtr move_task);
 
     /// Just call finish
-    virtual ~BackgroundJobsAssignee();
+    ~BackgroundJobsAssignee();
 
     BackgroundJobsAssignee(
         MergeTreeData & data_,
