@@ -442,7 +442,7 @@ version: 2.0
 configuration file or of any configuration file inside the `config.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <my_ldap_server>
         <host>localhost</host>
         <port>636</port>
@@ -458,7 +458,7 @@ configuration file or of any configuration file inside the `config.d` directory.
         <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
         <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
     </my_ldap_server>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.RBAC
@@ -478,7 +478,7 @@ version: 1.0
 an [LDAP] server inside the `users.xml` file or any configuration file inside the `users.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <users>
         <user_name>
             <ldap>
@@ -486,7 +486,7 @@ an [LDAP] server inside the `users.xml` file or any configuration file inside th
             </ldap>
         </user_name>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.Name.Empty

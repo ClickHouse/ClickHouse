@@ -611,7 +611,7 @@ version: 2.0
 configuration file or of any configuration file inside the `config.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <my_ldap_server>
         <host>localhost</host>
         <port>636</port>
@@ -627,7 +627,7 @@ configuration file or of any configuration file inside the `config.d` directory.
         <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
         <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
     </my_ldap_server>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory
@@ -649,7 +649,7 @@ version: 1.0
 [ClickHouse] SHALL support `<ldap>` section with the following syntax
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <server>my_ldap_server</server>
@@ -659,7 +659,7 @@ version: 1.0
             </roles>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server
