@@ -11,6 +11,6 @@ INSERT INTO h3_indexes VALUES (geoToH3(10.0, 0.0, 1));
 INSERT INTO h3_indexes VALUES (geoToH3(0.0, 10.0, 2));
 INSERT INTO h3_indexes VALUES (geoToH3(10.0, 10.0, 3));
 
-SELECT h3ResIsClassIII(h3_index) FROM h3_indexes ORDER BY h3_index;
+SELECT h3IsResClassIII(h3_index) FROM h3_indexes ORDER BY h3_index;
 
 DROP TABLE h3_indexes;
