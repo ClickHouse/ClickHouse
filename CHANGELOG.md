@@ -34,7 +34,6 @@
 * New functions `currentProfiles()`, `enabledProfiles()`, `defaultProfiles()`. [#26714](https://github.com/ClickHouse/ClickHouse/pull/26714) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Add functions that return (initial_)query_id of the current query. This closes [#23682](https://github.com/ClickHouse/ClickHouse/issues/23682). [#26410](https://github.com/ClickHouse/ClickHouse/pull/26410) ([Alexey Boykov](https://github.com/mathalex)).
 * Add `REPLACE GRANT` feature. [#26384](https://github.com/ClickHouse/ClickHouse/pull/26384) ([Caspian](https://github.com/Cas-pian)).
-* Implement window function `nth_value(expr, N)` that returns the value of the Nth row of the window frame. [#26334](https://github.com/ClickHouse/ClickHouse/pull/26334) ([Zuo, RuoYu](https://github.com/ryzuo)).
 * `EXPLAIN` query now has `EXPLAIN ESTIMATE ...` mode that will show information about read rows, marks and parts from MergeTree tables. Closes [#23941](https://github.com/ClickHouse/ClickHouse/issues/23941). [#26131](https://github.com/ClickHouse/ClickHouse/pull/26131) ([fastio](https://github.com/fastio)).
 * Added `system.zookeeper_log` table. All actions of ZooKeeper client are logged into this table. Implements [#25449](https://github.com/ClickHouse/ClickHouse/issues/25449). [#26129](https://github.com/ClickHouse/ClickHouse/pull/26129) ([tavplubix](https://github.com/tavplubix)).
 * Zero-copy replication for `ReplicatedMergeTree` over `HDFS` storage. [#25918](https://github.com/ClickHouse/ClickHouse/pull/25918) ([Zhichang Yu](https://github.com/yuzhichang)).
