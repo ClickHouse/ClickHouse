@@ -4324,9 +4324,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     const auto & query_ptr = query_info.query;
 
-    // Currently projections don't support final yet.
-    if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
-        return false;
+    if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
+    {
+        // Currently projections don't support final yet.
+        if (select->final())
+            return false;
+
+        // Currently projections don't support ARRAY JOIN yet.
+        if (select->arrayJoinExpressionList().first)
+            return false;
+    }
 
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)
