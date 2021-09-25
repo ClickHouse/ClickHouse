@@ -456,7 +456,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_BindDN = Requirement(
         'For example, \n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <ldap_servers>\n'
         '        <my_ldap_server>\n'
         '            <!-- ... -->\n'
@@ -464,7 +464,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_BindDN = Requirement(
         '            <!-- ... -->\n'
         '        </my_ldap_server>\n'
         '    </ldap_servers>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -601,7 +601,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Syntax = Req
         'For example,\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <user_directories>\n'
         '        <ldap>\n'
         '            <!-- ... -->\n'
@@ -614,7 +614,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Syntax = Req
         '            </role_mapping>\n'
         '        </ldap>\n'
         '    </user_directories>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -1366,7 +1366,7 @@ with the actual user name during each authentication attempt.
 For example, 
 
 ```xml
-<yandex>
+<clickhouse>
     <ldap_servers>
         <my_ldap_server>
             <!-- ... -->
@@ -1374,7 +1374,7 @@ For example,
             <!-- ... -->
         </my_ldap_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN
@@ -1457,7 +1457,7 @@ of the `config.xml`.
 For example,
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <!-- ... -->
@@ -1470,7 +1470,7 @@ For example,
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 #### Special Characters Escaping
