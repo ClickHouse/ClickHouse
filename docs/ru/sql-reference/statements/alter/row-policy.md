@@ -10,7 +10,7 @@ toc_title: ROW POLICY
 Синтаксис:
 
 ``` sql
-ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1] 
+ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1]
         [, name2 [ON CLUSTER cluster_name2] ON [database2.]table2 [RENAME TO new_name2] ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
@@ -18,4 +18,3 @@ ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]t
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/alter/row-policy/) <!--hide-->

@@ -1,6 +1,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
@@ -64,7 +65,12 @@ public:
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
-            return *x;
+        {
+            if ((*x)->getUser())
+                return *x;
+            /// No user, probably the user has been dropped while it was in the cache.
+            cache.remove(params);
+        }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
         cache.add(params, res);
         return res;
@@ -220,6 +226,22 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
     }
 }
 
+void AccessControlManager::addReplicatedStorage(
+    const String & storage_name_,
+    const String & zookeeper_path_,
+    const zkutil::GetZooKeeper & get_zookeeper_function_)
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
+            return;
+    }
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
+    new_storage->startup();
+}
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
@@ -317,6 +339,11 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         {
             addLDAPStorage(name, config, prefix);
         }
+        else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
+        {
+            String zookeeper_path = config.getString(prefix + ".zookeeper_path");
+            addReplicatedStorage(name, zookeeper_path, get_zookeeper_function);
+        }
         else
             throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
@@ -361,9 +388,9 @@ void AccessControlManager::addStoragesFromMainConfig(
 }
 
 
-UUID AccessControlManager::login(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
+UUID AccessControlManager::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
-    return MultipleAccessStorage::login(user_name, password, address, *external_authenticators);
+    return MultipleAccessStorage::login(credentials, address, *external_authenticators);
 }
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
@@ -403,7 +430,7 @@ void AccessControlManager::checkSettingNameIsAllowed(const std::string_view & se
 
 std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const UUID & user_id,
-    const boost::container::flat_set<UUID> & current_roles,
+    const std::vector<UUID> & current_roles,
     bool use_default_roles,
     const Settings & settings,
     const String & current_database,
@@ -411,7 +438,7 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
 {
     ContextAccessParams params;
     params.user_id = user_id;
-    params.current_roles = current_roles;
+    params.current_roles.insert(current_roles.begin(), current_roles.end());
     params.use_default_roles = use_default_roles;
     params.current_database = current_database;
     params.readonly = settings.readonly;
@@ -444,8 +471,8 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(cons
 
 
 std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
-    const boost::container::flat_set<UUID> & current_roles,
-    const boost::container::flat_set<UUID> & current_roles_with_admin_option) const
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
 }
@@ -484,10 +511,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
 }
 
-std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+std::shared_ptr<const SettingsProfilesInfo> AccessControlManager::getSettingsProfileInfo(const UUID & profile_id)
 {
-    return settings_profiles_cache->getProfileSettings(profile_name);
+    return settings_profiles_cache->getSettingsProfileInfo(profile_id);
 }
+
 
 const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
 {

@@ -18,7 +18,7 @@ void PostgreSQLOutputFormat::doWritePrefix()
 
     initialized = true;
     const auto & header = getPort(PortKind::Main).getHeader();
-    data_types = header.getDataTypes();
+    auto data_types = header.getDataTypes();
 
     if (header.columns())
     {
@@ -29,6 +29,7 @@ void PostgreSQLOutputFormat::doWritePrefix()
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             columns.emplace_back(column_name, data_types[i]->getTypeId());
+            serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
     }
@@ -51,7 +52,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                data_types[j]->serializeAsText(*columns[j], i, ostr, format_settings);
+                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }

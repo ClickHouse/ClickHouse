@@ -36,11 +36,10 @@ is_blocked:            1
 error_count:           0
 data_files:            1
 data_compressed_bytes: 499
-last_exception:        
+last_exception:
 ```
 
 **Смотрите также**
 
 -   [Движок таблиц Distributed](../../engines/table-engines/special/distributed.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/distribution_queue) <!--hide-->

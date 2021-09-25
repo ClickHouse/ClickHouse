@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS database_for_dict;
 
 CREATE DATABASE database_for_dict;
@@ -29,6 +31,9 @@ LIFETIME(MIN 300 MAX 360);
 
 SELECT * from somedict;
 
+-- No dictionary columns
+SELECT 1 FROM somedict;
+
 SHOW TABLES;
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE database_for_dict;

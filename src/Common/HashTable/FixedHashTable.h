@@ -19,7 +19,7 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {}
+    FixedHashTableCell() {} //-V730
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; }
@@ -267,7 +267,7 @@ public:
         DB::ReadBuffer & in;
         Cell cell;
         size_t read_count = 0;
-        size_t size;
+        size_t size = 0;
         bool is_eof = false;
         bool is_initialized = false;
     };
@@ -475,6 +475,17 @@ public:
     size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
+
+    /// Return offset for result in internal buffer.
+    /// Result can have value up to `getBufferSizeInCells() + 1`
+    /// because offset for zero value considered to be 0
+    /// and for other values it will be `offset in buffer + 1`
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
+    }
 
     const Cell * data() const { return buf; }
     Cell * data() { return buf; }

@@ -4,7 +4,7 @@ toc_priority: 109
 
 # topKWeighted {#topkweighted}
 
-Аналогична `topK`, но дополнительно принимает положительный целочисленный параметр `weight`. Каждое значение учитывается `weight` раз при расчёте частоты.
+Возвращает массив наиболее часто встречающихся значений в указанном столбце. Результирующий массив упорядочен по убыванию частоты значения (не по самим значениям). Дополнительно учитывается вес значения.
 
 **Синтаксис**
 
@@ -12,14 +12,11 @@ toc_priority: 109
 topKWeighted(N)(x, weight)
 ```
 
-**Параметры**
-
--   `N` — Количество элементов для выдачи.
-
 **Аргументы**
 
--   `x` – значение.
--   `weight` — вес. [UInt8](../../../sql-reference/data-types/int-uint.md).
+-   `N` — количество элементов для выдачи.
+-   `x` — значение.
+-   `weight` — вес. Каждое значение учитывается `weight` раз при расчёте частоты. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
 
@@ -41,4 +38,6 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 └───────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/) <!--hide-->
+**Смотрите также**
+
+-   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)

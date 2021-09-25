@@ -644,7 +644,7 @@ If there are no replicas at the moment on replicated table creation, a new first
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
-ENGINE = ReplcatedMergeTree(
+ENGINE = ReplicatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/hits',
     '{replica}'
 )
@@ -659,4 +659,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 
 Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

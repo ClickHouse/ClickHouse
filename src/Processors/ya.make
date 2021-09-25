@@ -7,8 +7,16 @@ PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
     contrib/libs/protobuf
+    contrib/libs/apache/arrow
+    contrib/libs/apache/orc
 )
 
+ADDINCL(
+    contrib/libs/apache/arrow/src
+    contrib/libs/apache/orc/c++/include
+)
+
+CFLAGS(-DUSE_ARROW=1 -DUSE_PARQUET=1 -DUSE_ORC=1)
 
 SRCS(
     Chunk.cpp
@@ -20,13 +28,19 @@ SRCS(
     Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
+    Executors/StreamingFormatExecutor.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
     Formats/IOutputFormat.cpp
     Formats/IRowInputFormat.cpp
     Formats/IRowOutputFormat.cpp
+    Formats/Impl/ArrowBlockInputFormat.cpp
+    Formats/Impl/ArrowBlockOutputFormat.cpp
+    Formats/Impl/ArrowBufferedStreams.cpp
+    Formats/Impl/ArrowColumnToCHColumn.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
     Formats/Impl/ConstantExpressionTemplate.cpp
@@ -79,6 +93,7 @@ SRCS(
     LimitTransform.cpp
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/FinishAggregatingInOrderAlgorithm.cpp
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
@@ -92,11 +107,9 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingConstColumnStep.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
+    QueryPlan/BuildQueryPipelineSettings.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -108,24 +121,28 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
+    QueryPlan/IntersectOrExceptStep.cpp
+    QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
-    QueryPlan/MaterializingStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
+    QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp
+    QueryPlan/Optimizations/filterPushDown.cpp
     QueryPlan/Optimizations/liftUpArrayJoin.cpp
     QueryPlan/Optimizations/limitPushDown.cpp
     QueryPlan/Optimizations/mergeExpressions.cpp
     QueryPlan/Optimizations/optimizeTree.cpp
     QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
+    QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromRemote.cpp
     QueryPlan/ReadNothingStep.cpp
-    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
@@ -137,11 +154,12 @@ SRCS(
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Transforms/AddingMissedTransform.cpp
+    Transforms/AddingDefaultsTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
+    Transforms/CheckSortedTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
@@ -151,6 +169,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
+    Transforms/IntersectOrExceptTransform.cpp
     Transforms/JoiningTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
@@ -162,8 +181,10 @@ SRCS(
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
+    Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
+    Transforms/getSourceFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )

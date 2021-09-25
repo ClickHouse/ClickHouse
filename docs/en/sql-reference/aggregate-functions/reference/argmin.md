@@ -4,13 +4,28 @@ toc_priority: 105
 
 # argMin {#agg-function-argmin}
 
-Syntax: `argMin(arg, val)` or `argMin(tuple(arg, val))`
+Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
 
-Calculates the `arg` value for a minimal `val` value. If there are several different values of `arg` for minimal values of `val`, the first of these values encountered is output.
+**Syntax**
 
-Tuple version of this function will return the tuple with the minimal `val` value. It is convinient for use with `SimpleAggregateFunction`.
+``` sql
+argMin(arg, val)
+```
 
-**Example:**
+**Arguments**
+
+-   `arg` — Argument.
+-   `val` — Value.
+
+**Returned value**
+
+-   `arg` value that corresponds to minimum `val` value.
+
+Type: matches `arg` type.
+
+**Example**
+
+Input table:
 
 ``` text
 ┌─user─────┬─salary─┐
@@ -20,12 +35,16 @@ Tuple version of this function will return the tuple with the minimal `val` valu
 └──────────┴────────┘
 ```
 
+Query:
+
 ``` sql
-SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary
+SELECT argMin(user, salary) FROM salary
 ```
 
+Result:
+
 ``` text
-┌─argMin(user, salary)─┬─argMin(tuple(user, salary))─┐
-│ worker               │ ('worker',1000)             │
-└──────────────────────┴─────────────────────────────┘
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
 ```

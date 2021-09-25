@@ -8,7 +8,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents
@@ -200,6 +200,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                     description,
                     max_merged_block_size,
                     limit,
+                    false,
                     nullptr,
                     quiet,
                     use_average_block_sizes,

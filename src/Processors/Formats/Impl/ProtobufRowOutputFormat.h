@@ -8,21 +8,16 @@
 #    include <Core/Block.h>
 #    include <Formats/FormatSchemaInfo.h>
 #    include <Formats/FormatSettings.h>
-#    include <Formats/ProtobufWriter.h>
 #    include <Processors/Formats/IRowOutputFormat.h>
-
-
-namespace google
-{
-namespace protobuf
-{
-    class Message;
-}
-}
 
 
 namespace DB
 {
+class ProtobufWriter;
+class ProtobufSerializer;
+class FormatSchemaInfo;
+struct FormatSettings;
+
 /** Stream designed to serialize data in the google protobuf format.
   * Each row is written as a separated message.
   *
@@ -38,22 +33,22 @@ class ProtobufRowOutputFormat : public IRowOutputFormat
 public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header,
+        const Block & header_,
         const RowOutputFormatParams & params_,
-        const FormatSchemaInfo & format_schema,
-        const FormatSettings & settings);
+        const FormatSchemaInfo & schema_info_,
+        const FormatSettings & settings_,
+        bool with_length_delimiter_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const IDataType &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override {}
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
-    DataTypes data_types;
-    ProtobufWriter writer;
-    std::vector<size_t> value_indices;
-    const bool allow_only_one_row;
+    std::unique_ptr<ProtobufWriter> writer;
+    std::unique_ptr<ProtobufSerializer> serializer;
+    const bool allow_multiple_rows;
 };
 
 }

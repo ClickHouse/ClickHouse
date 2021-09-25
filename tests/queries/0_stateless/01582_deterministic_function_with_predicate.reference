@@ -1,8 +1,8 @@
 SELECT count()
-FROM 
+FROM
 (
     SELECT number
-    FROM 
+    FROM
     (
         SELECT number
         FROM numbers(1000000)

@@ -13,7 +13,7 @@ toc_title: Nullable
 
 `NULL` — значение по умолчанию для типа `Nullable`, если в конфигурации сервера ClickHouse не указано иное.
 
-## Особенности хранения {#osobennosti-khraneniia}
+## Особенности хранения {#storage-features}
 
 Для хранения значения типа `Nullable` ClickHouse использует:
 
@@ -27,7 +27,34 @@ toc_title: Nullable
 !!! info "Info"
     Почти всегда использование `Nullable` снижает производительность, учитывайте это при проектировании своих баз.
 
-## Пример использования {#primer-ispolzovaniia}
+## Поиск NULL {#finding-null}
+
+Найти в столбце значения `NULL` можно с помощью подстолбца `null`, при этом весь столбец считывать не требуется. Подстолбец содержит `1`, если соответствующее значение равно `NULL`, и `0` если не равно.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+Результат:
+
+``` text
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+## Пример использования {#usage-example}
 
 ``` sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
@@ -47,5 +74,3 @@ SELECT x + y from t_null
 │          5 │
 └────────────┘
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nullable/) <!--hide-->

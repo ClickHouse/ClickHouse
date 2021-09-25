@@ -10,10 +10,11 @@ toc_title: generateRandom
 Поддерживает все типы данных, которые могут храниться в таблице, за исключением `LowCardinality` и `AggregateFunction`.
 
 ``` sql
-generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
+generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]])
 ```
 
-**Входные параметры**
+**Аргументы**
+
 - `name` — название соответствующего столбца.
 - `TypeName` — тип соответствующего столбца.
 - `max_array_length` — максимальная длина массива для всех сгенерированных массивов. По умолчанию `10`.
@@ -38,4 +39,3 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/generate/) <!--hide-->

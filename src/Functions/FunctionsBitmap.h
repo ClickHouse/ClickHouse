@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -93,11 +93,13 @@ class FunctionBitmapBuildImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapBuildImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapBuildImpl>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -116,8 +118,35 @@ public:
         DataTypes argument_types = {nested_type};
         Array params_row;
         AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        AggregateFunctionPtr bitmap_function;
+        WhichDataType which(nested_type);
+        if (which.isUInt8())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<UInt8>::name(), argument_types, params_row, properties);
+        else if (which.isUInt16())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<UInt16>::name(), argument_types, params_row, properties);
+        else if (which.isUInt32())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        else if (which.isUInt64())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<UInt64>::name(), argument_types, params_row, properties);
+        else if (which.isInt8())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<Int8>::name(), argument_types, params_row, properties);
+        else if (which.isInt16())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<Int16>::name(), argument_types, params_row, properties);
+        else if (which.isInt32())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<Int32>::name(), argument_types, params_row, properties);
+        else if (which.isInt64())
+            bitmap_function = AggregateFunctionFactory::instance().get(
+                AggregateFunctionGroupBitmapData<Int64>::name(), argument_types, params_row, properties);
+        else
+            throw Exception(
+                "Unexpected type " + array_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
     }
@@ -141,6 +170,14 @@ public:
             return executeBitmapData<UInt32>(argument_types, arguments);
         else if (which.isUInt64())
             return executeBitmapData<UInt64>(argument_types, arguments);
+        else if (which.isInt8())
+            return executeBitmapData<Int8>(argument_types, arguments);
+        else if (which.isInt16())
+            return executeBitmapData<Int16>(argument_types, arguments);
+        else if (which.isInt32())
+            return executeBitmapData<Int32>(argument_types, arguments);
+        else if (which.isInt64())
+            return executeBitmapData<Int64>(argument_types, arguments);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -161,7 +198,7 @@ private:
         Array params_row;
         AggregateFunctionProperties properties;
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+            AggregateFunctionGroupBitmapData<T>::name(), argument_types, params_row, properties);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
         col_to->reserve(offsets.size());
 
@@ -186,18 +223,20 @@ class FunctionBitmapToArrayImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type && bitmap_type->getFunctionName() =="groupBitmap"))
             throw Exception(
                 "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -230,6 +269,14 @@ public:
             executeIntType<UInt32>(arguments, input_rows_count, res_data, res_offsets);
         else if (which.isUInt64())
             executeIntType<UInt64>(arguments, input_rows_count, res_data, res_offsets);
+        else if (which.isInt8())
+            executeIntType<Int8>(arguments, input_rows_count, res_data, res_offsets);
+        else if (which.isInt16())
+            executeIntType<Int16>(arguments, input_rows_count, res_data, res_offsets);
+        else if (which.isInt32())
+            executeIntType<Int32>(arguments, input_rows_count, res_data, res_offsets);
+        else if (which.isInt64())
+            executeIntType<Int64>(arguments, input_rows_count, res_data, res_offsets);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -268,18 +315,20 @@ class FunctionBitmapSubset : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
             throw Exception(
                 "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -312,6 +361,14 @@ public:
             return executeIntType<UInt32>(arguments, input_rows_count);
         else if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
+        else if (which.isInt8())
+            return executeIntType<Int8>(arguments, input_rows_count);
+        else if (which.isInt16())
+            return executeIntType<Int16>(arguments, input_rows_count);
+        else if (which.isInt32())
+            return executeIntType<Int32>(arguments, input_rows_count);
+        else if (which.isInt64())
+            return executeIntType<Int64>(arguments, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -384,7 +441,11 @@ struct BitmapSubsetInRangeImpl
 public:
     static constexpr auto name = "bitmapSubsetInRange";
     template <typename T>
-    static void apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_0, UInt64 range_start, UInt64 range_end, AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
+    static void apply(
+        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
+        UInt64 range_start,
+        UInt64 range_end,
+        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         bitmap_data_0.rbs.rb_range(range_start, range_end, bitmap_data_2.rbs);
     }
@@ -395,33 +456,54 @@ struct BitmapSubsetLimitImpl
 public:
     static constexpr auto name = "bitmapSubsetLimit";
     template <typename T>
-    static void apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_0, UInt64 range_start, UInt64 range_end, AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
+    static void apply(
+        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
+        UInt64 range_start,
+        UInt64 range_end,
+        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         bitmap_data_0.rbs.rb_limit(range_start, range_end, bitmap_data_2.rbs);
     }
 };
 
+struct BitmapSubsetOffsetLimitImpl
+{
+public:
+    static constexpr auto name = "subBitmap";
+    template <typename T>
+    static void apply(
+        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
+        UInt64 range_start,
+        UInt64 range_end,
+        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
+        {
+        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
+        }
+};
+
 using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl>;
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
-
+using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
 class FunctionBitmapTransform : public IFunction
 {
 public:
     static constexpr auto name = "bitmapTransform";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapTransform>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapTransform>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
             throw Exception(
                 "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -456,6 +538,14 @@ public:
             return executeIntType<UInt32>(arguments, input_rows_count);
         else if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
+        else if (which.isInt8())
+            return executeIntType<Int8>(arguments, input_rows_count);
+        else if (which.isInt16())
+            return executeIntType<Int16>(arguments, input_rows_count);
+        else if (which.isInt32())
+            return executeIntType<Int32>(arguments, input_rows_count);
+        else if (which.isInt64())
+            return executeIntType<Int64>(arguments, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -568,18 +658,20 @@ class FunctionBitmapSelfCardinalityImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
             throw Exception(
                 "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -604,6 +696,14 @@ public:
             executeIntType<UInt32>(arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
             executeIntType<UInt64>(arguments, input_rows_count, vec_to);
+        else if (which.isInt8())
+            executeIntType<Int8>(arguments, input_rows_count, vec_to);
+        else if (which.isInt16())
+            executeIntType<Int16>(arguments, input_rows_count, vec_to);
+        else if (which.isInt32())
+            executeIntType<Int32>(arguments, input_rows_count, vec_to);
+        else if (which.isInt64())
+            executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -732,26 +832,28 @@ class FunctionBitmapContains : public IFunction
 public:
     static constexpr auto name = "bitmapContains";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapContains>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapContains>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
             throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         WhichDataType which(arguments[1].get());
-        if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
+        if (!which.isNativeInt() && !which.isNativeUInt())
             throw Exception(
-                "Second argument for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be an native integer type but it has type " + arguments[1]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<UInt8>>();
@@ -775,6 +877,14 @@ public:
             executeIntType<UInt32>(arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
             executeIntType<UInt64>(arguments, input_rows_count, vec_to);
+        else if (which.isInt8())
+            executeIntType<Int8>(arguments, input_rows_count, vec_to);
+        else if (which.isInt16())
+            executeIntType<Int16>(arguments, input_rows_count, vec_to);
+        else if (which.isInt32())
+            executeIntType<Int32>(arguments, input_rows_count, vec_to);
+        else if (which.isInt64())
+            executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -828,26 +938,28 @@ class FunctionBitmapCardinality : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapCardinality>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapCardinality>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
             throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
-        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
             throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
@@ -877,6 +989,14 @@ public:
             executeIntType<UInt32>(arguments, input_rows_count, vec_to);
         else if (which.isUInt64())
             executeIntType<UInt64>(arguments, input_rows_count, vec_to);
+        else if (which.isInt8())
+            executeIntType<Int8>(arguments, input_rows_count, vec_to);
+        else if (which.isInt16())
+            executeIntType<Int16>(arguments, input_rows_count, vec_to);
+        else if (which.isInt32())
+            executeIntType<Int32>(arguments, input_rows_count, vec_to);
+        else if (which.isInt64())
+            executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -957,32 +1077,39 @@ struct BitmapAndnotImpl
     }
 };
 
+struct NameBitmapAnd
+{
+    static constexpr auto name = "bitmapAnd";
+};
+
 template <template <typename> class Impl, typename Name>
 class FunctionBitmap : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmap>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmap>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
             throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
-        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
             throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
@@ -1009,6 +1136,14 @@ public:
             return executeBitmapData<UInt32>(arguments, input_rows_count);
         else if (which.isUInt64())
             return executeBitmapData<UInt64>(arguments, input_rows_count);
+        else if (which.isInt8())
+            return executeBitmapData<Int8>(arguments, input_rows_count);
+        else if (which.isInt16())
+            return executeBitmapData<Int16>(arguments, input_rows_count);
+        else if (which.isInt32())
+            return executeBitmapData<Int32>(arguments, input_rows_count);
+        else if (which.isInt64())
+            return executeBitmapData<Int64>(arguments, input_rows_count);
         else
             throw Exception(
                 "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1046,10 +1181,16 @@ private:
             const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
             const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
 
-            col_to->insertFrom(data_ptr_0);
+            // bitmapAnd(RoaringBitMap, SmallSet) is slower than bitmapAnd(SmallSet, RoaringBitMap), so we can exchange the position of two arguments for the speed
+            auto * bm_1 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
+            auto * bm_2 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+
+            // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
+            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->rbs.isLarge() && bm_2->rbs.isSmall();
+            col_to->insertFrom(need_exchange ? data_ptr_1 : data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(need_exchange ? data_ptr_0 : data_ptr_1);
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
         return col_to;
@@ -1107,10 +1248,6 @@ using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCa
 using FunctionBitmapHasAll = FunctionBitmapCardinality<BitmapHasAllImpl, NameBitmapHasAll, UInt8>;
 using FunctionBitmapHasAny = FunctionBitmapCardinality<BitmapHasAnyImpl, NameBitmapHasAny, UInt8>;
 
-struct NameBitmapAnd
-{
-    static constexpr auto name = "bitmapAnd";
-};
 struct NameBitmapOr
 {
     static constexpr auto name = "bitmapOr";

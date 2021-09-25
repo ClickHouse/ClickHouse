@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: deadlock
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,6 +29,7 @@ function thread2()
 function thread3()
 {
     while true; do
+        # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
         $CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables" --format Null
     done
 }

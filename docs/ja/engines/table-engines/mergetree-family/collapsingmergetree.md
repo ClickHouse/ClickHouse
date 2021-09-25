@@ -303,4 +303,4 @@ select * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

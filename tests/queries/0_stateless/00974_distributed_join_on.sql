@@ -1,6 +1,4 @@
--- Avoid "Connection failed at try №1" messages.
-SET send_logs_level = 'none';
-SET connect_timeout_with_failover_ms = 5000;
+-- Tags: distributed
 
 DROP TABLE IF EXISTS source_table1;
 DROP TABLE IF EXISTS source_table2;

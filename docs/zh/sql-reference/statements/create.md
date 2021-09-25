@@ -238,13 +238,13 @@ SELECT a, b, c FROM (SELECT ...)
 
 当一个`SELECT`子句包含`DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`时，请注意，这些仅会在插入数据时在每个单独的数据块上执行。例如，如果你在其中包含了`GROUP BY`，则只会在查询期间进行聚合，但聚合范围仅限于单个批的写入数据。数据不会进一步被聚合。但是当你使用一些其他数据聚合引擎时这是例外的，如：`SummingMergeTree`。
 
-目前对物化视图执行`ALTER`是不支持的，因此这可能是不方便的。如果物化视图是使用的`TO [db.]name`的方式进行构建的，你可以使用`DETACH`语句现将视图剥离，然后使用`ALTER`运行在目标表上，然后使用`ATTACH`将之前剥离的表重新加载进来。
+目前对物化视图执行`ALTER`是不支持的，因此这可能是不方便的。如果物化视图是使用的`TO [db.]name`的方式进行构建的，你可以使用`DETACH`语句先将视图剥离，然后使用`ALTER`运行在目标表上，然后使用`ATTACH`将之前剥离的表重新加载进来。
 
 视图看起来和普通的表相同。例如，你可以通过`SHOW TABLES`查看到它们。
 
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/create/) <!--hide-->
 
 ## CREATE DICTIONARY {#create-dictionary-query}
 

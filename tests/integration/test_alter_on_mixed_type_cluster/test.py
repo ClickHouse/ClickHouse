@@ -1,7 +1,6 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -18,19 +17,19 @@ def started_cluster():
         cluster.start()
 
         for node in [node1, node2]:
-            node.query('''
-            CREATE TABLE test_table_replicated(date Date, id UInt32, value Int32)
+            node.query_with_retry('''
+            CREATE TABLE IF NOT EXISTS test_table_replicated(date Date, id UInt32, value Int32)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '{replica}') ORDER BY id;
                 '''.format(replica=node.name))
-            node.query('''CREATE TABLE test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
+            node.query_with_retry('''CREATE TABLE IF NOT EXISTS test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
 
         for node in [node3, node4]:
-            node.query('''
-            CREATE TABLE test_table_replicated(date Date, id UInt32, value Int32)
+            node.query_with_retry('''
+            CREATE TABLE IF NOT EXISTS test_table_replicated(date Date, id UInt32, value Int32)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/1/someotable', '{replica}') ORDER BY id;
                 '''.format(replica=node.name))
 
-            node.query('''CREATE TABLE test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
+            node.query_with_retry('''CREATE TABLE IF NOT EXISTS test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
 
         yield cluster
 
@@ -79,7 +78,7 @@ def test_alter_replicated_on_cluster(started_cluster):
     assert node3.query("SELECT date FROM test_table_replicated") == '2019-10-01 00:00:00\n'
     assert node4.query("SELECT date FROM test_table_replicated") == '2019-10-01 00:00:00\n'
 
-    node3.query("ALTER TABLE test_table_replicated ON CLUSTER 'test_cluster_mixed' MODIFY COLUMN value String", settings={"replication_alter_partitions_sync": "2"})
+    node3.query_with_retry("ALTER TABLE test_table_replicated ON CLUSTER 'test_cluster_mixed' MODIFY COLUMN value String", settings={"replication_alter_partitions_sync": "2"})
 
     for node in [node2, node4]:
         node.query("INSERT INTO test_table_replicated VALUES(toDateTime('2019-10-02 00:00:00'), 2, 'Hello')")

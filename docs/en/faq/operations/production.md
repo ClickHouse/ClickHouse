@@ -25,7 +25,7 @@ Here’re some key points to get reasonable fidelity in a pre-production environ
     -   Don’t make it read-only with some frozen data.
     -   Don’t make it write-only with just copying data without building some typical reports.
     -   Don’t wipe it clean instead of applying schema migrations.
--   Use a sample of real production data and queries. Try to choose a sample that’s still representative and makes `SELECT` queries return reasonable results. Use obfuscation if your data is sensitive and internal policies don’t allow it to leave the production environment.
+-   Use a sample of real production data and queries. Try to choose a sample that’s still representative and makes `SELECT` queries return reasonable results. Use obfuscation if your data is sensitive and internal policies do not allow it to leave the production environment.
 -   Make sure that pre-production is covered by your monitoring and alerting software the same way as your production environment does.
 -   If your production spans across multiple datacenters or regions, make your pre-production does the same.
 -   If your production uses complex features like replication, distributed table, cascading materialize views, make sure they are configured similarly in pre-production.
@@ -61,8 +61,8 @@ For production use, there are two key options: `stable` and `lts`. Here is some 
 
 -   `stable` is the kind of package we recommend by default. They are released roughly monthly (and thus provide new features with reasonable delay) and three latest stable releases are supported in terms of diagnostics and backporting of bugfixes.
 -   `lts` are released twice a year and are supported for a year after their initial release. You might prefer them over `stable` in the following cases:
-    -   Your company has some internal policies that don’t allow for frequent upgrades or using non-LTS software.
-    -   You are using ClickHouse in some secondary products that either doesn’t require any complex ClickHouse features and don’t have enough resources to keep it updated.
+    -   Your company has some internal policies that do not allow for frequent upgrades or using non-LTS software.
+    -   You are using ClickHouse in some secondary products that either does not require any complex ClickHouse features and do not have enough resources to keep it updated.
 
 Many teams who initially thought that `lts` is the way to go, often switch to `stable` anyway because of some recent feature that’s important for their product.
 

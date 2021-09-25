@@ -6,12 +6,14 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 import random
 import string
+import os
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_zookeeper=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+node1 = cluster.add_instance('node1', user_configs=['configs/custom_settings.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', user_configs=['configs/custom_settings.xml'], with_zookeeper=True)
 
-DEFAULT_MAX_THREADS_FOR_FETCH = 3
+MAX_THREADS_FOR_FETCH = 3
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -64,8 +66,8 @@ def test_limited_fetches(started_cluster):
                 time.sleep(0.1)
 
     for concurrently_fetching_parts in fetches_result:
-        if len(concurrently_fetching_parts) > DEFAULT_MAX_THREADS_FOR_FETCH:
-            assert False, "Found more than {} concurrently fetching parts: {}".format(DEFAULT_MAX_THREADS_FOR_FETCH, ', '.join(concurrently_fetching_parts))
+        if len(concurrently_fetching_parts) > MAX_THREADS_FOR_FETCH:
+            assert False, "Found more than {} concurrently fetching parts: {}".format(MAX_THREADS_FOR_FETCH, ', '.join(concurrently_fetching_parts))
 
     assert max([len(parts) for parts in fetches_result]) == 3, "Strange, but we don't utilize max concurrent threads for fetches"
     assert(max(background_fetches_metric)) == 3, "Just checking metric consistent with table"

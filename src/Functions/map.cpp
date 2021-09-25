@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeMap.h>
@@ -34,7 +34,7 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionMap>();
     }
@@ -59,13 +59,16 @@ public:
         return true;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
-            throw Exception("Function " + getName() + " even number of arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
         DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
@@ -145,62 +148,32 @@ class FunctionMapContains : public IFunction
 {
 public:
     static constexpr auto name = NameMapContains::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapContains>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
         return NameMapContains::name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-
-        if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        auto key_type = map_type->getKeyType();
-
-        if (!(isNumber(arguments[1].type) && isNumber(key_type))
-            && key_type->getName() != arguments[1].type->getName())
-            throw Exception{"Second argument for function " + getName() + " must be a " + key_type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeUInt8>();
+        return impl.getReturnTypeImpl(arguments);
     }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
-        if (!col_map)
-            return nullptr;
-
-        const auto & nested_column = col_map->getNestedColumn();
-        const auto & keys_data = col_map->getNestedData().getColumn(0);
-
-        /// Prepare arguments to call arrayIndex for check has the array element.
-        ColumnsWithTypeAndName new_arguments =
-        {
-            {
-                ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr()),
-                std::make_shared<DataTypeArray>(result_type),
-                ""
-            },
-            arguments[1]
-        };
-
-        return FunctionArrayIndex<HasAction, NameMapContains>().executeImpl(new_arguments, result_type, input_rows_count);
+        return impl.executeImpl(arguments, result_type, input_rows_count);
     }
+
+private:
+    FunctionArrayIndex<HasAction, NameMapContains> impl;
 };
 
 
@@ -208,7 +181,7 @@ class FunctionMapKeys : public IFunction
 {
 public:
     static constexpr auto name = "mapKeys";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapKeys>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapKeys>(); }
 
     String getName() const override
     {
@@ -216,6 +189,8 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -255,7 +230,7 @@ class FunctionMapValues : public IFunction
 {
 public:
     static constexpr auto name = "mapValues";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapValues>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapValues>(); }
 
     String getName() const override
     {
@@ -263,6 +238,8 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

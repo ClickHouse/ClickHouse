@@ -12,6 +12,8 @@ SRCS(
     ITableFunction.cpp
     ITableFunctionFileLike.cpp
     ITableFunctionXDBC.cpp
+    TableFunctionDictionary.cpp
+    TableFunctionExecutable.cpp
     TableFunctionFactory.cpp
     TableFunctionFile.cpp
     TableFunctionGenerateRandom.cpp
@@ -21,6 +23,7 @@ SRCS(
     TableFunctionNull.cpp
     TableFunctionNumbers.cpp
     TableFunctionRemote.cpp
+    TableFunctionSQLite.cpp
     TableFunctionURL.cpp
     TableFunctionValues.cpp
     TableFunctionView.cpp

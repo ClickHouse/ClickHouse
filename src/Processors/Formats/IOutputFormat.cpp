@@ -76,6 +76,9 @@ void IOutputFormat::work()
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
+        if (before_finalize_callback)
+            before_finalize_callback();
+
         finalize();
         finalized = true;
         return;
@@ -117,4 +120,3 @@ void IOutputFormat::write(const Block & block)
 }
 
 }
-

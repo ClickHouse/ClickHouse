@@ -284,6 +284,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserProjectionDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "projection declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
@@ -303,6 +310,13 @@ class ParserConstraintDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const override { return "constraint declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserProjectionDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "projection declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

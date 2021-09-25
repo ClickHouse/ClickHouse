@@ -4,18 +4,27 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
-        , context(std::make_shared<Context>(context_))
+        , context(Context::createCopy(context_))
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
     {
+        if (options.shard_num)
+            context->addLocalScalar(
+                "_shard_num",
+                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
+        if (options.shard_count)
+            context->addLocalScalar(
+                "_shard_count",
+                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     }
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
@@ -28,11 +37,11 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
 protected:
     ASTPtr query_ptr;
-    std::shared_ptr<Context> context;
+    ContextMutablePtr context;
     Block result_header;
     SelectQueryOptions options;
     size_t max_streams = 1;

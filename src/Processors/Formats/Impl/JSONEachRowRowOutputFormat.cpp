@@ -28,7 +28,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 }
 
 
-void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeString(fields[field_number], out);
     writeChar(':', out);
@@ -37,11 +37,11 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataT
     {
         WriteBufferFromOwnString buf;
 
-        type.serializeAsText(column, row_num, buf, settings);
+        serialization.serializeText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        type.serializeAsTextJSON(column, row_num, out, settings);
+        serialization.serializeTextJSON(column, row_num, out, settings);
 
     ++field_number;
 }

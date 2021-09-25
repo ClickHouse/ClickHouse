@@ -1,6 +1,6 @@
 ---
 toc_priority: 59
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f\u043c\u0438\u0020\u042f\u043d\u0434\u0435\u043a\u0441\u002e\u041c\u0435\u0442\u0440\u0438\u043a\u0438"
+toc_title: "Функции для работы со словарями Яндекс.Метрики"
 ---
 
 # Функции для работы со словарями Яндекс.Метрики {#ym-dict-functions}
@@ -113,13 +113,13 @@ LIMIT 15
 **Синтаксис**
 
 ``` sql
-regionToTopContinent(id[, geobase]);
+regionToTopContinent(id[, geobase])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `id` — Идентификатор региона из геобазы Яндекса. [UInt32](../../sql-reference/functions/ym-dict-functions.md).
--   `geobase` — Ключ словаря. Смотрите [Множественные геобазы](#multiple-geobases). [String](../../sql-reference/functions/ym-dict-functions.md). Опциональный параметр.
+-   `id` — идентификатор региона из геобазы Яндекса. [UInt32](../../sql-reference/functions/ym-dict-functions.md).
+-   `geobase` — ключ словаря. Смотрите [Множественные геобазы](#multiple-geobases). [String](../../sql-reference/functions/ym-dict-functions.md). Опциональный параметр.
 
 **Возвращаемое значение**
 
@@ -151,4 +151,3 @@ regionToTopContinent(id[, geobase]);
 
 `ua` и `uk` обозначают одно и то же - украинский язык.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ym_dict_functions/) <!--hide-->

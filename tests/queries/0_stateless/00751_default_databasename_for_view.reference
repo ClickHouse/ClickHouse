@@ -12,14 +12,11 @@ SELECT
     platform,
     app
 FROM test_00751.t_00751
-WHERE (app = 
-(
+WHERE (app = (
     SELECT min(app)
     FROM test_00751.u_00751
-)) AND (platform = 
-(
-    SELECT 
-        (
+)) AND (platform = (
+    SELECT (
             SELECT min(platform)
             FROM test_00751.v_00751
         )

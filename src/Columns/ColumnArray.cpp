@@ -7,6 +7,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -238,6 +240,16 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnArray::skipSerializedInArena(const char * pos) const
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().skipSerializedInArena(pos);
+
+    return pos;
+}
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
 {
@@ -369,8 +381,16 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnArray::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnArray>();
+}
+
+namespace
+{
+
 template <bool positive>
-struct ColumnArray::Cmp
+struct Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -389,6 +409,9 @@ struct ColumnArray::Cmp
         return positive ? res : -res;
     }
 };
+
+}
+
 
 void ColumnArray::reserve(size_t n)
 {
@@ -528,6 +551,34 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
+
+void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
+{
+    auto & offsets_data = getOffsets();
+    if (mask.size() < offsets_data.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
+    offsets_data.resize(mask.size());
+    UInt64 last_offset = offsets_data[from];
+    while (index >= 0)
+    {
+        offsets_data[index] = last_offset;
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            --from;
+            last_offset = offsets_data[from];
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
 
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
@@ -912,6 +963,21 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool
         updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
 }
 
+ColumnPtr ColumnArray::compress() const
+{
+    ColumnPtr data_compressed = data->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
+
+    size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
+
+    return ColumnCompressed::create(size(), byte_size,
+        [data_compressed = std::move(data_compressed), offsets_compressed = std::move(offsets_compressed)]
+        {
+            return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
+        });
+}
+
+
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
     if (replicate_offsets.empty())
@@ -1173,7 +1239,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         ColumnTuple::create(tuple_columns),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
-
 
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {

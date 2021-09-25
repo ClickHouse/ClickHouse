@@ -15,12 +15,12 @@ BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Param
 
 bool BinaryRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     size_t num_columns = columns.size();
     for (size_t i = 0; i < num_columns; ++i)
-        getPort().getHeader().getByPosition(i).type->deserializeBinary(*columns[i], in);
+        serializations[i]->deserializeBinary(*columns[i], *in);
 
     return true;
 }
@@ -28,21 +28,21 @@ bool BinaryRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void BinaryRowInputFormat::readPrefix()
 {
-    /// NOTE The header is completely ignored. This can be easily improved.
+    /// NOTE: The header is completely ignored. This can be easily improved.
 
     UInt64 columns = 0;
     String tmp;
 
     if (with_names || with_types)
     {
-        readVarUInt(columns, in);
+        readVarUInt(columns, *in);
     }
 
     if (with_names)
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            readStringBinary(tmp, in);
+            readStringBinary(tmp, *in);
         }
     }
 
@@ -50,7 +50,7 @@ void BinaryRowInputFormat::readPrefix()
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            readStringBinary(tmp, in);
+            readStringBinary(tmp, *in);
         }
     }
 }

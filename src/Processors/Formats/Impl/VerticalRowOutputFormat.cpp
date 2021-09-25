@@ -50,22 +50,22 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
 }
 
 
-void VerticalRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeString(names_and_paddings[field_number], out);
-    writeValue(column, type, row_num);
+    writeValue(column, serialization, row_num);
     writeChar('\n', out);
 
     ++field_number;
 }
 
 
-void VerticalRowOutputFormat::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
+void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    type.serializeAsText(column, row_num, out, format_settings);
+    serialization.serializeText(column, row_num, out, format_settings);
 }
 
 
@@ -123,26 +123,25 @@ void VerticalRowOutputFormat::writeBeforeExtremes()
 
 void VerticalRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
 {
-    writeSpecialRow(columns, row_num, PortKind::Totals, "Min");
+    writeSpecialRow(columns, row_num, "Min");
 }
 
 void VerticalRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_num)
 {
-    writeSpecialRow(columns, row_num, PortKind::Totals, "Max");
+    writeSpecialRow(columns, row_num, "Max");
 }
 
 void VerticalRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeSpecialRow(columns, row_num, PortKind::Totals, "Totals");
+    writeSpecialRow(columns, row_num, "Totals");
     was_totals_written = true;
 }
 
-void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t row_num, PortKind port_kind, const char * title)
+void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t row_num, const char * title)
 {
     row_number = 0;
     field_number = 0;
 
-    const auto & header = getPort(port_kind).getHeader();
     size_t num_columns = columns.size();
 
     writeCString(title, out);
@@ -158,8 +157,7 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         if (i != 0)
             writeFieldDelimiter();
 
-        const auto & col = header.getByPosition(i);
-        writeField(*columns[i], *col.type, row_num);
+        writeField(*columns[i], *serializations[i], row_num);
     }
 }
 

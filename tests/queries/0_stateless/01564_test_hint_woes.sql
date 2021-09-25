@@ -49,3 +49,6 @@ INSERT INTO t0(c0, c1) VALUES ('1', 1) ;
 
 -- the return code must be zero after the final query has failed with expected error
 insert into values_01564 values (11); -- { serverError 469 }
+
+drop table t0;
+drop table values_01564;

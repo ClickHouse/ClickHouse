@@ -1,6 +1,7 @@
 #include <Access/MultipleAccessStorage.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -264,7 +265,7 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     auto storage = findStorage(id);
     if (!storage)
@@ -285,7 +286,7 @@ bool MultipleAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard MultipleAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::unique_lock lock{mutex};
     auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -320,10 +321,10 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 {
     /// lock is already locked.
 
-    std::vector<std::pair<StoragePtr, ext::scope_guard>> added_subscriptions[static_cast<size_t>(EntityType::MAX)];
-    std::vector<ext::scope_guard> removed_subscriptions;
+    std::vector<std::pair<StoragePtr, scope_guard>> added_subscriptions[static_cast<size_t>(EntityType::MAX)];
+    std::vector<scope_guard> removed_subscriptions;
 
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         auto & handlers = handlers_by_type[static_cast<size_t>(type)];
         auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
@@ -363,7 +364,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     lock.unlock();
     removed_subscriptions.clear();
 
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
         {
@@ -382,7 +383,8 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
     /// Lock the mutex again to store added subscriptions to the nested storages.
     lock.lock();
-    for (auto type : ext::range(EntityType::MAX))
+
+    for (auto type : collections::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
         {
@@ -399,25 +401,24 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     }
 
     lock.unlock();
-    added_subscriptions->clear();
 }
 
 
-UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
         try
         {
-            auto id = storage->login(user_name, password, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
+            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;
         }
         catch (...)
         {
-            if (!storage->find(EntityType::USER, user_name))
+            if (!storage->find(EntityType::USER, credentials.getUserName()))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -426,7 +427,7 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
             throw;
         }
     }
-    throwNotFound(EntityType::USER, user_name);
+    throwNotFound(EntityType::USER, credentials.getUserName());
 }
 
 

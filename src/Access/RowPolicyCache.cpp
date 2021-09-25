@@ -6,7 +6,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
@@ -59,7 +59,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
     roles = &policy->to_roles;
     database_and_table_name = std::make_shared<std::pair<String, String>>(policy->getDatabase(), policy->getTableName());
 
-    for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+    for (auto type : collections::range(0, MAX_CONDITION_TYPE))
     {
         parsed_conditions[type] = nullptr;
         const String & condition = policy->conditions[type];
@@ -217,7 +217,7 @@ void RowPolicyCache::mixConditionsFor(EnabledRowPolicies & enabled)
         MixedConditionKey key;
         key.database = info.database_and_table_name->first;
         key.table_name = info.database_and_table_name->second;
-        for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+        for (auto type : collections::range(0, MAX_CONDITION_TYPE))
         {
             if (info.parsed_conditions[type])
             {

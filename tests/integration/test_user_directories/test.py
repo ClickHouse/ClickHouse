@@ -15,7 +15,7 @@ def started_cluster():
         cluster.start()
 
         for i in range(2, 8):
-            node.exec_in_container("cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users{}.xml".format(i))
+            node.exec_in_container(["cp", "/etc/clickhouse-server/users.xml", "/etc/clickhouse-server/users{}.xml".format(i)])
 
         yield cluster
 

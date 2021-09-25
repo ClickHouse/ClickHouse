@@ -155,7 +155,7 @@ static inline long double fp_barrierl(long double x)
 static inline void fp_force_evalf(float x)
 {
 	volatile float y;
-	y = x;
+	y = x; //-V1001
 }
 #endif
 
@@ -164,7 +164,7 @@ static inline void fp_force_evalf(float x)
 static inline void fp_force_eval(double x)
 {
 	volatile double y;
-	y = x;
+	y = x; //-V1001
 }
 #endif
 
@@ -173,7 +173,7 @@ static inline void fp_force_eval(double x)
 static inline void fp_force_evall(long double x)
 {
 	volatile long double y;
-	y = x;
+	y = x; //-V1001
 }
 #endif
 

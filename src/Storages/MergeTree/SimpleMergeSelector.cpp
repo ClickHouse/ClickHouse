@@ -3,6 +3,7 @@
 #include <Common/interpolate.h>
 
 #include <cmath>
+#include <cassert>
 #include <iostream>
 
 
@@ -168,7 +169,8 @@ void selectWithinPartition(
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
-            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
+            assert(end > begin);
+            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once) //-V658
                 break;
 
             if (!parts[end - 1].shall_participate_in_merges)

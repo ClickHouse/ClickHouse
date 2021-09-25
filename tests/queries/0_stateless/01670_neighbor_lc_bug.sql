@@ -33,7 +33,7 @@ SELECT
     val_low,
     neighbor(val_low, -1) AS low_m1,
     neighbor(val_low, 1) AS low_p1
-FROM 
+FROM
 (
     SELECT *
     FROM neighbor_test

@@ -10,16 +10,6 @@ import socket
 import tempfile
 import logging
 import os
-
-g_dns_hook = None
-
-def custom_getaddrinfo(*args):
-    # print("from custom_getaddrinfo g_dns_hook is None ", g_dns_hook is None)
-    ret = g_dns_hook.custom_getaddrinfo(*args)
-    # print("g_dns_hook.custom_getaddrinfo result", ret)
-    return ret
-
-
 class mk_krb_conf(object):
     def __init__(self, krb_conf, kdc_ip):
         self.krb_conf = krb_conf
@@ -37,37 +27,10 @@ class mk_krb_conf(object):
         if self.amended_krb_conf is not None:
             self.amended_krb_conf.close()
 
-# tweak dns resolution to connect to localhost where api_host is in URL
-class dns_hook(object):
-    def __init__(self, hdfs_api):
-        # print("dns_hook.init ", hdfs_api.kerberized, hdfs_api.host, hdfs_api.data_port, hdfs_api.proxy_port)
-        self.hdfs_api = hdfs_api
-    def __enter__(self):
-        global g_dns_hook
-        g_dns_hook = self
-        # print("g_dns_hook is None ", g_dns_hook is None)
-        self.original_getaddrinfo = socket.getaddrinfo
-        socket.getaddrinfo = custom_getaddrinfo
-        return self
-    def __exit__(self, type, value, traceback):
-        global g_dns_hook
-        g_dns_hook = None
-        socket.getaddrinfo = self.original_getaddrinfo
-    def custom_getaddrinfo(self, *args):
-        (hostname, port) = args[:2]
-        # print("top of custom_getaddrinfo", hostname, port)
-
-        if hostname == self.hdfs_api.host and (port == self.hdfs_api.data_port or port == self.hdfs_api.proxy_port):
-            # print("dns_hook substitute")
-            return [(socket.AF_INET, 1, 6, '', ("127.0.0.1", port))]
-        else:
-            return self.original_getaddrinfo(*args)
-
 class HDFSApi(object):
-    def __init__(self, user, timeout=100, kerberized=False, principal=None,
+    def __init__(self, user, host, proxy_port, data_port, timeout=100, kerberized=False, principal=None,
                  keytab=None, krb_conf=None,
-                 host = "localhost", protocol = "http",
-                 proxy_port = 50070, data_port = 50075, hdfs_ip = None, kdc_ip = None):
+                 protocol = "http", hdfs_ip = None, kdc_ip = None):
         self.host = host
         self.protocol = protocol
         self.proxy_port = proxy_port
@@ -84,15 +47,17 @@ class HDFSApi(object):
         # logging.basicConfig(level=logging.DEBUG)
         # logging.getLogger().setLevel(logging.DEBUG)
         # requests_log = logging.getLogger("requests.packages.urllib3")
-        # requests_log.setLevel(logging.DEBUG)
+        # requests_log.setLevel(logging.INFO)
         # requests_log.propagate = True
+        # kerb_log = logging.getLogger("requests_kerberos")
+        # kerb_log.setLevel(logging.DEBUG)
+        # kerb_log.propagate = True
 
         if kerberized:
             self._run_kinit()
             self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
-                #principal=self.principal,
-                #hostname_override=self.host, principal=self.principal)
-                # , mutual_authentication=reqkerb.REQUIRED, force_preemptive=True)
+            if self.kerberos_auth is None:
+                print("failed to obtain kerberos_auth")
         else:
             self.kerberos_auth = None
 
@@ -101,47 +66,68 @@ class HDFSApi(object):
             raise Exception("kerberos principal and keytab are required")
 
         with mk_krb_conf(self.krb_conf, self.kdc_ip) as instantiated_krb_conf:
-            # print("instantiated_krb_conf ", instantiated_krb_conf)
+            logging.debug("instantiated_krb_conf {}".format(instantiated_krb_conf))
 
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
             cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(instantiated_krb_conf=instantiated_krb_conf, keytab=self.keytab, principal=self.principal)
 
-            # print(cmd)
-
             start = time.time()
 
             while time.time() - start < self.timeout:
                 try:
-                    subprocess.call(cmd, shell=True)
-                    print("KDC started, kinit successfully run")
+                    res = subprocess.run(cmd, shell=True)
+                    if res.returncode != 0:
+                        # check_call(...) from subprocess does not print stderr, so we do it manually
+                        logging.debug('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
+                        logging.debug('Stdout:\n{}\n'.format(res.stdout.decode('utf-8')))
+                        logging.debug('Env:\n{}\n'.format(env))
+                        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
+
+                    logging.debug("KDC started, kinit successfully run")
                     return
                 except Exception as ex:
-                    print("Can't run kinit ... waiting {}".format(str(ex)))
+                    logging.debug("Can't run kinit ... waiting {}".format(str(ex)))
                     time.sleep(1)
 
         raise Exception("Kinit running failure")
 
+    @staticmethod
+    def req_wrapper(func, expected_code, cnt=2, **kwargs):
+        for i in range(0, cnt):
+            logging.debug(f"CALL: {str(kwargs)}")
+            response_data = func(**kwargs)
+            logging.debug(f"response_data:{response_data.content} headers:{response_data.headers}")
+            if response_data.status_code == expected_code:
+                return response_data
+            else:
+                logging.error(f"unexpected response_data.status_code {response_data.status_code} != {expected_code}")
+                time.sleep(1)
+        response_data.raise_for_status()
+
+
     def read_data(self, path, universal_newlines=True):
-        with dns_hook(self):
-            response = requests.get("{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': 'localhost'}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
-        if response.status_code != 307:
-            response.raise_for_status()
+        logging.debug("read_data protocol:{} host:{} ip:{} proxy port:{} data port:{} path: {}".format(self.protocol, self.host, self.hdfs_ip, self.proxy_port, self.data_port, path))
+        response = self.req_wrapper(requests.get, 307, url="{protocol}://{ip}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, ip=self.hdfs_ip, port=self.proxy_port, path=path), headers={'host': str(self.hdfs_ip)}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
         # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
-        url = "{location}".format(location=response.headers['Location'])
-        # print("redirected to ", url)
-        with dns_hook(self):
-            response_data = requests.get(url,
-                                         headers={'host': 'localhost'},
+        location = None
+        if self.kerberized:
+            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port))
+        else:
+            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.hdfs_ip, self.data_port))
+        logging.debug("redirected to {}".format(location))
+
+        response_data = self.req_wrapper(requests.get, 200, url=location, headers={'host': self.hdfs_ip},
                                          verify=False, auth=self.kerberos_auth)
-        if response_data.status_code != 200:
-            response_data.raise_for_status()
+
         if universal_newlines:
             return response_data.text
         else:
             return response_data.content
 
     def write_data(self, path, content):
+        logging.debug("write_data protocol:{} host:{} port:{} path: {} user:{}, principal:{}".format(
+            self.protocol, self.host, self.proxy_port, path, self.user, self.principal))
         named_file = NamedTemporaryFile(mode='wb+')
         fpath = named_file.name
         if isinstance(content, str):
@@ -149,42 +135,36 @@ class HDFSApi(object):
         named_file.write(content)
         named_file.flush()
 
+        response = self.req_wrapper(requests.put, 307,
+            url="{protocol}://{ip}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, ip=self.hdfs_ip,
+                                                                            port=self.proxy_port,
+                                                                            path=path, user=self.user),
+            allow_redirects=False,
+            headers={'host': str(self.hdfs_ip)},
+            params={'overwrite' : 'true'},
+            verify=False, auth=self.kerberos_auth
+        )
 
+        logging.debug("HDFS api response:{}".format(response.headers))
+
+        # additional_params = '&'.join(
+        #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         if self.kerberized:
-            self._run_kinit()
-            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
-            # print(self.kerberos_auth)
+            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port))
+        else:
+            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.hdfs_ip, self.data_port))
 
-        with dns_hook(self):
-            response = requests.put(
-                "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host=self.host,
-                                                                               port=self.proxy_port,
-                                                                               path=path, user=self.user),
-                allow_redirects=False,
-                headers={'host': 'localhost'},
-                params={'overwrite' : 'true'},
-                verify=False, auth=self.kerberos_auth
-            )
-        if response.status_code != 307:
-            # print(response.headers)
-            response.raise_for_status()
-
-        additional_params = '&'.join(
-            response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
-
-        with dns_hook(self), open(fpath, mode="rb") as fh:
+        with open(fpath, mode="rb") as fh:
             file_data = fh.read()
             protocol = "http" # self.protocol
-            response = requests.put(
-                "{location}".format(location=response.headers['Location']),
+            response = self.req_wrapper(requests.put, 201,
+                url="{location}".format(location=location),
                 data=file_data,
-                headers={'content-type':'text/plain', 'host': 'localhost'},
+                headers={'content-type':'text/plain', 'host': str(self.hdfs_ip)},
                 params={'file': path, 'user.name' : self.user},
                 allow_redirects=False, verify=False, auth=self.kerberos_auth
             )
-            # print(response)
-            if response.status_code != 201:
-                response.raise_for_status()
+            logging.debug(f"{response.content} {response.headers}")
 
 
     def write_gzip_data(self, path, content):

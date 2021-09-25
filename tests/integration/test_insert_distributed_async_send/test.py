@@ -17,9 +17,27 @@ n1 = cluster.add_instance('n1', main_configs=['configs/remote_servers.xml'], use
 # n2 -- distributed_directory_monitor_batch_inserts=0
 n2 = cluster.add_instance('n2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.d/no_batch.xml'])
 
+# n3 -- distributed_directory_monitor_batch_inserts=1/distributed_directory_monitor_split_batch_on_failure=1
+n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers_split.xml'], user_configs=[
+    'configs/users.d/batch.xml',
+    'configs/users.d/split.xml',
+])
+# n4 -- distributed_directory_monitor_batch_inserts=0/distributed_directory_monitor_split_batch_on_failure=1
+n4 = cluster.add_instance('n4', main_configs=['configs/remote_servers_split.xml'], user_configs=[
+    'configs/users.d/no_batch.xml',
+    'configs/users.d/split.xml',
+])
+
 batch_params = pytest.mark.parametrize('batch', [
     (1),
     (0),
+])
+
+batch_and_split_params = pytest.mark.parametrize('batch,split', [
+    (1, 0),
+    (0, 0),
+    (1, 1),
+    (0, 1),
 ])
 
 @pytest.fixture(scope='module', autouse=True)
@@ -62,15 +80,19 @@ def insert_data(node):
     assert size > 1<<16
     return size
 
-def get_node(batch):
+def get_node(batch, split=None):
+    if split:
+        if batch:
+            return n3
+        return n4
     if batch:
         return n1
     return n2
 
-def bootstrap(batch):
+def bootstrap(batch, split=None):
     drop_tables()
     create_tables('insert_distributed_async_send_cluster_two_replicas')
-    return insert_data(get_node(batch))
+    return insert_data(get_node(batch, split))
 
 def get_path_to_dist_batch(file='2.bin'):
     # There are:
@@ -80,8 +102,8 @@ def get_path_to_dist_batch(file='2.bin'):
     # @return the file for the n2 shard
     return f'/var/lib/clickhouse/data/default/dist/shard1_replica2/{file}'
 
-def check_dist_after_corruption(truncate, batch):
-    node = get_node(batch)
+def check_dist_after_corruption(truncate, batch, split=None):
+    node = get_node(batch, split)
 
     if batch:
         # In batch mode errors are ignored
@@ -102,8 +124,12 @@ def check_dist_after_corruption(truncate, batch):
     broken = get_path_to_dist_batch('broken')
     node.exec_in_container(['bash', '-c', f'ls {broken}/2.bin'])
 
-    assert int(n1.query('SELECT count() FROM data')) == 10000
-    assert int(n2.query('SELECT count() FROM data')) == 0
+    if split:
+        assert int(n3.query('SELECT count() FROM data')) == 10000
+        assert int(n4.query('SELECT count() FROM data')) == 0
+    else:
+        assert int(n1.query('SELECT count() FROM data')) == 10000
+        assert int(n2.query('SELECT count() FROM data')) == 0
 
 
 @batch_params
@@ -114,17 +140,17 @@ def test_insert_distributed_async_send_success(batch):
     assert int(n1.query('SELECT count() FROM data')) == 10000
     assert int(n2.query('SELECT count() FROM data')) == 10000
 
-@batch_params
-def test_insert_distributed_async_send_truncated_1(batch):
-    size = bootstrap(batch)
+@batch_and_split_params
+def test_insert_distributed_async_send_truncated_1(batch, split):
+    size = bootstrap(batch, split)
     path = get_path_to_dist_batch()
-    node = get_node(batch)
+    node = get_node(batch, split)
 
     new_size = size - 10
     # we cannot use truncate, due to hardlinks
     node.exec_in_container(['bash', '-c', f'mv {path} /tmp/bin && head -c {new_size} /tmp/bin > {path}'])
 
-    check_dist_after_corruption(True, batch)
+    check_dist_after_corruption(True, batch, split)
 
 @batch_params
 def test_insert_distributed_async_send_truncated_2(batch):
@@ -175,38 +201,43 @@ def test_insert_distributed_async_send_different_header(batch):
     create_tables('insert_distributed_async_send_cluster_two_shards')
 
     node = get_node(batch)
-    node.query("INSERT INTO dist VALUES (0, '')", settings={
+    node.query("INSERT INTO dist VALUES (0, 'f')", settings={
         'prefer_localhost_replica': 0,
     })
-    node.query('ALTER TABLE dist MODIFY COLUMN value Nullable(String)')
-    node.query("INSERT INTO dist VALUES (2, '')", settings={
+    node.query('ALTER TABLE dist MODIFY COLUMN value UInt64')
+    node.query("INSERT INTO dist VALUES (2, 1)", settings={
         'prefer_localhost_replica': 0,
     })
 
+    n1.query('ALTER TABLE data MODIFY COLUMN value UInt64', settings={
+        'mutations_sync': 1,
+    })
+
     if batch:
-        # first batch with Nullable(String)
-        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
-            'mutations_sync': 1,
-        })
-        # but only one batch will be sent
-        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: String to Nullable\(String\)\. Stack trace:"):
+        # but only one batch will be sent, and first is with UInt64 column, so
+        # one rows inserted, and for string ('f') exception will be throw.
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot parse string 'f' as UInt64: syntax error at begin of string"):
             node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 1
-        # second batch with String
-        n1.query('ALTER TABLE data MODIFY COLUMN value String', settings={
-            'mutations_sync': 1,
-        })
+        # but once underlying column String, implicit conversion will do the
+        # thing, and insert left batch.
+        n1.query("""
+        DROP TABLE data SYNC;
+        CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY key;
+        """)
         node.query('SYSTEM FLUSH DISTRIBUTED dist')
-        assert int(n1.query('SELECT count() FROM data')) == 2
-    else:
-        # first send with String
-        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: Nullable\(String\) to String\. Stack trace:"):
-            node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 1
-        # second send with Nullable(String)
-        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
-            'mutations_sync': 1,
-        })
+    else:
+        # first send with String ('f'), so zero rows will be inserted
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot parse string 'f' as UInt64: syntax error at begin of string"):
+            node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 0
+        # but once underlying column String, implicit conversion will do the
+        # thing, and insert 2 rows (mixed UInt64 and String).
+        n1.query("""
+        DROP TABLE data SYNC;
+        CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY key;
+        """)
         node.query('SYSTEM FLUSH DISTRIBUTED dist')
         assert int(n1.query('SELECT count() FROM data')) == 2
 

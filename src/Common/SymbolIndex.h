@@ -22,7 +22,8 @@ protected:
     SymbolIndex() { update(); }
 
 public:
-    static MultiVersion<SymbolIndex>::Version instance(bool reload = false);
+    static MultiVersion<SymbolIndex>::Version instance();
+    static void reload();
 
     struct Symbol
     {
@@ -36,7 +37,7 @@ public:
         const void * address_begin;
         const void * address_end;
         std::string name;
-        std::unique_ptr<Elf> elf;
+        std::shared_ptr<Elf> elf;
     };
 
     /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.
@@ -60,6 +61,7 @@ private:
     Data data;
 
     void update();
+    static MultiVersion<SymbolIndex> & instanceImpl();
 };
 
 }

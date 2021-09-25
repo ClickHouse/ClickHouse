@@ -1,5 +1,6 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <Common/MemoryTracker.h>
 #include <common/types.h>
 
 #ifdef __SSE2__
@@ -136,14 +137,9 @@ void WriteBufferValidUTF8::finish()
 
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
-    try
-    {
-        finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finish();
 }
 
 }

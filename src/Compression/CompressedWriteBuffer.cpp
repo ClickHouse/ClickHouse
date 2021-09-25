@@ -8,6 +8,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Common/MemorySanitizer.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -29,13 +30,15 @@ void CompressedWriteBuffer::nextImpl()
     compressed_buffer.resize(compressed_reserve_size);
     UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
-    // FIXME remove this after fixing msan report in lz4.
-    // Almost always reproduces on stateless tests, the exact test unknown.
-    __msan_unpoison(compressed_buffer.data(), compressed_size);
-
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
     out.write(reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
     out.write(compressed_buffer.data(), compressed_size);
+}
+
+
+void CompressedWriteBuffer::finalize()
+{
+    next();
 }
 
 
@@ -47,16 +50,12 @@ CompressedWriteBuffer::CompressedWriteBuffer(
 {
 }
 
+
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    try
-    {
-        next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock;
+    next();
 }
 
 }

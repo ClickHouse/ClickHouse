@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -113,8 +114,8 @@ timeout $TIMEOUT bash -c thread7 2> /dev/null &
 wait
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
 
-$CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY database_for_dict.dict1"
-$CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY database_for_dict.dict2"
+$CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY IF NOT EXISTS database_for_dict.dict1"
+$CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY IF NOT EXISTS database_for_dict.dict2"
 
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE table_for_dict1;

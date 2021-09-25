@@ -22,144 +22,145 @@ CREATE TABLE codecTest (
     valueI8  Int8     CODEC(DoubleDelta),
     valueDT  DateTime CODEC(DoubleDelta),
     valueD   Date     CODEC(DoubleDelta)
-) Engine = MergeTree ORDER BY key;
+) Engine = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0;
 
 
 -- checking for overflow
 INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueI64, valueI64)
-	VALUES (1, 18446744073709551615, 18446744073709551615, 9223372036854775807, 9223372036854775807), (2, 0, 0, -9223372036854775808, -9223372036854775808), (3, 18446744073709551615, 18446744073709551615, 9223372036854775807, 9223372036854775807);
+    VALUES (1, 18446744073709551615, 18446744073709551615, 9223372036854775807, 9223372036854775807), (2, 0, 0, -9223372036854775808, -9223372036854775808), (3, 18446744073709551615, 18446744073709551615, 9223372036854775807, 9223372036854775807);
 
 -- n^3 covers all double delta storage cases, from small difference between neighbouref_values (stride) to big.
 INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueU16, valueU16, ref_valueU8, valueU8, ref_valueI64, valueI64, ref_valueI32, valueI32, ref_valueI16, valueI16, ref_valueI8, valueI8, ref_valueDT, valueDT, ref_valueD, valueD)
-	SELECT number as n, n * n * n as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
-	FROM system.numbers LIMIT 101, 1000;
+    SELECT number as n, n * n * n as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
+    FROM system.numbers LIMIT 101, 1000;
 
 -- best case - constant stride
 INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueU16, valueU16, ref_valueU8, valueU8, ref_valueI64, valueI64, ref_valueI32, valueI32, ref_valueI16, valueI16, ref_valueI8, valueI8, ref_valueDT, valueDT, ref_valueD, valueD)
-	SELECT number as n, n as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
-	FROM system.numbers LIMIT 2001, 1000;
+    SELECT number as n, n as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
+    FROM system.numbers LIMIT 2001, 1000;
 
 
 -- worst case - random stride
 INSERT INTO codecTest (key, ref_valueU64, valueU64, ref_valueU32, valueU32, ref_valueU16, valueU16, ref_valueU8, valueU8, ref_valueI64, valueI64, ref_valueI32, valueI32, ref_valueI16, valueI16, ref_valueI8, valueI8, ref_valueDT, valueDT, ref_valueD, valueD)
-	SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
-	FROM system.numbers LIMIT 3001, 1000;
+    SELECT number as n, n + (rand64() - 9223372036854775807)/1000 as v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, v, toDateTime(v), toDateTime(v), toDate(v), toDate(v)
+    FROM system.numbers LIMIT 3001, 1000;
 
 
 SELECT 'U64';
 SELECT
-	key,
-	ref_valueU64, valueU64, ref_valueU64 - valueU64 as dU64
+    key,
+    ref_valueU64, valueU64, ref_valueU64 - valueU64 as dU64
 FROM codecTest
 WHERE
-	dU64 != 0
+    dU64 != 0
 LIMIT 10;
 
 
 SELECT 'U32';
 SELECT
-	key,
-	ref_valueU32, valueU32, ref_valueU32 - valueU32 as dU32
+    key,
+    ref_valueU32, valueU32, ref_valueU32 - valueU32 as dU32
 FROM codecTest
 WHERE
-	dU32 != 0
+    dU32 != 0
 LIMIT 10;
 
 
 SELECT 'U16';
 SELECT
-	key,
-	ref_valueU16, valueU16, ref_valueU16 - valueU16 as dU16
+    key,
+    ref_valueU16, valueU16, ref_valueU16 - valueU16 as dU16
 FROM codecTest
 WHERE
-	dU16 != 0
+    dU16 != 0
 LIMIT 10;
 
 
 SELECT 'U8';
 SELECT
-	key,
-	ref_valueU8, valueU8, ref_valueU8 - valueU8 as dU8
+    key,
+    ref_valueU8, valueU8, ref_valueU8 - valueU8 as dU8
 FROM codecTest
 WHERE
-	dU8 != 0
+    dU8 != 0
 LIMIT 10;
 
 
 SELECT 'I64';
 SELECT
-	key,
-	ref_valueI64, valueI64, ref_valueI64 - valueI64 as dI64
+    key,
+    ref_valueI64, valueI64, ref_valueI64 - valueI64 as dI64
 FROM codecTest
 WHERE
-	dI64 != 0
+    dI64 != 0
 LIMIT 10;
 
 
 SELECT 'I32';
 SELECT
-	key,
-	ref_valueI32, valueI32, ref_valueI32 - valueI32 as dI32
+    key,
+    ref_valueI32, valueI32, ref_valueI32 - valueI32 as dI32
 FROM codecTest
 WHERE
-	dI32 != 0
+    dI32 != 0
 LIMIT 10;
 
 
 SELECT 'I16';
 SELECT
-	key,
-	ref_valueI16, valueI16, ref_valueI16 - valueI16 as dI16
+    key,
+    ref_valueI16, valueI16, ref_valueI16 - valueI16 as dI16
 FROM codecTest
 WHERE
-	dI16 != 0
+    dI16 != 0
 LIMIT 10;
 
 
 SELECT 'I8';
 SELECT
-	key,
-	ref_valueI8, valueI8, ref_valueI8 - valueI8 as dI8
+    key,
+    ref_valueI8, valueI8, ref_valueI8 - valueI8 as dI8
 FROM codecTest
 WHERE
-	dI8 != 0
+    dI8 != 0
 LIMIT 10;
 
 
 SELECT 'DT';
 SELECT
-	key,
-	ref_valueDT, valueDT, ref_valueDT - valueDT as dDT
+    key,
+    ref_valueDT, valueDT, ref_valueDT - valueDT as dDT
 FROM codecTest
 WHERE
-	dDT != 0
+    dDT != 0
 LIMIT 10;
 
 
 SELECT 'D';
 SELECT
-	key,
-	ref_valueD, valueD, ref_valueD - valueD as dD
+    key,
+    ref_valueD, valueD, ref_valueD - valueD as dD
 FROM codecTest
 WHERE
-	dD != 0
+    dD != 0
 LIMIT 10;
 
 SELECT 'Compression:';
 SELECT
-	table, name, type,
-	compression_codec,
-	data_uncompressed_bytes u,
-	data_compressed_bytes c,
-	round(u/c,3) ratio
+    table, name, type,
+    compression_codec,
+    data_uncompressed_bytes u,
+    data_compressed_bytes c,
+    round(u/c,3) ratio
 FROM system.columns
 WHERE
-	table == 'codecTest'
+    table = 'codecTest'
+    AND database = currentDatabase()
 AND
-	compression_codec != ''
+    compression_codec != ''
 AND
-	ratio <= 1
+    ratio <= 1
 ORDER BY
-	table, name, type;
+    table, name, type;
 
 DROP TABLE IF EXISTS codecTest;

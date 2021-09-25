@@ -1,6 +1,6 @@
 ---
 toc_priority: 53
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0055\u0049\u0044"
+toc_title: "Функции для работы с UUID"
 ---
 
 # Функции для работы с UUID {#funktsii-dlia-raboty-s-uuid}
@@ -33,6 +33,90 @@ SELECT * FROM t_uuid
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
+```
+
+## empty {#empty}
+
+Проверяет, является ли входной UUID пустым.
+
+**Синтаксис**
+
+```sql
+empty(UUID)
+```
+
+UUID считается пустым, если он содержит все нули (нулевой UUID).
+
+Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [String](string-functions.md#empty).
+
+**Параметры**
+
+-   `x` — UUID на входе функции. [UUID](../data-types/uuid.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для пустого UUID или `0` — для непустого UUID.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Для генерации UUID-значений предназначена функция [generateUUIDv4](#uuid-function-generate).
+
+Запрос:
+
+```sql
+SELECT empty(generateUUIDv4());
+```
+
+Ответ:
+
+```text
+┌─empty(generateUUIDv4())─┐
+│                       0 │
+└─────────────────────────┘
+```
+
+## notEmpty {#notempty}
+
+Проверяет, является ли входной UUID непустым.
+
+**Синтаксис**
+
+```sql
+notEmpty(UUID)
+```
+
+UUID считается пустым, если он содержит все нули (нулевой UUID).
+
+Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [String](string-functions.md#function-notempty).
+
+**Параметры**
+
+-   `x` — UUID на входе функции. [UUID](../data-types/uuid.md).
+
+**Возвращаемое значение**
+
+-   Возвращает `1` для непустого UUID или `0` — для пустого UUID.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Пример**
+
+Для генерации UUID-значений предназначена функция [generateUUIDv4](#uuid-function-generate).
+
+Запрос:
+
+```sql
+SELECT notEmpty(generateUUIDv4());
+```
+
+Результат:
+
+```text
+┌─notEmpty(generateUUIDv4())─┐
+│                          1 │
+└────────────────────────────┘
 ```
 
 ## toUUID (x) {#touuid-x}
@@ -159,9 +243,23 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
+## serverUUID() {#server-uuid}
+
+Возвращает случайный и уникальный UUID, который генерируется при первом запуске сервера и сохраняется навсегда. Результат записывается в файл `uuid`, расположенный в каталоге сервера ClickHouse `/var/lib/clickhouse/`.
+
+**Синтаксис**
+
+```sql
+serverUUID()
+```
+
+**Возвращаемое значение**
+
+-   UUID сервера. 
+
+Тип: [UUID](../data-types/uuid.md).
+
 ## См. также: {#sm-takzhe}
 
 -   [dictGetUUID](ext-dict-functions.md)
 -   [dictGetUUIDOrDefault](ext-dict-functions.md)
-
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

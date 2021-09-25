@@ -8,10 +8,10 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE TABLE`, с помощью которого был создан указанный объект.
+Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE`, с помощью которого был создан указанный объект.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -91,7 +91,7 @@ SHOW DATABASES LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -190,8 +190,8 @@ SHOW TABLES FROM system LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [Create Tables](https://clickhouse.tech/docs/ru/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/ru/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.com/docs/ru/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/ru/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -301,7 +301,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ``` sql
 SHOW USERS
 ```
- 
+
 ## SHOW ROLES {#show-roles-statement}
 
 Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
@@ -340,8 +340,8 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ``` sql
 SHOW QUOTAS
-```  
-    
+```
+
 ## SHOW QUOTA {#show-quota-statement}
 
 Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
@@ -362,4 +362,140 @@ SHOW [CURRENT] QUOTA
 SHOW ACCESS
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->
+## SHOW CLUSTER(s) {#show-cluster-statement}
+
+Возвращает список кластеров. Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
+
+!!! info "Note"
+    По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
+
+### Синтаксис {#show-cluster-syntax}
+
+``` sql
+SHOW CLUSTER '<name>'
+SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+```
+### Примеры {#show-cluster-examples}
+
+Запрос:
+
+``` sql
+SHOW CLUSTERS;
+```
+
+Результат:
+
+```text
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+Результат:
+
+```text
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+Результат:
+
+```text
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+estimated_recovery_time: 0
+```
+
+## SHOW SETTINGS {#show-settings}
+
+Возвращает список системных настроек и их значений. Использует данные из таблицы [system.settings](../../operations/system-tables/settings.md).
+
+**Синтаксис**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Секции**
+
+При использовании `LIKE|ILIKE` можно задавать шаблон для имени настройки. Этот шаблон может содержать символы подстановки, такие как `%` или `_`. При использовании `LIKE` шаблон чувствителен к регистру, а при использовании `ILIKE` — не чувствителен.
+
+Если используется `CHANGED`, запрос вернет только те настройки, значения которых были изменены, т.е. отличны от значений по умолчанию.
+
+**Примеры**
+
+Запрос с использованием `LIKE`:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Результат:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Запрос с использованием `ILIKE`:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Результат:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Запрос с использованием `CHANGED`:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Результат:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**См. также**
+
+-   Таблица [system.settings](../../operations/system-tables/settings.md)

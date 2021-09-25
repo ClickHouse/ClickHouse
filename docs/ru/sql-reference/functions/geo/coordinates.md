@@ -1,5 +1,5 @@
 ---
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0433\u0435\u043e\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u043c\u0438\u0020\u043a\u043e\u043e\u0440\u0434\u0438\u043d\u0430\u0442\u0430\u043c\u0438"
+toc_title: "Функции для работы с географическими координатами"
 toc_priority: 62
 ---
 
@@ -133,4 +133,3 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/geo/coordinates) <!--hide-->

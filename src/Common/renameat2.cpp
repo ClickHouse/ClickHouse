@@ -1,14 +1,17 @@
 #include <Common/renameat2.h>
 #include <Common/Exception.h>
-#include <Poco/File.h>
+#include <Common/VersionNumber.h>
+#include <Poco/Environment.h>
+#include <filesystem>
 
 #if defined(linux) || defined(__linux) || defined(__linux__)
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
-#include <sys/utsname.h>
 #endif
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -25,22 +28,9 @@ namespace ErrorCodes
 static bool supportsRenameat2Impl()
 {
 #if defined(__NR_renameat2)
-    /// renameat2 is available in linux since 3.15
-    struct utsname sysinfo;
-    if (uname(&sysinfo))
-        return false;
-    char * point = nullptr;
-    auto v_major = strtol(sysinfo.release, &point, 10);
-
-    errno = 0;
-    if (errno || *point != '.' || v_major < 3)
-        return false;
-    if (3 < v_major)
-        return true;
-
-    errno = 0;
-    auto v_minor = strtol(point + 1, nullptr, 10);
-    return !errno && 15 <= v_minor;
+    VersionNumber renameat2_minimal_version(3, 15, 0);
+    VersionNumber linux_version(Poco::Environment::osVersion());
+    return linux_version >= renameat2_minimal_version;
 #else
     return false;
 #endif
@@ -93,9 +83,9 @@ static bool renameat2(const std::string &, const std::string &, int)
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
     /// NOTE it's unsafe
-    if (Poco::File{new_path}.exists())
+    if (fs::exists(new_path))
         throw Exception("File " + new_path + " exists", ErrorCodes::FILE_ALREADY_EXISTS);
-    Poco::File{old_path}.renameTo(new_path);
+    fs::rename(old_path, new_path);
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places

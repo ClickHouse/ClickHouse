@@ -13,11 +13,15 @@ namespace DB
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
         collector_finished.wait();
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         {
             std::unique_lock<std::mutex> lock(mutex);
+
             if (background_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -66,8 +70,11 @@ namespace DB
             writer_condvar.notify_all();
         }
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         try
         {
@@ -80,9 +87,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction()
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Collector");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -135,9 +144,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Formatter");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -147,11 +158,12 @@ namespace DB
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer
             unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
-            /// The second invocation won't release memory, only set size equals to 0.
-            unit.segment.resize(0);
 
             unit.actual_memory_size = 0;
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
+
+            /// The second invocation won't release memory, only set size equals to 0.
+            unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
 

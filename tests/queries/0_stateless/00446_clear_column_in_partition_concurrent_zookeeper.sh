@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database, no-parallel
+# Tag no-replicated-database: Old syntax is not allowed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,8 +10,8 @@ ch="$CLICKHOUSE_CLIENT --stacktrace -q"
 
 $ch "DROP TABLE IF EXISTS clear_column1"
 $ch "DROP TABLE IF EXISTS clear_column2"
-$ch "CREATE TABLE clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column_concurrent', '1', d, d, 8192)"
-$ch "CREATE TABLE clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column_concurrent', '2', d, d, 8192)"
+$ch "CREATE TABLE clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/tables/clear_column_concurrent', '1', d, d, 8192)"
+$ch "CREATE TABLE clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/tables/clear_column_concurrent', '2', d, d, 8192)"
 
 $ch "ALTER TABLE clear_column1 CLEAR COLUMN VasyaUnexistingColumn IN PARTITION '200001'" --replication_alter_partitions_sync=2 1>/dev/null 2>/dev/null
 rc=$?

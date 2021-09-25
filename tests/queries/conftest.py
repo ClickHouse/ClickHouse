@@ -1,22 +1,37 @@
-import pytest
-
 import os
+import re
 import sys
-import tempfile
+
+import pytest
 
 from .server import ServerThread
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--builddir", action="store", default=None, help="Path to build directory to use binaries from",
-    )
+# Command-line arguments
 
+def pytest_addoption(parser):
+    parser.addoption("--builddir", action="store", default=None, help="Path to build directory to use binaries from")
+
+
+# HTML report hooks
+
+def pytest_html_report_title(report):
+    report.title = "ClickHouse Functional Stateless Tests (PyTest)"
+
+
+RE_TEST_NAME = re.compile(r"\[(.*)\]")
+def pytest_itemcollected(item):
+    match = RE_TEST_NAME.search(item.name)
+    if match:
+        item._nodeid = match.group(1)
+
+
+# Fixtures
 
 @pytest.fixture(scope='module')
 def cmdopts(request):
     return {
-        'builddir': request.config.getoption("--builddir"),
+        'builddir': request.config.getoption("--builddir")
     }
 
 
@@ -25,6 +40,9 @@ def bin_prefix(cmdopts):
     prefix = 'clickhouse'
     if cmdopts['builddir'] is not None:
         prefix = os.path.join(cmdopts['builddir'], 'programs', prefix)
+    # FIXME: does this hangs the server start for some reason?
+    # if not os.path.isabs(prefix):
+    #     prefix = os.path.abspath(prefix)
     return prefix
 
 

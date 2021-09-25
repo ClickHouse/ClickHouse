@@ -5,10 +5,13 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Access
     clickhouse/src/AggregateFunctions
+    clickhouse/src/Backups
+    clickhouse/src/Bridge
     clickhouse/src/Client
     clickhouse/src/Columns
     clickhouse/src/Common
     clickhouse/src/Compression
+    clickhouse/src/Coordination
     clickhouse/src/Core
     clickhouse/src/Databases
     clickhouse/src/DataStreams
