@@ -1035,7 +1035,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
@@ -1054,7 +1055,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     bool scheduled = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+            getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
@@ -1064,7 +1066,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             }, common_assignee_trigger, getStorageID()));
         scheduled = true;
     }
-    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
+            getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
         assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
@@ -1078,7 +1081,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 return true;
             }, common_assignee_trigger, getStorageID()));
         scheduled = true;
-     }
+    }
 
     return scheduled;
 }
