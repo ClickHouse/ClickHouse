@@ -54,7 +54,7 @@ def test_reload_zookeeper(start_cluster):
         </node>
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
-</yandex >
+</clickhouse>
 """
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
