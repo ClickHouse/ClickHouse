@@ -31,7 +31,7 @@ struct IdentifierSemantic
         ColumnName,       /// column qualified with column names list
         AliasedTableName, /// column qualified with table name (but table has an alias so its priority is lower than TableName)
         TableName,        /// column qualified with table name
-        DbAndTable,       /// column qualified with database and table name
+        DBAndTable,       /// column qualified with database and table name
         TableAlias,       /// column qualified with table alias
         Ambiguous,
     };
