@@ -306,7 +306,7 @@ with the actual user name during each authentication attempt.
 For example, 
 
 ```xml
-<yandex>
+<clickhouse>
     <ldap_servers>
         <my_ldap_server>
             <!-- ... -->
@@ -314,7 +314,7 @@ For example,
             <!-- ... -->
         </my_ldap_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN
@@ -397,7 +397,7 @@ of the `config.xml`.
 For example,
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <!-- ... -->
@@ -410,7 +410,7 @@ For example,
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 #### Special Characters Escaping
