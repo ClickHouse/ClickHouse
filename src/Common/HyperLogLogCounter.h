@@ -80,17 +80,12 @@ template <UInt64 MaxValue> struct MinCounterType
 /// Denominator of expression for HyperLogLog algorithm.
 template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode, typename Enable = void>
-class __attribute__ ((packed)) Denominator;
-
-namespace
-{
+class Denominator;
 
 /// Returns true if rank storage is big.
 constexpr bool isBigRankStore(UInt8 precision)
 {
     return precision >= 12;
-}
-
 }
 
 /// Used to deduce denominator type depending on options provided.
@@ -120,7 +115,7 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// Satisfiable when rank storage is small enough.
 template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
-class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
     std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
 {
@@ -164,7 +159,7 @@ private:
 /// Used when rank storage is big.
 template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
-class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
     std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
 {
@@ -251,6 +246,7 @@ struct RankWidth<UInt64>
 };
 
 }
+
 
 /// Sets behavior of HyperLogLog class.
 enum class HyperLogLogMode

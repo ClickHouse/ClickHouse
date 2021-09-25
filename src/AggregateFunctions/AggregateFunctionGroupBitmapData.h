@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
+#include <boost/noncopyable.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -14,6 +15,7 @@
 #include <roaring.hh>
 #include <roaring64map.hh>
 
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ enum BitmapKind
     Small = 0,
     Bitmap = 1
 };
+
 
 /**
   * For a small number of values - an array of fixed size "on the stack".
@@ -32,6 +35,7 @@ template <typename T, UInt8 small_set_size>
 class RoaringBitmapWithSmallSet : private boost::noncopyable
 {
 private:
+    using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = std::vector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
@@ -363,6 +367,7 @@ public:
     /**
      * Check whether the argument is the subset of this set.
      * Empty set is a subset of any other set (consistent with hasAll).
+     * It's used in subset and currently only support comparing same type
      */
     UInt8 rb_is_subset(const RoaringBitmapWithSmallSet & r1) const
     {
@@ -486,6 +491,7 @@ public:
 
     /**
      * Return new set with specified range (not include the range_end)
+     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const
     {
@@ -525,6 +531,7 @@ public:
 
     /**
      * Return new set of the smallest `limit` values in set which is no less than `range_start`.
+     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
     {
@@ -572,16 +579,47 @@ public:
         }
     }
 
+    UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
+    {
+        if (limit == 0 || offset >= size())
+            return 0;
+
+        if (isSmall())
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = small.begin();
+            for (;it != small.end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != small.end() && count < limit; ++it, ++count)
+                r1.add(it->getValue());
+            return count;
+        }
+        else
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = rb->begin();
+            for (;it != rb->end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != rb->end() && count < limit; ++it, ++count)
+                r1.add(*it);
+            return count;
+        }
+    }
+
     UInt64 rb_min() const
     {
         if (isSmall())
         {
             if (small.empty())
                 return 0;
-            auto min_val = std::numeric_limits<std::make_unsigned_t<T>>::max();
+            auto min_val = std::numeric_limits<UnsignedT>::max();
             for (const auto & x : small)
             {
-                auto val = x.getValue();
+                UnsignedT val = x.getValue();
                 if (val < min_val)
                     min_val = val;
             }
@@ -597,10 +635,10 @@ public:
         {
             if (small.empty())
                 return 0;
-            auto max_val = std::numeric_limits<std::make_unsigned_t<T>>::min();
+            UnsignedT max_val = 0;
             for (const auto & x : small)
             {
-                auto val = x.getValue();
+                UnsignedT val = x.getValue();
                 if (val > max_val)
                     max_val = val;
             }
@@ -611,7 +649,8 @@ public:
     }
 
     /**
-     * Replace value
+     * Replace value.
+     * It's used in transform and currently can only support UInt32
      */
     void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num)
     {

@@ -60,16 +60,12 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyFile(const String & from_path, const String & to_path) override;
-
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t aio_threshold,
-        size_t mmap_threshold) const override;
+        const ReadSettings & settings,
+        size_t estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -91,7 +87,10 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    const String getType() const override { return "memory"; }
+    DiskType getType() const override { return DiskType::RAM; }
+    bool isRemote() const override { return false; }
+
+    bool supportZeroCopyReplication() const override { return false; }
 
 private:
     void createDirectoriesImpl(const String & path);

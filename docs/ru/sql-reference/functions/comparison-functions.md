@@ -1,6 +1,6 @@
 ---
 toc_priority: 36
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0441\u0440\u0430\u0432\u043d\u0435\u043d\u0438\u044f"
+toc_title: "Функции сравнения"
 ---
 
 # Функции сравнения {#funktsii-sravneniia}
@@ -34,4 +34,3 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0441\u0440\u0430\u
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/comparison_functions/) <!--hide-->

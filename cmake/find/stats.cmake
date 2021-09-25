@@ -1,4 +1,4 @@
-option(ENABLE_STATS "Enalbe StatsLib library" ${ENABLE_LIBRARIES})
+option(ENABLE_STATS "Enable StatsLib library" ${ENABLE_LIBRARIES})
 
 if (ENABLE_STATS)
     if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/stats")

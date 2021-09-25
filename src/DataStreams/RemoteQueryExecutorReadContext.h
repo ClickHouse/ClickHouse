@@ -7,7 +7,9 @@
 #include <Common/Fiber.h>
 #include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
+#include <Common/Epoll.h>
 #include <Client/Connection.h>
+#include <Client/IConnections.h>
 #include <Poco/Timespan.h>
 
 namespace Poco::Net
@@ -32,27 +34,32 @@ public:
     /// This mutex for fiber is needed because fiber could be destroyed in cancel method from another thread.
     std::mutex fiber_lock;
 
-    Poco::Timespan receive_timeout;
-    MultiplexedConnections & connections;
+    /// atomic is required due to data-race between setConnectionFD() and setTimer() from the cancellation path.
+    std::atomic<uint64_t> receive_timeout_usec = 0;
+    IConnections & connections;
     Poco::Net::Socket * last_used_socket = nullptr;
 
     /// Here we have three descriptors we are going to wait:
-    /// * socket_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
+    /// * connection_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
     /// * timer is a timerfd descriptor to manually check socket timeout
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
-    /// We put those descriptors into our own epoll_fd which is used by external executor.
+    /// We put those descriptors into our own epoll which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
-    int socket_fd = -1;
-    int epoll_fd = -1;
+    bool is_timer_alarmed = false;
+    int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };
 
-    explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_);
+    Epoll epoll;
+
+    std::string connection_fd_description;
+
+    explicit RemoteQueryExecutorReadContext(IConnections & connections_);
     ~RemoteQueryExecutorReadContext();
 
-    bool checkTimeout() const;
-    bool checkTimeoutImpl() const;
+    bool checkTimeout(bool blocking = false);
+    bool checkTimeoutImpl(bool blocking);
 
-    void setSocket(Poco::Net::Socket & socket);
+    void setConnectionFD(int fd, Poco::Timespan timeout = 0, const std::string & fd_description = "");
     void setTimer() const;
 
     bool resumeRoutine();
@@ -69,6 +76,7 @@ class RemoteQueryExecutorReadContext
 {
 public:
     void cancel() {}
+    void setTimer() {}
 };
 
 }

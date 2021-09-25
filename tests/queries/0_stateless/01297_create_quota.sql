@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297, q6_01297, q7_01297, q8_01297, q9_01297, q10_01297;
 DROP QUOTA IF EXISTS q11_01297, q12_01297;
 DROP QUOTA IF EXISTS q2_01297_renamed;
@@ -125,5 +127,13 @@ SELECT '-- system.quota_limits';
 SELECT * FROM system.quota_limits WHERE quota_name LIKE 'q%\_01297' ORDER BY quota_name, duration;
 DROP QUOTA q1_01297, q2_01297, q3_01297, q4_01297;
 
+SELECT '-- query_selects query_inserts';
+CREATE QUOTA q1_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_selects = 1 TO r1_01297;
+CREATE QUOTA q2_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_inserts = 1 TO r1_01297;
+SHOW CREATE QUOTA q1_01297;
+SHOW CREATE QUOTA q2_01297;
+DROP QUOTA q1_01297, q2_01297;
+
 DROP ROLE r1_01297;
 DROP USER u1_01297;
+

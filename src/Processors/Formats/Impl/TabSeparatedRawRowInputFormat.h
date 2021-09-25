@@ -31,26 +31,25 @@ public:
 
     String getName() const override { return "TabSeparatedRawRowInputFormat"; }
 
-    bool readField(IColumn & column, const DataTypePtr & type, bool) override
+    bool readField(IColumn & column, const DataTypePtr &, const SerializationPtr & serialization, bool) override
     {
         String tmp;
 
-        while (!in.eof())
+        while (!in->eof())
         {
-            char * pos = find_first_symbols<'\n', '\t'>(in.position(), in.buffer().end());
+            char * pos = find_first_symbols<'\n', '\t'>(in->position(), in->buffer().end());
 
-            tmp.append(in.position(), pos - in.position());
-            in.position() = pos;
+            tmp.append(in->position(), pos - in->position());
+            in->position() = pos;
 
-            if (pos == in.buffer().end())
-                in.next();
+            if (pos == in->buffer().end())
+                in->next();
             else
                 break;
         }
 
         ReadBufferFromString cell(tmp);
-
-        type->deserializeAsWholeText(column, cell, format_settings);
+        serialization->deserializeWholeText(column, cell, format_settings);
 
         return true;
     }

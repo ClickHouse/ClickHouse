@@ -1,7 +1,7 @@
-#include "CompressionCodecLZ4.h"
-
 #include <lz4.h>
 #include <lz4hc.h>
+
+#include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -9,7 +9,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 
@@ -17,11 +19,52 @@
 namespace DB
 {
 
+class CompressionCodecLZ4 : public ICompressionCodec
+{
+public:
+    explicit CompressionCodecLZ4();
+
+    uint8_t getMethodByte() const override;
+
+    UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
+
+    void updateHash(SipHash & hash) const override;
+
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+
+    bool isCompression() const override { return true; }
+    bool isGenericCompression() const override { return true; }
+
+private:
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+
+    mutable LZ4::PerformanceStatistics lz4_stat;
+    ASTPtr codec_desc;
+};
+
+
+class CompressionCodecLZ4HC : public CompressionCodecLZ4
+{
+public:
+    explicit CompressionCodecLZ4HC(int level_);
+
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+
+private:
+    const int level;
+};
+
+
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 CompressionCodecLZ4::CompressionCodecLZ4()
@@ -51,7 +94,10 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
 
 void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
+    bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
+
+    if (!success)
+        throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -99,6 +145,12 @@ CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
     setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+}
+
+
+CompressionCodecPtr getCompressionCodecLZ4(int level)
+{
+    return std::make_shared<CompressionCodecLZ4HC>(level);
 }
 
 }

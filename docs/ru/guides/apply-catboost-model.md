@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "\u041f\u0440\u0438\u043c\u0435\u043d\u0435\u043d\u0438\u0435\u0020\u043c\u043e\u0434\u0435\u043b\u0438\u0020\u0043\u0061\u0074\u0042\u006f\u006f\u0073\u0074\u0020\u0432\u0020\u0043\u006c\u0069\u0063\u006b\u0048\u006f\u0075\u0073\u0065"
+toc_title: "Применение модели CatBoost в ClickHouse"
 ---
 
 # Применение модели CatBoost в ClickHouse {#applying-catboost-model-in-clickhouse}
@@ -17,6 +17,8 @@ toc_title: "\u041f\u0440\u0438\u043c\u0435\u043d\u0435\u043d\u0438\u0435\u0020\u
 4.  [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
+
+Вы можете перегрузить модели CatBoost, если их конфигурация была обновлена, без перезагрузки сервера. Для этого используйте системные запросы [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) и [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models).
 
 ## Перед началом работы {#prerequisites}
 
@@ -158,6 +160,8 @@ FROM amazon_train
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
+!!! note "Примечание"
+    Вы можете позднее изменить путь к конфигурации модели CatBoost без перезагрузки сервера.
 
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 

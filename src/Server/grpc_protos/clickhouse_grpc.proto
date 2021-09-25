@@ -32,13 +32,32 @@ message ExternalTable {
    // Data to insert to the external table.
    // If a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used,
    // then data for insertion to the same external table can be split between multiple QueryInfos.
-   string data = 3;
+   bytes data = 3;
 
    // Format of the data to insert to the external table.
    string format = 4;
 
    // Settings for executing that insertion, applied after QueryInfo.settings.
    map<string, string> settings = 5;
+}
+
+enum CompressionAlgorithm {
+   NO_COMPRESSION = 0;
+   DEFLATE = 1;
+   GZIP = 2;
+   STREAM_GZIP = 3;
+}
+
+enum CompressionLevel {
+   COMPRESSION_NONE = 0;
+   COMPRESSION_LOW = 1;
+   COMPRESSION_MEDIUM = 2;
+   COMPRESSION_HIGH = 3;
+}
+
+message Compression {
+   CompressionAlgorithm algorithm = 1;
+   CompressionLevel level = 2;
 }
 
 // Information about a query which a client sends to a ClickHouse server.
@@ -53,10 +72,10 @@ message QueryInfo {
    string database = 4;
 
    // Input data, used both as data for INSERT query and as data for the input() function.
-   string input_data = 5;
+   bytes input_data = 5;
 
    // Delimiter for input_data, inserted between input_data from adjacent QueryInfos.
-   string input_data_delimiter = 6;
+   bytes input_data_delimiter = 6;
 
    // Default output format. If not specified, 'TabSeparated' is used.
    string output_format = 7;
@@ -78,6 +97,10 @@ message QueryInfo {
    // If true there will be at least one more QueryInfo in the input stream.
    // `next_query_info` is allowed to be set only if a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used.
    bool next_query_info = 16;
+
+   /// Controls how a ClickHouse server will compress query execution results before sending back to the client.
+   /// If not set the compression settings from the configuration file will be used.
+   Compression result_compression = 17;
 }
 
 enum LogsLevel {
@@ -128,9 +151,9 @@ message Exception {
 // Result of execution of a query which is sent back by the ClickHouse server to the client.
 message Result {
    // Output of the query, represented in the `output_format` or in a format specified in `query`.
-   string output = 1;
-   string totals = 2;
-   string extremes = 3;
+   bytes output = 1;
+   bytes totals = 2;
+   bytes extremes = 3;
 
    repeated LogEntry logs = 4;
    Progress progress = 5;

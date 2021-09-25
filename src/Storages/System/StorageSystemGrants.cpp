@@ -18,7 +18,6 @@
 namespace DB
 {
 using EntityType = IAccessEntity::Type;
-using Kind = AccessRightsElementWithOptions::Kind;
 
 NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 {
@@ -36,10 +35,10 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
@@ -64,7 +63,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
                        const String * database,
                        const String * table,
                        const String * column,
-                       Kind kind,
+                       bool is_partial_revoke,
                        bool grant_option)
     {
         if (grantee_type == EntityType::USER)
@@ -119,13 +118,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
             column_column_null_map.push_back(true);
         }
 
-        column_is_partial_revoke.push_back(kind == Kind::REVOKE);
+        column_is_partial_revoke.push_back(is_partial_revoke);
         column_grant_option.push_back(grant_option);
     };
 
     auto add_rows = [&](const String & grantee_name,
                         IAccessEntity::Type grantee_type,
-                        const AccessRightsElementsWithOptions & elements)
+                        const AccessRightsElements & elements)
     {
         for (const auto & element : elements)
         {
@@ -139,13 +138,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
             if (element.any_column)
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.kind, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.kind, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.is_partial_revoke, element.grant_option);
             }
         }
     };

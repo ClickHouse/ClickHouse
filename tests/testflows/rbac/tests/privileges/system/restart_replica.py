@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=restart_replica, flags=TE,
+        Suite(run=restart_replica,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in restart_replica.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=restart_replica, flags=TE,
+        Suite(run=restart_replica,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in restart_replica.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM RESTART REPLICA", "table"),
     ("RESTART REPLICA", "table"),
@@ -63,11 +64,19 @@ def restart_replica(self, privilege, on, grant_target_name, user_name, node=None
     with table(node, table_name, "ReplicatedMergeTree-sharded_cluster"):
 
         with Scenario("SYSTEM RESTART REPLICA without privilege"):
-            with When("I check the user can't restart replica"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't restart replica"):
                 node.query(f"SYSTEM RESTART REPLICA {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM RESTART REPLICA with privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -75,6 +84,7 @@ def restart_replica(self, privilege, on, grant_target_name, user_name, node=None
                 node.query(f"SYSTEM RESTART REPLICA {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM RESTART REPLICA with revoked privilege"):
+
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -89,6 +99,8 @@ def restart_replica(self, privilege, on, grant_target_name, user_name, node=None
 @Name("system restart replica")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_RestartReplica("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM RESTART REPLICA.

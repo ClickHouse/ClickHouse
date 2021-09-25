@@ -7,10 +7,18 @@
 #include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
+#include <Core/TypeId.h>
+#include <Core/TypeName.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
@@ -90,12 +98,13 @@ struct FloatCompareHelper
 template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
 template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
+
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!IsDecimalNumber<T>);
+    static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
@@ -118,7 +127,7 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return IsNumber<T>; }
+    bool isNumeric() const override { return is_arithmetic_v<T>; }
 
     size_t size() const override
     {
@@ -153,6 +162,8 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
+
+    const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -205,6 +216,11 @@ public:
                                                     compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
@@ -214,8 +230,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -224,6 +240,7 @@ public:
         assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
+
 
     void get(size_t n, Field & res) const override
     {
@@ -238,28 +255,39 @@ public:
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
-        return UInt64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return UInt64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
-        return Int64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return Int64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
     {
-        return bool(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return bool(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<NearestFieldType<T>>(x));
+        data.push_back(DB::get<T>(x));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
@@ -297,6 +325,8 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    ColumnPtr compress() const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
@@ -344,5 +374,23 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     return res;
 }
+
+/// Prevent implicit template instantiation of ColumnVector for common types
+
+extern template class ColumnVector<UInt8>;
+extern template class ColumnVector<UInt16>;
+extern template class ColumnVector<UInt32>;
+extern template class ColumnVector<UInt64>;
+extern template class ColumnVector<UInt128>;
+extern template class ColumnVector<UInt256>;
+extern template class ColumnVector<Int8>;
+extern template class ColumnVector<Int16>;
+extern template class ColumnVector<Int32>;
+extern template class ColumnVector<Int64>;
+extern template class ColumnVector<Int128>;
+extern template class ColumnVector<Int256>;
+extern template class ColumnVector<Float32>;
+extern template class ColumnVector<Float64>;
+extern template class ColumnVector<UUID>;
 
 }

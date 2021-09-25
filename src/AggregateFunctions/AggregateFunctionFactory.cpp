@@ -17,19 +17,25 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
 
+
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
+const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
+{
+    return AggregateFunctionFactory::instance().getCanonicalNameIfAny(name);
+}
 
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
@@ -41,10 +47,14 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
-    if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_aggregate_functions.emplace(Poco::toLower(name), creator_with_properties).second)
-        throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+    if (case_sensitiveness == CaseInsensitive)
+    {
+        auto key = Poco::toLower(name);
+        if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
+            throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
+                ErrorCodes::LOGICAL_ERROR);
+        case_insensitive_name_mapping[key] = name;
+    }
 }
 
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
@@ -80,13 +90,24 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         AggregateFunctionPtr nested_function = getImpl(
             name, nested_types, nested_parameters, out_properties, has_null_arguments);
-        return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
+
+        // Pure window functions are not real aggregate functions. Applying
+        // combinators doesn't make sense for them, they must handle the
+        // nullability themselves. Another special case is functions from Nothing
+        // that are rewritten to AggregateFunctionNothing, in this case
+        // nested_function is nullptr.
+        if (!nested_function || !nested_function->isOnlyWindowFunction())
+        {
+            return combinator->transformAggregateFunction(nested_function,
+                out_properties, type_without_low_cardinality, parameters);
+        }
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
-    if (!res)
+    auto with_original_arguments = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
+
+    if (!with_original_arguments)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
-    return res;
+    return with_original_arguments;
 }
 
 
@@ -98,6 +119,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
+    bool is_case_insensitive = false;
     Value found;
 
     /// Find by exact match.
@@ -107,9 +129,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     }
 
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+    {
         found = jt->second;
+        is_case_insensitive = true;
+    }
 
-    const Context * query_context = nullptr;
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
@@ -118,13 +143,15 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         out_properties = found.properties;
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
+            query_context->addQueryFactoriesInfo(
+                    Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? Poco::toLower(name) : name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        return found.creator(name, argument_types, parameters);
+        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+        return found.creator(name, argument_types, parameters, settings);
     }
 
     /// Combinators of aggregate functions.
@@ -133,13 +160,32 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
+        const std::string & combinator_name = combinator->getName();
+
         if (combinator->isForInternalUsageOnly())
-            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function combinator '{}' is only for internal usage",
+                combinator_name);
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator->getName());
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
-        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        String nested_name = name.substr(0, name.size() - combinator_name.size());
+        /// Nested identical combinators (i.e. uniqCombinedIfIf) is not
+        /// supported (since they even don't work -- silently).
+        ///
+        /// But non-identical does supported and works, for example
+        /// uniqCombinedIfMergeIf, it is useful in case when the underlying
+        /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
+        /// need to filter aggregation result based on another column for
+        /// example.
+        if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
+        }
+
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 

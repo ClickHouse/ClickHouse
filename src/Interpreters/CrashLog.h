@@ -24,7 +24,8 @@ struct CrashLogElement
     Array trace_full;
 
     static std::string name() { return "CrashLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 

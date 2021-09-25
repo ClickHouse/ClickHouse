@@ -8,6 +8,7 @@
 #include <Interpreters/TextLog.h>
 #include "OwnSplitChannel.h"
 
+
 namespace Poco::Util
 {
     class AbstractConfiguration;
@@ -21,15 +22,7 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
-    std::optional<size_t> getLayer() const
-    {
-        return layer; /// layer set in inheritor class BaseDaemonApplication.
-    }
-
     void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
-
-protected:
-    std::optional<size_t> layer;
 
 private:
     Poco::AutoPtr<Poco::FileChannel> log_file;

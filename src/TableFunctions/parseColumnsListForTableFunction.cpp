@@ -14,10 +14,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnsDescription parseColumnsListFromString(const std::string & structure, const Context & context)
+ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextPtr context)
 {
     ParserColumnDeclarationList parser;
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
     ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
 
@@ -25,7 +25,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     if (!columns_list)
         throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
-    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, !settings.allow_suspicious_codecs);
+    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
 }
 
 }

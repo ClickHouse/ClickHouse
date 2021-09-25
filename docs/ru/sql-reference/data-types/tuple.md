@@ -47,4 +47,30 @@ SELECT tuple(1,NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/tuple/) <!--hide-->
+## Адресация элементов кортежа {#addressing-tuple-elements}
+
+К элементам кортежа можно обращаться по индексу и по имени:
+
+``` sql
+CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
+
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples;
+
+SELECT a.2 FROM named_tuples;
+```
+
+Результат:
+
+``` text
+┌─a.s─┐
+│ y   │
+│ x   │
+└─────┘
+
+┌─tupleElement(a, 2)─┐
+│                 10 │
+│                -10 │
+└────────────────────┘
+```

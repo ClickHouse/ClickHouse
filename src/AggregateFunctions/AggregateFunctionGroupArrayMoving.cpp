@@ -5,11 +5,11 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -21,17 +21,18 @@ namespace ErrorCodes
 namespace
 {
 
+/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
-    using Data = MovingSumData<std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>>;
+    using Data = MovingSumData<std::conditional_t<is_decimal<T>, Decimal128, NearestFieldType<T>>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using Data = MovingAvgData<std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>>;
+    using Data = MovingAvgData<std::conditional_t<is_decimal<T>, Decimal128, Float64>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
@@ -56,7 +57,8 @@ inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string 
 }
 
 template <template <typename, typename> class Function>
-AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionMoving(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 

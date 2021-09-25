@@ -1,11 +1,11 @@
 version: '2.3'
 services:
     zoo1:
-        image: zookeeper:3.4.12
+        image: zookeeper:3.6.2
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+            ZOO_SERVERS: server.1=zoo1:2888:3888;2181 server.2=zoo2:2888:3888;2181 server.3=zoo3:2888:3888;2181
             ZOO_MY_ID: 1
             JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:
@@ -16,11 +16,11 @@ services:
               source: ${ZK_DATA_LOG1:-}
               target: /datalog
     zoo2:
-        image: zookeeper:3.4.12
+        image: zookeeper:3.6.2
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+            ZOO_SERVERS: server.1=zoo1:2888:3888;2181 server.2=zoo2:2888:3888;2181 server.3=zoo3:2888:3888
             ZOO_MY_ID: 2
             JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:
@@ -31,11 +31,11 @@ services:
               source: ${ZK_DATA_LOG2:-}
               target: /datalog
     zoo3:
-        image: zookeeper:3.4.12
+        image: zookeeper:3.6.2
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+            ZOO_SERVERS: server.1=zoo1:2888:3888;2181 server.2=zoo2:2888:3888;2181 server.3=zoo3:2888:3888;2181
             ZOO_MY_ID: 3
             JVMFLAGS: -Dzookeeper.forceSync=no
         volumes:

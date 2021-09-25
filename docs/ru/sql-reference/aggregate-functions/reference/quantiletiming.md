@@ -18,11 +18,11 @@ quantileTiming(level)(expr)
 
 Алиас: `medianTiming`.
 
-**Параметры**
+**Аргументы**
 
--   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `level` — уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
 
--   `expr` — [Выражение](../../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float\*](../../../sql-reference/data-types/float.md).
+-   `expr` — [выражение](../../syntax.md#syntax-expressions), зависящее от значений столбцов, возвращающее данные типа [Float\*](../../../sql-reference/data-types/float.md).
 
         - Если в функцию передать отрицательные значения, то её поведение не определено.
         - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
@@ -85,4 +85,3 @@ SELECT quantileTiming(response_time) FROM t
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/) <!--hide-->

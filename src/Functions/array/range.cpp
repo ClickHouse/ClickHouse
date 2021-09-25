@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <numeric>
 
 
@@ -22,12 +23,19 @@ namespace ErrorCodes
 }
 
 
+/** Generates array
+  * range(size): [0, size)
+  * range(start, end): [start, end)
+  * range(start, end, step): [start, end) with step increments.
+  */
 class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
-    static constexpr size_t max_elements = 100'000'000;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
+
+    const size_t max_elements;
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
 
 private:
     String getName() const override { return name; }
@@ -35,14 +43,15 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 3 || arguments.empty())
         {
-            throw Exception{"Function " + getName() + " needs 1..3 arguments; passed "
-                            + std::to_string(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} needs 1..3 arguments; passed {}.",
+                getName(), arguments.size());
         }
 
         for (const auto & arg : arguments)
@@ -339,6 +348,18 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
+        WhichDataType which(elem_type);
+
+        if (!which.isUInt8()
+            && !which.isUInt16()
+            && !which.isUInt32()
+            && !which.isUInt64())
+        {
+            throw Exception{"Illegal columns of arguments of function " + getName()
+                + ", the function only implemented for unsigned integers up to 64 bit", ErrorCodes::ILLEGAL_COLUMN};
+        }
+
         ColumnPtr res;
         if (arguments.size() == 1)
         {
@@ -356,22 +377,24 @@ private:
         Columns columns_holder(3);
         ColumnRawPtrs column_ptrs(3);
 
-        const auto return_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
-
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i == 1)
-                columns_holder[i] = castColumn(arguments[i], return_type)->convertToFullColumnIfConst();
+                columns_holder[i] = castColumn(arguments[i], elem_type)->convertToFullColumnIfConst();
             else
-                columns_holder[i] = castColumn(arguments[i], return_type);
+                columns_holder[i] = castColumn(arguments[i], elem_type);
 
             column_ptrs[i] = columns_holder[i].get();
         }
 
-        // for step column, defaults to 1
+        /// Step is one by default.
         if (arguments.size() == 2)
         {
-            columns_holder[2] = return_type->createColumnConst(input_rows_count, 1);
+            /// Convert a column with constant 1 to the result type.
+            columns_holder[2] = castColumn(
+                {DataTypeUInt8().createColumnConst(input_rows_count, 1), std::make_shared<DataTypeUInt8>(), {}},
+                elem_type);
+
             column_ptrs[2] = columns_holder[2].get();
         }
 
@@ -385,7 +408,9 @@ private:
             if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count)) ||
                 (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count)) ||
                 (res = executeConstStartStep<UInt32>(column_ptrs[1], start, step, input_rows_count)) ||
-                (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count))) {}
+                (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
+            {
+            }
         }
         else if (is_start_const && !is_step_const)
         {
@@ -394,7 +419,9 @@ private:
             if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
                 (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
                 (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
-                (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count))) {}
+                (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+            {
+            }
         }
         else if (!is_start_const && is_step_const)
         {
@@ -403,14 +430,18 @@ private:
             if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
                 (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
                 (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
-                (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count))) {}
+                (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+            {
+            }
         }
         else
         {
             if ((res = executeGeneric<UInt8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
                 (res = executeGeneric<UInt16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
                 (res = executeGeneric<UInt32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
-                (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))) {}
+                (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)))
+            {
+            }
         }
 
         if (!res)

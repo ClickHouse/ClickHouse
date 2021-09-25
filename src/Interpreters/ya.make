@@ -28,6 +28,7 @@ SRCS(
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
+    AsynchronousInsertQueue.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -39,25 +40,32 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     ColumnAliasesVisitor.cpp
     Context.cpp
+    ConvertStringsToEnumVisitor.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
+    DDLTask.cpp
     DDLWorker.cpp
     DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
     DictionaryReader.cpp
+    DuplicateOrderByVisitor.cpp
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
+    ExpressionActionsSettings.cpp
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
+    ExternalUserDefinedExecutableFunctionsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
+    FunctionNameNormalizer.cpp
+    GatherFunctionQuantileVisitor.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -66,7 +74,9 @@ SRCS(
     InJoinSubqueriesPreprocessor.cpp
     InternalTextLogsQueue.cpp
     InterpreterAlterQuery.cpp
+    InterpreterBackupQuery.cpp
     InterpreterCheckQuery.cpp
+    InterpreterCreateFunctionQuery.cpp
     InterpreterCreateQuery.cpp
     InterpreterCreateQuotaQuery.cpp
     InterpreterCreateRoleQuery.cpp
@@ -75,6 +85,7 @@ SRCS(
     InterpreterCreateUserQuery.cpp
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp
+    InterpreterDropFunctionQuery.cpp
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
@@ -85,6 +96,7 @@ SRCS(
     InterpreterKillQueryQuery.cpp
     InterpreterOptimizeQuery.cpp
     InterpreterRenameQuery.cpp
+    InterpreterSelectIntersectExceptQuery.cpp
     InterpreterSelectQuery.cpp
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
@@ -100,19 +112,23 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
+    Lemmatizers.cpp
     LogicalExpressionsOptimizer.cpp
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
+    NormalizeSelectWithUnionQueryVisitor.cpp
     NullableUtils.cpp
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp
@@ -123,19 +139,26 @@ SRCS(
     QueryNormalizer.cpp
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
+    QueryViewsLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
+    RewriteCountVariantsVisitor.cpp
+    RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
+    SelectIntersectExceptQueryVisitor.cpp
+    Session.cpp
+    SessionLog.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
+    SynonymsExtensions.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -145,12 +168,20 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    UserDefinedExecutableFunction.cpp
+    UserDefinedExecutableFunctionFactory.cpp
+    UserDefinedSQLFunctionFactory.cpp
+    UserDefinedSQLFunctionVisitor.cpp
+    UserDefinedSQLObjectsLoader.cpp
+    WindowDescription.cpp
+    ZooKeeperLog.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp
     convertFieldToType.cpp
     createBlockSelector.cpp
     evaluateConstantExpression.cpp
+    executeDDLQueryOnCluster.cpp
     executeQuery.cpp
     getClusterName.cpp
     getHeaderForProcessingStage.cpp

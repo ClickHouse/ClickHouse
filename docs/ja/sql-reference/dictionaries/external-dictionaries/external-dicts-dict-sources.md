@@ -55,7 +55,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 または
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -87,7 +87,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 または
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 フィールドの設定:
@@ -627,4 +627,4 @@ SOURCE(REDIS(
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` は簡単な源のためのハッシュされたシングルキー源, `hash_map` 二つのキーを持つハッシュソース用です。 距源およびキャッシュ源の複雑な鍵サポートされていません。 省略可能であり、デフォルト値は `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

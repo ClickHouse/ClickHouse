@@ -10,11 +10,31 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-def add_instance(name):
+# By default the exceptions that was throwed in threads will be ignored
+# (they will not mark the test as failed, only printed to stderr).
+#
+# Wrap thrading.Thread and re-throw exception on join()
+class SafeThread(threading.Thread):
+    def __init__(self, target):
+        super().__init__()
+        self.target = target
+        self.exception = None
+    def run(self):
+        try:
+            self.target()
+        except Exception as e: # pylint: disable=broad-except
+            self.exception = e
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.exception:
+            raise self.exception
+
+def add_instance(name, ddl_config=None):
     main_configs=[
-        'configs/ddl.xml',
         'configs/remote_servers.xml',
     ]
+    if ddl_config:
+        main_configs.append(ddl_config)
     dictionaries=[
         'configs/dict.xml',
     ]
@@ -24,8 +44,12 @@ def add_instance(name):
         with_zookeeper=True)
 
 initiator = add_instance('initiator')
-n1 = add_instance('n1')
-n2 = add_instance('n2')
+# distributed_ddl.pool_size = 2
+n1 = add_instance('n1', 'configs/ddl_a.xml')
+n2 = add_instance('n2', 'configs/ddl_a.xml')
+# distributed_ddl.pool_size = 20
+n3 = add_instance('n3', 'configs/ddl_b.xml')
+n4 = add_instance('n4', 'configs/ddl_b.xml')
 
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
@@ -49,17 +73,32 @@ def longer_then(sec):
         return inner
     return wrapper
 
-# It takes 7 seconds to load slow_dict.
-def thread_reload_dictionary():
-    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster slow_dict')
+# It takes 7 seconds to load slow_dict_7.
+def execute_reload_dictionary_slow_dict_7():
+    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_a slow_dict_7', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
+def execute_reload_dictionary_slow_dict_3():
+    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_b slow_dict_3', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
+def execute_smoke_query():
+    initiator.query('DROP DATABASE IF EXISTS foo ON CLUSTER cluster_b', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
+
+def check_log():
+    # ensure that none of tasks processed multiple times
+    for _, instance in list(cluster.instances.items()):
+        assert not instance.contains_in_log('Coordination::Exception: Node exists')
 
 # NOTE: uses inner function to exclude slow start_cluster() from timeout.
 
-def test_dict_load():
+def test_slow_dict_load_7():
     @pytest.mark.timeout(10)
     @longer_then(7)
     def inner_test():
-        initiator.query('SYSTEM RELOAD DICTIONARY slow_dict')
+        initiator.query('SYSTEM RELOAD DICTIONARY slow_dict_7')
     inner_test()
 
 def test_all_in_parallel():
@@ -68,12 +107,13 @@ def test_all_in_parallel():
     def inner_test():
         threads = []
         for _ in range(2):
-            threads.append(threading.Thread(target=thread_reload_dictionary))
+            threads.append(SafeThread(target=execute_reload_dictionary_slow_dict_7))
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(70)
     inner_test()
+    check_log()
 
 def test_two_in_parallel_two_queued():
     @pytest.mark.timeout(19)
@@ -81,9 +121,35 @@ def test_two_in_parallel_two_queued():
     def inner_test():
         threads = []
         for _ in range(4):
-            threads.append(threading.Thread(target=thread_reload_dictionary))
+            threads.append(SafeThread(target=execute_reload_dictionary_slow_dict_7))
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(70)
     inner_test()
+    check_log()
+
+def test_smoke():
+    for _ in range(100):
+        execute_smoke_query()
+    check_log()
+
+def test_smoke_parallel():
+    threads = []
+    for _ in range(100):
+        threads.append(SafeThread(target=execute_smoke_query))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(70)
+    check_log()
+
+def test_smoke_parallel_dict_reload():
+    threads = []
+    for _ in range(100):
+        threads.append(SafeThread(target=execute_reload_dictionary_slow_dict_3))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(70)
+    check_log()

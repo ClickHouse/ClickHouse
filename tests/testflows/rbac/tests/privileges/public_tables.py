@@ -58,6 +58,10 @@ def sensitive_tables(self, node=None):
             output = node.query("SELECT count(*) FROM system.query_thread_log", settings = [("user",user_name)]).output
             assert output == 0, error()
 
+        with And("I select from query_views_log"):
+            output = node.query("SELECT count(*) FROM system.query_views_log", settings = [("user",user_name)]).output
+            assert output == 0, error()
+
         with And("I select from clusters"):
             output = node.query("SELECT count(*) FROM system.clusters", settings = [("user",user_name)]).output
             assert output == 0, error()
@@ -95,5 +99,5 @@ def sensitive_tables(self, node=None):
 def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    Scenario(run=public_tables, setup=instrument_clickhouse_server_log, flags=TE)
-    Scenario(run=sensitive_tables, setup=instrument_clickhouse_server_log, flags=TE)
+    Scenario(run=public_tables, setup=instrument_clickhouse_server_log)
+    Scenario(run=sensitive_tables, setup=instrument_clickhouse_server_log)

@@ -1,6 +1,6 @@
 ---
 toc_priority: 34
-toc_title: "\u0410\u0440\u0438\u0444\u043c\u0435\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Арифметические функции"
 ---
 
 # Арифметические функции {#arifmeticheskie-funktsii}
@@ -83,4 +83,3 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 Вычисляет наименьшее общее кратное чисел.
 При делении на ноль или при делении минимального отрицательного числа на минус единицу, кидается исключение.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/arithmetic_functions/) <!--hide-->

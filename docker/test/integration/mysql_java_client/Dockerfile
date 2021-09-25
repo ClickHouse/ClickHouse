@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-mysql-java-client .
+# docker build -t clickhouse/mysql-java-client .
 # MySQL Java client docker container
 
 FROM ubuntu:18.04

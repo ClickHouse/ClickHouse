@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cmath>
+#include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
+#include <Core/AccurateComparison.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
@@ -10,11 +12,13 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -132,6 +136,7 @@ class QuantileTDigest
         if (unmerged > params.max_unmerged)
             compress();
     }
+
     void compressBrute()
     {
         if (centroids.size() <= params.max_centroids)
@@ -195,14 +200,12 @@ public:
             BetterFloat l_count = l->count;
             while (r != centroids.end())
             {
-                if (l->mean == r->mean) // Perfect aggregation (fast). We compare l->mean, not l_mean, to avoid identical elements after compress
-                {
-                    l_count += r->count;
-                    l->count = l_count;
-                    ++r;
-                    continue;
-                }
-                // we use quantile which gives us the smallest error
+                /// N.B. Piece of logic which compresses the same singleton centroids into one centroid is removed
+                /// because: 1) singleton centroids are being processed in unusual way in recent version of algorithm
+                /// and such compression would break this logic;
+                /// 2) we shall not compress centroids further than `max_centroids` parameter requires because
+                /// this will lead to uneven compression.
+                /// For more information see: https://arxiv.org/abs/1902.04023
 
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                 BetterFloat ql = (sum + l_count * 0.5) / count;
@@ -314,26 +317,39 @@ public:
         compress();
 
         if (centroids.size() == 1)
-            return centroids.front().mean;
+            return checkOverflow<ResultType>(centroids.front().mean);
 
         Float64 x = level * count;
         Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = centroids.front().mean;
+        Count prev_count = centroids.front().count;
 
         for (const auto & c : centroids)
         {
             Float64 current_x = sum + c.count * 0.5;
 
             if (current_x >= x)
-                return interpolate(x, prev_x, prev_mean, current_x, c.mean);
+            {
+                /// Special handling of singletons.
+                Float64 left = prev_x + 0.5 * (prev_count == 1);
+                Float64 right = current_x - 0.5 * (c.count == 1);
+
+                if (x <= left)
+                    return checkOverflow<ResultType>(prev_mean);
+                else if (x >= right)
+                    return checkOverflow<ResultType>(c.mean);
+                else
+                    return checkOverflow<ResultType>(interpolate(x, left, prev_mean, right, c.mean));
+            }
 
             sum += c.count;
             prev_mean = c.mean;
+            prev_count = c.count;
             prev_x = current_x;
         }
 
-        return centroids.back().mean;
+        return checkOverflow<ResultType>(centroids.back().mean);
     }
 
     /** Get multiple quantiles (`size` parts).
@@ -364,25 +380,40 @@ public:
         Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = centroids.front().mean;
+        Count prev_count = centroids.front().count;
 
         size_t result_num = 0;
         for (const auto & c : centroids)
         {
             Float64 current_x = sum + c.count * 0.5;
 
-            while (current_x >= x)
+            if (current_x >= x)
             {
-                result[levels_permutation[result_num]] = interpolate(x, prev_x, prev_mean, current_x, c.mean);
+                /// Special handling of singletons.
+                Float64 left = prev_x + 0.5 * (prev_count == 1);
+                Float64 right = current_x - 0.5 * (c.count == 1);
 
-                ++result_num;
-                if (result_num >= size)
-                    return;
+                while (current_x >= x)
+                {
 
-                x = levels[levels_permutation[result_num]] * count;
+                    if (x <= left)
+                        result[levels_permutation[result_num]] = prev_mean;
+                    else if (x >= right)
+                        result[levels_permutation[result_num]] = c.mean;
+                    else
+                        result[levels_permutation[result_num]] = interpolate(x, left, prev_mean, right, c.mean);
+
+                    ++result_num;
+                    if (result_num >= size)
+                        return;
+
+                    x = levels[levels_permutation[result_num]] * count;
+                }
             }
 
             sum += c.count;
             prev_mean = c.mean;
+            prev_count = c.count;
             prev_x = current_x;
         }
 
@@ -409,6 +440,16 @@ public:
     void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float32 * result)
     {
         getManyImpl(levels, indices, size, result);
+    }
+
+private:
+    template <typename ResultType>
+    static ResultType checkOverflow(Value val)
+    {
+        ResultType result;
+        if (accurate::convertNumeric(val, result))
+            return result;
+        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 };
 

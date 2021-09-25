@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
@@ -16,7 +17,7 @@ class IMergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
-    using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
+    using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         const MergeTreeData::DataPartPtr & data_part_,
@@ -72,6 +73,7 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
+    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -92,7 +94,9 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-    std::unordered_map<String, DataTypePtr> columns_from_part;
+
+    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
+    ColumnsFromPart columns_from_part;
 };
 
 }

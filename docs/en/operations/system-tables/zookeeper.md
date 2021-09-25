@@ -1,11 +1,15 @@
 # system.zookeeper {#system-zookeeper}
 
 The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must have a ‘path’ equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
+The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children in ZooKeeper that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
 To output data for all root nodes, write path = ‘/’.
-If the path specified in ‘path’ doesn’t exist, an exception will be thrown.
+If the path specified in ‘path’ does not exist, an exception will be thrown.
+
+The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
+If in the specified ‘path’ collection has does not exist path, an exception will be thrown.
+It can be used to do a batch of ZooKeeper path queries.
 
 Columns:
 
@@ -68,4 +72,4 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/zookeeper) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/zookeeper) <!--hide-->

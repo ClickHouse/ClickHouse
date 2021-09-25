@@ -4,7 +4,7 @@ toc_priority: 114
 
 # groupArraySample {#grouparraysample}
 
-Creates an array of sample argument values. The size of the resulting array is limited to `max_size` elements. Argument values are selected and added to the array randomly. 
+Creates an array of sample argument values. The size of the resulting array is limited to `max_size` elements. Argument values are selected and added to the array randomly.
 
 **Syntax**
 
@@ -12,7 +12,7 @@ Creates an array of sample argument values. The size of the resulting array is l
 groupArraySample(max_size[, seed])(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `max_size` — Maximum size of the resulting array. [UInt64](../../data-types/int-uint.md).
 -   `seed` — Seed for the random number generator. Optional. [UInt64](../../data-types/int-uint.md). Default value: `123456`.

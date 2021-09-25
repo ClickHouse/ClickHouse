@@ -30,6 +30,7 @@
 
 namespace DB
 {
+struct Settings;
 
 enum class StatisticsFunctionKind
 {
@@ -48,7 +49,7 @@ struct StatFuncOneArg
     using Type1 = T;
     using Type2 = T;
     using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
-    using Data = std::conditional_t<IsDecimalNumber<T>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
+    using Data = std::conditional_t<is_decimal<T>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
 
     static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 1;
@@ -74,8 +75,8 @@ class AggregateFunctionVarianceSimple final
 public:
     using T1 = typename StatFunc::Type1;
     using T2 = typename StatFunc::Type2;
-    using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
-    using ColVecT2 = std::conditional_t<IsDecimalNumber<T2>, ColumnDecimal<T2>, ColumnVector<T2>>;
+    using ColVecT1 = ColumnVectorOrDecimal<T1>;
+    using ColVecT2 = ColumnVectorOrDecimal<T2>;
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
@@ -121,7 +122,9 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
@@ -129,11 +132,10 @@ public:
                 static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
         {
-            if constexpr (std::is_same_v<T1, Decimal256>)
+            if constexpr (is_decimal<T1>)
             {
                 this->data(place).add(static_cast<ResultType>(
-                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value
-                ));
+                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value));
             }
             else
                 this->data(place).add(
@@ -141,27 +143,27 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();
 
-        if constexpr (IsDecimalNumber<T1>)
+        if constexpr (is_decimal<T1>)
         {
             if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
                 dst.push_back(data.getPopulation(src_scale * 2));

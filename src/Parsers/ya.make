@@ -11,19 +11,23 @@ PEERDIR(
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
+    ASTBackupQuery.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
     ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
+    ASTCreateFunctionQuery.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp
     ASTCreateRoleQuery.cpp
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
+    ASTDatabaseOrNone.cpp
     ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
+    ASTDropFunctionQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
     ASTFunction.cpp
@@ -38,6 +42,8 @@ SRCS(
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
+    ASTProjectionDeclaration.cpp
+    ASTProjectionSelectQuery.cpp
     ASTQualifiedAsterisk.cpp
     ASTQueryParameter.cpp
     ASTQueryWithOnCluster.cpp
@@ -46,6 +52,7 @@ SRCS(
     ASTRolesOrUsersSet.cpp
     ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
+    ASTSelectIntersectExceptQuery.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
     ASTSetQuery.cpp
@@ -84,8 +91,10 @@ SRCS(
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
     ParserAlterQuery.cpp
+    ParserBackupQuery.cpp
     ParserCase.cpp
     ParserCheckQuery.cpp
+    ParserCreateFunctionQuery.cpp
     ParserCreateQuery.cpp
     ParserCreateQuotaQuery.cpp
     ParserCreateRoleQuery.cpp
@@ -93,10 +102,12 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
+    ParserDatabaseOrNone.cpp
     ParserDescribeTableQuery.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
+    ParserDropFunctionQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
     ParserExternalDDLQuery.cpp
@@ -105,6 +116,7 @@ SRCS(
     ParserKillQueryQuery.cpp
     ParserOptimizeQuery.cpp
     ParserPartition.cpp
+    ParserProjectionSelectQuery.cpp
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
@@ -133,6 +145,7 @@ SRCS(
     TokenIterator.cpp
     formatAST.cpp
     formatSettingName.cpp
+    getInsertQuery.cpp
     iostream_debug_helpers.cpp
     makeASTForLogicalFunction.cpp
     obfuscateQueries.cpp

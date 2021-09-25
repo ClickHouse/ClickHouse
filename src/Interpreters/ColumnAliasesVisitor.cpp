@@ -3,7 +3,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -14,8 +13,11 @@
 namespace DB
 {
 
-bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
+bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &, const Data & data)
 {
+    if (data.excluded_nodes.contains(node.get()))
+        return false;
+
     if (const auto * f = node->as<ASTFunction>())
     {
         /// "lambda" visits children itself.
@@ -25,35 +27,15 @@ bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 
     return !(node->as<ASTTableExpression>()
             || node->as<ASTSubquery>()
-            || node->as<ASTArrayJoin>()
-            || node->as<ASTSelectQuery>()
-            || node->as<ASTSelectWithUnionQuery>());
+            || node->as<ASTArrayJoin>());
 }
 
 void ColumnAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    // If it's select query, only replace filters.
-    if (auto * query = ast->as<ASTSelectQuery>())
-    {
-        if (query->where())
-             Visitor(data).visit(query->refWhere());
-        if (query->prewhere())
-             Visitor(data).visit(query->refPrewhere());
-
-        return;
-    }
-
-    if (auto * node = ast->as<ASTFunction>())
-    {
-        visit(*node, ast, data);
-        return;
-    }
-
-    if (auto * node = ast->as<ASTIdentifier>())
-    {
-        visit(*node, ast, data);
-        return;
-    }
+    if (auto * func = ast->as<ASTFunction>())
+        visit(*func, ast, data);
+    else if (auto * ident = ast->as<ASTIdentifier>())
+        visit(*ident, ast, data);
 }
 
 void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & data)
@@ -81,13 +63,27 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
 {
     if (auto column_name = IdentifierSemantic::getColumnName(node))
     {
-        if (data.forbidden_columns.count(*column_name) || data.private_aliases.count(*column_name) || !data.columns.has(*column_name))
+        if (data.array_join_result_columns.count(*column_name) || data.array_join_source_columns.count(*column_name)
+            || data.private_aliases.count(*column_name) || !data.columns.has(*column_name))
             return;
 
         const auto & col = data.columns.get(*column_name);
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
         {
-            ast = addTypeConversionToAST(col.default_desc.expression->clone(), col.type->getName(), data.columns.getAll(), data.context);
+            auto alias = node.tryGetAlias();
+            auto alias_expr = col.default_desc.expression->clone();
+            auto original_column = alias_expr->getColumnName();
+            // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
+            if (data.array_join_result_columns.count(original_column) || data.array_join_source_columns.count(original_column))
+                return;
+            ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
+            // We need to set back the original column name, or else the process of naming resolution will complain.
+            if (!alias.empty())
+                ast->setAlias(alias);
+            else
+                ast->setAlias(*column_name);
+
+            data.changed = true;
             // revisit ast to track recursive alias columns
             Visitor(data).visit(ast);
         }

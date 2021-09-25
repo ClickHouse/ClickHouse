@@ -12,7 +12,10 @@ void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
+void registerFunctionsBinaryRepr(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
+void registerFunctionsCodingUUID(FunctionFactory &);
+void registerFunctionChar(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
@@ -40,11 +43,15 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
+void registerFunctionsSQLJSON(FunctionFactory &);
+void registerFunctionToJSONString(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
+void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
+void registerFunctionsSnowflake(FunctionFactory & factory);
 #if !defined(ARCADIA_BUILD)
 void registerFunctionBayesAB(FunctionFactory &);
 #endif
@@ -70,7 +77,10 @@ void registerFunctions()
 #if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
 #endif
+    registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
+    registerFunctionsCodingUUID(factory);
+    registerFunctionChar(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
     registerFunctionsConversion(factory);
@@ -97,12 +107,16 @@ void registerFunctions()
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
     registerFunctionsJSON(factory);
+    registerFunctionsSQLJSON(factory);
+    registerFunctionToJSONString(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
     registerFunctionBitHammingDistance(factory);
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
+    registerFunctionValidateNestedArraySizes(factory);
+    registerFunctionsSnowflake(factory);
 
 #if !defined(ARCADIA_BUILD)
     registerFunctionBayesAB(factory);

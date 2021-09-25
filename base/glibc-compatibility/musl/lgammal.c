@@ -85,6 +85,9 @@
  *
  */
 
+// Disable warnings by PVS-Studio
+//-V::GA
+
 #include <stdint.h>
 #include <math.h>
 #include "libm.h"

@@ -4,7 +4,7 @@
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
@@ -124,7 +124,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         if (limits.randomize_interval)
             end_of_interval += randomDuration(limits.duration);
         interval.end_of_interval = end_of_interval.time_since_epoch();
-        for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
             if (limits.max[resource_type])
                 interval.max[resource_type] = *limits.max[resource_type];
@@ -159,7 +159,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
             const auto & current_interval = *lower_bound;
-            for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
                 new_interval.used[resource_type].store(current_interval.used[resource_type].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());

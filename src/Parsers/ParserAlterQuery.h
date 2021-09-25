@@ -2,6 +2,7 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTAlterQuery.h>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ namespace DB
   *     [RENAME COLUMN [IF EXISTS] col_name TO col_name]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
   *     [MODIFY SETTING setting_name=setting_value, ...]
+  *     [RESET SETTING setting_name, ...]
   *     [COMMENT COLUMN [IF EXISTS] col_name string]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
@@ -44,9 +46,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    bool is_live_view;
+    ASTAlterQuery::AlterObjectType alter_object;
 
-    ParserAlterCommandList(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : alter_object(alter_object_) {}
 };
 
 
@@ -57,18 +60,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    bool is_live_view;
+    ASTAlterQuery::AlterObjectType alter_object;
 
-    ParserAlterCommand(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : alter_object(alter_object_) {}
 };
 
-
-/// Part of the UPDATE command of the form: col_name = expr
-class ParserAssignment : public IParserBase
-{
-protected:
-    const char * getName() const  override{ return "column assignment"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 }
