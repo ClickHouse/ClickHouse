@@ -73,4 +73,6 @@ class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>
     using SystemLog<ZooKeeperLogElement>::SystemLog;
 };
 
+DataTypePtr getCoordinationErrorCodesEnumType();
+
 }

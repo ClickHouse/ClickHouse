@@ -36,7 +36,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, bool /* has_force_restore_data_flag */, bool /*force_attach*/, bool /* skip_startup_tables */)
+    ContextMutablePtr local_context, bool /* force_restore */, bool /*force_attach*/, bool /* skip_startup_tables */)
 {
     iterateMetadataFiles(local_context, [this](const String & file_name)
     {

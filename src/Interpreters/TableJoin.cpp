@@ -339,8 +339,16 @@ static std::optional<String> getDictKeyName(const String & dict_name , ContextPt
 
 bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
 {
+    using Strictness = ASTTableJoin::Strictness;
+
+    bool allowed_inner = isInner(kind()) && strictness() == Strictness::All;
+    bool allowed_left = isLeft(kind()) && (strictness() == Strictness::Any ||
+                                           strictness() == Strictness::All ||
+                                           strictness() == Strictness::Semi ||
+                                           strictness() == Strictness::Anti);
+
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
-    if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
+    if (!allowed_inner && !allowed_left)
         return false;
 
     const Names & right_keys = keyNamesRight();

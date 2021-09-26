@@ -25,4 +25,4 @@ The list of documented datasets:
 -   [Brown University Benchmark](../../getting-started/example-datasets/brown-benchmark.md)
 -   [Cell Towers](../../getting-started/example-datasets/cell-towers.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->
