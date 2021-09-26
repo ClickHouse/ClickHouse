@@ -64,7 +64,7 @@ done
 
 timeout $TIMEOUT bash -c select1 &
 timeout $TIMEOUT bash -c select2 &
-timeout $TIMEOUT bash -c truncate1 &
+# timeout $TIMEOUT bash -c truncate1 &
 
 wait
 echo "OK"
