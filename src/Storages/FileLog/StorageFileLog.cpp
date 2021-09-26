@@ -39,7 +39,8 @@ namespace ErrorCodes
     extern const int CANNOT_GET_FILE_STAT;
     extern const int NOT_REGULAR_FILE;
     extern const int READ_META_FILE_FAILED;
-	extern const int FILE_STREAM_ERROR;
+    extern const int FILE_STREAM_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
