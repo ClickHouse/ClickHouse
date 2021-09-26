@@ -205,6 +205,12 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readYAMLHeaderInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<',', '\n'>(s, buf);
+}
+
+template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<'\t', '\n'>(s, buf);
@@ -236,6 +242,12 @@ void readString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringInto(s, buf);
+}
+
+void readYAMLHeader(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readYAMLHeaderInto(s, buf);
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
