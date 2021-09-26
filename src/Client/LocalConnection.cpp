@@ -2,6 +2,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 
+
 namespace DB
 {
 
@@ -362,8 +363,8 @@ Packet LocalConnection::receivePacket()
             break;
         }
         default:
-            throw Exception("Unknown packet " + toString(packet.type)
-                + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
+                            "Unknown packet {} for {}", toString(packet.type), getDescription());
     }
 
     next_packet_type.reset();
