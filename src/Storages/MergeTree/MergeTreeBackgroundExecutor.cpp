@@ -114,6 +114,7 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 
             /// This is significant to order the destructors.
             item->task.reset();
+            item->is_done.set();
             return;
         }
 
@@ -149,6 +150,7 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         item->task.reset();
+        item->is_done.set();
     }
 }
 
@@ -176,13 +178,7 @@ void MergeTreeBackgroundExecutor::threadFunction()
                 active.push_back(item);
             }
 
-            routine(item);
-
-            /// When storage shutdowns it will wait until all related background tasks
-            /// are finished, because they may want to interact with its fields
-            /// and this will cause segfault.
-            if (item->is_currently_deleting)
-                item->is_done.set();
+            routine(std::move(item));
         }
         catch (...)
         {

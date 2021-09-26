@@ -41,7 +41,7 @@
                             {% for code, name in config.extra.languages.items() %}
                             <a class="dropdown-item{% if language == code %} disabled{% endif %}"
                                href="/docs/{{ code }}/{{ page.url }}">
-                                <img src="/images/flags/{{ code }}.svg" alt="" title="" width="60" class="d-inline-block mr-2" />{{ name }}
+                                <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
                             </a>
                             {% endfor %}
                         </div>

@@ -704,6 +704,18 @@
                 "clang-tidy": "disable",
                 "with_coverage": false
             }
+        },
+        "ClickHouse Keeper Jepsen": {
+            "required_build_properties": {
+                "compiler": "clang-13",
+                "package_type": "binary",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
         }
     }
 }
