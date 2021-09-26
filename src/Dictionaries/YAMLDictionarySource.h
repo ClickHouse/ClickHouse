@@ -18,32 +18,14 @@ namespace ErrorCodes
 class YAMLDictionarySource final : public IDictionarySource
 {
 public:
-
-    //struct Configuration
-    //{
-
-    //};
     
     YAMLDictionarySource(
             const std::string & filepath_, 
-            //const Configuration & configuration,
             Block & sample_block_,
             ContextPtr context_,
             bool created_from_ddl);
  
     YAMLDictionarySource(const YAMLDictionarySource & other);
-    
-    InputFormatPtr getYAMLInput(
-        ReadBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
-
-    InputFormatPtr getYAMLInputFormat(
-        ReadBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        const std::optional<FormatSettings> & _format_settings = std::nullopt) const; 
 
     Pipe loadAll() override;
 
@@ -80,7 +62,6 @@ private:
     Poco::Timestamp getLastModification() const;
 
     const std::string filepath;
-    //const Configuration configuration;
     Block sample_block;
     ContextPtr context;
     Poco::Timestamp last_modification;

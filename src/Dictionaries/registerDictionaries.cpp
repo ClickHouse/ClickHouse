@@ -24,6 +24,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
+void registerDictionaryRegexpTree(DictionaryFactory & factory);
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
 void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory);
@@ -58,6 +59,7 @@ void registerDictionaries()
 
     {
         auto & factory = DictionaryFactory::instance();
+	registerDictionaryRegexpTree(factory);
         registerDictionaryRangeHashed(factory);
         registerDictionaryTrie(factory);
         registerDictionaryFlat(factory);

@@ -75,6 +75,7 @@ void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 /// Input only formats.
 
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
+void registerInputFormatProcessorYAML(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
 void registerInputFormatProcessorLineAsString(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
@@ -120,6 +121,8 @@ void registerFormats()
     registerOutputFormatProcessorMsgPack(factory);
     registerInputFormatProcessorRawBLOB(factory);
     registerOutputFormatProcessorRawBLOB(factory);
+
+    registerInputFormatProcessorYAML(factory);
 
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorORC(factory);
