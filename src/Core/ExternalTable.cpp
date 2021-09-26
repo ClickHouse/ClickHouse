@@ -15,7 +15,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/Sinks/EmptySink.h>
 
 #include <Core/ExternalTable.h>

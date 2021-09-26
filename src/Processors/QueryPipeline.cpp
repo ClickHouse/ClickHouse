@@ -6,9 +6,9 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/NullSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -300,7 +300,7 @@ QueryPipeline::QueryPipeline(Chain chain)
     for (auto processor : chain.getProcessors())
         processors.emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputPort().getHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(chain.getOutputPort(), sink->getPort());
     processors.emplace_back(std::move(sink));
 
@@ -380,7 +380,7 @@ void QueryPipeline::complete(Chain chain)
     for (auto processor : chain.getProcessors())
         processors.emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputPort().getHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(*output, chain.getInputPort());
     connect(chain.getOutputPort(), sink->getPort());
     processors.emplace_back(std::move(sink));

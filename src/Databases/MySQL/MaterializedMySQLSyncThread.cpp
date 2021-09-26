@@ -12,7 +12,6 @@
 #    include <Processors/QueryPipelineBuilder.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Sinks/ExceptionHandlingSink.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>

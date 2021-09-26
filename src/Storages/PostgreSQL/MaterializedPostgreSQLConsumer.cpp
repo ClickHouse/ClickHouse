@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Common/SettingsChanges.h>
 
