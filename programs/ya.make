@@ -8,6 +8,11 @@ CFLAGS(
     -DENABLE_CLICKHOUSE_SERVER
 )
 
+ADDINCL(
+    # It's not used due to a lack of -DUSE_BASE64 option. But ya.make still tries to resolve it.
+    contrib/restricted/turbo_base64
+)
+
 PEERDIR(
     clickhouse/base/daemon
     clickhouse/base/loggers

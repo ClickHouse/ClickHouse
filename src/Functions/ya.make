@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH -DUSE_BASE64
 )
 
 ADDINCL(
@@ -15,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    contrib/restricted/turbo_base64
     GLOBAL contrib/restricted/murmurhash
 )
 
@@ -31,6 +32,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/turbo_base64
     contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
@@ -218,6 +220,7 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
@@ -248,6 +251,7 @@ SRCS(
     divide/divide.cpp
     divide/divideImpl.cpp
     dumpColumnStructure.cpp
+    e.cpp
     empty.cpp
     encodeXMLComponent.cpp
     encrypt.cpp
@@ -299,15 +303,11 @@ SRCS(
     h3EdgeAngle.cpp
     h3EdgeLengthM.cpp
     h3GetBaseCell.cpp
-    h3GetFaces.cpp
     h3GetResolution.cpp
     h3HexAreaM2.cpp
     h3IndexesAreNeighbors.cpp
-    h3IsPentagon.cpp
     h3IsValid.cpp
-    h3ResIsClassIII.cpp
     h3ToChildren.cpp
-    h3ToGeoBoundary.cpp
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
@@ -316,6 +316,7 @@ SRCS(
     hasThreadFuzzer.cpp
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
+    hostName.cpp
     hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
@@ -363,7 +364,6 @@ SRCS(
     map.cpp
     match.cpp
     materialize.cpp
-    mathConstants.cpp
     minus.cpp
     modulo.cpp
     moduloOrZero.cpp
@@ -404,6 +404,7 @@ SRCS(
     nullIf.cpp
     padString.cpp
     partitionId.cpp
+    pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
@@ -480,7 +481,7 @@ SRCS(
     s2RectIntersection.cpp
     s2RectUnion.cpp
     s2ToGeo.cpp
-    serverConstants.cpp
+    serverUUID.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
@@ -506,11 +507,13 @@ SRCS(
     synonyms.cpp
     tan.cpp
     tanh.cpp
+    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
     timeSlot.cpp
     timeSlots.cpp
+    timezone.cpp
     timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
@@ -573,7 +576,9 @@ SRCS(
     tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
+    uptime.cpp
     validateNestedArraySizes.cpp
+    version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
     visitParamExtractFloat.cpp

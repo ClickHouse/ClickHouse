@@ -28,7 +28,6 @@ SRCS(
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
-    AsynchronousInsertQueue.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -61,11 +60,9 @@ SRCS(
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
-    ExternalUserDefinedExecutableFunctionsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     FunctionNameNormalizer.cpp
-    GatherFunctionQuantileVisitor.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -152,7 +149,6 @@ SRCS(
     RowRefs.cpp
     SelectIntersectExceptQueryVisitor.cpp
     Session.cpp
-    SessionLog.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
@@ -168,11 +164,9 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
-    UserDefinedExecutableFunction.cpp
-    UserDefinedExecutableFunctionFactory.cpp
-    UserDefinedSQLFunctionFactory.cpp
-    UserDefinedSQLFunctionVisitor.cpp
-    UserDefinedSQLObjectsLoader.cpp
+    UserDefinedFunctionFactory.cpp
+    UserDefinedFunctionsVisitor.cpp
+    UserDefinedObjectsLoader.cpp
     WindowDescription.cpp
     ZooKeeperLog.cpp
     addMissingDefaults.cpp

@@ -130,16 +130,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        /// disconnect() will reset the socket, get timeouts before.
-        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
-            e.displayText(), getDescription(),
-            socket->getReceiveTimeout().totalMilliseconds(),
-            socket->getSendTimeout().totalMilliseconds());
-
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -419,12 +413,7 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    /// Query is not executed within sendQuery() function.
-    ///
-    /// And what this means that temporary timeout (via TimeoutSetter) is not
-    /// enough, since next query can use timeout from the previous query in this case.
-    socket->setReceiveTimeout(timeouts.receive_timeout);
-    socket->setSendTimeout(timeouts.send_timeout);
+    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
     if (settings)
     {

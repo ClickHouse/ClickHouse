@@ -1,5 +1,3 @@
--- Tags: global
-
 drop table if exists xp;
 drop table if exists xp_d;
 

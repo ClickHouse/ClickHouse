@@ -532,7 +532,7 @@ class ClickHouseCluster:
             binary_path = binary_path[:-len('-server')]
 
         env_variables['keeper_binary'] = binary_path
-        env_variables['image'] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables['image'] = "yandex/clickhouse-integration-test:" + self.docker_base_tag
         env_variables['user'] = str(os.getuid())
         env_variables['keeper_fs'] = 'bind'
         for i in range(1, 4):
@@ -757,10 +757,10 @@ class ClickHouseCluster:
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
-                     hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
+                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True):
 
         """Add an instance to the cluster.
 
@@ -832,8 +832,7 @@ class ClickHouseCluster:
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
-            tmpfs=tmpfs or [],
-            config_root_name=config_root_name)
+            tmpfs=tmpfs or [])
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -1659,9 +1658,6 @@ class ClickHouseCluster:
 
                 if instance.contains_in_log("Fatal", from_host=True):
                     fatal_log = instance.grep_in_log("Fatal", from_host=True)
-                    if 'Child process was terminated by signal 9 (KILL)' in fatal_log:
-                        fatal_log = None
-                        continue
                     logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
             try:
@@ -1805,8 +1801,8 @@ class ClickHouseInstance:
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
-            image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            image="yandex/clickhouse-integration-test", tag="latest",
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1879,7 +1875,6 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
         self.is_up = False
-        self.config_root_name = config_root_name
 
 
     def is_built_with_sanitizer(self, sanitizer_name=''):
@@ -2224,8 +2219,9 @@ class ClickHouseInstance:
             finally:
                 sock.close()
 
-    def dict_to_xml(self, dictionary):
-        xml_str = dict2xml(dictionary, wrap=self.config_root_name, indent="  ", newlines=True)
+    @staticmethod
+    def dict_to_xml(dictionary):
+        xml_str = dict2xml(dictionary, wrap="yandex", indent="  ", newlines=True)
         return xml_str
 
     @property
@@ -2308,22 +2304,15 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        def write_embedded_config(name, dest_dir):
-            with open(p.join(HELPERS_DIR, name), 'r') as f:
-                data = f.read()
-                data = data.replace('yandex', self.config_root_name)
-                with open(p.join(dest_dir, name), 'w') as r:
-                    r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
+            shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
 
-        write_embedded_config('0_common_instance_users.xml', users_d_dir)
-
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
         if len(self.custom_dictionaries_paths):
-            write_embedded_config('0_common_enable_dictionaries.xml', self.config_d_dir)
+            shutil.copy(p.join(HELPERS_DIR, '0_common_enable_dictionaries.xml'), self.config_d_dir)
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

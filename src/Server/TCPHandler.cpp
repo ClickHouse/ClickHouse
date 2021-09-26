@@ -286,15 +286,14 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
+            bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
-            ///        and don't check implicitly via existence of |state.io.in|.
-            if (state.io.out && !state.io.in)
+            if (state.io.out)
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
@@ -308,7 +307,6 @@ void TCPHandler::runImpl()
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
             else if (state.io.in)
-                /// TODO: check that this branch works well for insert query with embedded data.
                 processOrdinaryQuery();
 
             state.io.onFinish();

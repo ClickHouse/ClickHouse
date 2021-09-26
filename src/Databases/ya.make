@@ -9,7 +9,6 @@ PEERDIR(
 
 
 SRCS(
-    DDLDependencyVisitor.cpp
     DatabaseAtomic.cpp
     DatabaseDictionary.cpp
     DatabaseFactory.cpp
@@ -31,7 +30,6 @@ SRCS(
     SQLite/DatabaseSQLite.cpp
     SQLite/SQLiteUtils.cpp
     SQLite/fetchSQLiteTableStructure.cpp
-    TablesLoader.cpp
 
 )
 

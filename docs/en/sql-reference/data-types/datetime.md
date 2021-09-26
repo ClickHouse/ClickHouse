@@ -145,4 +145,4 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [The `Date` data type](../../sql-reference/data-types/date.md)
 
-[Original article](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

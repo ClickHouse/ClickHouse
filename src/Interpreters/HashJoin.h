@@ -140,8 +140,6 @@ public:
       */
     bool addJoinedBlock(const Block & block, bool check_limits) override;
 
-    void checkTypesOfKeys(const Block & block) const override;
-
     /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */

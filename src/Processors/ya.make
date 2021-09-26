@@ -8,15 +8,13 @@ PEERDIR(
     contrib/libs/msgpack
     contrib/libs/protobuf
     contrib/libs/apache/arrow
-    contrib/libs/apache/orc
 )
 
 ADDINCL(
     contrib/libs/apache/arrow/src
-    contrib/libs/apache/orc/c++/include
 )
 
-CFLAGS(-DUSE_ARROW=1 -DUSE_PARQUET=1 -DUSE_ORC=1)
+CFLAGS(-DUSE_ARROW=1)
 
 SRCS(
     Chunk.cpp
@@ -28,7 +26,6 @@ SRCS(
     Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
-    Executors/StreamingFormatExecutor.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
     Formats/IOutputFormat.cpp
@@ -184,7 +181,7 @@ SRCS(
     Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
-    Transforms/getSourceFromASTInsertQuery.cpp
+    Transforms/getSourceFromFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )

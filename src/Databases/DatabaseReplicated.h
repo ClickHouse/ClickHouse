@@ -57,12 +57,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
-
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
-
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
-
+    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
     void shutdown() override;
 
     friend struct DatabaseReplicatedTask;

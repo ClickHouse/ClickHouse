@@ -134,7 +134,6 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
     <compression incl="clickhouse_compression">
     </compression>
     <distributed_ddl>

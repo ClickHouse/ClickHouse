@@ -187,9 +187,6 @@ public:
         return dict;
     }
 
-    bool isInputFormat(const String & name) const;
-    bool isOutputFormat(const String & name) const;
-
 private:
     FormatsDictionary dict;
 

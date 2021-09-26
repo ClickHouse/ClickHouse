@@ -140,8 +140,9 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
@@ -200,7 +201,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-bool IStorage::isStaticStorage() const
+bool IStorage::isReadOnly() const
 {
     auto storage_policy = getStoragePolicy();
     if (storage_policy)
