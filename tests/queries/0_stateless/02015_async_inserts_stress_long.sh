@@ -55,7 +55,7 @@ export -f insert1
 export -f insert2
 export -f select1
 export -f select2
-export -f truncate1
+# export -f truncate1
 
 for _ in {1..5}; do
     timeout $TIMEOUT bash -c insert1 &
