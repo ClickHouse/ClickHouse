@@ -36,6 +36,20 @@ SELECT * FROM map_test_index_map_keys WHERE map['K2'] NOT IN 'V2';
 SELECT 'NOT IN with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE map['K3'] NOT IN '';
 
+SELECT 'MapContains with existing key';
+SELECT * FROM map_test_index_map_keys WHERE mapContains(map, 'K0');
+SELECT 'MapContains with non existing key';
+SELECT * FROM map_test_index_map_keys WHERE mapContains(map, 'K2');
+SELECT 'MapContains with non existing key and default value';
+SELECT * FROM map_test_index_map_keys WHERE mapContains(map, '');
+
+SELECT 'Has with existing key';
+SELECT * FROM map_test_index_map_keys WHERE has(map, 'K0');
+SELECT 'Has with non existing key';
+SELECT * FROM map_test_index_map_keys WHERE has(map, 'K2');
+SELECT 'Has with non existing key and default value';
+SELECT * FROM map_test_index_map_keys WHERE has(map, '');
+
 DROP TABLE map_test_index_map_keys;
 
 DROP TABLE IF EXISTS map_test_index_map_values;
@@ -62,12 +76,5 @@ SELECT 'NOT IN with non existing key';
 SELECT * FROM map_test_index_map_values WHERE map['K2'] NOT IN 'V2';
 SELECT 'NOT IN with non existing key and default value';
 SELECT * FROM map_test_index_map_values WHERE map['K3'] NOT IN '';
-
-SELECT 'MapContains with existing key';
-SELECT * FROM map_test_index_map_values WHERE mapContains(map, 'K0');
-SELECT 'MapContains with non existing key';
-SELECT * FROM map_test_index_map_values WHERE mapContains(map, 'K2');
-SELECT 'MapContains with non existing key and default value';
-SELECT * FROM map_test_index_map_values WHERE mapContains(map, 'K3');
 
 DROP TABLE map_test_index_map_values;

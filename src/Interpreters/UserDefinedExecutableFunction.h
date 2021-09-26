@@ -63,7 +63,6 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        std::cerr << "UserDefinedExecutableFunction::clone " << this << std::endl;
         return std::make_shared<UserDefinedExecutableFunction>(configuration, lifetime, process_pool);
     }
 
