@@ -510,6 +510,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Convert to Disjunctive Normal Form https://en.wikipedia.org/wiki/Disjunctive_normal_form
 ///    based on sample https://github.com/ilejn/ndf
+/// Keep join conditions as is.
 class DNF
 {
     bool node_added = false;
@@ -582,9 +583,10 @@ class DNF
                         const auto * f = arg->as<ASTFunction>();
                         if (f && f->name == "or" && f->children.size() == 1)
                         {
+                            const bool throw_on_table_mix = false;
                             auto pos = CollectJoinOnKeysMatcher::getTableForIdentifiers(std::make_shared<ASTFunction>(*f),
-                                                                                        false /* throw_on_table_mix */,
-                                                                                        data);
+                                throw_on_table_mix,
+                                data);
                             return pos != JoinIdentifierPos::Left && pos != JoinIdentifierPos::Right;
                         }
                         return false;
@@ -601,7 +603,8 @@ class DNF
                 {
                     // LOG_DEBUG(&Poco::Logger::get("toDNF"), "IDs {} vs. {}", arg->getTreeHash(), (*or_child)->getTreeHash());
 
-                    if (arg->getTreeHash() != (*or_child)->getTreeHash())
+                    // if (arg->getTreeHash() != (*or_child)->getTreeHash())
+                    if (arg.get() != (*or_child).get())
                     {
                         rest_children.push_back(arg);
                     }
@@ -677,13 +680,14 @@ class DNF
 
 
 public:
-    DNF(const CollectJoinOnKeysVisitor::Data & data_)
+    explicit DNF(const CollectJoinOnKeysVisitor::Data & data_)
         : data(data_)
     {
     }
 
     void process(const ASTSelectQuery & select_query, const TablesWithColumns & tables)
     {
+
         const ASTTablesInSelectQueryElement * node = select_query.join();
         if (!node || tables.size() < 2)
         {
