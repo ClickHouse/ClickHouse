@@ -228,7 +228,7 @@ public:
     ///    we can eliminate redundant disjuncts ORing filter conditions
     ///    This is needed for queries like
     ///    SELECT * FROM t1 INNER ALL JOIN t2 ON (t1.a = t2.a  AND t1.c > 0) OR (t1.a = t2.a AND t1.b > 0);
-    ///    to be compartible with merge joins and to create only one hashmap if hashjoin.
+    ///    to be compatible with merge joins and to reduce number of hashmaps if hashjoin.
     void optimizeClauses();
     void addDisjunct();
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
