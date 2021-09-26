@@ -23,14 +23,6 @@ class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IS
     friend struct shared_ptr_helper<StorageFileLog>;
 
 public:
-    enum class FileStatus
-    {
-        BEGIN,
-        NO_CHANGE,
-        UPDATED,
-        REMOVED,
-        BROKEN
-    };
 
     using Files = std::vector<String>;
 
@@ -50,14 +42,54 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void drop() override;
+
     const auto & getFormatName() const { return format_name; }
 
-    auto & getFileNames() { return file_names; }
-    auto & getFileStatuses() { return file_statuses; }
+    enum class FileStatus
+    {
+        OPEN, /// first time open file after table start up
+        NO_CHANGE,
+        UPDATED,
+        REMOVED,
+    };
+
+    struct FileContext
+    {
+        FileStatus status = FileStatus::OPEN;
+        std::ifstream reader;
+    };
+
+    struct FileMeta
+    {
+        String file_name;
+        UInt64 last_writen_position = 0;
+        UInt64 last_open_end;
+    };
+
+    using FileNameToInode = std::unordered_map<String, UInt64>;
+    using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
+    using FileNameToContext = std::unordered_map<String, FileContext>;
+
+    struct FileInfos
+    {
+        FileNameToInode inode_by_name;
+        InodeToFileMeta meta_by_inode;
+        FileNameToContext context_by_name;
+        /// file names without path
+        Names file_names;
+    };
+
+    auto & getFileInfos() { return file_infos; }
+
+    auto getFullMetaPath(const String & file_name) const { return root_meta_path + "/" + file_name; }
+    auto getFullDataPath(const String & file_name) const { return root_data_path + "/" + file_name; }
 
     NamesAndTypesList getVirtuals() const override;
 
     static Names getVirtualColumnNames();
+
+    static UInt64 getInode(const String & file_name);
 
 protected:
     StorageFileLog(
@@ -66,25 +98,26 @@ protected:
         const ColumnsDescription & columns_,
         const String & relative_path_,
         const String & format_name_,
-        std::unique_ptr<FileLogSettings> settings);
+        std::unique_ptr<FileLogSettings> settings,
+        bool attach);
 
 private:
     std::unique_ptr<FileLogSettings> filelog_settings;
+
+    /// user_files_path/ + path_argument/
     const String path;
+    bool path_is_directory = true;
+
+    /// If path argument of the table is a regular file, it equals to user_files_path
+    /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
+    String root_data_path;
+    /// Database meta_path/ + .table_name/
+    String root_meta_path;
+
+    FileInfos file_infos;
 
     const String format_name;
     Poco::Logger * log;
-
-    struct FileContext
-    {
-        FileStatus status = FileStatus::BEGIN;
-        size_t last_read_position = 0;
-    };
-
-    using NameToFile = std::unordered_map<String, FileContext>;
-    NameToFile file_statuses;
-
-    std::vector<String> file_names;
 
     std::mutex status_mutex;
 
@@ -92,7 +125,6 @@ private:
 
     uint64_t milliseconds_to_wait;
 
-    // Stream thread
     struct TaskContext
     {
         BackgroundSchedulePool::TaskHolder holder;
@@ -105,7 +137,9 @@ private:
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
-    void init();
+    void loadFiles();
+
+    void loadMetaFiles(bool attach);
 
     void threadFunc();
 
@@ -116,7 +150,15 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    bool updateFileStatuses();
+    bool updateFileInfos();
+
+    void openFilesAndSetPos();
+    void closeFilesAndStoreMeta();
+
+    /// Serialize all file meta
+    void serialize(bool with_end_pos = false) const;
+
+    void deserialize();
 };
 
 }
