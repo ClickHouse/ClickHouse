@@ -1,6 +1,6 @@
-# docker build --network=host -t yandex/clickhouse-codebrowser .
-# docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output yandex/clickhouse-codebrowser
-FROM yandex/clickhouse-binary-builder
+# docker build --network=host -t clickhouse/codebrowser .
+# docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output clickhouse/codebrowser
+FROM clickhouse/binary-builder
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-9 libl
 # https://github.com/ClickHouse-Extras/woboq_codebrowser/commit/37e15eaf377b920acb0b48dbe82471be9203f76b
 RUN git clone https://github.com/ClickHouse-Extras/woboq_codebrowser
 
-RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang\+\+-9 -DCMAKE_C_COMPILER=clang-9 && make -j
+RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang\+\+-13 -DCMAKE_C_COMPILER=clang-13 && make -j
 
 ENV CODEGEN=/woboq_codebrowser/generator/codebrowser_generator
 ENV CODEINDEX=/woboq_codebrowser/indexgenerator/codebrowser_indexgenerator
@@ -24,7 +24,7 @@ ENV SHA=nosha
 ENV DATA="data"
 
 CMD mkdir -p $BUILD_DIRECTORY && cd $BUILD_DIRECTORY && \
-    cmake $SOURCE_DIRECTORY -DCMAKE_CXX_COMPILER=/usr/bin/clang\+\+-11 -DCMAKE_C_COMPILER=/usr/bin/clang-11 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_S3=0 && \
+    cmake $SOURCE_DIRECTORY -DCMAKE_CXX_COMPILER=/usr/bin/clang\+\+-13 -DCMAKE_C_COMPILER=/usr/bin/clang-13 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_S3=0 && \
     mkdir -p $HTML_RESULT_DIRECTORY && \
     $CODEGEN -b $BUILD_DIRECTORY -a -o $HTML_RESULT_DIRECTORY -p ClickHouse:$SOURCE_DIRECTORY:$SHA -d $DATA | ts '%Y-%m-%d %H:%M:%S' && \
     cp -r $STATIC_DATA $HTML_RESULT_DIRECTORY/ &&\

@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 DROP DATABASE IF EXISTS database_for_dict_01268;
 
 CREATE DATABASE database_for_dict_01268;

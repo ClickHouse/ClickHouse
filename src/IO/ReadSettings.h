@@ -4,46 +4,44 @@
 #include <string>
 #include <Core/Defines.h>
 
-
 namespace DB
 {
-
-#define FOR_EACH_READ_METHOD(M) \
-    /** Simple synchronous reads with 'read'. \
-        Can use direct IO after specified size. Can use prefetch by asking OS to perform readahead. */ \
-    M(read) \
-    \
-    /** Simple synchronous reads with 'pread'. \
-        In contrast to 'read', shares single file descriptor from multiple threads. \
-        Can use direct IO after specified size. Can use prefetch by asking OS to perform readahead. */ \
-    M(pread) \
-    \
-    /** Use mmap after specified size or simple synchronous reads with 'pread'. \
-        Can use prefetch by asking OS to perform readahead. */ \
-    M(mmap) \
-    \
-    /** Checks if data is in page cache with 'preadv2' on modern Linux kernels. \
-        If data is in page cache, read from the same thread. \
-        If not, offload IO to separate threadpool. \
-        Can do prefetch with double buffering. \
-        Can use specified priorities and limit the number of concurrent reads. */ \
-    M(pread_threadpool) \
-    \
-    /** It's using asynchronous reader with fake backend that in fact synchronous. \
-        Only used for testing purposes. */ \
-    M(pread_fake_async) \
-
-
 enum class ReadMethod
 {
-#define DEFINE_READ_METHOD(NAME) NAME,
-    FOR_EACH_READ_METHOD(DEFINE_READ_METHOD)
-#undef DEFINE_READ_METHOD
+    /**
+     * Simple synchronous reads with 'read'.
+     * Can use direct IO after specified size.
+     * Can use prefetch by asking OS to perform readahead.
+     */
+    read,
+
+    /**
+     * Simple synchronous reads with 'pread'.
+     * In contrast to 'read', shares single file descriptor from multiple threads.
+     * Can use direct IO after specified size.
+     * Can use prefetch by asking OS to perform readahead.
+     */
+    pread,
+
+    /**
+     * Use mmap after specified size or simple synchronous reads with 'pread'.
+     * Can use prefetch by asking OS to perform readahead.
+     */
+    mmap,
+
+    /**
+     * Checks if data is in page cache with 'preadv2' on modern Linux kernels.
+     * If data is in page cache, read from the same thread.
+     * If not, offload IO to separate threadpool.
+     * Can do prefetch with double buffering.
+     * Can use specified priorities and limit the number of concurrent reads.
+     */
+    pread_threadpool,
+
+    /// Use asynchronous reader with fake backend that in fact synchronous.
+    /// @attention Use only for testing purposes.
+    pread_fake_async
 };
-
-const char * toString(ReadMethod read_method);
-ReadMethod parseReadMethod(const std::string & name);
-
 
 class MMappedFileCache;
 
@@ -67,6 +65,9 @@ struct ReadSettings
 
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
+
+    size_t remote_fs_backoff_threshold = 10000;
+    size_t remote_fs_backoff_max_tries = 4;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {
