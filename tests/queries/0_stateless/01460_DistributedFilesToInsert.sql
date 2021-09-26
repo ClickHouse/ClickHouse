@@ -1,3 +1,6 @@
+-- Tags: no-parallel, no-fasttest
+-- Tag no-fasttest: Look at DistributedFilesToInsert, so cannot run in parallel.
+
 -- otherwise SYSTEM STOP DISTRIBUTED SENDS does not makes any effect (for localhost)
 -- (i.e. no .bin files and hence no sending is required)
 set prefer_localhost_replica=0;

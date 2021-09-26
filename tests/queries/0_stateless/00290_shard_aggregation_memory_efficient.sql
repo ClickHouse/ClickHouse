@@ -1,3 +1,5 @@
+-- Tags: shard
+
 DROP TABLE IF EXISTS numbers_10_00290;
 SET max_block_size = 1000;
 CREATE TABLE numbers_10_00290 ENGINE = Log AS SELECT * FROM system.numbers LIMIT 10000;

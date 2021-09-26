@@ -33,6 +33,7 @@ endif()
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
 add_subdirectory (abseil-cpp-cmake)
+add_subdirectory (magic-enum-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
@@ -206,12 +207,14 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_EMBEDDED_COMPILER)
+function(add_llvm)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
 
+    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
+    set (CMAKE_INSTALL_RPATH "ON")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -219,13 +222,12 @@ if (USE_EMBEDDED_COMPILER)
 
     # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
     # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
     set (CMAKE_CXX_STANDARD 17)
 
     add_subdirectory (llvm/llvm)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
+endfunction()
+if (USE_EMBEDDED_COMPILER)
+    add_llvm()
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)

@@ -251,13 +251,13 @@ sudo ./llvm.sh 12
 
 ## Написание кода {#napisanie-koda}
 
-Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.com/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.tech/docs/ru/development/style/
+Стиль кода: https://clickhouse.com/docs/ru/development/style/
 
-Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.tech/docs/ru/development/contrib/#adding-third-party-libraries
+Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.com/docs/ru/development/contrib/#adding-third-party-libraries
 
-Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.com/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 

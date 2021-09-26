@@ -59,6 +59,10 @@ A lambda function that accepts multiple arguments can also be passed to a higher
 
 For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
 
+## User Defined Functions {#user-defined-functions}
+
+Custom functions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
+
 ## Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.

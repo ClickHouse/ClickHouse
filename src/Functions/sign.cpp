@@ -10,10 +10,11 @@ struct SignImpl
 {
     using ResultType = Int8;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (IsDecimalNumber<A> || std::is_floating_point_v<A>)
+        if constexpr (is_decimal<A> || std::is_floating_point_v<A>)
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;
         else if constexpr (is_signed_v<A>)
             return a < 0 ? -1 : a == 0 ? 0 : 1;

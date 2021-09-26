@@ -15,4 +15,4 @@ toc_title: Операции
 !!! info "Если вы не нашли то, что искали"
     Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
 
-[Original article](https://clickhouse.tech/docs/en/faq/operations/)
+[Original article](https://clickhouse.com/docs/en/faq/operations/)

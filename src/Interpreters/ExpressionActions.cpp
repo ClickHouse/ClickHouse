@@ -792,7 +792,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
     for (const auto & column : columns)
     {
         /// Skip .sizeX and similar meta information
-        if (!column.getSubcolumnName().empty())
+        if (column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant
@@ -1042,7 +1042,7 @@ ExpressionActionsChain::JoinStep::JoinStep(
         required_columns.emplace_back(column.name, column.type);
 
     NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types);
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
     for (const auto & [name, type] : result_names_and_types)
         /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
         result_columns.emplace_back(nullptr, type, name);

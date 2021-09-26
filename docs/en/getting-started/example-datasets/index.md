@@ -25,4 +25,4 @@ The list of documented datasets:
 -   [What's on the Menu?](../../getting-started/example-datasets/menus.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->
