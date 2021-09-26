@@ -16,16 +16,13 @@ SRCS(
     DiskMemory.cpp
     DiskRestartProxy.cpp
     DiskSelector.cpp
-    DiskWebServer.cpp
     IDisk.cpp
     IDiskRemote.cpp
     IVolume.cpp
     LocalDirectorySyncGuard.cpp
     ReadIndirectBufferFromRemoteFS.cpp
-    ReadIndirectBufferFromWebServer.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
-    TemporaryFileOnDisk.cpp
     VolumeJBOD.cpp
     VolumeRAID1.cpp
     WriteIndirectBufferFromRemoteFS.cpp

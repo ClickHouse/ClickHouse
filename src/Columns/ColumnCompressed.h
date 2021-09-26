@@ -57,13 +57,9 @@ public:
       */
     static ColumnPtr wrap(ColumnPtr column)
     {
-        /// The order of evaluation of function arguments is unspecified
-        /// and could cause interacting with object in moved-from state
-        const auto size = column->size();
-        const auto bytes = column->allocatedBytes();
         return ColumnCompressed::create(
-            size,
-            bytes,
+            column->size(),
+            column->allocatedBytes(),
             [column = std::move(column)]{ return column; });
     }
 
@@ -128,3 +124,4 @@ private:
 };
 
 }
+

@@ -23,20 +23,6 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
-## Dynamically adding new tables to replication
-
-``` sql
-ATTACH TABLE postgres_database.new_table;
-```
-
-It will work as well if there is a setting `materialized_postgresql_tables_list`.
-
-## Dynamically removing tables from replication
-
-``` sql
-DETACH TABLE postgres_database.table_to_remove;
-```
-
 ## Settings {#settings}
 
 -   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
@@ -45,10 +31,6 @@ DETACH TABLE postgres_database.table_to_remove;
 
 -   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
--   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
-
--   [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot)
-
 ``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
@@ -56,12 +38,6 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
-```
-
-It is also possible to change settings at run time.
-
-``` sql
-ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Requirements {#requirements}
@@ -97,7 +73,7 @@ WHERE oid = 'postgres_table'::regclass;
 
 !!! warning "Warning"
     Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
-
+	
 ## Example of Use {#example-of-use}
 
 ``` sql
@@ -106,11 +82,3 @@ ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres
 
 SELECT * FROM postgresql_db.postgres_table;
 ```
-
-## Notes {#notes}
-
-- Failover of the logical replication slot.
-
-Logical Replication Slots which exist on the primary are not available on standby replicas.
-So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
-A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.

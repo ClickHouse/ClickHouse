@@ -45,4 +45,4 @@ If there were problems with mutating some data parts, the following columns cont
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine
 -   [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/mutations) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/mutations) <!--hide-->

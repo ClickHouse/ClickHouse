@@ -60,7 +60,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.output_format_csv_null_representation;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
@@ -162,12 +161,14 @@ InputFormatPtr FormatFactory::getInput(
     if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
 
-    if (parallel_parsing)
+    if (parallel_parsing && name == "JSONEachRow")
     {
-        const auto & non_trivial_prefix_and_suffix_checker = getCreators(name).non_trivial_prefix_and_suffix_checker;
-        /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
-            parallel_parsing = false;
+        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
+
+        /// For JSONEachRow we can safely skip whitespace characters
+        skipWhitespaceIfAny(buf);
+        if (buf.eof() || *buf.position() == '[')
+            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
     }
 
     if (parallel_parsing)
@@ -391,14 +392,6 @@ void FormatFactory::registerInputFormatProcessor(const String & name, InputProce
     target = std::move(input_creator);
 }
 
-void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
-{
-    auto & target = dict[name].non_trivial_prefix_and_suffix_checker;
-    if (target)
-        throw Exception("FormatFactory: Non trivial prefix and suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(non_trivial_prefix_and_suffix_checker);
-}
-
 void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)
 {
     auto & target = dict[name].output_processor_creator;
@@ -438,18 +431,6 @@ bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
 {
     const auto & target = getCreators(name);
     return target.is_column_oriented;
-}
-
-bool FormatFactory::isInputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.input_creator || it->second.input_processor_creator);
-}
-
-bool FormatFactory::isOutputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.output_creator || it->second.output_processor_creator);
 }
 
 FormatFactory & FormatFactory::instance()

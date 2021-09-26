@@ -13,8 +13,6 @@ namespace DB
 {
 
 class ASTAlterCommand;
-class IDatabase;
-using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
@@ -44,7 +42,6 @@ struct AlterCommand
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
-        MODIFY_DATABASE_SETTING,
     };
 
     /// Which property user wants to remove from column
@@ -170,6 +167,9 @@ struct AlterCommand
     /// metadata changes.
     std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
+
+/// Return string representation of AlterCommand::Type
+String alterTypeToString(const AlterCommand::Type type);
 
 class Context;
 

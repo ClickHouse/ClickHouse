@@ -63,7 +63,7 @@ git checkout -b name_for_a_branch_with_my_test upstream/master
 
 #### Install & run clickhouse
 
-1) install `clickhouse-server` (follow [official docs](https://clickhouse.com/docs/en/getting-started/install/))
+1) install `clickhouse-server` (follow [official docs](https://clickhouse.tech/docs/en/getting-started/install/))
 2) install test configurations (it will use Zookeeper mock implementation and adjust some settings)
 ```
 cd ~/workspace/ClickHouse/tests/config

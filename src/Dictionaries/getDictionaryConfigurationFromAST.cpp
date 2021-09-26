@@ -4,6 +4,7 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
@@ -15,8 +16,6 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/isLocalAddress.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -182,9 +181,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (const auto & child : children)
+    for (size_t index = 0; index != children.size(); ++index)
     {
-        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -403,9 +402,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (const auto & child : children)
+    for (size_t i = 0; i != children.size(); ++i)
     {
-        const ASTPair * pair = child->as<const ASTPair>();
+        const ASTPair * pair = children[i]->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
@@ -497,6 +496,9 @@ void checkAST(const ASTCreateQuery & query)
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
 
+    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
+
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
 
@@ -510,6 +512,8 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
+
+    /// Range can be empty
 }
 
 void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
@@ -575,30 +579,6 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     conf->load(xml_document);
     return conf;
-}
-
-std::optional<ClickHouseDictionarySourceInfo>
-getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context)
-{
-    ClickHouseDictionarySourceInfo info;
-
-    String host = config->getString("dictionary.source.clickhouse.host", "");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
-    String database = config->getString("dictionary.source.clickhouse.db", "");
-    String table = config->getString("dictionary.source.clickhouse.table", "");
-    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
-
-    if (host.empty() || port == 0 || table.empty())
-        return {};
-
-    info.table_name = {database, table};
-
-    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
-    if (!isLocalAddress({host, port}, default_port))
-        return info;
-
-    info.is_local = true;
-    return info;
 }
 
 }

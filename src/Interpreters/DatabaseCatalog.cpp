@@ -30,7 +30,6 @@
 
 #if USE_LIBPQXX
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
-#    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -241,9 +240,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
-                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
-                                        db_and_table.second->getStorageID().table_name);
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
         }
 #endif
 

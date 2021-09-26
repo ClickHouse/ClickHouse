@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SET allow_simdjson=1;
 
 SELECT JSONLength('"HX-=');

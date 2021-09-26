@@ -10,7 +10,6 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -50,8 +49,6 @@ public:
         unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_);
 
 private:
     friend class StorageMySQLSink;

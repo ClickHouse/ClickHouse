@@ -38,22 +38,29 @@ namespace
                                                   const std::string & where_,
                                                   IXDBCBridgeHelper & bridge_)
     {
-        QualifiedTableName qualified_name{schema_, table_};
+        std::string schema = schema_;
+        std::string table = table_;
 
         if (bridge_.isSchemaAllowed())
         {
-            if (qualified_name.database.empty())
-                qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+            if (schema.empty())
+            {
+                if (auto pos = table.find('.'); pos != std::string::npos)
+                {
+                    schema = table.substr(0, pos);
+                    table = table.substr(pos + 1);
+                }
+            }
         }
         else
         {
-            if (!qualified_name.database.empty())
+            if (!schema.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 
-        return {dict_struct_, db_, qualified_name.database, qualified_name.table, query_, where_, bridge_.getIdentifierQuotingStyle()};
+        return {dict_struct_, db_, schema, table, query_, where_, bridge_.getIdentifierQuotingStyle()};
     }
 }
 
@@ -227,12 +234,12 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextPtr global_context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-            global_context, global_context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+            context, context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
 
         std::string settings_config_prefix = config_prefix + ".odbc";
 
@@ -248,13 +255,13 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1)
         };
 
-        return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
+        return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, context, bridge);
 #else
         (void)dict_struct;
         (void)config;
         (void)config_prefix;
         (void)sample_block;
-        (void)global_context;
+        (void)context;
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.");
 #endif
@@ -269,7 +276,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
-                                 ContextPtr /* global_context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* created_from_ddl */) -> DictionarySourcePtr {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

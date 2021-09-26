@@ -43,6 +43,7 @@ SRCS(
     Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
+    ExternalLoaderStatus.cpp
     FieldVisitorDump.cpp
     FieldVisitorHash.cpp
     FieldVisitorSum.cpp
@@ -115,8 +116,8 @@ SRCS(
     hasLinuxCapability.cpp
     hex.cpp
     isLocalAddress.cpp
-    isValidUTF8.cpp
     malloc.cpp
+    memory.cpp
     new_delete.cpp
     parseAddress.cpp
     parseGlobs.cpp
