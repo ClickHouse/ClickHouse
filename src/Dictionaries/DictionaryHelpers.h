@@ -240,8 +240,7 @@ public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
             std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
-                    ColumnVector<DictionaryAttributeType>>>>;
+                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -267,7 +266,7 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);

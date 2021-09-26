@@ -56,7 +56,7 @@ StorageExecutable::StorageExecutable(
     const std::vector<String> & arguments_,
     const String & format_,
     const std::vector<ASTPtr> & input_queries_,
-    const ExecutablePoolSettings & pool_settings_,
+    const ExecutableSettings & settings_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints)
     : IStorage(table_id_)
@@ -64,9 +64,9 @@ StorageExecutable::StorageExecutable(
     , arguments(arguments_)
     , format(format_)
     , input_queries(input_queries_)
-    , pool_settings(pool_settings_)
+    , settings(settings_)
     /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
-    , process_pool(std::make_shared<ProcessPool>(pool_settings.pool_size == 0 ? std::numeric_limits<int>::max() : pool_settings.pool_size))
+    , process_pool(std::make_shared<ProcessPool>(settings.pool_size == 0 ? std::numeric_limits<int>::max() : settings.pool_size))
     , log(&Poco::Logger::get("StorageExecutablePool"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -114,15 +114,15 @@ Pipe StorageExecutable::read(
     {
         bool result = process_pool->tryBorrowObject(process, [&config, this]()
         {
-            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, pool_settings.command_termination_timeout };
+            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, settings.command_termination_timeout };
             auto shell_command = ShellCommand::execute(config);
             return shell_command;
-        }, pool_settings.max_command_execution_time * 10000);
+        }, settings.max_command_execution_time * 1000);
 
         if (!result)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                pool_settings.max_command_execution_time);
+                settings.max_command_execution_time);
     }
     else
     {
@@ -136,6 +136,8 @@ Pipe StorageExecutable::read(
     {
         BlockInputStreamPtr input_stream = inputs[i];
         WriteBufferFromFile * write_buffer = nullptr;
+
+        bool send_chunk_header = settings.send_chunk_header;
 
         if (i == 0)
         {
@@ -151,14 +153,22 @@ Pipe StorageExecutable::read(
             write_buffer = &it->second;
         }
 
-        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, is_executable_pool, this]()
+        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, is_executable_pool, send_chunk_header, this]()
         {
             auto output_stream = context->getOutputStream(format, *write_buffer, input_stream->getHeader().cloneEmpty());
             input_stream->readPrefix();
             output_stream->writePrefix();
 
             while (auto block = input_stream->read())
+            {
+                if (send_chunk_header)
+                {
+                    writeText(block.rows(), *write_buffer);
+                    writeChar('\n', *write_buffer);
+                }
+
                 output_stream->write(block);
+            }
 
             input_stream->readSuffix();
             output_stream->writeSuffix();
@@ -183,7 +193,7 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), std::move(tasks), configuration, process_pool));
     return pipe;
 }
 
@@ -232,7 +242,7 @@ void registerStorageExecutable(StorageFactory & factory)
             if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
                 max_command_execution_time = max_execution_time_seconds;
 
-            ExecutablePoolSettings pool_settings;
+            ExecutableSettings pool_settings;
             pool_settings.max_command_execution_time = max_command_execution_time;
             if (args.storage_def->settings)
                 pool_settings.loadFromQuery(*args.storage_def);

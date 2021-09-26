@@ -1,3 +1,5 @@
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-unbundled, no-parallel, no-fasttest
+
 SET allow_introspection_functions = 1;
 
 SET memory_profiler_step = 1000000;
