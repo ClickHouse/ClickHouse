@@ -18,7 +18,6 @@
 #include <Parsers/IAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

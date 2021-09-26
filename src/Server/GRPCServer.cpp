@@ -24,9 +24,10 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/QueryPipelineBuilder.h>
 #include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
@@ -1037,7 +1038,7 @@ namespace
                     cur_pipeline.addTransform(std::move(sink));
                     cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
                     {
-                        return std::make_shared<ExceptionHandlingSink>(header);
+                        return std::make_shared<EmptySink>(header);
                     });
 
                     auto executor = cur_pipeline.execute();
@@ -1076,12 +1077,15 @@ namespace
 
     void Call::generateOutput()
     {
-        if (!io.pipeline.pulling())
+        if (!io.pipeline.initialized())
             return;
 
-        auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+        Block header;
+        if (io.pipeline.pulling())
+            header = io.pipeline.getHeader();
+
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, header);
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
@@ -1089,54 +1093,80 @@ namespace
         if (!input_function_is_used)
             check_query_info_contains_cancel_only = true;
 
-        auto check_for_cancel = [&]
+        if (io.pipeline.pulling())
         {
-            if (isQueryCancelled())
+            auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            auto check_for_cancel = [&]
             {
-                executor->cancel();
-                return false;
+                if (isQueryCancelled())
+                {
+                    executor->cancel();
+                    return false;
+                }
+                return true;
+            };
+
+            Block block;
+            while (check_for_cancel())
+            {
+                if (!executor->pull(block, interactive_delay / 1000))
+                    break;
+
+                throwIfFailedToSendResult();
+                if (!check_for_cancel())
+                    break;
+
+                if (block && !io.null_format)
+                    block_output_stream->write(block);
+
+                if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+                {
+                    addProgressToResult();
+                    after_send_progress.restart();
+                }
+
+                addLogsToResult();
+
+                bool has_output = write_buffer->offset();
+                if (has_output || result.has_progress() || result.logs_size())
+                    sendResult();
+
+                throwIfFailedToSendResult();
+                if (!check_for_cancel())
+                    break;
             }
-            return true;
-        };
 
-        Block block;
-        while (check_for_cancel())
-        {
-            if (!executor->pull(block, interactive_delay / 1000))
-                break;
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-
-            if (block && !io.null_format)
-                block_output_stream->write(block);
-
-            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+            if (!isQueryCancelled())
             {
+                addTotalsToResult(executor->getTotalsBlock());
+                addExtremesToResult(executor->getExtremesBlock());
+                addProfileInfoToResult(executor->getProfileInfo());
+            }
+        }
+        else
+        {
+            auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
+            auto callback = [&]() -> bool
+            {
+                if (isQueryCancelled())
+                    return true;
+
+                throwIfFailedToSendResult();
                 addProgressToResult();
-                after_send_progress.restart();
-            }
+                addLogsToResult();
 
-            addLogsToResult();
+                bool has_output = write_buffer->offset();
+                if (has_output || result.has_progress() || result.logs_size())
+                    sendResult();
 
-            bool has_output = write_buffer->offset();
-            if (has_output || result.has_progress() || result.logs_size())
-                sendResult();
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
+                throwIfFailedToSendResult();
+                return false;
+            };
+            executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
+            executor->execute();
         }
 
         block_output_stream->writeSuffix();
-
-        if (!isQueryCancelled())
-        {
-            addTotalsToResult(executor->getTotalsBlock());
-            addExtremesToResult(executor->getExtremesBlock());
-            addProfileInfoToResult(executor->getProfileInfo());
-        }
     }
 
     void Call::finishQuery()
