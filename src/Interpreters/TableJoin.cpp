@@ -140,9 +140,18 @@ void TableJoin::newClauseIfPopulated()
 namespace
 {
 
+bool compatibleFilerConditions(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
+{
+    bool has_left = l.on_filter_condition_left || r.on_filter_condition_left;
+    bool has_right = l.on_filter_condition_right || r.on_filter_condition_right;
+    return !(has_left && has_right);
+}
+
 bool equalTableColumns(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
 {
-    return l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right;
+    return l.key_names_left == r.key_names_left &&
+        l.key_names_right == r.key_names_right &&
+        compatibleFilerConditions(l, r);
 }
 
 void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
@@ -169,23 +178,8 @@ void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
 /// from's conditions added to to's ones
 void addConditionsToClause(TableJoin::JoinOnClause & to, const TableJoin::JoinOnClause & from)
 {
-    bool has_left = to.on_filter_condition_left || from.on_filter_condition_left;
-    bool has_right = to.on_filter_condition_right || from.on_filter_condition_right;
-    /// Cannot join conditions for left and right table via OR.
-    /// Currently all rows that don't hold condition from left(/right) table are filtered
-    if (has_left && has_right)
-    {
-        /// Format for debug
-        const auto & all_conds = {to.on_filter_condition_left, from.on_filter_condition_left,
-                                  to.on_filter_condition_right, from.on_filter_condition_right};
-        std::vector<String> conditions_str;
-        for (const auto & cond : all_conds)
-        {
-            if (cond != nullptr)
-                conditions_str.push_back(queryToString(cond));
-        }
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported JOIN ON conditions: '{}'", fmt::join(conditions_str, " OR "));
-    }
+    assert(compatibleFilerConditions(to, from));
+
     joinASTbyOR(to.on_filter_condition_left, from.on_filter_condition_left);
     joinASTbyOR(to.on_filter_condition_right, from.on_filter_condition_right);
 }
@@ -194,7 +188,9 @@ void addConditionsToClause(TableJoin::JoinOnClause & to, const TableJoin::JoinOn
 
 bool operator<(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
 {
-    return l.key_names_left < r.key_names_left || (l.key_names_left == r.key_names_left && l.key_names_right < r.key_names_right);
+    return l.key_names_left < r.key_names_left ||
+        (l.key_names_left == r.key_names_left && l.key_names_right < r.key_names_right) ||
+        (l.key_names_left == r.key_names_left && l.key_names_left == r.key_names_left && l.on_filter_condition_left && !r.on_filter_condition_left);
 }
 
 void TableJoin::optimizeClauses()
