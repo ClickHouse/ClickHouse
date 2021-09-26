@@ -233,7 +233,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         return found.properties;
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
