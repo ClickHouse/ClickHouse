@@ -57,7 +57,7 @@ The preprocessing is:
 - coverting the `time` field to date as it only contains 00:00 time;
 - ignoring the [UUid](../../sql-reference/data-types/uuid.md) field because we don't need it for analysis;
 - transforming `type` and `duration` to more readable Enum fields with function [transform](../../sql-reference/functions/other-functions.md#transform);
-- transforming `is_new` and `category` fields from single-character string (`Y`/`N` and `A`/`B`) to [UInt8](../../sql-reference/data-types/int-uint.md##uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) field with 0 and 1.
+- transforming `is_new` and `category` fields from single-character string (`Y`/`N` and `A`/`B`) to [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256) field with 0 and 1.
 
 Preprocessed data is piped directly to `clickhouse-client` to be inserted into ClickHouse table in streaming fashion.
 
