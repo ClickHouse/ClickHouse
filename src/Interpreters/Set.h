@@ -208,7 +208,7 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_);
+    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -217,6 +217,8 @@ public:
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 private:
+    // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
+    bool has_all_keys;
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 

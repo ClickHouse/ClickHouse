@@ -11,18 +11,20 @@
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/copyData.h>
+#include <Databases/DatabaseOnDisk.h>
 
 
 namespace DB
 {
 
-static const auto RESCHEDULE_MS = 500;
+static const auto RESCHEDULE_MS = 1000;
 static const auto BACKOFF_TRESHOLD_MS = 10000;
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
@@ -45,7 +47,6 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings.materialized_postgresql_tables_list)
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
-    , connection(std::make_shared<postgres::Connection>(connection_info_))
     , milliseconds_to_wait(RESCHEDULE_MS)
 {
     replication_slot = replication_settings.materialized_postgresql_replication_slot;
@@ -77,7 +78,8 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
 {
     try
     {
-        connection->connect(); /// Will throw pqxx::broken_connection if no connection at the moment
+        postgres::Connection connection(connection_info);
+        connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
         startSynchronization(false);
     }
     catch (const pqxx::broken_connection & pqxx_error)
@@ -102,14 +104,9 @@ void PostgreSQLReplicationHandler::shutdown()
 
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
-    {
-        pqxx::work tx(connection->getRef());
-        createPublicationIfNeeded(tx);
-        tx.commit();
-    }
-
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
+    createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StoragePtr> nested_storages;
@@ -120,8 +117,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// 2. if replication slot already exist, start_lsn is read from pg_replication_slots as
     ///    `confirmed_flush_lsn` - the address (LSN) up to which the logical slot's consumer has confirmed receiving data.
     ///    Data older than this is not available anymore.
-    ///    TODO: more tests
     String snapshot_name, start_lsn;
+
+    /// Also lets have a separate non-replication connection, because we need two parallel transactions and
+    /// one connection can have one transaction at a time.
+    auto tmp_connection = std::make_shared<postgres::Connection>(connection_info);
 
     auto initial_sync = [&]()
     {
@@ -144,7 +144,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         {
             try
             {
-                nested_storages[table_name] = loadFromSnapshot(snapshot_name, table_name, storage->as <StorageMaterializedPostgreSQL>());
+                nested_storages[table_name] = loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>());
             }
             catch (Exception & e)
             {
@@ -186,6 +186,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
+                /// FIXME: Looks like it is possible we might get here if there is no nested storage or at least nested storage id field might be empty.
+                ///        Caught it somehow when doing something else incorrectly, but do not see any reason how it could happen.
                 /// Try load nested table, set materialized table metadata.
                 nested_storages[table_name] = materialized_storage->prepare();
             }
@@ -209,13 +211,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
     consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
             context,
-            connection,
+            std::move(tmp_connection),
             replication_slot,
             publication_name,
             start_lsn,
             max_block_size,
             allow_automatic_update,
-            nested_storages);
+            nested_storages,
+            (is_materialized_postgresql_database ? remote_database_name : remote_database_name + '.' + tables_list));
 
     consumer_task->activateAndSchedule();
 
@@ -224,10 +227,19 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 }
 
 
-StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name, const String & table_name,
+ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name)
+{
+    postgres::Connection connection(connection_info);
+    pqxx::nontransaction tx(connection.getRef());
+    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    return storage->getCreateNestedTableQuery(std::move(table_structure));
+}
+
+
+StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
                                                           StorageMaterializedPostgreSQL * materialized_storage)
 {
-    auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
+    auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
@@ -312,7 +324,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 }
 
 
-bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::work & tx)
+bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
@@ -321,7 +333,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::work & tx)
 }
 
 
-void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
+void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransaction & tx)
 {
     auto publication_exists = isPublicationExist(tx);
 
@@ -332,7 +344,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
                     "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
                     publication_name);
 
-        connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+        dropPublication(tx);
     }
 
     if (!is_attach || !publication_exists)
@@ -413,7 +425,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::result result{tx.exec(query_str)};
         start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
-        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}", replication_slot, start_lsn);
+        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}, snapshot: {}", replication_slot, start_lsn, snapshot_name);
     }
     catch (Exception & e)
     {
@@ -448,16 +460,41 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 }
 
 
+void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
+{
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteString(table_name));
+    ntx.exec(query_str);
+    LOG_TRACE(log, "Added table `{}` to publication `{}`", table_name, publication_name);
+}
+
+
+void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name)
+{
+    std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", publication_name, doubleQuoteString(table_name));
+    ntx.exec(query_str);
+    LOG_TRACE(log, "Removed table `{}` from publication `{}`", table_name, publication_name);
+}
+
+
+void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
+{
+    consumer_task->deactivate();
+    consumer->setSetting(setting);
+    consumer_task->activateAndSchedule();
+}
+
+
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
     try
     {
         shutdown();
 
-        connection->execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        postgres::Connection connection(connection_info);
+        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        connection->execWithRetry([&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -466,7 +503,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        connection->execWithRetry([&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);
@@ -482,12 +519,17 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
+NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
 {
-    pqxx::work tx(connection_.getRef());
+    postgres::Connection connection(connection_info);
     NameSet result_tables;
+    bool publication_exists_before_startup;
 
-    bool publication_exists_before_startup = isPublicationExist(tx);
+    {
+        pqxx::nontransaction tx(connection.getRef());
+        publication_exists_before_startup = isPublicationExist(tx);
+    }
+
     LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
 
     Strings expected_tables;
@@ -508,7 +550,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
                         "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
                         publication_name);
 
-            connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+            connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
         }
         else
         {
@@ -518,13 +560,20 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                             publication_name);
 
-                result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+                {
+                    pqxx::nontransaction tx(connection.getRef());
+                    result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+                }
             }
             /// Check tables list from publication is the same as expected tables list.
             /// If not - drop publication and return expected tables list.
             else
             {
-                result_tables = fetchTablesFromPublication(tx);
+                {
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
+                }
+
                 NameSet diff;
                 std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
                                               result_tables.begin(), result_tables.end(),
@@ -543,7 +592,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
                                 "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}.",
                                 publication_name, diff_tables);
 
-                    connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                    connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
                 }
             }
         }
@@ -560,11 +609,13 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
             /// Fetch all tables list from database. Publication does not exist yet, which means
             /// that no replication took place. Publication will be created in
             /// startSynchronization method.
-            result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+            {
+                pqxx::nontransaction tx(connection.getRef());
+                result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+            }
         }
     }
 
-    tx.commit();
     return result_tables;
 }
 
@@ -591,6 +642,88 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 }
 
 
+void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
+{
+    /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
+    /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in losing data.
+    consumer_task->deactivate();
+    try
+    {
+        LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
+        postgres::Connection replication_connection(connection_info, /* replication */true);
+        String snapshot_name, start_lsn;
+        StoragePtr nested_storage;
+
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            if (isReplicationSlotExist(tx, start_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
+            createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
+
+            /// Protect against deadlock.
+            auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
+            if (!nested)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
+
+            {
+                postgres::Connection tmp_connection(connection_info);
+                nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
+            }
+            auto nested_table_id = nested_storage->getStorageID();
+            materialized_storage->setNestedStorageID(nested_table_id);
+            nested_storage = materialized_storage->prepare();
+        }
+
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            addTableToPublication(tx, postgres_table_name);
+        }
+
+        /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
+        consumer->addNested(postgres_table_name, nested_storage, start_lsn);
+        LOG_TRACE(log, "Table `{}` successfully added to replication", postgres_table_name);
+    }
+    catch (...)
+    {
+        consumer_task->activate();
+        consumer_task->scheduleAfter(RESCHEDULE_MS);
+
+        auto error_message = getCurrentExceptionMessage(false);
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Failed to add table `{}` to replication. Info: {}", postgres_table_name, error_message);
+    }
+    consumer_task->activateAndSchedule();
+}
+
+
+void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
+{
+    consumer_task->deactivate();
+    try
+    {
+        postgres::Connection replication_connection(connection_info, /* replication */true);
+
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            removeTableFromPublication(tx, postgres_table_name);
+        }
+
+        /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
+        consumer->removeNested(postgres_table_name);
+    }
+    catch (...)
+    {
+        consumer_task->activate();
+        consumer_task->scheduleAfter(RESCHEDULE_MS);
+
+        auto error_message = getCurrentExceptionMessage(false);
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Failed to remove table `{}` from replication. Info: {}", postgres_table_name, error_message);
+    }
+    consumer_task->activateAndSchedule();
+}
+
+
 void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data)
 {
     /// If table schema has changed, the table stops consuming changes from replication stream.
@@ -608,6 +741,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             dropReplicationSlot(tx, /* temporary */true);
 
         createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
+        postgres::Connection tmp_connection(connection_info);
 
         for (const auto & [relation_id, table_name] : relation_data)
         {
@@ -618,7 +752,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             auto temp_materialized_storage = materialized_storage->createTemporary();
 
             /// This snapshot is valid up to the end of the transaction, which exported it.
-            StoragePtr temp_nested_storage = loadFromSnapshot(snapshot_name, table_name,
+            StoragePtr temp_nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, table_name,
                                                               temp_materialized_storage->as <StorageMaterializedPostgreSQL>());
 
             auto table_id = materialized_storage->getNestedStorageID();

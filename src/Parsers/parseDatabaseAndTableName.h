@@ -10,4 +10,6 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 /// Parses [db.]name or [db.]* or [*.]*
 bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table);
 
+bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_str);
+
 }
