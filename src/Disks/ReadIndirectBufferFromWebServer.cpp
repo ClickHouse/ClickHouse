@@ -24,7 +24,8 @@ static const auto WAIT_MS = 10;
 
 
 ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
-    const String & url_, ContextPtr context_, size_t buf_size_, size_t backoff_threshold_, size_t max_tries_)
+    const String & url_, ContextPtr context_, size_t buf_size_,
+    size_t backoff_threshold_, size_t max_tries_, bool use_external_buffer_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
@@ -32,6 +33,7 @@ ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
     , buf_size(buf_size_)
     , backoff_threshold_ms(backoff_threshold_)
     , max_tries(max_tries_)
+    , use_external_buffer(use_external_buffer_)
 {
 }
 
@@ -70,8 +72,15 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
 
     if (impl)
     {
-        /// Restore correct position at the needed offset.
-        impl->position() = position();
+        if (use_external_buffer)
+        {
+            impl->set(working_buffer.begin(), working_buffer.size());
+        }
+        else
+        {
+            impl->position() = position();
+        }
+
         assert(!impl->hasPendingData());
     }
 
