@@ -1,5 +1,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -9,19 +13,21 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Poco/File.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
+
+#include <sys/stat.h>
 
 namespace DB
 {
@@ -31,6 +37,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_GET_FILE_STAT;
+    extern const int NOT_REGULAR_FILE;
+    extern const int READ_META_FILE_FAILED;
+	extern const int FILE_STREAM_ERROR;
 }
 
 namespace
@@ -46,7 +56,8 @@ StorageFileLog::StorageFileLog(
     const ColumnsDescription & columns_,
     const String & relative_path_,
     const String & format_name_,
-    std::unique_ptr<FileLogSettings> settings)
+    std::unique_ptr<FileLogSettings> settings,
+    bool attach)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
@@ -61,7 +72,18 @@ StorageFileLog::StorageFileLog(
 
     try
     {
-        init();
+        loadMetaFiles(attach);
+        loadFiles();
+
+        assert(
+            file_infos.file_names.size() == file_infos.meta_by_inode.size() == file_infos.inode_by_name.size()
+            == file_infos.context_by_name.size());
+
+        if (path_is_directory)
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
+
+        auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
     {
@@ -69,36 +91,184 @@ StorageFileLog::StorageFileLog(
     }
 }
 
-void StorageFileLog::init()
+void StorageFileLog::loadMetaFiles(bool attach)
 {
+    const auto database = DatabaseCatalog::instance().getDatabase(getStorageID().getDatabaseName());
+    const auto table_name = getStorageID().getTableName();
+
+    root_meta_path = database->getMetadataPath() + "/." + table_name;
+
+    /// Create table, just create meta data directory
+    if (!attach)
+    {
+        if (std::filesystem::exists(root_meta_path))
+        {
+            std::filesystem::remove_all(root_meta_path);
+        }
+        std::filesystem::create_directories(root_meta_path);
+    }
+    /// Attach table
+    else
+    {
+        /// Meta file may lost, log and create directory
+        if (!std::filesystem::exists(root_meta_path))
+        {
+            LOG_INFO(log, "Meta files of table {} may have lost.", getStorageID().getTableName());
+            std::filesystem::create_directories(root_meta_path);
+        }
+        /// Load all meta info to file_infos;
+        deserialize();
+    }
+}
+
+void StorageFileLog::loadFiles()
+{
+
     if (std::filesystem::is_regular_file(path))
     {
-        auto normal_path = std::filesystem::path(path).lexically_normal().native();
-        file_statuses[normal_path] = FileContext{};
-        file_names.push_back(normal_path);
+        path_is_directory = false;
+        root_data_path = getContext()->getUserFilesPath();
+
+        file_infos.file_names.push_back(std::filesystem::path(path).filename());
     }
     else if (std::filesystem::is_directory(path))
     {
+        root_data_path = path;
         /// Just consider file with depth 1
         for (const auto & dir_entry : std::filesystem::directory_iterator{path})
         {
             if (dir_entry.is_regular_file())
             {
-                auto normal_path = std::filesystem::path(dir_entry.path()).lexically_normal().native();
-                file_statuses[normal_path] = FileContext{};
-                file_names.push_back(normal_path);
+                file_infos.file_names.push_back(dir_entry.path().filename());
             }
         }
     }
     else
     {
-        throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path {} neither a regular file, nor a directory", path);
     }
 
-    directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
+    /// Get files inode
+    for (const auto & file : file_infos.file_names)
+    {
+        auto inode = getInode(getFullDataPath(file));
+        file_infos.inode_by_name.emplace(file, inode);
+        file_infos.context_by_name.emplace(file, FileContext{});
+    }
 
-    auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
-    task = std::make_shared<TaskContext>(std::move(thread));
+    /// Update file meta or create file meta
+    for (const auto & file_inode : file_infos.inode_by_name)
+    {
+        if (auto it = file_infos.meta_by_inode.find(file_inode.second); it != file_infos.meta_by_inode.end())
+        {
+            /// data file have been renamed, need update meta file's name
+            if (it->second.file_name != file_inode.first)
+            {
+                it->second.file_name = file_inode.first;
+                if (std::filesystem::exists(getFullMetaPath(it->second.file_name)))
+                {
+                    std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file_inode.first));
+                }
+            }
+        }
+        /// New file
+        else
+        {
+            FileMeta meta{file_inode.first, 0, 0};
+            file_infos.meta_by_inode.emplace(file_inode.second, meta);
+        }
+    }
+
+    /// Clear unneeded meta file, because data files may be deleted
+    if (file_infos.meta_by_inode.size() > file_infos.inode_by_name.size())
+    {
+        InodeToFileMeta valid_metas;
+        valid_metas.reserve(file_infos.inode_by_name.size());
+        for (const auto & it : file_infos.meta_by_inode)
+        {
+            if (file_infos.inode_by_name.contains(it.second.file_name))
+                valid_metas.emplace(it);
+        }
+        file_infos.meta_by_inode.swap(valid_metas);
+    }
+}
+
+void StorageFileLog::serialize(bool with_end_pos) const
+{
+    for (const auto & it : file_infos.meta_by_inode)
+    {
+        auto full_name = getFullMetaPath(it.second.file_name);
+        if (!std::filesystem::exists(full_name))
+        {
+            Poco::File{full_name}.createFile();
+        }
+        WriteBufferFromFile buf(full_name);
+        writeIntText(it.first, buf);
+        writeChar('\n', buf);
+        writeIntText(it.second.last_writen_position, buf);
+
+        if (with_end_pos)
+        {
+            writeChar('\n', buf);
+            writeIntText(it.second.last_open_end, buf);
+        }
+    }
+}
+
+void StorageFileLog::deserialize()
+{
+    for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
+    {
+        if (!dir_entry.is_regular_file())
+        {
+            throw Exception(
+                ErrorCodes::NOT_REGULAR_FILE,
+                "The file {} under {} is not a regular file when deserializing meta files.",
+                dir_entry.path().c_str(),
+                root_meta_path);
+        }
+
+        ReadBufferFromFile buf(dir_entry.path().c_str());
+        FileMeta meta;
+        UInt64 inode, last_written_pos;
+
+        if (!tryReadIntText(inode, buf))
+        {
+            throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+        }
+        if (!checkChar('\n', buf))
+        {
+            throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+        }
+        if (!tryReadIntText(last_written_pos, buf))
+        {
+            throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+        }
+
+        meta.file_name = dir_entry.path().filename();
+        meta.last_writen_position = last_written_pos;
+
+        /// May have last open end in meta file
+        if (checkChar('\n', buf))
+        {
+            if (!tryReadIntText(meta.last_open_end, buf))
+            {
+                throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+            }
+        }
+
+        file_infos.meta_by_inode.emplace(inode, meta);
+    }
+}
+
+UInt64 StorageFileLog::getInode(const String & file_name)
+{
+    struct stat file_stat;
+    if (stat(file_name.c_str(), &file_stat))
+    {
+        throw Exception(ErrorCodes::CANNOT_GET_FILE_STAT, "Can not get stat info of file {}", file_name);
+    }
+    return file_stat.st_ino;
 }
 
 Pipe StorageFileLog::read(
@@ -112,45 +282,47 @@ Pipe StorageFileLog::read(
 {
     std::lock_guard<std::mutex> lock(status_mutex);
 
-    updateFileStatuses();
+    updateFileInfos();
 
     /// No files to parse
-    if (file_names.empty())
+    if (file_infos.file_names.empty())
     {
         return Pipe{};
     }
 
     auto modified_context = Context::createCopy(local_context);
 
-    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_names.size());
+    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_infos.file_names.size());
+
+    openFilesAndSetPos();
+    serialize(true);
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
     {
-        pipes.emplace_back(std::make_shared<FileLogSource>(
-            *this,
-            metadata_snapshot,
-            modified_context,
-            getMaxBlockSize(),
-            getPollTimeoutMillisecond(),
-            stream_number,
-            max_streams_number));
+        Pipe pipe(std::make_shared<FileLogSource>(
+            *this, metadata_snapshot, modified_context, getMaxBlockSize(), getPollTimeoutMillisecond(), stream_number, max_streams_number));
+
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+        auto actions = std::make_shared<ExpressionActions>(
+            convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+
+        pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
+        pipes.emplace_back(std::move(pipe));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+    return Pipe::unitePipes(std::move(pipes));
+}
 
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-        pipe.getHeader().getColumnsWithTypeAndName(),
-        metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
-
-    auto actions = std::make_shared<ExpressionActions>(
-        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
-
-    pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
-
-    return pipe;
+void StorageFileLog::drop()
+{
+    if (std::filesystem::exists(root_meta_path))
+        std::filesystem::remove_all(root_meta_path);
 }
 
 void StorageFileLog::startup()
@@ -161,7 +333,6 @@ void StorageFileLog::startup()
     }
 }
 
-
 void StorageFileLog::shutdown()
 {
     if (task)
@@ -171,6 +342,59 @@ void StorageFileLog::shutdown()
         LOG_TRACE(log, "Waiting for cleanup");
         task->holder->deactivate();
     }
+    closeFilesAndStoreMeta();
+}
+
+void StorageFileLog::openFilesAndSetPos()
+{
+    for (const auto & file : file_infos.file_names)
+    {
+        auto & context = file_infos.context_by_name.at(file);
+        if (context.status != FileStatus::NO_CHANGE)
+        {
+            context.reader = std::ifstream(getFullDataPath(file));
+            if (!context.reader.good())
+            {
+                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Open file {} failed.", file);
+            }
+
+            context.reader.seekg(0, context.reader.end);
+            if (!context.reader.good())
+            {
+                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Seekg file {} failed.", file);
+            }
+
+            auto file_end = context.reader.tellg();
+            if (!context.reader.good())
+            {
+                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Tellg file {} failed.", file);
+            }
+
+            auto & meta = file_infos.meta_by_inode.at(file_infos.inode_by_name.at(file));
+            if (meta.last_writen_position > static_cast<UInt64>(file_end))
+            {
+                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "File {} has been broken.", file);
+            }
+            /// updte file end at the monment, used in ReadBuffer and serialize
+            meta.last_open_end = file_end;
+
+            context.reader.seekg(meta.last_writen_position);
+            if (!context.reader.good())
+            {
+                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Seekg file {} failed.", file);
+            }
+        }
+    }
+}
+
+void StorageFileLog::closeFilesAndStoreMeta()
+{
+    for (auto & it : file_infos.context_by_name)
+    {
+        if (it.second.reader.is_open())
+            it.second.reader.close();
+    }
+    serialize();
 }
 
 size_t StorageFileLog::getMaxBlockSize() const
@@ -191,7 +415,6 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
     return filelog_settings->filelog_poll_timeout_ms.changed ? filelog_settings->filelog_poll_timeout_ms.totalMilliseconds()
                                                              : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
-
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
@@ -257,7 +480,7 @@ void StorageFileLog::threadFunc()
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
-                updateFileStatuses();
+                updateFileInfos();
             }
         }
     }
@@ -271,7 +494,6 @@ void StorageFileLog::threadFunc()
         task->holder->scheduleAfter(milliseconds_to_wait);
 }
 
-
 bool StorageFileLog::streamToViews()
 {
     std::lock_guard<std::mutex> lock(status_mutex);
@@ -283,7 +505,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads.value, file_names.size());
+    auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads.value, file_infos.file_names.size());
     /// No files to parse
     if (max_streams_number == 0)
     {
@@ -299,33 +521,30 @@ bool StorageFileLog::streamToViews()
     InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
     auto block_io = interpreter.execute();
 
+    openFilesAndSetPos();
+    serialize();
+
     Pipes pipes;
     pipes.reserve(max_streams_number);
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
     {
-        pipes.emplace_back(std::make_shared<FileLogSource>(
-            *this,
-            metadata_snapshot,
-            new_context,
-            getPollMaxBatchSize(),
-            getPollTimeoutMillisecond(),
-            stream_number,
-            max_streams_number));
+        Pipe pipe(std::make_shared<FileLogSource>(
+            *this, metadata_snapshot, new_context, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_number, max_streams_number));
+
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            block_io.out->getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+        auto actions = std::make_shared<ExpressionActions>(
+            convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+
+        pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
+        pipes.emplace_back(std::move(pipe));
     }
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-        pipe.getHeader().getColumnsWithTypeAndName(),
-        block_io.out->getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
-
-    auto actions = std::make_shared<ExpressionActions>(
-        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
-
-    pipe.addSimpleTransform([&](const Block & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
 
     QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out->getHeader(), "StorageFileLog streamToViews");
 
@@ -338,14 +557,18 @@ bool StorageFileLog::streamToViews()
     {
         block_io.out->write(block);
         rows += block.rows();
+        /// During files open, also save file end at the openning moment
+        serialize(true);
     }
     block_io.out->writeSuffix();
+
+    serialize();
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
         formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
-    return updateFileStatuses();
+    return updateFileInfos();
 }
 
 void registerStorageFileLog(StorageFactory & factory)
@@ -395,7 +618,8 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
         auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageFileLog::create(args.table_id, args.getContext(), args.columns, path, format, std::move(filelog_settings));
+        return StorageFileLog::create(
+            args.table_id, args.getContext(), args.columns, path, format, std::move(filelog_settings), args.attach);
     };
 
     factory.registerStorage(
@@ -406,10 +630,24 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
-bool StorageFileLog::updateFileStatuses()
+bool StorageFileLog::updateFileInfos()
 {
     if (!directory_watch)
+    {
+        /// For table just watch one file, we can not use directory monitor to watch it
+        if (!path_is_directory)
+        {
+            assert(
+                file_infos.file_names.size() == file_infos.meta_by_inode.size() == file_infos.inode_by_name.size()
+                == file_infos.context_by_name.size() == 1);
+            if (auto it = file_infos.context_by_name.find(file_infos.file_names[0]); it != file_infos.context_by_name.end())
+            {
+                it->second.status = FileStatus::UPDATED;
+                return true;
+            }
+        }
         return false;
+    }
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     auto error = directory_watch->getErrorAndReset();
@@ -423,54 +661,95 @@ bool StorageFileLog::updateFileStatuses()
         switch (event.type)
         {
             case Poco::DirectoryWatcher::DW_ITEM_ADDED: {
-                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                if (std::filesystem::is_regular_file(normal_path))
+                if (std::filesystem::is_regular_file(event.path))
                 {
-                    file_statuses[event.path] = FileContext{};
-                    file_names.push_back(normal_path);
+                    auto file_name = std::filesystem::path(event.path).filename();
+                    auto inode = getInode(event.path);
+
+                    file_infos.file_names.push_back(file_name);
+                    file_infos.inode_by_name.emplace(file_name, inode);
+
+                    FileMeta meta{file_name, 0, 0};
+                    file_infos.meta_by_inode.emplace(inode, meta);
+                    file_infos.context_by_name.emplace(file_name, FileContext{});
                 }
                 break;
             }
 
             case Poco::DirectoryWatcher::DW_ITEM_MODIFIED: {
-                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
-                if (std::filesystem::is_regular_file(normal_path) && file_statuses.contains(normal_path))
+                auto file_name = std::filesystem::path(event.path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                 {
-                    file_statuses[normal_path].status = FileStatus::UPDATED;
+                    it->second.status = FileStatus::UPDATED;
                 }
                 break;
             }
 
             case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
-            case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM: {
-                auto normal_path = std::filesystem::path(event.path).lexically_normal().native();
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, normal_path);
-                if (std::filesystem::is_regular_file(normal_path) && file_statuses.contains(normal_path))
+                auto file_name = std::filesystem::path(event.path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                 {
-                    file_statuses[normal_path].status = FileStatus::REMOVED;
+                    it->second.status = FileStatus::REMOVED;
+                }
+                break;
+            }
+            /// file rename
+            case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO: {
+                auto file_name = std::filesystem::path(event.path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+
+                file_infos.file_names.push_back(file_name);
+                file_infos.context_by_name.emplace(file_name, FileContext{});
+
+                auto inode = getInode(event.path);
+                file_infos.inode_by_name.emplace(file_name, inode);
+
+                if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
+                {
+                    // rename meta file
+                    auto old_name = it->second.file_name;
+                    it->second.file_name = file_name;
+                    if (std::filesystem::exists(getFullMetaPath(old_name)))
+                    {
+                        std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                    }
                 }
             }
         }
     }
     std::vector<String> valid_files;
-    for (const auto & file_name : file_names)
+
+    for (const auto & file_name : file_infos.file_names)
     {
-        if (file_statuses.at(file_name).status == FileStatus::REMOVED || file_statuses.at(file_name).status == FileStatus::BROKEN)
+        if (auto it = file_infos.context_by_name.find(file_name);
+            it != file_infos.context_by_name.end() && it->second.status == FileStatus::REMOVED)
         {
-            file_statuses.erase(file_name);
+            file_infos.context_by_name.erase(it);
+            if (auto inode = file_infos.inode_by_name.find(file_name); inode != file_infos.inode_by_name.end())
+            {
+                file_infos.inode_by_name.erase(inode);
+                file_infos.meta_by_inode.erase(inode->second);
+                if (std::filesystem::exists(getFullMetaPath(file_name)))
+                    std::filesystem::remove(getFullMetaPath(file_name));
+            }
         }
         else
         {
             valid_files.push_back(file_name);
         }
     }
+    file_infos.file_names.swap(valid_files);
 
-    file_names.swap(valid_files);
+    /// These file infos should always have same size(one for one)
+    assert(
+        file_infos.file_names.size() == file_infos.meta_by_inode.size() == file_infos.inode_by_name.size()
+        == file_infos.context_by_name.size());
 
-    return events.empty() || file_names.empty();
+    return events.empty() || file_infos.file_names.empty();
 }
 
 NamesAndTypesList StorageFileLog::getVirtuals() const

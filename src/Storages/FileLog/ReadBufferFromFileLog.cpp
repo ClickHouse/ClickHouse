@@ -69,8 +69,6 @@ bool ReadBufferFromFileLog::poll()
         allowed = true;
         return true;
     }
-
-
 }
 
 ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_size_)
@@ -100,85 +98,52 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
     size_t need_records_size = batch_size_ - new_records.size();
     size_t read_records_size = 0;
 
-    const auto & file_names = storage.getFileNames();
-    auto & file_statuses = storage.getFileStatuses();
+    auto & file_infos = storage.getFileInfos();
 
-    size_t files_per_stream = file_names.size() / max_streams_number;
+    size_t files_per_stream = file_infos.file_names.size() / max_streams_number;
     size_t start = stream_number * files_per_stream;
-    size_t end = stream_number == max_streams_number - 1 ? file_names.size() : (stream_number + 1) * files_per_stream;
+    size_t end = stream_number == max_streams_number - 1 ? file_infos.file_names.size() : (stream_number + 1) * files_per_stream;
 
     for (size_t i = start; i < end; ++i)
     {
-        auto & file = file_statuses[file_names[i]];
-        if (file.status == StorageFileLog::FileStatus::NO_CHANGE)
+        auto file_name = file_infos.file_names[i];
+        auto & file_ctx = file_infos.context_by_name.at(file_name);
+        if (file_ctx.status == StorageFileLog::FileStatus::NO_CHANGE)
             continue;
 
-        auto reader = std::ifstream(file_names[i]);
-
-        /// check if ifstream is good. For example, if the file deleted during streamToViews,
-        /// this will return false because file does not exist anymore.
-        if (!reader.good())
-        {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
-
-        reader.seekg(0, reader.end);
-        /// Exception may happen in seekg and tellg, then badbit will be set
-        if (!reader.good())
-        {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
-
-        auto stream_end = reader.tellg();
-        if (!reader.good())
-        {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
-
-        /// file may broken(for example truncate), mark this file to BROKEN,
-        /// should be removed in next updateFileStatuses call
-        if (file.last_read_position > static_cast<size_t>(stream_end))
-        {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
-
-        reader.seekg(file.last_read_position);
-        if (!reader.good())
-        {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
+        auto & file_meta = file_infos.meta_by_inode.at(file_infos.inode_by_name.at(file_name));
 
         Record record;
-        while (read_records_size < need_records_size && reader.tellg() < stream_end)
+        while (read_records_size < need_records_size && static_cast<UInt64>(file_ctx.reader.tellg()) < file_meta.last_open_end)
         {
-            if (!reader.good())
+            if (!file_ctx.reader.good())
             {
-                throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+                throw Exception("Can not read from file " + file_name + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
             }
-            UInt64 start_offset = reader.tellg();
-            std::getline(reader, record.data);
-            record.file_name = file_names[i];
+            UInt64 start_offset = file_ctx.reader.tellg();
+            std::getline(file_ctx.reader, record.data);
+            record.file_name = file_name;
             record.offset = start_offset;
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
-        auto current_position = reader.tellg();
-        if (!reader.good())
+        UInt64 current_position = file_ctx.reader.tellg();
+        if (!file_ctx.reader.good())
         {
-            throw Exception("Can not read from file " + file_names[i] + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+            throw Exception("Can not read from file " + file_name + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
         }
 
-        file.last_read_position = current_position;
+        file_meta.last_writen_position = current_position;
 
         /// stream reach to end
-        if (current_position == stream_end && file.status != StorageFileLog::FileStatus::BROKEN)
+        if (current_position == file_meta.last_open_end)
         {
-            file.status = StorageFileLog::FileStatus::NO_CHANGE;
+            file_ctx.status = StorageFileLog::FileStatus::NO_CHANGE;
         }
 
-        /// All ifstream reach end or broken
-        if (i == end - 1 && (file.status == StorageFileLog::FileStatus::NO_CHANGE || file.status == StorageFileLog::FileStatus::BEGIN))
+        /// All ifstream reach end
+        if (i == end - 1 && (file_ctx.status == StorageFileLog::FileStatus::NO_CHANGE))
         {
             stream_out = true;
         }
@@ -198,6 +163,9 @@ bool ReadBufferFromFileLog::nextImpl()
     auto * new_position = const_cast<char *>(current->data.data());
     BufferBase::set(new_position, current->data.size(), 0);
     allowed = false;
+
+    current_file = current->file_name;
+    current_offset = current->offset;
 
     ++current;
 
