@@ -49,6 +49,9 @@ size_t IAST::checkSize(size_t max_size) const
 
 void IAST::reset(IAST *& field)
 {
+    if (field == nullptr)
+        return;
+
     const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
     {
        return p.get() == field;
