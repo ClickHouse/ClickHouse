@@ -112,3 +112,48 @@ toc_title: "Хранение данных на внешних дисках"
     </storage_configuration>
 </yandex>
 ```
+
+## Хранение данных на веб-сервере {#storing-data-on-webserver}
+
+Вы можете хранить данные на веб-сервере в виде статических файлов (например, каталога данных таблицы), используя диск с типом `web`, и выполнять запросы к этим данным. Это может быть полезно для обслуживания общедоступных наборов данных.
+
+Не поддерживаются следующие типы запросов: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) и [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
+
+Хранение данных на веб-сервере поддерживается только для табличных движков семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) и [Log](../engines/table-engines/log-family/log.md). Чтобы получить доступ к данным, хранящимся на диске `web`, при выполнении запроса используйте настройку [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms). Например, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
+
+Пример конфигурации:
+
+``` xml
+<yandex>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</yandex>
+```
+
+Обязательные параметры:
+
+-   `type` — `web`. Иначе диск создан не будет.
+-   `endpoint` — URL точки приема запроса в формате `path`. URL точки должен содержать путь к корневой директории на сервере, где хранятся данные, полученные с помощью утилиты `clickhouse-static-files-uploader`.
+
+Необязательные параметры:
+
+-   `min_bytes_for_seek` — минимальное количество байтов, которое используются для операций поиска вместо последовательного чтения. Значение по умолчанию: `1` Mb.
+-   `remote_disk_read_backoff_threashold` — максимальное время ожидания при попытке чтения данных с удаленного диска. Значение по умолчанию: `10000` секунд.
+-   `remote_disk_read_backoff_max_tries` — максимальное количество попыток чтения данных с задержкой. Значение по умолчанию: `5`.
+
+Чтобы ограничить количество попыток чтения данных во время одного HTTP-запроса, используйте настройку [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries).
