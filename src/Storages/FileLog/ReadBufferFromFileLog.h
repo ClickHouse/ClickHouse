@@ -37,8 +37,8 @@ public:
 
     bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
-    auto getFileName() const { return current != records.begin() ? (current - 1)->file_name : ""; }
-    auto getOffset() const { return current != records.begin() ? (current - 1)->offset : 0; }
+    auto getFileName() const { return current_file; }
+    auto getOffset() const { return current_offset; }
 
 private:
     enum class BufferStatus
@@ -77,6 +77,9 @@ private:
 
     Records records;
     Records::const_iterator current;
+
+    String current_file;
+    UInt64 current_offset;
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
