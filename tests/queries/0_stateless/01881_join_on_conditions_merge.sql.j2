@@ -84,7 +84,14 @@ SELECT '--';
 SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON t1.id == t2.id AND length(t1.key2) == length(t2.key2) AND t1.key != '333';
 SELECT 't22', * FROM t1 INNER JOIN t22 ON t1.id == t22.id AND (toUInt8(t1.key) > 222 OR toUInt8(t1.key2) >2) AND (t22.idd>3 OR t22.key2='BBB');
 
+SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND t1.b > 0 OR t1.a = t2.a AND t2.b > 0; -- { serverError 48 }
+SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0); -- { serverError 48 }
 
+SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON (t1.a = t2.a AND t1.b > 0) OR (t1.a = t2.a AND t1.c > 0);
+
+SELECT * FROM t1 INNER ALL JOIN t2 ON (t1.id = t2.id AND t1.key2 == '222') OR (t1.id = t2.id AND  (t2.key2='AAA' OR t2.key2='BBB')); -- { serverError 48 }
+
+SELECT * FROM t1 INNER ALL JOIN t2 ON (t1.id = t2.id AND t1.key2 == '222') OR (t1.id = t2.id AND  (t2.key2='AAA' OR t1.key2='BBB')); -- { serverError 48 }
 {% endfor -%}
 
 DROP TABLE IF EXISTS t1;
