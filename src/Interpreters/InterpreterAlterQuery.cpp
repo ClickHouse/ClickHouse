@@ -57,7 +57,8 @@ BlockIO InterpreterAlterQuery::execute()
     if (typeid_cast<DatabaseReplicated *>(database.get())
         && !getContext()->getClientInfo().is_replicated_database_internal
         && !alter.isAttachAlter()
-        && !alter.isFetchAlter())
+        && !alter.isFetchAlter()
+        && !alter.isDropPartitionAlter())
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();

@@ -136,6 +136,57 @@ def test_alter_attach(started_cluster, attachable_part, engine):
         assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == ""
 
 
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_part(started_cluster, engine):
+    table = f"alter_drop_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP PART '{part_name}'")
+    assert main_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    if engine == "ReplicatedMergeTree":
+        # The DROP operation is still replicated at the table engine level
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    else:
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == "456\n"
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_detach_part(started_cluster, engine):
+    table = f"alter_detach_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == f"{part_name}\n"
+    if engine == "ReplicatedMergeTree":
+        # The detach operation is still replicated at the table engine level
+        assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+    else:
+        assert dummy_node.query(detached_parts_query) == ""
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_detached_part(started_cluster, engine):
+    table = f"alter_drop_detached_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+        dummy_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP DETACHED PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == ""
+    assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+
+
 def test_alter_fetch(started_cluster):
     main_node.query("CREATE TABLE testdb.fetch_source (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")
     main_node.query("CREATE TABLE testdb.fetch_target (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")

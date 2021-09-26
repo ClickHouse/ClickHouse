@@ -460,6 +460,11 @@ bool ASTAlterQuery::isFetchAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::FETCH_PARTITION);
 }
 
+bool ASTAlterQuery::isDropPartitionAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
