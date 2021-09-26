@@ -23,6 +23,20 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
+## Dynamically adding new tables to replication
+
+``` sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+It will work as well if there is a setting `materialized_postgresql_tables_list`.
+
+## Dynamically removing tables from replication
+
+``` sql
+DETACH TABLE postgres_database.table_to_remove;
+```
+
 ## Settings {#settings}
 
 -   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
@@ -42,6 +56,12 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
+```
+
+It is also possible to change settings at run time.
+
+``` sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Requirements {#requirements}

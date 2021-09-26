@@ -6,7 +6,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/SystemLog.h>
+#include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -39,7 +39,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & config_prefix)
 {
     if (!config.has(config_prefix))
+    {
+        LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+                "Not creating {}.{} since corresponding section '{}' is missing from config",
+                default_database_name, default_table_name, config_prefix);
+
         return {};
+    }
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
@@ -107,6 +113,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         "opentelemetry_span_log");
     query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
     zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
+    session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -130,6 +137,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(query_views_log.get());
     if (zookeeper_log)
         logs.emplace_back(zookeeper_log.get());
+    if (session_log)
+        logs.emplace_back(session_log.get());
 
     try
     {

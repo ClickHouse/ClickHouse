@@ -1,6 +1,10 @@
 #pragma once
 #include <cstddef>
 
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 constexpr size_t KiB = 1024;
 constexpr size_t MiB = 1024 * KiB;
 constexpr size_t GiB = 1024 * MiB;

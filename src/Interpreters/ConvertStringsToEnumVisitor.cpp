@@ -149,8 +149,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (!literal1 || !literal2)
             return;
 
-        if (literal1->value.getTypeName() != std::string_view{"String"}
-            || literal2->value.getTypeName() != std::string_view{"String"})
+        if (literal1->value.getTypeName() != "String" || literal2->value.getTypeName() != "String")
             return;
 
         changeIfArguments(function_node.arguments->children[1],
@@ -166,8 +165,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (!literal_to || !literal_other)
             return;
 
-        if (literal_to->value.getTypeName() != std::string_view{"Array"}
-            || literal_other->value.getTypeName() != std::string_view{"String"})
+        if (literal_to->value.getTypeName() != "Array" || literal_other->value.getTypeName() != "String")
             return;
 
         Array array_to = literal_to->value.get<Array>();

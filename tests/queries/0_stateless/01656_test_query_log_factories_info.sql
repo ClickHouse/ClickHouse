@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 SET log_queries=1;
 
