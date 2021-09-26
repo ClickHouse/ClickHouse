@@ -116,19 +116,22 @@ public:
             ContextPtr context_,
             size_t buf_size_,
             size_t backoff_threshold_,
-            size_t max_tries_)
+            size_t max_tries_,
+            size_t threadpool_read_)
         : ReadBufferFromRemoteFS(metadata_)
         , uri(uri_)
         , context(context_)
         , buf_size(buf_size_)
         , backoff_threshold(backoff_threshold_)
         , max_tries(max_tries_)
+        , threadpool_read(threadpool_read_)
     {
     }
 
     SeekableReadBufferPtr createReadBuffer(const String & path) const override
     {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries);
+        return std::make_unique<ReadIndirectBufferFromWebServer>(
+            fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries, threadpool_read);
     }
 
 private:
@@ -137,6 +140,7 @@ private:
     size_t buf_size;
     size_t backoff_threshold;
     size_t max_tries;
+    bool threadpool_read;
 };
 
 
@@ -198,9 +202,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+
     auto web_impl = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(),
-        read_settings.remote_fs_buffer_size, read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries);
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
+        read_settings.remote_fs_buffer_size,
+        read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries,
+        threadpool_read);
+
+    if (threadpool_read)
     {
         auto reader = IDiskRemote::getThreadPoolReader();
         auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(web_impl));
