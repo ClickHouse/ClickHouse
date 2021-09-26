@@ -46,8 +46,8 @@ rm ${user_files_path}/logs/d.txt
 
 ${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
 
-${CLICKHOUSE_CLIENT} --query "detach table t;"
-${CLICKHOUSE_CLIENT} --query "attach table t;"
+${CLICKHOUSE_CLIENT} --query "detach table file_log;"
+${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 
 # should no records return
 ${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"

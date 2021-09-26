@@ -578,6 +578,8 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    virtual bool dropTableImmediately() const { return false; }
+
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write
     /// (actually can be replaced with std::mutex, but for consistency we use
