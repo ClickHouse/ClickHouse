@@ -33,6 +33,8 @@ SELECT 'flat: left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: any left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key;
+SELECT 'flat: any left + any_join_distinct_right_table_keys'; -- falls back to regular join
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key SETTINGS any_join_distinct_right_table_keys = '1';
 SELECT 'flat: semi left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 SEMI JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: anti left';

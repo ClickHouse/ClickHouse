@@ -10,7 +10,7 @@ toc_title: "\u5982\u4F55\u5728Linux\u4E0A\u6784\u5EFAClickHouse for AARCH64\uFF0
 
 这是当你有Linux机器，并希望使用它来构建的情况下 `clickhouse` 二进制文件将运行在另一个Linux机器上与AARCH64CPU架构。 这适用于在Linux服务器上运行的持续集成检查。
 
-Aarch64的交叉构建基于 [构建说明](build.md) 先跟着他们
+Aarch64的交叉构建基于 [构建说明](../development/build.md) 先跟着他们
 
 # 安装Clang-8 {#install-clang-8}
 

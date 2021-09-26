@@ -22,7 +22,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -915,10 +914,6 @@ test: string with 'quotes' and   with some special
 ```
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-
-## VerticalRaw {#verticalraw}
-
-Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 ## XML {#xml}
 
