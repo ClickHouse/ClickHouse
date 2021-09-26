@@ -233,13 +233,13 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
+The Code Style Guide: https://clickhouse.com/docs/en/development/style/
 
-Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
+Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
 
-Writing tests: https://clickhouse.tech/docs/en/development/tests/
+Writing tests: https://clickhouse.com/docs/en/development/tests/
 
 List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 

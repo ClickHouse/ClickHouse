@@ -25,7 +25,7 @@ chmod a+x ./hardware.sh
 
 3. Copy the output and send it to clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark/hardware/
+All the results are published here: https://clickhouse.com/benchmark/hardware/
 
 
 ## Manual Run
@@ -68,4 +68,4 @@ mv hits_100m_obfuscated_v1/* .
 ```
 7.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark/hardware/
+All the results are published here: https://clickhouse.com/benchmark/hardware/

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
+# Tag no-parallel: Creates database and users
+# Tag no-fasttest: Requires postgresql-client
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -107,11 +107,13 @@ Hierarchy of privileges:
         -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
+    -   `CREATE FUNCTION`
 -   [DROP](#grant-drop)
     -   `DROP DATABASE`
     -   `DROP TABLE`
     -   `DROP VIEW`
     -   `DROP DICTIONARY`
+    -   `DROP FUNCTION`
 -   [TRUNCATE](#grant-truncate)
 -   [OPTIMIZE](#grant-optimize)
 -   [SHOW](#grant-show)

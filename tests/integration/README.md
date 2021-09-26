@@ -66,7 +66,7 @@ For tests that use common docker compose files you may need to set up their path
 ### Running with runner script
 
 The only requirement is fresh configured docker and
-docker pull yandex/clickhouse-integration-tests-runner
+docker pull clickhouse/integration-tests-runner
 
 Notes:
 * If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
@@ -122,7 +122,7 @@ You can just open shell inside a container by overwritting the command:
 The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
 ```
 cd docker/test/integration
-docker build -t yandex/clickhouse-integration-test .
+docker build -t clickhouse/integration-test .
 ```
 
 The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.

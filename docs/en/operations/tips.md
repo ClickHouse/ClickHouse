@@ -259,4 +259,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

@@ -1,3 +1,6 @@
+-- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts
+-- Tag no-replicated-database: Fails due to additional replicas or shards
+
 drop table if exists rmt;
 -- cleanup code will perform extra Exists
 -- (so the .reference will not match)
