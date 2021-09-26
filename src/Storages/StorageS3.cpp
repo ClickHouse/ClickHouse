@@ -732,20 +732,70 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
     upd.auth_settings = std::move(settings);
 }
 
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
-{
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
-    {
-        ASTs & engine_args = args.engine_args;
 
+StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+{
+    StorageS3Configuration configuration;
+
+    if (auto named_collection = getURLBasedDataSourceConfiguration(engine_args, local_context))
+    {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
+        for (const auto & [arg_name, arg_value] : storage_specific_args)
+        {
+            if (arg_name == "access_key_id")
+                configuration.access_key_id = arg_value.safeGet<String>();
+            else if (arg_name == "secret_access_key")
+                configuration.secret_access_key = arg_value.safeGet<String>();
+            else
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
+                    arg_name);
+        }
+    }
+    else
+    {
         if (engine_args.size() < 2 || engine_args.size() > 5)
             throw Exception(
                 "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
+        configuration.url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        if (engine_args.size() >= 4)
+        {
+            configuration.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+
+        if (engine_args.size() == 3 || engine_args.size() == 5)
+        {
+            configuration.compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.format = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+        {
+            configuration.compression_method = "auto";
+            configuration.format = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+        }
+    }
+
+    return configuration;
+}
+
+
+void registerStorageS3Impl(const String & name, StorageFactory & factory)
+{
+    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
+    {
+        auto & engine_args = args.engine_args;
+        if (engine_args.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+        auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -760,9 +810,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             for (const auto & change : changes)
             {
                 if (user_format_settings.has(change.name))
-                {
                     user_format_settings.set(change.name, change.value);
-                }
             }
 
             // Apply changes from SETTINGS clause, with validation.
@@ -774,42 +822,18 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             format_settings = getFormatSettings(args.getContext());
         }
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        Poco::URI uri (url);
-        S3::URI s3_uri (uri);
-
-        String access_key_id;
-        String secret_access_key;
-        if (engine_args.size() >= 4)
-        {
-            access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-
-        UInt64 max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
-        UInt64 min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
-        UInt64 max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
-        UInt64 max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
-
-        String compression_method;
-        String format_name;
-        if (engine_args.size() == 3 || engine_args.size() == 5)
-        {
-            compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-            format_name = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-        else
-        {
-            compression_method = "auto";
-            format_name = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-        }
+        S3::URI s3_uri(Poco::URI(configuration.url));
+        auto max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
+        auto min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
+        auto max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
+        auto max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
 
         return StorageS3::create(
             s3_uri,
-            access_key_id,
-            secret_access_key,
+            configuration.access_key_id,
+            configuration.secret_access_key,
             args.table_id,
-            format_name,
+            configuration.format,
             max_single_read_retries,
             min_upload_part_size,
             max_single_part_upload_size,
@@ -819,7 +843,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.comment,
             args.getContext(),
             format_settings,
-            compression_method);
+            configuration.compression_method);
     },
     {
         .supports_settings = true,
