@@ -2427,6 +2427,8 @@ class ClickHouseInstance:
 
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace("{main_config_file}", self.main_config_name)
+        else:
+            entrypoint_cmd = '[' + ', '.join(map(lambda x: '"' + x + '"', entrypoint_cmd.split())) + ']'
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
