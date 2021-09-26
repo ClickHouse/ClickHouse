@@ -1553,18 +1553,20 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 
 ### Data Types Matching {#data-types-matching-msgpack}
 
-| MsgPack data type               | ClickHouse data type                                                             |
-|---------------------------------|----------------------------------------------------------------------------------|
-| `uint N`, `positive fixint`     | [UIntN](../sql-reference/data-types/int-uint.md)                                 |
-| `int N`                         | [IntN](../sql-reference/data-types/int-uint.md)                                  |
-| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
-| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
-| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
-| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
-| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
-| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
-| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
-| `nil`                             | [Nothing](../sql-reference/data-types/special-data-types/nothing.md)             |
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      | MessagePack data type (`SELECT`)   |
+|--------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------|
+| `uint N`, `positive fixint`                                        | [UIntN](../sql-reference/data-types/int-uint.md)          | `uint N`                           |
+| `int N`                                                            | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
+| `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          | `uint 8`                           |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           | `bin 8`, `bin 16`, `bin 32`        |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [FixedString](../sql-reference/data-types/fixedstring.md) | `bin 8`, `bin 16`, `bin 32`        |
+| `float 32`                                                         | [Float32](../sql-reference/data-types/float.md)           | `float 32`                         |
+| `float 64`                                                         | [Float64](../sql-reference/data-types/float.md)           | `float 64`                         |
+| `uint 16`                                                          | [Date](../sql-reference/data-types/date.md)               | `uint 16`                          |
+| `uint 32`                                                          | [DateTime](../sql-reference/data-types/datetime.md)       | `uint 32`                          |
+| `uint 64`                                                          | [DateTime64](../sql-reference/data-types/datetime.md)     | `uint 64`                          |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 | `fixmap`, `map 16`, `map 32`       |
 
 Example:
 
