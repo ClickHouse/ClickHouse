@@ -385,7 +385,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     {
         if (!is_interactive)
         {
-            e.addMessage("(query: {})", full_query);
+            e.addMessage("(in query: {})", full_query);
             throw;
         }
     }

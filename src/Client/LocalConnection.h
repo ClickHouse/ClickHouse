@@ -12,7 +12,6 @@
 namespace DB
 {
 
-
 /// State of query processing.
 struct LocalQueryState
 {
@@ -124,15 +123,14 @@ private:
 
     ContextMutablePtr query_context;
     Session session;
-    bool send_progress;
-    std::optional<ThreadStatus> thread_status;
 
-    /// At the moment, only one ongoing query in the connection is supported at a time.
+    bool send_progress;
+    String description = "clickhouse-local";
+
+    std::optional<ThreadStatus> thread_status;
     std::optional<LocalQueryState> state;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
-
-    String description = "clickhouse-local";
 };
 }
