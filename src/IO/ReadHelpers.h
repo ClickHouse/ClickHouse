@@ -463,6 +463,8 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 template <typename T> void readFloatText(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
+/// used to read header for .yaml files for the RegexpTreeDictionary.
+void readYAMLHeader(String & s, ReadBuffer & buf);
 
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
@@ -508,6 +510,9 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 /// Read and append result to array of characters.
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readYAMLHeaderInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf);
