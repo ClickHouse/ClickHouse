@@ -59,41 +59,46 @@ A lambda function that accepts multiple arguments can also be passed to a higher
 
 For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
 
-## User Defined Functions {#user-defined-functions}
+## SQL User Defined Functions {#user-defined-functions}
 
 Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
 
-The other option is to create functions using XML configuration. Add the path to a function configuration file inside `user_defined_executable_functions_config` tag. Wildcard symbol `*` may be used inside the path. 
+## Executable User Defined Functions {#executable-user-defined-functions}
+ClickHouse can call any external executable program or script to process data. Describe such functions in a [configuration file](../../operations/configuration-files.md) and add the path of that file to the main configuration in `user_defined_executable_functions_config` setting. If a wildcard symbol `*` is used in the path, then all files matching a pattern are loaded. Example:
 ``` xml
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
-Function configuration files are searched inside path specified by `user_files_path` setting.
+User defined function configurations are searched relative to a path specified in the `user_files_path` setting.
 
-Function configuration contains:
+A function configuration contains the following settings:
 
 -   `name` - a function name.
 -   `command` - a command or a script to execute.
--   `argument` - argument description with the `type` of an argument. Each argument is described in a separate tag.
--   `format` - The format in which arguments are passed to a command.
--   `return_type` - the type of a value returned by the function.
--   `type` - a function type. If it is set to `executable` then single command is started. If it is set to `executable_pool` then several commands are started.
--   `lifetime` - reload interval in seconds.
+-   `argument` - argument description with the `type` of an argument. Each argument is described in a separate setting.
+-   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
+-   `return_type` - the type of a returned value.
+-   `max_command_execution_time` - the maximum number of seconds the function is allowed to process arguments. Optional. Default value is `10`.
+-   `command_termination_timeout` - ??? Optional. Default value is `10`.
+-   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
+-   `pool_size` - a size of the command pool. Optional. Default value is `16`.
+-   `lifetime` - reload interval of the function in seconds. If it is set to `0` then function is not reloaded.
+-   `send_chunk_header` - ??? Optional. Default value is `false`.
 
-A function command must read arguments from STDIN and must output result to STDOUT. It must process arguments in a loop.
+The command must read arguments from STDIN and must output the result to STDOUT. The command must process arguments iteratively. That is after processing a set of arguments it must wait for the next set of arguments.
 
 **Example**
 The following example creates `my_function`. It gets single argument of type String. `xargs` command listens to STDIN and calls `echo` for every argument.
 ```
 <functions>
     <function>
-        <type>executable</type>
         <name>my_function</name>
+        <command>xargs -I arg echo Processing arg</command>
         <argument>
             <type>String</type>
         </argument>
-        <return_type>String</return_type>
         <format>TabSeparated</format>
-        <command>xargs -I arg echo Processing arg</command>
+        <return_type>String</return_type>
+        <type>executable</type>
         <lifetime>0</lifetime>
     </function>
 </functions>
