@@ -122,6 +122,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
     else
     {
+        LOG_TEST(log, "Commit request for session {} with type {}, log id {}{}",
+                 request_for_session.session_id, toString(request_for_session.request->getOpNum()), log_idx,
+                 request_for_session.request->getPath().empty() ? "" : ", path " + request_for_session.request->getPath());
+
         std::lock_guard lock(storage_and_responses_lock);
         KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
         for (auto & response_for_session : responses_for_sessions)
@@ -304,7 +308,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         responses_queue.push(response);
 }
 
-std::unordered_set<int64_t> KeeperStateMachine::getDeadSessions()
+std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();

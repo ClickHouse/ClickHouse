@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -162,17 +163,26 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     LOG_DEBUG(
         log,
         "Choose {} projection {}",
-        ProjectionDescription::typeToString(query_info.projection->desc->type),
+        query_info.projection->desc->type,
         query_info.projection->desc->name);
 
     Pipes pipes;
     Pipe projection_pipe;
     Pipe ordinary_pipe;
 
-    if (query_info.projection->merge_tree_projection_select_result_ptr)
+    auto projection_plan = std::make_unique<QueryPlan>();
+    if (query_info.projection->desc->is_minmax_count_projection)
+    {
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(
+            query_info.minmax_count_projection_block.cloneEmpty(),
+            Chunk(query_info.minmax_count_projection_block.getColumns(), query_info.minmax_count_projection_block.rows())));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_plan->addStep(std::move(read_from_pipe));
+    }
+    else if (query_info.projection->merge_tree_projection_select_result_ptr)
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
-        auto plan = readFromParts(
+        projection_plan = readFromParts(
             {},
             query_info.projection->required_columns,
             metadata_snapshot,
@@ -183,35 +193,32 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.projection->merge_tree_projection_select_result_ptr);
+    }
 
-        if (plan->isInitialized())
+    if (projection_plan->isInitialized())
+    {
+        if (query_info.projection->before_where)
         {
-            // If `before_where` is not empty, transform input blocks by adding needed columns
-            // originated from key columns. We already project the block at the end, using
-            // projection_block, so we can just add more columns here without worrying
-            // NOTE: prewhere is executed inside readFromParts
-            if (query_info.projection->before_where)
-            {
-                auto where_step = std::make_unique<FilterStep>(
-                    plan->getCurrentDataStream(),
-                    query_info.projection->before_where,
-                    query_info.projection->where_column_name,
-                    query_info.projection->remove_where_filter);
+            auto where_step = std::make_unique<FilterStep>(
+                projection_plan->getCurrentDataStream(),
+                query_info.projection->before_where,
+                query_info.projection->where_column_name,
+                query_info.projection->remove_where_filter);
 
-                where_step->setStepDescription("WHERE");
-                plan->addStep(std::move(where_step));
-            }
-
-            if (query_info.projection->before_aggregation)
-            {
-                auto expression_before_aggregation
-                    = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), query_info.projection->before_aggregation);
-                expression_before_aggregation->setStepDescription("Before GROUP BY");
-                plan->addStep(std::move(expression_before_aggregation));
-            }
-            projection_pipe = plan->convertToPipe(
-                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+            where_step->setStepDescription("WHERE");
+            projection_plan->addStep(std::move(where_step));
         }
+
+        if (query_info.projection->before_aggregation)
+        {
+            auto expression_before_aggregation
+                = std::make_unique<ExpressionStep>(projection_plan->getCurrentDataStream(), query_info.projection->before_aggregation);
+            expression_before_aggregation->setStepDescription("Before GROUP BY");
+            projection_plan->addStep(std::move(expression_before_aggregation));
+        }
+
+        projection_pipe = projection_plan->convertToPipe(
+            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
     if (query_info.projection->merge_tree_normal_select_result_ptr)
@@ -260,6 +267,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto many_data = std::make_shared<ManyAggregatedData>(projection_pipe.numOutputPorts() + ordinary_pipe.numOutputPorts());
         size_t counter = 0;
 
+        AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
+
         // TODO apply in_order_optimization here
         auto build_aggregate_pipe = [&](Pipe & pipe, bool projection)
         {
@@ -299,7 +308,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_count_to_compile_aggregate_expression,
                     header_before_aggregation); // The source header is also an intermediate header
 
-                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
+                transform_params = std::make_shared<AggregatingTransformParams>(
+                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
 
                 /// This part is hacky.
                 /// We want AggregatingTransform to work with aggregate states instead of normal columns.
@@ -329,7 +339,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.compile_aggregate_expressions,
                     settings.min_count_to_compile_aggregate_expression);
 
-                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
+                transform_params = std::make_shared<AggregatingTransformParams>(
+                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
             }
 
             pipe.resize(pipe.numOutputPorts(), true, true);
@@ -1520,7 +1531,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
+                part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -1590,7 +1601,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_initial_selected_granules += num_granules;
 
             if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
+                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types)
                         .can_be_true)
                 continue;
 

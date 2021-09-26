@@ -543,6 +543,17 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            const auto & column = columns_desc.get(command.column_name);
+            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+        }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
 set -eu
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

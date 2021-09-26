@@ -13,15 +13,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+
 namespace CurrentMetrics
 {
-extern const Metric SyncDrainedConnections;
-extern const Metric ActiveSyncDrainedConnections;
+    extern const Metric SyncDrainedConnections;
+    extern const Metric ActiveSyncDrainedConnections;
 }
 
 namespace DB
@@ -208,6 +208,12 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    /// Set initial_query_id to query_id for the clickhouse-benchmark.
+    ///
+    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
+    ///  due to it executes queries via RemoteBlockInputStream)
+    if (modified_client_info.initial_query_id.empty())
+        modified_client_info.initial_query_id = query_id;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;

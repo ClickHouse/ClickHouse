@@ -112,28 +112,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
-    static std::atomic_uint total_sends {0};
-
-    if ((data_settings->replicated_max_parallel_sends
-            && total_sends >= data_settings->replicated_max_parallel_sends)
-        || (data_settings->replicated_max_parallel_sends_for_table
-            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
-    {
-        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
-        response.setReason("Too many concurrent fetches, try again later");
-        response.set("Retry-After", "10");
-        response.setChunkedTransferEncoding(false);
-        return;
-    }
-
     /// We pretend to work as older server version, to be sure that client will correctly process our version
     response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION))});
-
-    ++total_sends;
-    SCOPE_EXIT({--total_sends;});
-
-    ++data.current_table_sends;
-    SCOPE_EXIT({--data.current_table_sends;});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -600,9 +580,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         new_projection_part->is_temp = false;
         new_projection_part->setColumns(block.getNamesAndTypesList());
         MergeTreePartition partition{};
-        IMergeTreeDataPart::MinMaxIndex minmax_idx{};
         new_projection_part->partition = std::move(partition);
-        new_projection_part->minmax_idx = std::move(minmax_idx);
+        new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
         MergedBlockOutputStream part_out(
             new_projection_part,
@@ -628,7 +607,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
-    new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(

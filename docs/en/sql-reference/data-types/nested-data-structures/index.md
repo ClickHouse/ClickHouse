@@ -7,4 +7,4 @@ toc_title: hidden
 
 # Nested Data Structures {#nested-data-structures}
 
-[Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/nested_data_structures/) <!--hide-->

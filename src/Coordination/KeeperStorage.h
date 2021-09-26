@@ -123,7 +123,7 @@ public:
     {
         auto result = session_id_counter++;
         session_and_timeout.emplace(result, session_timeout_ms);
-        session_expiry_queue.update(result, session_timeout_ms);
+        session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
         return result;
     }
 
@@ -131,7 +131,7 @@ public:
     void addSessionID(int64_t session_id, int64_t session_timeout_ms)
     {
         session_and_timeout.emplace(session_id, session_timeout_ms);
-        session_expiry_queue.update(session_id, session_timeout_ms);
+        session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
     /// Process user request and return response.
@@ -172,7 +172,7 @@ public:
     }
 
     /// Get all dead sessions
-    std::unordered_set<int64_t> getDeadSessions()
+    std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
     }

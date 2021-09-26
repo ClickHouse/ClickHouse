@@ -1,5 +1,6 @@
 #include <Interpreters/TableJoin.h>
 
+
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Block.h>
@@ -7,9 +8,19 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
+
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <Interpreters/DictionaryReader.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
+
+#include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageJoin.h>
 
 #include <common/logger_useful.h>
 
@@ -20,6 +31,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+std::string formatTypeMap(const TableJoin::NameToTypeMap & target, const TableJoin::NameToTypeMap & source)
+{
+    std::vector<std::string> text;
+    for (const auto & [k, v] : target)
+    {
+        auto src_type_it = source.find(k);
+        std::string src_type_name = src_type_it != source.end() ? src_type_it->second->getName() : "";
+        text.push_back(fmt::format("{} : {} -> {}", k, src_type_name, v->getName()));
+    }
+    return fmt::format("{}", fmt::join(text, ", "));
+}
+
 }
 
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
@@ -49,8 +78,6 @@ void TableJoin::resetCollected()
     renames.clear();
     left_type_map.clear();
     right_type_map.clear();
-    left_converting_actions = nullptr;
-    right_converting_actions = nullptr;
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
@@ -184,7 +211,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 {
     const Names & left_keys = keyNamesLeft();
     const Names & right_keys = keyNamesRight();
-    NameSet required_keys(requiredRightKeys().begin(), requiredRightKeys().end());
+    NameSet required_keys = requiredRightKeys();
     Block required_right_keys;
 
     for (size_t i = 0; i < right_keys.size(); ++i)
@@ -202,7 +229,6 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     return required_right_keys;
 }
 
-
 bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
 {
     return forceNullableLeft() && JoinCommon::canBecomeNullable(column_type);
@@ -215,36 +241,54 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    DataTypePtr type = joined_column.type;
-
-    if (hasUsing())
-    {
-        if (auto it = right_type_map.find(joined_column.name); it != right_type_map.end())
-            type = it->second;
-    }
-
-    if (rightBecomeNullable(type))
-        type = JoinCommon::convertTypeToNullable(type);
-
-    columns_added_by_join.emplace_back(joined_column.name, type);
+    columns_added_by_join.emplace_back(joined_column);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
+NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
 {
-    for (auto & col : names_and_types)
+    NamesAndTypesList result;
+    for (const auto & col : columns_added_by_join)
+    {
+        DataTypePtr type = col.type;
+        if (hasUsing())
+        {
+            if (auto it = right_type_map.find(col.name); it != right_type_map.end())
+                type = it->second;
+        }
+
+        if (rightBecomeNullable(type))
+            type = JoinCommon::convertTypeToNullable(type);
+        result.emplace_back(col.name, type);
+    }
+
+    return result;
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability)
+{
+    for (auto & col : left_columns)
     {
         if (hasUsing())
         {
+            /*
+             * Join with `USING` semantic allows to have columns with changed types in result table.
+             * But `JOIN ON` should preserve types from original table.
+             * So we need to know changed types in result tables before further analysis (e.g. analyzeAggregation)
+             * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
+             *   when part of plan built and types of expression will be known.
+             */
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
+
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
                 col.type = it->second;
         }
+
         if (correct_nullability && leftBecomeNullable(col.type))
             col.type = JoinCommon::convertTypeToNullable(col.type);
     }
 
-    /// Types in columns_added_by_join already converted and set nullable if needed
-    for (const auto & col : columns_added_by_join)
-        names_and_types.emplace_back(col.name, col.type);
+    for (const auto & col : correctedColumnsAddedByJoin())
+        left_columns.emplace_back(col.name, col.type);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
@@ -282,10 +326,29 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
-bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
+static std::optional<String> getDictKeyName(const String & dict_name , ContextPtr context)
 {
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+    if (!dictionary)
+        return {};
+
+    if (const auto & structure = dictionary->getStructure(); structure.id)
+        return structure.id->name;
+    return {};
+}
+
+bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
+{
+    using Strictness = ASTTableJoin::Strictness;
+
+    bool allowed_inner = isInner(kind()) && strictness() == Strictness::All;
+    bool allowed_left = isLeft(kind()) && (strictness() == Strictness::Any ||
+                                           strictness() == Strictness::All ||
+                                           strictness() == Strictness::Semi ||
+                                           strictness() == Strictness::Anti);
+
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
-    if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
+    if (!allowed_inner && !allowed_left)
         return false;
 
     const Names & right_keys = keyNamesRight();
@@ -297,9 +360,17 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (it_key == original_names.end())
         return false;
 
-    if (dict_key != it_key->second)
+    if (!right_storage_dictionary)
+        return false;
+
+    auto dict_name = right_storage_dictionary->getDictionaryName();
+
+    auto dict_key = getDictKeyName(dict_name, context);
+    if (!dict_key.has_value() || *dict_key != it_key->second)
         return false; /// JOIN key != Dictionary key
 
+    Names src_names;
+    NamesAndTypesList dst_columns;
     for (const auto & col : sample_block)
     {
         if (col.name == right_keys[0])
@@ -313,51 +384,35 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
             dst_columns.push_back({col.name, col.type});
         }
     }
+    dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
 
     return true;
 }
 
-bool TableJoin::applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
+std::pair<ActionsDAGPtr, ActionsDAGPtr>
+TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
 {
-    bool need_convert = needConvert();
-    if (!need_convert && !hasUsing())
-    {
-        /// For `USING` we already inferred common type an syntax analyzer stage
-        NamesAndTypesList left_list;
-        NamesAndTypesList right_list;
-        for (const auto & col : left_sample_columns)
-            left_list.emplace_back(col.name, col.type);
-        for (const auto & col : right_sample_columns)
-            right_list.emplace_back(col.name, col.type);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
 
-        need_convert = inferJoinKeyCommonType(left_list, right_list);
-    }
+    auto left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
+    auto right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
 
-    if (need_convert)
-    {
-        left_converting_actions = applyKeyConvertToTable(left_sample_columns, left_type_map, key_names_left);
-        right_converting_actions = applyKeyConvertToTable(right_sample_columns, right_type_map, key_names_right);
-    }
-
-    return need_convert;
+    return {left_converting_actions, right_converting_actions};
 }
 
-bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right)
+template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
+bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
-    std::unordered_map<String, DataTypePtr> left_types;
-    for (const auto & col : left)
-    {
-        left_types[col.name] = col.type;
-    }
+    if (!left_type_map.empty() || !right_type_map.empty())
+        return true;
 
-    std::unordered_map<String, DataTypePtr> right_types;
+    NameToTypeMap left_types;
+    for (const auto & col : left)
+        left_types[col.name] = col.type;
+
+    NameToTypeMap right_types;
     for (const auto & col : right)
-    {
-        if (auto it = renames.find(col.name); it != renames.end())
-            right_types[it->second] = col.type;
-        else
-            right_types[col.name] = col.type;
-    }
+        right_types[renamedRightColumnName(col.name)] = col.type;
 
     for (size_t i = 0; i < key_names_left.size(); ++i)
     {
@@ -374,37 +429,37 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             continue;
 
-        DataTypePtr supertype;
+        DataTypePtr common_type;
         try
         {
-            supertype = DB::getLeastSupertype({ltype->second, rtype->second});
+            /// TODO(vdimir): use getMostSubtype if possible
+            common_type = DB::getLeastSupertype({ltype->second, rtype->second});
         }
         catch (DB::Exception & ex)
         {
-            throw Exception(
-                "Type mismatch of columns to JOIN by: " +
-                    key_names_left[i] + ": " + ltype->second->getName() + " at left, " +
-                    key_names_right[i] + ": " + rtype->second->getName() + " at right. " +
-                    "Can't get supertype: " + ex.message(),
-                ErrorCodes::TYPE_MISMATCH);
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
+                key_names_left[i], ltype->second->getName(),
+                key_names_right[i], rtype->second->getName(),
+                ex.message());
         }
-        left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
+
+        if (!allow_right && !common_type->equals(*rtype->second))
+        {
+            throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
+                "Can't change type for right table: {}: {} -> {}.",
+                key_names_right[i], rtype->second->getName(), common_type->getName());
+        }
+        left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = common_type;
     }
 
     if (!left_type_map.empty() || !right_type_map.empty())
     {
-        auto format_type_map = [](NameToTypeMap mapping) -> std::string
-        {
-            std::vector<std::string> text;
-            for (const auto & [k, v] : mapping)
-                text.push_back(k + ": " + v->getName());
-            return fmt::format("{}", fmt::join(text, ", "));
-        };
         LOG_TRACE(
             &Poco::Logger::get("TableJoin"),
             "Infer supertype for joined columns. Left: [{}], Right: [{}]",
-            format_type_map(left_type_map),
-            format_type_map(right_type_map));
+            formatTypeMap(left_type_map, left_types),
+            formatTypeMap(right_type_map, right_types));
     }
 
     return !left_type_map.empty();
@@ -413,15 +468,20 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
 ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const
 {
+    bool has_some_to_do = false;
+
     ColumnsWithTypeAndName cols_dst = cols_src;
     for (auto & col : cols_dst)
     {
         if (auto it = type_mapping.find(col.name); it != type_mapping.end())
         {
+            has_some_to_do = true;
             col.type = it->second;
             col.column = nullptr;
         }
     }
+    if (!has_some_to_do)
+        return nullptr;
 
     NameToNameMap key_column_rename;
     /// Returns converting actions for tables that need to be performed before join
@@ -435,6 +495,20 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
             name = it->second;
     }
     return dag;
+}
+
+void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
+{
+    if (right_storage_dictionary)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
+    right_storage_join = storage;
+}
+
+void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
+{
+    if (right_storage_join)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
+    right_storage_dictionary = storage;
 }
 
 String TableJoin::renamedRightColumnName(const String & name) const

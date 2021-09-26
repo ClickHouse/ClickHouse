@@ -11,7 +11,7 @@ def started_cluster(request):
     try:
         cluster = ClickHouseCluster(__file__)
         node = cluster.add_instance('node',
-                                    main_configs=["configs_secure/config.d/ssl_conf.xml"],
+                                    main_configs=["configs_secure/config.d/ssl_conf.xml", "configs/named_collections.xml"],
                                     with_mongo=True,
                                     with_mongo_secure=request.param)
         cluster.start()
@@ -123,4 +123,19 @@ def test_secure_connection(started_cluster):
 
     assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + '\n'
     node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table.drop()
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_predefined_connection_configuration(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection['test']
+    db.add_user('root', 'clickhouse')
+    simple_mongo_table = db['simple_table']
+    data = []
+    for i in range(0, 100):
+        data.append({'key': i, 'data': hex(i * i)})
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances['node']
+    node.query("create table simple_mongo_table(key UInt64, data String) engine = MongoDB(mongo1)")
     simple_mongo_table.drop()

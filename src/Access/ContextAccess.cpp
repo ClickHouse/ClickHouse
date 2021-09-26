@@ -119,8 +119,10 @@ namespace
         AccessRights res = access;
         res.modifyFlags(modifier);
 
-        /// Anyone has access to the "system" database.
+        /// Anyone has access to the "system" and "information_schema" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         return res;
     }
 

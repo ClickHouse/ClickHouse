@@ -29,6 +29,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
+    , minmax_count_projection(
+          other.minmax_count_projection ? std::optional<ProjectionDescription>(other.minmax_count_projection->clone()) : std::nullopt)
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -50,6 +52,10 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
+    if (other.minmax_count_projection)
+        minmax_count_projection = other.minmax_count_projection->clone();
+    else
+        minmax_count_projection = std::nullopt;
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;

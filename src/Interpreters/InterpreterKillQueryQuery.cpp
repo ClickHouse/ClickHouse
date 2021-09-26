@@ -319,7 +319,13 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     if (query.type == ASTKillQueryQuery::Type::Query)
         required_access.emplace_back(AccessType::KILL_QUERY);
     else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(AccessType::ALTER_UPDATE | AccessType::ALTER_DELETE | AccessType::ALTER_MATERIALIZE_INDEX | AccessType::ALTER_MATERIALIZE_TTL);
+        required_access.emplace_back(
+                AccessType::ALTER_UPDATE
+                | AccessType::ALTER_DELETE
+                | AccessType::ALTER_MATERIALIZE_INDEX
+                | AccessType::ALTER_MATERIALIZE_COLUMN
+                | AccessType::ALTER_MATERIALIZE_TTL
+            );
     return required_access;
 }
 
