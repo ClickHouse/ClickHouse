@@ -898,7 +898,7 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    if (table.table)
+    if (table.table && !table.table->dropTableImmediately())
     {
         table.table->drop();
     }

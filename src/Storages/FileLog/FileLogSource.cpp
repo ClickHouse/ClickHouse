@@ -11,12 +11,7 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-const auto MAX_FAILED_POLL_ATTEMPTS = 10;
+static constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 FileLogSource::FileLogSource(
     StorageFileLog & storage_,

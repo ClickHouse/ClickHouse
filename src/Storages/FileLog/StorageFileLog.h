@@ -44,6 +44,8 @@ public:
 
     void drop() override;
 
+    bool dropTableImmediately() const override { return true; }
+
     const auto & getFormatName() const { return format_name; }
 
     enum class FileStatus
