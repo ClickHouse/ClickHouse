@@ -222,6 +222,8 @@ public:
 
     bool isFetchAlter() const;
 
+    bool isDropPartitionAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
