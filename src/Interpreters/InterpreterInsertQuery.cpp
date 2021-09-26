@@ -16,7 +16,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/StorageDistributed.h>
@@ -404,7 +404,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
-            return std::make_shared<ExceptionHandlingSink>(cur_header);
+            return std::make_shared<EmptySink>(cur_header);
         });
 
         /// Don't use more threads for insert then for select to reduce memory consumption.

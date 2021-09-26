@@ -2,7 +2,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <iostream>
 
 #include <Common/setThreadName.h>

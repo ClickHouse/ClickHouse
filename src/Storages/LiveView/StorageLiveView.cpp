@@ -16,7 +16,7 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Sources/BlocksSource.h>
-#include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
@@ -267,7 +267,7 @@ void StorageLiveView::writeIntoLiveView(
     pipeline.addChain(Chain(std::move(output)));
     pipeline.setSinks([&](const Block & cur_header, Pipe::StreamType)
     {
-        return std::make_shared<ExceptionHandlingSink>(cur_header);
+        return std::make_shared<EmptySink>(cur_header);
     });
 
     auto executor = pipeline.execute();
