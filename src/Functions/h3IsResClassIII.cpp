@@ -24,12 +24,12 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 
-class FunctionH3ResIsClassIII : public IFunction
+class FunctionH3IsResClassIII : public IFunction
 {
 public:
-    static constexpr auto name = "h3ResIsClassIII";
+    static constexpr auto name = "h3IsResClassIII";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ResIsClassIII>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IsResClassIII>(); }
 
     std::string getName() const override { return name; }
 
@@ -69,9 +69,9 @@ public:
 
 }
 
-void registerFunctionH3ResIsClassIII(FunctionFactory & factory)
+void registerFunctionH3IsResClassIII(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionH3ResIsClassIII>();
+    factory.registerFunction<FunctionH3IsResClassIII>();
 }
 
 }
