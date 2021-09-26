@@ -312,6 +312,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
     {
         AlterCommand command;
@@ -842,6 +850,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
@@ -959,6 +968,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
+
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {

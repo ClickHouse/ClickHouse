@@ -792,7 +792,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
     for (const auto & column : columns)
     {
         /// Skip .sizeX and similar meta information
-        if (!column.getSubcolumnName().empty())
+        if (column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant

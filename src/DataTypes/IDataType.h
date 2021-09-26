@@ -80,6 +80,9 @@ public:
     virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+
+    using SubcolumnCallback = std::function<void(const String &, const DataTypePtr &, const ISerialization::SubstreamPath &)>;
+    void forEachSubcolumn(const SubcolumnCallback & callback) const;
     Names getSubcolumnNames() const;
 
     /// Returns default serialization of data type.
@@ -382,6 +385,12 @@ template <typename T>
 inline bool isUInt8(const T & data_type)
 {
     return WhichDataType(data_type).isUInt8();
+}
+
+template <typename T>
+inline bool isUInt64(const T & data_type)
+{
+    return WhichDataType(data_type).isUInt64();
 }
 
 template <typename T>

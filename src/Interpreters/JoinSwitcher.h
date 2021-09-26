@@ -26,6 +26,11 @@ public:
     /// @returns false, if join-on-disk disk limit exceeded
     bool addJoinedBlock(const Block & block, bool check_limits) override;
 
+    void checkTypesOfKeys(const Block & block) const override
+    {
+        join->checkTypesOfKeys(block);
+    }
+
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
     {
         join->joinBlock(block, not_processed);
