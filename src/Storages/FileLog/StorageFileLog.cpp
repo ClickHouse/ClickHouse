@@ -34,7 +34,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_FILE_STAT;
@@ -375,7 +374,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "File {} has been broken.", file);
             }
-            /// updte file end at the monment, used in ReadBuffer and serialize
+            /// update file end at the monment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
 
             context.reader.seekg(meta.last_writen_position);
@@ -557,7 +556,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.out->write(block);
         rows += block.rows();
-        /// During files open, also save file end at the openning moment
+        /// During files open, also save file end at the opening moment
         serialize(true);
     }
     block_io.out->writeSuffix();
