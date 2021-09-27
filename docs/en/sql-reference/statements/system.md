@@ -87,7 +87,7 @@ SYSTEM RELOAD MODEL <model_name>
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
 
-Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from an XML configuration.
+Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
 
 **Syntax**
 
