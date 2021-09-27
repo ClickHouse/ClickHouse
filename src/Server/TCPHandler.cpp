@@ -115,6 +115,20 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
+        sendHello();
+
+        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
+        {
+            session->makeSessionContext();
+
+            /// If session created, then settings in session context has been updated.
+            /// So it's better to update the connection settings for flexibility.
+            extractConnectionSettingsFromContext(session->sessionContext());
+
+            /// When connecting, the default database could be specified.
+            if (!default_database.empty())
+                session->sessionContext()->setCurrentDatabase(default_database);
+        }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -138,21 +152,6 @@ void TCPHandler::runImpl()
         catch (...) {}
 
         throw;
-    }
-
-    sendHello();
-
-    if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
-    {
-        session->makeSessionContext();
-
-        /// If session created, then settings in session context has been updated.
-        /// So it's better to update the connection settings for flexibility.
-        extractConnectionSettingsFromContext(session->sessionContext());
-
-        /// When connecting, the default database could be specified.
-        if (!default_database.empty())
-            session->sessionContext()->setCurrentDatabase(default_database);
     }
 
     while (true)
