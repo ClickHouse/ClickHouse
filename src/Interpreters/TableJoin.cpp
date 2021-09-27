@@ -125,113 +125,6 @@ void TableJoin::addUsingKey(const ASTPtr & ast)
     addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast);
 }
 
-void TableJoin::newClauseIfPopulated()
-{
-    const auto & clause = clauses.back();
-    if (!clause.key_names_left.empty() || !clause.key_names_right.empty() ||
-        clause.on_filter_condition_left || clause.on_filter_condition_right)
-    {
-        clauses.emplace_back();
-    }
-    if (getStorageJoin() && clauses.size() > 1)
-        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-namespace
-{
-
-bool compatibleFilerConditions(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
-{
-    bool has_left = l.on_filter_condition_left || r.on_filter_condition_left;
-    bool has_right = l.on_filter_condition_right || r.on_filter_condition_right;
-    return !(has_left && has_right);
-}
-
-bool equalTableColumns(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
-{
-    return l.key_names_left == r.key_names_left &&
-        l.key_names_right == r.key_names_right &&
-        compatibleFilerConditions(l, r);
-}
-
-void joinASTbyOR(ASTPtr & to, const ASTPtr & from)
-{
-    if (from == nullptr)
-        return;
-
-    if (to == nullptr)
-    {
-        to = from;
-    }
-    else if (const auto * func = to->as<ASTFunction>(); func && func->name == "or")
-    {
-        /// already have `or` in condition, just add new argument
-        func->arguments->children.push_back(from);
-    }
-    else
-    {
-        /// already have some conditions, unite it with `or`
-        to = makeASTFunction("or", to, from);
-    }
-}
-
-/// from's conditions added to to's ones
-void addConditionsToClause(TableJoin::JoinOnClause & to, const TableJoin::JoinOnClause & from)
-{
-    assert(compatibleFilerConditions(to, from));
-
-    joinASTbyOR(to.on_filter_condition_left, from.on_filter_condition_left);
-    joinASTbyOR(to.on_filter_condition_right, from.on_filter_condition_right);
-}
-
-}
-
-bool operator<(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause & r)
-{
-    return l.key_names_left < r.key_names_left ||
-        (l.key_names_left == r.key_names_left && l.key_names_right < r.key_names_right) ||
-        (l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right && l.on_filter_condition_left && !r.on_filter_condition_left);
-}
-
-void TableJoin::optimizeClauses()
-{
-    if (clauses.size() > 1)
-    {
-        std::sort(std::begin(clauses), std::end(clauses));
-
-        auto to_it = clauses.begin();
-
-        for (auto from_it = to_it + 1; from_it != clauses.end(); ++from_it)
-        {
-            if (!equalTableColumns(*from_it, *to_it))
-            {
-                if (++to_it != from_it)
-                {
-                    *to_it = std::move(*from_it);
-                }
-            }
-            else
-            {
-                addConditionsToClause(*to_it, *from_it);
-            }
-        }
-        const Clauses::size_type new_size = std::distance(clauses.begin(), to_it) + 1;
-        if (clauses.size() != new_size)
-        {
-            LOG_TRACE(
-                &Poco::Logger::get("TableJoin"), "optimizeClauses trim clauses, size {} => {}", clauses.size(), new_size);
-            clauses.resize(new_size);
-        }
-
-        if (clauses.size() > MAX_DISJUNCTS)
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Maximum number of keys that join tables via OR is {} (after normalization), consider reducing",
-                MAX_DISJUNCTS);
-        }
-    }
-}
-
 void TableJoin::addDisjunct()
 {
     clauses.emplace_back();
@@ -619,7 +512,6 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
                 right_key_name, rtype->second->getName(),
                 ex.message());
         }
-
         if (!allow_right && !common_type->equals(*rtype->second))
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
