@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ELEMENT_IN_AST;
+    extern const int LOGICAL_ERROR;
 }
 
 
