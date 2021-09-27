@@ -48,6 +48,8 @@ public:
             throw std::runtime_error("Unlucky...");
     }
 
+    UInt64 getPriority() override { return 0; }
+
 private:
     std::mt19937 generator;
     std::uniform_int_distribution<> distribution;
@@ -62,7 +64,7 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = DB::MergeTreeBackgroundExecutor::create
+    auto executor = DB::OrdinaryBackgroundExecutor::create
     (
         "GTest",
         tasks_kinds,
@@ -103,7 +105,7 @@ TEST(Executor, RemoveTasksStress)
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    auto executor = DB::MergeTreeBackgroundExecutor::create
+    auto executor = DB::OrdinaryBackgroundExecutor::create
     (
         "GTest",
         tasks_kinds,

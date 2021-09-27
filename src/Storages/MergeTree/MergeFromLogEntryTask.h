@@ -22,6 +22,8 @@ public:
 
     IExecutableTask::Type getType() override { return IExecutableTask::Type::MERGE; }
 
+    UInt64 getPriority() override { return priority; }
+
 protected:
     /// Both return false if we can't execute merge.
     std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
@@ -40,6 +42,8 @@ private:
 
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
+
+    UInt64 priority;
 
     MergeTaskPtr merge_task;
 };

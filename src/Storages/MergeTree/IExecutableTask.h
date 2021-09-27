@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /**
  * Generic interface for background operations. Simply this is self-made coroutine.
  * The main method is executeStep, which will return true
@@ -36,6 +41,7 @@ public:
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
     virtual Type getType() { return Type::UNSPECIFIED; }
+    virtual UInt64 getPriority() = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -67,6 +73,10 @@ public:
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() override { return id; }
+    UInt64 getPriority() override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
+    }
 
 private:
     bool res = false;

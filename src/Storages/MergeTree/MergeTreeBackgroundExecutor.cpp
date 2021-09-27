@@ -9,7 +9,17 @@ namespace DB
 {
 
 
-void MergeTreeBackgroundExecutor::wait()
+TaskRuntimeDataPtr MergeMutateRuntimeQueue::pop()
+{
+    std::pop_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
+    auto result = std::move(buffer.back());
+    buffer.pop_back();
+    return result;
+}
+
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::wait()
 {
     {
         std::lock_guard lock(mutex);
@@ -21,7 +31,8 @@ void MergeTreeBackgroundExecutor::wait()
 }
 
 
-bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
+template <class Queue>
+bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
     std::lock_guard lock(mutex);
 
@@ -32,23 +43,22 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push_back(std::make_shared<TaskRuntimeData>(std::move(task), metric));
+    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
 
     has_tasks.notify_one();
     return true;
 }
 
 
-void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
 {
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        auto it = std::remove_if(pending.begin(), pending.end(),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
-        pending.erase(it, pending.end());
+        pending.remove(id);
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -64,7 +74,8 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 }
 
 
-void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -102,7 +113,7 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
             return;
         }
 
-        pending.push_back(item);
+        pending.push(item);
         erase_from_active();
         has_tasks.notify_one();
         return;
@@ -139,7 +150,8 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 }
 
 
-void MergeTreeBackgroundExecutor::threadFunction()
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
 
@@ -157,8 +169,7 @@ void MergeTreeBackgroundExecutor::threadFunction()
                 if (shutdown)
                     break;
 
-                item = std::move(pending.front());
-                pending.pop_front();
+                item = std::move(pending.pop());
                 active.push_back(item);
             }
 
@@ -171,5 +182,8 @@ void MergeTreeBackgroundExecutor::threadFunction()
     }
 }
 
+
+template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 }
