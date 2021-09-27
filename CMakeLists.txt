@@ -508,6 +508,7 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
+include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
