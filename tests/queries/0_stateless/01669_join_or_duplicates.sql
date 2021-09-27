@@ -18,6 +18,6 @@ select '17 full', * from (select 1 as x, 2 as y) t1 full join (select 1 as xx, 2
 
 select count(1) from (select * from (select 1 as x, 2 as y) t1 left join (select 1 as xx, 2 as yy from numbers(555)) t2  on x = xx or y = yy);
 
-select * from (select 'a' as a, number as c from numbers(2)) as t1 join (select 'a' as a, number as c from numbers(2)) as t2  on  t1.c=t2.c or t1.a = t2.a;
+select * from (select 'a' as a, number as c from numbers(2)) as t1 join (select 'a' as a, number as c from numbers(2)) as t2  on  t1.c = t2.c or t1.a = t2.a order by t1.c, t2.c;
 
-select * from (select 'a' as a, number as c from numbers(2)) as t1 join (select 'a' as a, number as c from numbers(2)) as t2  on  t1.a = t2.a or t1.c=t2.c;
+select * from (select 'a' as a, number as c from numbers(2)) as t1 join (select 'a' as a, number as c from numbers(2)) as t2  on  t1.a = t2.a or t1.c = t2.c order by t1.c, t2.c;
