@@ -75,9 +75,9 @@ StorageFileLog::StorageFileLog(
         loadMetaFiles(attach);
         loadFiles();
 
-        assert(
-            file_infos.file_names.size() == file_infos.meta_by_inode.size() == file_infos.inode_by_name.size()
-            == file_infos.context_by_name.size());
+        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+        assert(file_infos.file_names.size() == file_infos.inode_by_name.size());
+        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(path);
@@ -738,9 +738,9 @@ bool StorageFileLog::updateFileInfos()
     file_infos.file_names.swap(valid_files);
 
     /// These file infos should always have same size(one for one)
-    assert(
-        file_infos.file_names.size() == file_infos.meta_by_inode.size() == file_infos.inode_by_name.size()
-        == file_infos.context_by_name.size());
+    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    assert(file_infos.file_names.size() == file_infos.inode_by_name.size());
+    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
 }
