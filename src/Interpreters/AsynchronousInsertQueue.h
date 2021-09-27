@@ -134,7 +134,7 @@ private:
     /// Should be called with shared or exclusively locked 'rwlock'.
     void pushImpl(InsertData::EntryPtr entry, QueueIterator it);
 
-    void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
     template <typename E>
