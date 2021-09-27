@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
-    AsynchronousReaderPtr reader_, Int32 priority_, ReadBufferFromRemoteFSImpl impl_)
+    AsynchronousReaderPtr reader_, Int32 priority_, std::shared_ptr<ReadBufferFromRemoteFS> impl_)
     : reader(reader_), priority(priority_), impl(impl_)
 {
 }
@@ -35,16 +35,9 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
 std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readNext()
 {
     IAsynchronousReader::Request request;
-
-    auto remote_fd = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>();
-
-    /// Resize buffer to 0 and move pos to start.
-    impl->set(impl->buffer().begin(), impl->buffer().size());
-    remote_fd->impl = impl;
-
-    request.descriptor = std::move(remote_fd);
+    request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
+    request.offset = absolute_position;
     request.priority = priority;
-
     return reader->submit(request);
 }
 
@@ -77,11 +70,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     if (size)
     {
-        size_t offset = pos - working_buffer.begin();
-        assert(offset >= 0);
         swap(*impl);
-        impl->absolute_position += working_buffer.size();
-        position() = working_buffer.begin() + offset;
+        absolute_position += size;
+        impl->reset();
     }
 
     prefetch_future = {};
@@ -94,24 +85,24 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     if (whence == SEEK_CUR)
     {
         /// If position within current working buffer - shift pos.
-        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < impl->absolute_position)
+        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < absolute_position)
         {
             pos += offset_;
             return getPosition();
         }
         else
         {
-            impl->absolute_position += offset_;
+            absolute_position += offset_;
         }
     }
     else if (whence == SEEK_SET)
     {
         /// If position is within current working buffer - shift pos.
         if (!working_buffer.empty()
-            && static_cast<size_t>(offset_) >= impl->absolute_position - working_buffer.size()
-            && size_t(offset_) < impl->absolute_position)
+            && static_cast<size_t>(offset_) >= absolute_position - working_buffer.size()
+            && size_t(offset_) < absolute_position)
         {
-            pos = working_buffer.end() - (impl->absolute_position - offset_);
+            pos = working_buffer.end() - (absolute_position - offset_);
 
             assert(pos >= working_buffer.begin());
             assert(pos <= working_buffer.end());
@@ -120,7 +111,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
         }
         else
         {
-            impl->absolute_position = offset_;
+            absolute_position = offset_;
         }
     }
     else
@@ -130,14 +121,13 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     {
         std::cerr << "Ignoring prefetched data" << "\n";
         prefetch_future.wait();
-        impl->reset(); /// Clean the buffer, we do no need it.
         prefetch_future = {};
     }
 
     pos = working_buffer.end();
-    impl->reset();
+    impl->reset(true);
 
-    return impl->absolute_position;
+    return absolute_position;
 }
 
 

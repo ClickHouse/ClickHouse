@@ -103,7 +103,6 @@ bool ReadBufferFromS3::nextImpl()
         }
     }
 
-    std::cerr << "s3 buffer size: " << impl->buffer().size() << std::endl;
     if (!next_result)
         return false;
 

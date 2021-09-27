@@ -9,8 +9,7 @@ namespace DB
 
 class ReadBufferFromRemoteFS : public ReadBufferFromFileBase
 {
-friend class ReadIndirectBufferFromRemoteFS;
-friend class AsynchronousReadIndirectBufferFromRemoteFS;
+friend class ThreadPoolRemoteFSReader;
 
 public:
     explicit ReadBufferFromRemoteFS(const RemoteMetadata & metadata_);
@@ -21,14 +20,13 @@ public:
 
     String getFileName() const override { return metadata.metadata_file_path; }
 
-    bool readNext() { return nextImpl(); }
-
-    void reset();
-
-    bool initialized() const { return current_buf != nullptr; }
+    void reset(bool reset_inner_buf = false);
 
 protected:
+    size_t fetch(size_t offset);
+
     virtual SeekableReadBufferPtr createReadBuffer(const String & path) const = 0;
+
     RemoteMetadata metadata;
 
 private:
@@ -36,14 +34,13 @@ private:
 
     SeekableReadBufferPtr initialize();
 
-    bool readImpl();
+    bool read();
 
     SeekableReadBufferPtr current_buf;
 
     size_t current_buf_idx = 0;
+
     size_t absolute_position = 0;
 };
-
-using ReadBufferFromRemoteFSImpl = std::shared_ptr<ReadBufferFromRemoteFS>;
 
 }
