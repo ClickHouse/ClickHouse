@@ -37,7 +37,8 @@ constexpr bool static_for(auto && f, std::index_sequence<I...>)
  * See Common/tests/gtest_static_for.cpp for examples.
  */
 template <auto Begin, decltype(Begin) End>
-constexpr bool static_for(Fn<bool(Constant<Begin>)> auto && f)
+//constexpr bool static_for(Fn<bool(Constant<Begin>)> auto && f)
+constexpr bool static_for(auto && f)
 {
     using T = decltype(Begin);
 
@@ -51,7 +52,8 @@ constexpr bool static_for(Fn<bool(Constant<Begin>)> auto && f)
  * See Common/tests/gtest_static_for.cpp for examples.
  */
 template <CTArray Container>
-constexpr bool static_for(Fn<bool(Constant<Container[0]>)> auto && f)
+//constexpr bool static_for(Fn<bool(Constant<Container[0]>)> auto && f)
+constexpr bool static_for( auto && f)
 {
     return detail::static_for<Container>(
         std::forward<decltype(f)>(f),

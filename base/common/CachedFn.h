@@ -5,16 +5,16 @@
 #include "FnTraits.h"
 
 /**
- * The simplest cache for a functor that decays to a pointer-to-function.
+ * Cache for a functor that decays to a pointer-to-function.
  * The size is unlimited. Values are stored permanently and never evicted.
- * Suitable only for the simplest cases.
+ * Suitable only for simplest cases.
  *
  * Invocation/update is O(log(saved cache values)).
  *
- * @example FnCache<&my_func> cached; cached(arg);
+ * @example CachedFn<&my_func> cached; cached(arg);
   */
 template <auto * Func>
-struct FnCache
+struct CachedFn
 {
 private:
     using Traits = FnTraits<decltype(Func)>;
@@ -25,7 +25,7 @@ private:
     mutable std::mutex mutex;
 
 public:
-    template <typename... Args>
+    template <class ...Args>
     Result operator()(Args && ...args)
     {
         Key key{std::forward<Args>(args)...};
@@ -48,7 +48,7 @@ public:
         return res;
     }
 
-    template <typename ...Args>
+    template <class ...Args>
     void update(Args && ...args)
     {
         Key key{std::forward<Args>(args)...};
