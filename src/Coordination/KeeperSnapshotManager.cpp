@@ -435,10 +435,10 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
     return writer.getBuffer();
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot)
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const
 {
     std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
-    auto buffer_raw_ptr = writer.get();
+    auto * buffer_raw_ptr = writer.get();
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
         compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
@@ -451,7 +451,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
 }
 
 
-bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer) const
+bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
     static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
     ReadBufferFromNuraftBuffer reader(buffer);
