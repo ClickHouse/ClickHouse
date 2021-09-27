@@ -266,7 +266,7 @@ function run_tests
             --fast-tests-only --no-long --testname --shard --zookeeper \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_log.txt"
+        | tee "$FASTTEST_OUTPUT/test_result.txt"
 }
 
 case "$stage" in
