@@ -129,8 +129,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
         {
             if (on_conflict.empty())
