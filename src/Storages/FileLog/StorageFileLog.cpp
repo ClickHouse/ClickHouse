@@ -294,8 +294,8 @@ Pipe StorageFileLog::read(
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_infos.file_names.size());
 
+    /// When call closeFilesAndStoreMeta() ?
     openFilesAndSetPos();
-    serialize(true);
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
@@ -352,7 +352,7 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = file_infos.context_by_name.at(file);
         if (file_ctx.status != FileStatus::NO_CHANGE)
         {
-            file_ctx.reader = std::ifstream(getFullDataPath(file));
+            file_ctx.reader.open(getFullDataPath(file));
             if (!file_ctx.reader.good())
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Open file {} failed.", file);
@@ -385,6 +385,7 @@ void StorageFileLog::openFilesAndSetPos()
             }
         }
     }
+    serialize(true);
 }
 
 void StorageFileLog::closeFilesAndStoreMeta()
@@ -522,7 +523,6 @@ bool StorageFileLog::streamToViews()
     auto block_io = interpreter.execute();
 
     openFilesAndSetPos();
-    serialize();
 
     Pipes pipes;
     pipes.reserve(max_streams_number);
@@ -562,7 +562,7 @@ bool StorageFileLog::streamToViews()
     }
     block_io.out->writeSuffix();
 
-    serialize();
+    closeFilesAndStoreMeta();
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
