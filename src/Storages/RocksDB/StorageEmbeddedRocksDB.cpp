@@ -280,7 +280,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     {
         fs::create_directories(rocksdb_dir);
     }
-    initDb();
+    initDB();
 }
 
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
@@ -291,10 +291,10 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
 
     fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
-    initDb();
+    initDB();
 }
 
-void StorageEmbeddedRocksDB::initDb()
+void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
