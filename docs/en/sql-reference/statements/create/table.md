@@ -249,16 +249,16 @@ CREATE TABLE codec_example
     timestamp DateTime CODEC(DoubleDelta),
     slow_values Float32 CODEC(Gorilla)
 )
-ENGINE = MergeTree()
+ENGINE = MergeTree();
 ```
 
 ### Experimental Codecs {#experimental-codecs}
 
 There is a list of experimental compression codecs, that can be used only when the [allow_experimental_codecs](../../../operations/settings/settings.md#allow_experimental_codecs) setting is enabled.
 
-- [lizard](https://github.com/inikep/lizard)
-- [LZSSE](https://github.com/ConorStokes/LZSSE)
-- [density](https://github.com/centaurean/density)
+- [lizard](https://github.com/inikep/lizard) (formerly `LZ5`) — A lossless compression algorithm which contains 4 compression methods: `fastLZ4`, `LIZv1`, `fastLZ4 + Huffman`, and `LIZv1 + Huffman`. `Lizard` library is based on `LZ4` library, but the `lizard` compression format is not compatible with `LZ4`. The high compression/decompression speed is achieved without any `SSE` and `AVX` extensions.
+- [LZSSE](https://github.com/ConorStokes/LZSSE) — Designed for a branchless `SSE` decompression implementation. Supports three variants: `LZSSE2` for high compression files with small literal runs, `LZSSE4` for a more balanced mix of literals and matches, and `LZSSE8` for lower compression data with longer runs of matches. 
+- [density](https://github.com/centaurean/density) — Works not with bytes, but with groups of 4 bytes. Heavily uses registers for processing (as opposed to memory). A "blowup protection" is provided, dramatically increasing the processing speed of incompressible input data. 
 
 <!--
 ### Encryption Codecs {#create-query-encryption-codecs}
