@@ -190,7 +190,7 @@ bool operator<(const TableJoin::JoinOnClause & l, const TableJoin::JoinOnClause 
 {
     return l.key_names_left < r.key_names_left ||
         (l.key_names_left == r.key_names_left && l.key_names_right < r.key_names_right) ||
-        (l.key_names_left == r.key_names_left && l.key_names_left == r.key_names_left && l.on_filter_condition_left && !r.on_filter_condition_left);
+        (l.key_names_left == r.key_names_left && l.key_names_right == r.key_names_right && l.on_filter_condition_left && !r.on_filter_condition_left);
 }
 
 void TableJoin::optimizeClauses()
