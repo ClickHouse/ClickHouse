@@ -3724,3 +3724,18 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## allow_experimental_codecs {#allow_experimental_codecs}
+
+Enables or disables support of [experimental compression codecs](../../sql-reference/statements/create/table.md#experimental-codecs).
+
+Possible values:
+
+-   0 — Experimental codecs are not supported.
+-   1 — Experimental codecs can be used.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Experimental Codecs](../../sql-reference/statements/create/table.md#experimental-codecs)

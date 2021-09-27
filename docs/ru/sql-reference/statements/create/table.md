@@ -245,6 +245,13 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
+### Экспериментальные кодеки {#experimental-codecs}
+
+Некоторые кодеки для сжатия данных можно использовать как экспериментальный функционал и только при включенной настройке [allow_experimental_codecs](../../../operations/settings/settings.md#allow_experimental_codecs).
+
+- [lizard](https://github.com/inikep/lizard)
+- [LZSSE](https://github.com/ConorStokes/LZSSE)
+- [density](https://github.com/centaurean/density)
 
 ## Временные таблицы {#temporary-tables}
 

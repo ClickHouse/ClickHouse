@@ -252,6 +252,14 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+### Experimental Codecs {#experimental-codecs}
+
+There is a list of experimental compression codecs, that can be used only when the [allow_experimental_codecs](../../../operations/settings/settings.md#allow_experimental_codecs) setting is enabled.
+
+- [lizard](https://github.com/inikep/lizard)
+- [LZSSE](https://github.com/ConorStokes/LZSSE)
+- [density](https://github.com/centaurean/density)
+
 <!--
 ### Encryption Codecs {#create-query-encryption-codecs}
 

@@ -3505,3 +3505,18 @@ Exception: Total regexp lengths too large.
 **См. также**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## allow_experimental_codecs {#allow_experimental_codecs}
+
+Включает или отключает поддержку [экспериментальных кодеков](../../sql-reference/statements/create/table.md#experimental-codecs).
+
+Возможные значения:
+
+-   0 — экспериментальные кодеки не поддерживаются.
+-   1 — экспериментальные кодеки можно использовать.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Experimental Codecs](../../sql-reference/statements/create/table.md#experimental-codecs)
