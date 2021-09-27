@@ -8,7 +8,7 @@ namespace DB
 namespace detail
 {
 template <typename Typelist, size_t ...I>
-static bool castTypeToEither(const auto * type, auto && f, std::index_sequence<I...>)
+bool castTypeToEither(const auto * type, auto && f, std::index_sequence<I...>)
 {
     return (
         (typeid_cast<const typename Typelist::template At<I> *>(type)
@@ -28,7 +28,7 @@ static bool castTypeToEither(const T * type, F && f)
 
 /// Use Common/TypeList as template argument
 template <class Typelist>
-static constexpr bool castTypeToEitherTL(const auto * type, auto && f)
+static bool castTypeToEitherTL(const auto * type, auto && f)
 {
     return detail::castTypeToEither<Typelist>(
             type, std::forward<decltype(f)>(f),

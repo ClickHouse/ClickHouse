@@ -225,26 +225,17 @@ private:
         return LUTIndex(guess ? guess - 1 : 0);
     }
 
-    inline LUTIndex toLUTIndex(DayNum d) const
+    template <class T>
+    inline LUTIndex toLUTIndex(T value) const
     {
-        const UInt32 added = d.toUnderType() + daynum_offset_epoch;
-        return LUTIndex(added & date_lut_mask);
-    }
-
-    inline LUTIndex toLUTIndex(ExtendedDayNum d) const
-    {
-        const UInt32 added = d.toUnderType() + daynum_offset_epoch;
-        return LUTIndex(added & date_lut_mask);
-    }
-
-    inline LUTIndex toLUTIndex(Time t) const
-    {
-        return findIndex(t);
-    }
-
-    inline LUTIndex toLUTIndex(LUTIndex i) const
-    {
-        return i;
+        if constexpr (std::is_same_v<T, DayNum>)
+            return LUTIndex((value.toUnderType() + daynum_offset_epoch) & date_lut_mask);
+        else if constexpr (std::is_same_v<T, ExtendedDayNum>)
+            return LUTIndex(static_cast<UInt32>(value.toUnderType() + daynum_offset_epoch) & date_lut_mask);
+        else if constexpr (std::is_same_v<T, LUTIndex>)
+            return value;
+        else // some numeric type
+            return findIndex(value);
     }
 
     template <typename DateOrTime>
@@ -284,15 +275,15 @@ public:
 
     /// All functions below are thread-safe; arguments are not checked.
 
-    inline ExtendedDayNum toDayNum(ExtendedDayNum d) const
+    template <class T>
+    inline ExtendedDayNum toDayNum(T value) const
     {
-        return d;
-    }
-
-    template <typename DateOrTime>
-    inline ExtendedDayNum toDayNum(DateOrTime v) const
-    {
-        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
+        if constexpr (std::is_same_v<T, ExtendedDayNum>)
+            return value;
+        else
+            return ExtendedDayNum(static_cast<ExtendedDayNum::UnderlyingType>(
+                toLUTIndex<T>(value).toUnderType() - daynum_offset_epoch
+            ));
     }
 
     /// Round down to start of monday.
@@ -307,7 +298,8 @@ public:
     inline ExtendedDayNum toFirstDayNumOfWeek(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(i - (lut[i].day_of_week - 1));
+        const LUTIndex result(i - (lut[i].day_of_week - 1));
+        return toDayNum(result);
     }
 
     /// Round down to start of month.
@@ -322,7 +314,8 @@ public:
     inline ExtendedDayNum toFirstDayNumOfMonth(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(i - (lut[i].day_of_month - 1));
+        const LUTIndex result(i - (lut[i].day_of_month - 1));
+        return toDayNum(result);
     }
 
     /// Round down to start of quarter.
@@ -552,8 +545,9 @@ public:
     inline unsigned toRelativeWeekNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
+        const LUTIndex result(i + 8 - toDayOfWeek(i));
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + 8 - toDayOfWeek(i)) / 7;
+        return toDayNum(result) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -561,8 +555,9 @@ public:
     inline unsigned toISOYear(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
+        const LUTIndex result(i + 4 - toDayOfWeek(i));
         /// That's effectively the year of thursday of current week.
-        return toYear(toLUTIndex(i + 4 - toDayOfWeek(i)));
+        return toYear(result);
     }
 
     /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.

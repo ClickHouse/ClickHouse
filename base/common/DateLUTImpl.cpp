@@ -154,17 +154,18 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     size_t year_months_lut_index = 0;
     size_t first_day_of_last_month = 0;
 
-    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
+    for (UInt32 day = 0; day < DATE_LUT_SIZE; ++day)
     {
+        const LUTIndex index(day);
         const Values & values = lut[day];
 
         if (values.day_of_month == 1)
         {
             if (values.month == 1)
-                years_lut[values.year - DATE_LUT_MIN_YEAR] = LUTIndex(day);
+                years_lut[values.year - DATE_LUT_MIN_YEAR] = index;
 
             year_months_lut_index = (values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1;
-            years_months_lut[year_months_lut_index] = LUTIndex(day);
+            years_months_lut[year_months_lut_index] = index;
             first_day_of_last_month = day;
         }
     }

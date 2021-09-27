@@ -111,12 +111,6 @@ struct AccurateOrNullConvertStrategyAdditions
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
 
-namespace dt
-{
-template <class T>
-concept is_decimal_like_or_number = is_decimal_like<T> || is_number<T>;
-}
-
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
@@ -140,9 +134,17 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        Additions additions [[maybe_unused]] = Additions())
+        const ColumnsWithTypeAndName & arguments,
+        [[maybe_unused]] const DataTypePtr & result_type,
+        size_t input_rows_count,
+        [[maybe_unused]] Additions additions = Additions())
     {
+        constexpr bool accurate_convert_strategy =
+            std::is_same_v<Additions, AccurateConvertStrategyAdditions>;
+
+        constexpr bool accurate_or_null_convert_strategy =
+            std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>;
+
         const ColumnWithTypeAndName & named_from = arguments[0];
 
         if constexpr (std::is_same_v<Name, NameToUnixTimestamp>)
@@ -153,8 +155,8 @@ struct ConvertImpl
         }
 
         if constexpr (
-            (dt::is_decimal<FromDataType> && !to_is_decimal_like_or_number)
-            || (dt::is_decimal<ToDataType> && !from_is_decimal_like_or_number))
+            (from_is_decimal_like && !to_is_decimal_like_or_number)
+            || (to_is_decimal_like && !from_is_decimal_like_or_number))
             {
                 throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -167,15 +169,11 @@ struct ConvertImpl
             if constexpr (to_is_decimal_like)
             {
                 UInt32 scale;
-                if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                {
+
+                if constexpr(accurate_convert_strategy || accurate_or_null_convert_strategy)
                     scale = additions.scale;
-                }
                 else
-                {
                     scale = additions;
-                }
 
                 col_to = ColVecTo::create(0, scale);
             }
@@ -188,7 +186,8 @@ struct ConvertImpl
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+
+            if constexpr (accurate_or_null_convert_strategy)
             {
                 col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
@@ -196,7 +195,7 @@ struct ConvertImpl
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+                if constexpr (dt::is_uuid<FromDataType> != dt::is_uuid<ToDataType>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
                 }
@@ -204,7 +203,7 @@ struct ConvertImpl
                 {
                     if constexpr (from_is_decimal_like || to_is_decimal_like)
                     {
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        if constexpr (accurate_or_null_convert_strategy)
                         {
                             ToFieldType result;
                             bool convert_result = false;
@@ -243,7 +242,7 @@ struct ConvertImpl
                         {
                             if (!isFinite(vec_from[i]))
                             {
-                                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                if constexpr (accurate_or_null_convert_strategy)
                                 {
                                     vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
@@ -254,14 +253,13 @@ struct ConvertImpl
                             }
                         }
 
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                        if constexpr (accurate_convert_strategy || accurate_or_null_convert_strategy)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
                             if (!convert_result)
                             {
-                                if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                if constexpr (accurate_or_null_convert_strategy)
                                 {
                                     vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
@@ -283,7 +281,7 @@ struct ConvertImpl
                 }
             }
 
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            if constexpr(accurate_or_null_convert_strategy)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             else
                 return col_to;
@@ -1772,7 +1770,7 @@ private:
         if (!done)
         {
             /// Generic conversion of any type to String.
-            if (std::is_same_v<ToDataType, DataTypeString>)
+            if constexpr (dt::is_string<ToDataType>)
             {
                 return ConvertImplGenericToString::execute(arguments, result_type);
             }
@@ -2571,15 +2569,15 @@ private:
             ColumnPtr result_column;
 
             bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(from_type_index,
-                [&]<class Left, class Right>(TypePair<Left, Right>)
+                [&]<class To, class From>(TypePair<To, From>)
             {
-                if constexpr (dt::is_number<Left> && dt::is_number<Right>)
+                if constexpr (dt::is_number<To> && dt::is_number<From>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
-                        result_column = ConvertImpl<Right, Left, FunctionName>::execute(
+                        result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
                     else
-                        result_column = ConvertImpl<Right, Left, FunctionName>::execute(
+                        result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
 
                     return true;

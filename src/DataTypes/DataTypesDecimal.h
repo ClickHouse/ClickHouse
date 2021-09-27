@@ -68,6 +68,9 @@ template <class T> concept is_decimal = detail::is_decimal<T>;
 /// explicit semantics is better (so we can differentiate between DataTypeDecimals and DataTypeDateTime64.
 template <class T>
 concept is_decimal_like = is_decimal<T> || std::is_same_v<T, DataTypeDateTime64>;
+
+template <class T>
+concept is_decimal_like_or_number = is_decimal_like<T> || is_number<T>;
 }
 
 template <typename T>
@@ -265,6 +268,7 @@ inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
 {
     return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
 }
+
 }
 
 template <DB::dt::is_decimal_like T>
