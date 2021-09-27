@@ -49,13 +49,14 @@ public:
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
         MergeList::Entry * merge_entry_,
+        std::unique_ptr<MergeListElement> projection_merge_list_element_,
         time_t time_of_merge_,
         ContextPtr context_,
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
-        MergeTreeDataPartPtr parent_part_,
+        const IMergeTreeDataPart * parent_part_,
         String prefix_,
         MergeTreeData * data_,
         ActionBlocker * merges_blocker_,
@@ -66,6 +67,9 @@ public:
             global_ctx->future_part = std::move(future_part_);
             global_ctx->metadata_snapshot = std::move(metadata_snapshot_);
             global_ctx->merge_entry = std::move(merge_entry_);
+            global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
+            global_ctx->merge_list_element_ptr
+                = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
             global_ctx->space_reservation = std::move(space_reservation_);
@@ -112,12 +116,16 @@ private:
     struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
     {
         MergeList::Entry * merge_entry{nullptr};
+        /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
+        std::unique_ptr<MergeListElement> projection_merge_list_element;
+        MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         ActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
-        MergeTreeDataPartPtr parent_part{nullptr};
+        /// This will be either nullptr or new_data_part, so raw pointer is ok.
+        const IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
