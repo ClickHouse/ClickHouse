@@ -36,7 +36,18 @@
 
 namespace detail
 {
-template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); }
+
+template <char s0>
+inline bool is_in(char x)
+{
+    return x == s0;
+}
+
+template <char s0, char s1, char... tail>
+inline bool is_in(char x)
+{
+    return x == s0 || is_in<s1, tail...>(x);
+}
 
 #if defined(__SSE2__)
 template <char s0>
@@ -56,10 +67,16 @@ inline __m128i mm_is_in(__m128i bytes)
 #endif
 
 template <bool positive>
-constexpr bool maybe_negate(bool x) { return x == positive; }
+bool maybe_negate(bool x)
+{
+    if constexpr (positive)
+        return x;
+    else
+        return !x;
+}
 
 template <bool positive>
-constexpr uint16_t maybe_negate(uint16_t x)
+uint16_t maybe_negate(uint16_t x)
 {
     if constexpr (positive)
         return x;
@@ -132,13 +149,12 @@ template <bool positive, ReturnMode return_mode, size_t num_chars,
     char c05 = 0, char c06 = 0, char c07 = 0, char c08 = 0,
     char c09 = 0, char c10 = 0, char c11 = 0, char c12 = 0,
     char c13 = 0, char c14 = 0, char c15 = 0, char c16 = 0>
-inline const char * find_first_symbols_sse42(const char * const begin, const char * const end)
+inline const char * find_first_symbols_sse42_impl(const char * const begin, const char * const end)
 {
     const char * pos = begin;
 
 #if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
-
+#define MODE (_SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT)
     __m128i set = _mm_setr_epi8(c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16);
 
     for (; pos + 15 < end; pos += 16)
@@ -147,15 +163,16 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 
         if constexpr (positive)
         {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, MODE))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, MODE);
         }
         else
         {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, MODE | _SIDD_NEGATIVE_POLARITY))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, MODE | _SIDD_NEGATIVE_POLARITY);
         }
     }
+#undef MODE
 #endif
 
     for (; pos < end; ++pos)
@@ -180,15 +197,20 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 }
 
 
+template <bool positive, ReturnMode return_mode, char... symbols>
+inline const char * find_first_symbols_sse42(const char * begin, const char * end)
+{
+    return find_first_symbols_sse42_impl<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);
+}
+
 /// NOTE No SSE 4.2 implementation for find_last_symbols_or_null. Not worth to do.
 
 template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
-    requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
-        return find_first_symbols_sse42<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);
+        return find_first_symbols_sse42<positive, return_mode, symbols...>(begin, end);
     else
 #endif
         return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);

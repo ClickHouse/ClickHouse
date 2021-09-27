@@ -1,6 +1,6 @@
 #include <pthread.h>
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
+#if defined(__APPLE__)
 #elif defined(__FreeBSD__)
     #include <pthread_np.h>
 #else
@@ -22,10 +22,6 @@ namespace ErrorCodes
 }
 
 
-/// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
-static thread_local std::string thread_name;
-
-
 void setThreadName(const char * name)
 {
 #ifndef NDEBUG
@@ -38,35 +34,28 @@ void setThreadName(const char * name)
     if ((false))
 #elif defined(OS_DARWIN)
     if (0 != pthread_setname_np(name))
-#elif defined(OS_SUNOS)
-    if (0 != pthread_setname_np(pthread_self(), name))
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
         DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
-
-    thread_name = name;
 }
 
-const std::string & getThreadName()
+std::string getThreadName()
 {
-    if (!thread_name.empty())
-        return thread_name;
+    std::string name(16, '\0');
 
-    thread_name.resize(16);
-
-#if defined(__APPLE__) || defined(OS_SUNOS)
-    if (pthread_getname_np(pthread_self(), thread_name.data(), thread_name.size()))
+#if defined(__APPLE__)
+    if (pthread_getname_np(pthread_self(), name.data(), name.size()))
         throw DB::Exception("Cannot get thread name with pthread_getname_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #elif defined(__FreeBSD__)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
-//    if (pthread_get_name_np(pthread_self(), thread_name.data(), thread_name.size()))
+//    if (pthread_get_name_np(pthread_self(), name.data(), name.size()))
 //        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #else
-    if (0 != prctl(PR_GET_NAME, thread_name.data(), 0, 0, 0))
+    if (0 != prctl(PR_GET_NAME, name.data(), 0, 0, 0))
         DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
-    thread_name.resize(std::strlen(thread_name.data()));
-    return thread_name;
+    name.resize(std::strlen(name.data()));
+    return name;
 }

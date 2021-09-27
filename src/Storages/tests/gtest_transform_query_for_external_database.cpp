@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    ContextMutablePtr context;
+    Context context;
 
     static const State & instance()
     {
@@ -74,7 +74,7 @@ private:
     };
 
     explicit State()
-        : context(Context::createCopy(getContext().context))
+        : context(getContext().context)
     {
         tryRegisterFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
@@ -85,11 +85,10 @@ private:
             const auto & db_name = tab.table.database;
             database->attachTable(
                 table_name,
-                StorageMemory::create(
-                    StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
+                StorageMemory::create(StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
-        context->setCurrentDatabase("test");
+        context.setCurrentDatabase("test");
     }
 };
 
@@ -104,7 +103,7 @@ static void check(
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns()), select_options, state.getTables(table_num));
+        = TreeRewriter(state.context).analyzeSelect(ast, state.getColumns(), select_options, state.getTables(table_num));
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, state.getColumns(), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
@@ -176,7 +175,7 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
           R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
     check(state, 1,
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
-          R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");
+          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 42))");
 }
 
 TEST(TransformQueryForExternalDatabase, Issue7245)

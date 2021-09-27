@@ -35,7 +35,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
@@ -184,14 +184,8 @@ static void * getCallerAddress(const ucontext_t & context)
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
-
-#elif defined(__APPLE__) && defined(__aarch64__)
-    return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
-
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__)
-    return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
 #else
     return nullptr;
 #endif
@@ -417,7 +411,11 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
 
 std::string StackTrace::toString() const
 {
-    return toStringStatic(frame_pointers, offset, size);
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -428,23 +426,6 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     for (size_t i = 0; i < size; ++i)
         frame_pointers_copy[i] = frame_pointers_[i];
 
-    return toStringStatic(frame_pointers_copy, offset, size);
-}
-
-static SimpleCache<decltype(toStringImpl), &toStringImpl> & cacheInstance()
-{
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> cache;
-    return cache;
-}
-
-std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
-{
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    return cacheInstance()(frame_pointers, offset, size);
-}
-
-void StackTrace::dropCache()
-{
-    cacheInstance().drop();
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frame_pointers_copy, offset, size);
 }

@@ -5,34 +5,14 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Core/PostgreSQL/ConnectionHolder.h>
-#include <Core/NamesAndTypes.h>
+#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
 {
 
-struct PostgreSQLTableStructure
-{
-    std::shared_ptr<NamesAndTypesList> columns = nullptr;
-    std::shared_ptr<NamesAndTypesList> primary_key_columns = nullptr;
-    std::shared_ptr<NamesAndTypesList> replica_identity_columns = nullptr;
-};
-
-using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
-
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema);
-
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    pqxx::connection & connection, const String & postgres_table_name, bool use_nulls = true);
-
-template<typename T>
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    T & tx, const String & postgres_table_name, bool use_nulls = true,
-    bool with_primary_key = false, bool with_replica_identity_index = false);
-
-template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema);
+std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
+    std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls);
 
 }
 

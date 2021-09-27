@@ -26,6 +26,7 @@ aの結果 `SELECT`、および実行する `INSERT`ファイルバックアッ�
 | [カスタム区切り](#format-customseparated)                       | ✔    | ✔    |
 | [値](#data-format-values)                                       | ✔    | ✔    |
 | [垂直](#vertical)                                               | ✗    | ✔    |
+| [VerticalRaw](#verticalraw)                                     | ✗    | ✔    |
 | [JSON](#json)                                                   | ✗    | ✔    |
 | [JSONCompact](#jsoncompact)                                     | ✗    | ✔    |
 | [JSONEachRow](#jsoneachrow)                                     | ✔    | ✔    |
@@ -817,6 +818,10 @@ test: string with 'quotes' and      with some special
 ```
 
 この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
+
+## VerticalRaw {#verticalraw}
+
+に類似した [垂直](#vertical) しかし、エスケープ無効で。 この形式は、クエリ結果の出力にのみ適しており、解析（データの受信とテーブルへの挿入）には適していません。
 
 ## XML {#xml}
 

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS test_01190;
 CREATE DATABASE test_01190 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
 USE test_01190;
@@ -20,7 +18,7 @@ SHOW CREATE DICTIONARY test_01190.dict;
 CREATE TABLE log ENGINE = Log AS SELECT 'test' AS s;
 SHOW CREATE log;
 DETACH TABLE log;
-ATTACH DICTIONARY log; -- { serverError 80 }
+ATTACH DICTIONARY log; -- { serverError 487 }
 ATTACH TABLE log (s String) ENGINE = Log();
 SHOW CREATE log;
 SELECT * FROM log;

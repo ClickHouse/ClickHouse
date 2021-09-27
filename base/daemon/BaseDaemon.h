@@ -149,8 +149,6 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
-    virtual std::string getDefaultConfigFileName() const;
-
     std::optional<DB::StatusFile> pid_file;
 
     std::atomic_bool is_cancelled{false};

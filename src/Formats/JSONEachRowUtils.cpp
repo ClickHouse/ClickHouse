@@ -29,12 +29,10 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
         if (quotes)
         {
             pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
-
             if (pos > in.buffer().end())
                 throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
             else if (pos == in.buffer().end())
                 continue;
-
             if (*pos == '\\')
             {
                 ++pos;
@@ -50,12 +48,10 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
         else
         {
             pos = find_first_symbols<'{', '}', '\\', '"'>(pos, in.buffer().end());
-
             if (pos > in.buffer().end())
                 throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
             else if (pos == in.buffer().end())
                 continue;
-
             else if (*pos == '{')
             {
                 ++balance;
@@ -85,13 +81,6 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
 
     saveUpToPosition(in, memory, pos);
     return {loadAtPosition(in, memory, pos), number_of_rows};
-}
-
-bool nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl(ReadBuffer & buf)
-{
-    /// For JSONEachRow we can safely skip whitespace characters
-    skipWhitespaceIfAny(buf);
-    return buf.eof() || *buf.position() == '[';
 }
 
 }

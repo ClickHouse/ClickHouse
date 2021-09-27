@@ -8,6 +8,7 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/UUIDGenerator.h>
+#include <Poco/File.h>
 #include <Poco/Process.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>

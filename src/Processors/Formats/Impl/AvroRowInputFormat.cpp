@@ -344,7 +344,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isEnum())
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
-                Row symbol_mapping;
+                std::vector<Field> symbol_mapping;
                 for (size_t i = 0; i < root_node->names(); i++)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
@@ -599,7 +599,7 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(*in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
     file_reader_ptr->init();
 }
@@ -748,7 +748,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
-    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
+    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
     , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
@@ -758,16 +758,16 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
 
 bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in->eof())
+    if (in.eof())
     {
         return false;
     }
     // skip tombstone records (kafka messages with null value)
-    if (in->available() == 0)
+    if (in.available() == 0)
     {
         return false;
     }
-    SchemaId schema_id = readConfluentSchemaId(*in);
+    SchemaId schema_id = readConfluentSchemaId(in);
     const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder, ext);
     decoder->drain();
@@ -777,7 +777,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
 void AvroConfluentRowInputFormat::syncAfterError()
 {
     // skip until the end of current kafka message
-    in->tryIgnore(in->available());
+    in.tryIgnore(in.available());
 }
 
 const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId schema_id)

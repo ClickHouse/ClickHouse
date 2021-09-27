@@ -4,9 +4,8 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd/include
-    contrib/libs/lz4
-    contrib/restricted/fast_float/include
+    contrib/libs/zstd
+    contrib/restricted/fast_float
 )
 
 PEERDIR(
@@ -15,61 +14,45 @@ PEERDIR(
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/zstd
-    contrib/libs/lz4
     contrib/restricted/fast_float
 )
 
+
 SRCS(
     AIO.cpp
-    AsynchronousReadBufferFromFile.cpp
-    AsynchronousReadBufferFromFileDescriptor.cpp
+    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
-    Bzip2ReadBuffer.cpp
-    Bzip2WriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
-    FileEncryptionCommon.cpp
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
-    Lz4DeflatingWriteBuffer.cpp
-    Lz4InflatingReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
-    MMapReadBufferFromFileWithCache.cpp
-    MMappedFile.cpp
-    MMappedFileDescriptor.cpp
     MemoryReadWriteBuffer.cpp
     MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
-    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferFromEncryptedFile.cpp
+    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
-    ReadBufferFromFileDecorator.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
-    SynchronousReader.cpp
-    ThreadPoolReader.cpp
-    TimeoutSetter.cpp
     UseSSL.cpp
-    WriteBufferFromEncryptedFile.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
-    WriteBufferFromFileDecorator.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp

@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS mergetree_00588;
 DROP TABLE IF EXISTS distributed_00588;
 

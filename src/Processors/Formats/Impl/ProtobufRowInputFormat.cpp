@@ -8,7 +8,7 @@
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Interpreters/Context.h>
-#   include <common/range.h>
+#   include <ext/range.h>
 
 
 namespace DB

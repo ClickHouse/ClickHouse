@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition
 {
 public:
     struct RPNElement
@@ -24,8 +24,6 @@ public:
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
-            FUNCTION_HAS_ANY,
-            FUNCTION_HAS_ALL,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
@@ -44,7 +42,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -58,6 +56,7 @@ public:
 
 private:
     const Block & header;
+    const Context & context;
     const SelectQueryInfo & query_info;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;

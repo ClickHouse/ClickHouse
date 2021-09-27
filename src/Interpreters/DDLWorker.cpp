@@ -29,9 +29,6 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <common/scope_guard_safe.h>
-
-#include <Interpreters/ZooKeeperLog.h>
 
 namespace fs = std::filesystem;
 
@@ -151,26 +148,15 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
-DDLWorker::DDLWorker(
-    int pool_size_,
-    const std::string & zk_root_dir,
-    ContextPtr context_,
-    const Poco::Util::AbstractConfiguration * config,
-    const String & prefix,
-    const String & logger_name,
-    const CurrentMetrics::Metric * max_entry_metric_,
-    const CurrentMetrics::Metric * max_pushed_entry_metric_)
-    : context(Context::createCopy(context_))
+DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+                     const String & logger_name, const CurrentMetrics::Metric * max_entry_metric_)
+    : context(context_)
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
-    , max_pushed_entry_metric(max_pushed_entry_metric_)
 {
     if (max_entry_metric)
         CurrentMetrics::set(*max_entry_metric, 0);
-
-    if (max_pushed_entry_metric)
-        CurrentMetrics::set(*max_pushed_entry_metric, 0);
 
     if (1 < pool_size)
     {
@@ -190,16 +176,16 @@ DDLWorker::DDLWorker(
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
-            context->setSetting("profile", config->getString(prefix + ".profile"));
+            context.setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context->getSettingsRef().readonly)
+    if (context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
-    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
+    host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
 }
 
 void DDLWorker::startup()
@@ -238,7 +224,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = context->getZooKeeper();
+        current_zookeeper = context.getZooKeeper();
 
     return current_zookeeper;
 }
@@ -378,21 +364,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
-    size_t size_before_filtering = queue_nodes.size();
+    Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
     filterAndSortQueueNodes(queue_nodes);
-    /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
-    LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
-                   "entries={}..{}, "
-                   "first_failed_task_name={}, current_tasks_size={}, "
-                   "last_current_task={}, "
-                   "last_skipped_entry_name={}",
-                   initialized, size_before_filtering, queue_nodes.size(),
-                   queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
-                   first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
-                   current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
-                   last_skipped_entry_name ? *last_skipped_entry_name : "none");
-
     if (max_tasks_in_queue < queue_nodes.size())
         cleanup_event->set();
 
@@ -518,8 +491,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
         if (!task.is_initial_query)
-            query_scope.emplace(query_context);
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
+            query_scope.emplace(*query_context);
+        executeQuery(istr, ostr, !task.is_initial_query, *query_context, {});
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -634,7 +607,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             String dummy;
             if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
             {
-                constexpr int timeout_ms = 60 * 1000;
+                constexpr int timeout_ms = 30 * 1000;
                 if (!eph_node_disappeared->tryWait(timeout_ms))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
                                     "probably it's owned by someone else", active_node_path);
@@ -665,7 +638,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
@@ -847,7 +820,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             task.ops.push_back(create_shard_flag);
-            SCOPE_EXIT_MEMORY({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
+            SCOPE_EXIT({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
@@ -899,7 +872,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         else /// If we exceeded amount of tries
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
-            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retires exceeded");
         }
         return false;
     }
@@ -1051,15 +1024,6 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    if (max_pushed_entry_metric)
-    {
-        String str_buf = node_path.substr(query_path_prefix.length());
-        DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Metric id;
-        readText(id, in);
-        id = std::max(*max_pushed_entry_metric, id);
-        CurrentMetrics::set(*max_pushed_entry_metric, id);
-    }
 
     /// We cannot create status dirs in a single transaction with previous request,
     /// because we don't know node_path until previous request is executed.
@@ -1152,8 +1116,7 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             scheduleTasks(reinitialized);
 
-            LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
-                      queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
+            LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)

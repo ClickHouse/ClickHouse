@@ -74,6 +74,7 @@ private:
     using GroupsContainer = std::list<Group>;
     using OwnerQueryIds = std::unordered_map<String, size_t>;
 
+private:
     mutable std::mutex internal_state_mtx;
 
     GroupsContainer readers_queue;
@@ -84,6 +85,7 @@ private:
                                                                   /// or writers_queue.end() otherwise
     OwnerQueryIds owner_queries;
 
+private:
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
     void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;

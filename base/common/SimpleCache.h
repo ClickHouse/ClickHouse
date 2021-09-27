@@ -3,7 +3,7 @@
 #include <map>
 #include <tuple>
 #include <mutex>
-#include <common/function_traits.h>
+#include <ext/function_traits.h>
 
 
 /** The simplest cache for a free function.
@@ -32,11 +32,10 @@ public:
     template <typename... Args>
     Result operator() (Args &&... args)
     {
-        Key key{std::forward<Args>(args)...};
-
         {
             std::lock_guard lock(mutex);
 
+            Key key{std::forward<Args>(args)...};
             auto it = cache.find(key);
 
             if (cache.end() != it)
@@ -44,7 +43,7 @@ public:
         }
 
         /// The calculations themselves are not done under mutex.
-        Result res = std::apply(f, key);
+        Result res = f(std::forward<Args>(args)...);
 
         {
             std::lock_guard lock(mutex);
@@ -58,12 +57,11 @@ public:
     template <typename... Args>
     void update(Args &&... args)
     {
-        Key key{std::forward<Args>(args)...};
-
-        Result res = std::apply(f, key);
-
+        Result res = f(std::forward<Args>(args)...);
         {
             std::lock_guard lock(mutex);
+
+            Key key{std::forward<Args>(args)...};
             cache[key] = std::move(res);
         }
     }
