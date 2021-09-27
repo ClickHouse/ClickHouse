@@ -93,6 +93,9 @@ public:
 
     static UInt64 getInode(const String & file_name);
 
+    void openFilesAndSetPos();
+    void closeFilesAndStoreMeta();
+
 protected:
     StorageFileLog(
         const StorageID & table_id_,
@@ -153,9 +156,6 @@ private:
     bool checkDependencies(const StorageID & table_id);
 
     bool updateFileInfos();
-
-    void openFilesAndSetPos();
-    void closeFilesAndStoreMeta();
 
     /// Serialize all file meta
     void serialize(bool with_end_pos = false) const;

@@ -27,11 +27,27 @@ FileLogSource::FileLogSource(
     , context(context_)
     , max_block_size(max_block_size_)
     , poll_time_out(poll_time_out_)
+    , stream_number(stream_number_)
+    , max_streams_number(max_streams_number_)
     , non_virtual_header(metadata_snapshot_->getSampleBlockNonMaterialized())
     , virtual_header(
           metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
+    /// The last FileLogSource responsible for open files
+    if (stream_number == max_streams_number - 1)
+    {
+        storage.openFilesAndSetPos();
+    }
+}
+
+FileLogSource::~FileLogSource()
+{
+    /// The last FileLogSource responsible for close files
+    if (stream_number == max_streams_number - 1)
+    {
+        storage.closeFilesAndStoreMeta();
+    }
 }
 
 Chunk FileLogSource::generate()
