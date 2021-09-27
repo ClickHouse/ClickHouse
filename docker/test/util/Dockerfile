@@ -1,4 +1,4 @@
 # docker build -t clickhouse/test-util .
 
-FROM scratch
+FROM ubuntu:20.04
 COPY process_functional_tests_result.py /
