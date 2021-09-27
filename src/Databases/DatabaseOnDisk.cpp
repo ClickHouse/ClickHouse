@@ -522,6 +522,16 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    {
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        // TODO(nemkov): this is a precaution and should never happen, remove if there are no failed tests on CI/CD.
+        if (!ast_create_query.storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTCreateQuery lacks engine clause, but a comment is present.");
+
+        ast_create_query.storage->set(ast_create_query.storage->comment, std::make_shared<ASTLiteral>(database_comment));
+    }
+
     return ast;
 }
 
