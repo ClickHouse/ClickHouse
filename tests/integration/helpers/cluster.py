@@ -1748,7 +1748,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
                            " --log-file=/var/log/clickhouse-server/clickhouse-server.log " \
                            " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
-CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
@@ -2001,10 +2001,18 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
-            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-            time.sleep(stop_wait_sec)
-            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
-            if ps_clickhouse != "  PID TTY      STAT   TIME COMMAND" :
+            sleep_time = 0.1
+            num_steps = int(stop_wait_sec / sleep_time)
+            stopped = False
+            for step in range(num_steps):
+                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+                time.sleep(sleep_time)
+                ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+                if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+                    stopped = True
+                    break
+
+            if not stopped:
                 logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
                 self.stop_clickhouse(kill=True)
         except Exception as e:
@@ -2419,6 +2427,8 @@ class ClickHouseInstance:
 
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace("{main_config_file}", self.main_config_name)
+        else:
+            entrypoint_cmd = '[' + ', '.join(map(lambda x: '"' + x + '"', entrypoint_cmd.split())) + ']'
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 

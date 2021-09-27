@@ -15,6 +15,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -78,11 +79,11 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
 }
 
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
 {
-    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
-        out->write(adopted_block);
+        executor.push(adopted_block);
 }
 
 
@@ -124,7 +125,7 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (!allow_materialized)
     {
@@ -322,7 +323,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
@@ -354,19 +355,20 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo());
-                job.stream->writePrefix();
+                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
+                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
-            job.stream->write(adopted_shard_block);
+            Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            job.executor->push(adopted_shard_block);
         }
         else // local
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
@@ -382,11 +384,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
-                job.stream = block_io.out;
-                job.stream->writePrefix();
+                job.pipeline = std::move(block_io.pipeline);
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
@@ -498,11 +501,11 @@ void DistributedSink::onFinish()
             {
                 for (JobReplica & job : shard_jobs.replicas_jobs)
                 {
-                    if (job.stream)
+                    if (job.executor)
                     {
                         pool->scheduleOrThrowOnError([&job]()
                         {
-                            job.stream->writeSuffix();
+                            job.executor->finish();
                         });
                     }
                 }
@@ -618,10 +621,11 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
+    PushingPipelineExecutor executor(block_io.pipeline);
 
-    block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats, log);
-    block_io.out->writeSuffix();
+    executor.start();
+    writeBlockConvert(executor, block, repeats, log);
+    executor.finish();
 }
 
 
