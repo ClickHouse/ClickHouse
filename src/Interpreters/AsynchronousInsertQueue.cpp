@@ -148,7 +148,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     }
 }
 
-void AsynchronousInsertQueue::scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
+void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
@@ -219,7 +219,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
         data->entries.size(), data->size, queryToString(it->first.query));
 
     if (data->size > max_data_size)
-        scheduleProcessDataJob(it->first, std::move(data), getContext());
+        scheduleDataProcessingJob(it->first, std::move(data), getContext());
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -264,7 +264,7 @@ void AsynchronousInsertQueue::busyCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->first_update;
             if (lag >= busy_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
             else
                 timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(busy_timeout - lag));
         }
@@ -286,7 +286,7 @@ void AsynchronousInsertQueue::staleCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->last_update;
             if (lag >= stale_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
         }
     }
 }
@@ -367,6 +367,10 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(key.settings);
 
+    /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
+    insert_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    insert_context->setCurrentQueryId("");
+
     InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns);
     auto sinks = interpreter.getSinks();
     assert(sinks.size() == 1);
@@ -431,6 +435,10 @@ try
             entry->finish();
 }
 catch (const Exception & e)
+{
+    finishWithException(key.query, data->entries, e);
+}
+catch (const Poco::Exception & e)
 {
     finishWithException(key.query, data->entries, e);
 }
