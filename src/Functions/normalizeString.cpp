@@ -1,6 +1,10 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_ICU
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <unicode/normalizer2.h>
 #include <unicode/rep.h>
 #include <unicode/unistr.h>
 #include <unicode/unorm2.h>
@@ -15,12 +19,67 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_NORMALIZE_STRING;
 }
 
 namespace
 {
 
+// Expansion factors are specified for UTF-32, since icu uses UTF-32 for normalization
+// Maximum expansion factors for different normalization forms
+// https://unicode.org/faq/normalization.html#12
+
+struct NormalizeNFCImpl
+{
+    static constexpr auto name = "normalizeUTF8NFC";
+
+    static constexpr auto expansionFactor = 3;
+
+    static const UNormalizer2 *getNormalizer(UErrorCode *err)
+    {
+        return unorm2_getNFCInstance(err);
+    }
+};
+
+struct NormalizeNFDImpl
+{
+    static constexpr auto name = "normalizeUTF8NFD";
+
+    static constexpr auto expansionFactor = 4;
+
+    static const UNormalizer2 *getNormalizer(UErrorCode *err)
+    {
+        return unorm2_getNFDInstance(err);
+    }
+};
+
+struct NormalizeNFKCImpl
+{
+    static constexpr auto name = "normalizeUTF8NFKC";
+
+    static constexpr auto expansionFactor = 18;
+
+    static const UNormalizer2 *getNormalizer(UErrorCode *err)
+    {
+        return unorm2_getNFKCInstance(err);
+    }
+};
+
+
+struct NormalizeNFKDImpl
+{
+    static constexpr auto name = "normalizeUTF8NFKD";
+
+    static constexpr auto expansionFactor = 18;
+
+    static const UNormalizer2 *getNormalizer(UErrorCode *err)
+    {
+        return unorm2_getNFKDInstance(err);
+    }
+};
+
+template<typename NormalizeImpl>
 struct NormalizeUTF8Impl
 {
 
@@ -31,10 +90,9 @@ struct NormalizeUTF8Impl
     {
         UErrorCode err = U_ZERO_ERROR;
 
-        const UNormalizer2 *normalizer = unorm2_getNFCInstance(&err);
-        if (U_FAILURE(err)) {
-            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed: {}", u_errorName(err));
-        }
+        const UNormalizer2 *normalizer = NormalizeImpl::getNormalizer(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (getNormalizer): {}", u_errorName(err));
 
         size_t size = offsets.size();
         res_offsets.resize(size);
@@ -60,13 +118,10 @@ struct NormalizeUTF8Impl
                 reinterpret_cast<const char*>(&data[current_from_offset]),
                 from_size,
                 &err);
-            if (U_FAILURE(err)) {
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed: {}", u_errorName(err));
-            }
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
 
-            // NFC should produce no more than 3x code points
-            // https://unicode.org/faq/normalization.html#12
-            to_uchars.resize(from_code_points * 3 + 1);
+            to_uchars.resize(from_code_points * NormalizeImpl::expansionFactor + 1);
 
             int32_t to_code_points = unorm2_normalize(
                 normalizer,
@@ -75,14 +130,12 @@ struct NormalizeUTF8Impl
                 to_uchars.data(),
                 to_uchars.size(),
                 &err);
-            if (U_FAILURE(err)) {
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed: {}", u_errorName(err));
-            }
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
 
-            size_t max_to_size = current_to_offset + 2 * to_code_points + 1;
-            if (res_data.size() < max_to_size) {
+            size_t max_to_size = current_to_offset + 4 * to_code_points + 1;
+            if (res_data.size() < max_to_size)
                 res_data.resize(max_to_size);
-            }
 
             int32_t to_size;
             u_strToUTF8(
@@ -92,9 +145,8 @@ struct NormalizeUTF8Impl
                 to_uchars.data(),
                 to_code_points,
                 &err);
-            if (U_FAILURE(err)) {
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed: {}", u_errorName(err));
-            }
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strToUTF8): {}", u_errorName(err));
 
             current_to_offset += to_size;
             res_data[current_to_offset] = 0;
@@ -111,16 +163,20 @@ struct NormalizeUTF8Impl
     }
 };
 
-struct NameNormalizeUTF8
+using FunctionNormalizeUTF8NFC = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFCImpl>, NormalizeNFCImpl>;
+using FunctionNormalizeUTF8NFD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFDImpl>, NormalizeNFDImpl>;
+using FunctionNormalizeUTF8NFKC = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKCImpl>, NormalizeNFKCImpl>;
+using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKDImpl>, NormalizeNFKDImpl>;
+}
+
+void registerFunctionNormalizeUTF8(FunctionFactory & factory)
 {
-    static constexpr auto name = "normalizeUTF8";
-};
-
-using FunctionNormalizeUTF8 = FunctionStringToString<NormalizeUTF8Impl, NameNormalizeUTF8>;
-}
-
-void registerFunctionNormalizeUTF8(FunctionFactory & factory) {
-    factory.registerFunction<FunctionNormalizeUTF8>();
+    factory.registerFunction<FunctionNormalizeUTF8NFC>();
+    factory.registerFunction<FunctionNormalizeUTF8NFD>();
+    factory.registerFunction<FunctionNormalizeUTF8NFKC>();
+    factory.registerFunction<FunctionNormalizeUTF8NFKD>();
 }
 
 }
+
+#endif
