@@ -93,6 +93,17 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
+## use_skip_indexes {#settings-use_skip_indexes}
+
+Use data skipping indexes during query execution.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
 ## force_data_skipping_indices {#settings-force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
@@ -3630,7 +3641,7 @@ Default value: `enable`.
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn).
 
 Possible values:
 
@@ -3673,7 +3684,7 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn).
 
 Possible values:
 

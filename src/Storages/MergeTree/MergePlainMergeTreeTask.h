@@ -23,12 +23,12 @@ public:
         TableLockHolder table_lock_holder_,
         Callback && task_result_callback_)
         : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
-        , deduplicate_by_columns(deduplicate_by_columns_)
-        , merge_mutate_entry(merge_mutate_entry_)
-        , table_lock_holder(table_lock_holder_)
-        , task_result_callback(task_result_callback_) {}
+        , deduplicate_by_columns(std::move(deduplicate_by_columns_))
+        , merge_mutate_entry(std::move(merge_mutate_entry_))
+        , table_lock_holder(std::move(table_lock_holder_))
+        , task_result_callback(std::forward<Callback>(task_result_callback_)) {}
 
     bool executeStep() override;
 

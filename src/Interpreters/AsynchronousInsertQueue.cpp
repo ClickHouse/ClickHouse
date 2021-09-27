@@ -7,7 +7,9 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -367,11 +369,11 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(key.settings);
 
-    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns);
-    auto sinks = interpreter.getSinks();
-    assert(sinks.size() == 1);
+    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
+    auto pipeline = interpreter.execute().pipeline;
+    assert(pipeline.pushing());
 
-    auto header = sinks.at(0)->getInputs().front().getHeader();
+    auto header = pipeline.getHeader();
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
 
     size_t total_rows = 0;
@@ -413,15 +415,10 @@ try
     size_t total_bytes = chunk.bytes();
 
     auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
-    Pipe pipe(source);
+    pipeline.complete(Pipe(std::move(source)));
 
-    QueryPipeline out_pipeline;
-    out_pipeline.init(std::move(pipe));
-    out_pipeline.resize(1);
-    out_pipeline.setSinks([&](const Block &, Pipe::StreamType) { return sinks.at(0); });
-
-    auto out_executor = out_pipeline.execute();
-    out_executor->execute(out_pipeline.getNumThreads());
+    CompletedPipelineExecutor completed_executor(pipeline);
+    completed_executor.execute();
 
     LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
         total_rows, total_bytes, queryToString(key.query));
