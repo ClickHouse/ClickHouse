@@ -35,6 +35,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
@@ -49,7 +50,7 @@ StorageMerge::StorageMerge(
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
-    const DbToTableSetMap & source_databases_and_tables_,
+    const DBToTableSetMap & source_databases_and_tables_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -573,11 +574,14 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
 {
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    auto table_name_match = [this, &database_name](const String & table_name_) -> bool {
+    auto table_name_match = [this, database_name](const String & table_name_) -> bool
+    {
         if (source_databases_and_tables)
         {
-            const auto & source_tables = (*source_databases_and_tables).at(database_name);
-            return source_tables.count(table_name_);
+            if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
+                return it->second.count(table_name_);
+            else
+                return false;
         }
         else
             return source_table_regexp->match(table_name_);
@@ -742,6 +746,26 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return first_materialized_mysql->getColumnSizes();
 }
 
+
+std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(const ASTPtr & node, ContextPtr context_)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
+    {
+        if (func->arguments->children.size() != 1)
+            throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
+
+        auto * literal = func->arguments->children[0]->as<ASTLiteral>();
+        if (!literal || literal->value.safeGet<String>().empty())
+            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+
+        return {true, func->arguments->children[0]};
+    }
+
+    auto ast = evaluateConstantExpressionForDatabaseName(node, context_);
+    return {false, ast};
+}
+
+
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
@@ -757,10 +781,11 @@ void registerStorageMerge(StorageFactory & factory)
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto [is_regexp, database_ast] = evaluateDatabaseNameForMergeEngine(engine_args[0], args.getLocalContext());
+        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
         if (!is_regexp)
             engine_args[0] = database_ast;
+
         String source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
