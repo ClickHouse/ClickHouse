@@ -13,8 +13,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
-#include <DataStreams/SquashingBlockInputStream.h>
 
 namespace DB
 {
@@ -218,21 +219,23 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
-    auto in = InterpreterSelectQuery(
+    auto builder = InterpreterSelectQuery(
                   query_ast,
                   context,
                   Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                   SelectQueryOptions{
                       type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                   : QueryProcessingStage::WithMergeableState})
-                  .execute()
-                  .getInputStream();
-    in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), 0);
-    in->readPrefix();
-    auto ret = in->read();
-    if (in->read())
+                  .buildQueryPipeline();
+    builder.resize(1);
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    PullingPipelineExecutor executor(pipeline);
+    Block ret;
+    executor.pull(ret);
+    if (executor.pull(ret))
         throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-    in->readSuffix();
     return ret;
 }
 
