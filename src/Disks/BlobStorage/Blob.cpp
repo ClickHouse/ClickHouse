@@ -1,8 +1,11 @@
-// #if USE_AZURE_BLOB_STORAGE
+#include "Blob.h"
+
+#if USE_AZURE_BLOB_STORAGE
 
 #include <iostream>
 #include <azure/storage/blobs.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
+
 
 namespace DB
 {
@@ -82,4 +85,4 @@ void blob_do_sth()
 
 }
 
-// #endif
+#endif
