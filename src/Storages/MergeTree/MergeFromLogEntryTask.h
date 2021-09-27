@@ -43,7 +43,7 @@ private:
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
 
-    UInt64 priority;
+    UInt64 priority{0};
 
     MergeTaskPtr merge_task;
 };
