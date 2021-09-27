@@ -414,6 +414,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::NO_TYPE: break;
+        case ASTAlterCommand::MODIFY_COMMENT:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_COMMENT, database, table);
+            break;
+        }
     }
 
     return required_access;
