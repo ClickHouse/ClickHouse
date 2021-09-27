@@ -65,7 +65,7 @@ endif()
 #   target_link_libraries(azure-core PRIVATE winhttp)
 # endif()
 
-target_link_libraries(azure_sdk PRIVATE CURL::libcurl)
+target_link_libraries(azure_sdk PRIVATE ${CURL_LIBRARY})
 
 target_link_libraries(azure_sdk PRIVATE ${LIBXML2_LIBRARIES})
 target_include_directories(azure_sdk PUBLIC ${LIBXML2_INCLUDE_DIRS})
