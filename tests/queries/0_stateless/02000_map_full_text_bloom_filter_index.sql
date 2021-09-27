@@ -5,9 +5,7 @@ CREATE TABLE bf_tokenbf_map_test
 (
     row_id UInt32,
     map Map(String, String),
-    map_fixed Map(FixedString(2), String),
-    INDEX map_tokenbf map TYPE tokenbf_v1(256,2,0) GRANULARITY 1,
-    INDEX map_fixed_tokenbf map_fixed TYPE tokenbf_v1(256,2,0) GRANULARITY 1
+    INDEX map_tokenbf map TYPE tokenbf_v1(256,2,0) GRANULARITY 1
 ) Engine=MergeTree() ORDER BY row_id SETTINGS index_granularity = 2;
 
 CREATE TABLE bf_ngram_map_test
