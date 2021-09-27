@@ -349,23 +349,23 @@ void StorageFileLog::openFilesAndSetPos()
 {
     for (const auto & file : file_infos.file_names)
     {
-        auto & context = file_infos.context_by_name.at(file);
-        if (context.status != FileStatus::NO_CHANGE)
+        auto & file_ctx = file_infos.context_by_name.at(file);
+        if (file_ctx.status != FileStatus::NO_CHANGE)
         {
-            context.reader = std::ifstream(getFullDataPath(file));
-            if (!context.reader.good())
+            file_ctx.reader = std::ifstream(getFullDataPath(file));
+            if (!file_ctx.reader.good())
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Open file {} failed.", file);
             }
 
-            context.reader.seekg(0, context.reader.end);
-            if (!context.reader.good())
+            file_ctx.reader.seekg(0, file_ctx.reader.end);
+            if (!file_ctx.reader.good())
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Seekg file {} failed.", file);
             }
 
-            auto file_end = context.reader.tellg();
-            if (!context.reader.good())
+            auto file_end = file_ctx.reader.tellg();
+            if (!file_ctx.reader.good())
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Tellg file {} failed.", file);
             }
@@ -378,8 +378,8 @@ void StorageFileLog::openFilesAndSetPos()
             /// update file end at the monment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
 
-            context.reader.seekg(meta.last_writen_position);
-            if (!context.reader.good())
+            file_ctx.reader.seekg(meta.last_writen_position);
+            if (!file_ctx.reader.good())
             {
                 throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Seekg file {} failed.", file);
             }
