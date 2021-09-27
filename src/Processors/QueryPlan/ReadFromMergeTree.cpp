@@ -875,7 +875,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             log,
             num_streams,
             result.index_stats,
-            true /* use_skip_indexes */);
+            context->getSettings().use_skip_indexes);
     }
     catch (...)
     {

@@ -760,7 +760,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
 
         """Add an instance to the cluster.
 
@@ -832,7 +832,8 @@ class ClickHouseCluster:
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
-            tmpfs=tmpfs or [])
+            tmpfs=tmpfs or [],
+            config_root_name=config_root_name)
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -1658,6 +1659,9 @@ class ClickHouseCluster:
 
                 if instance.contains_in_log("Fatal", from_host=True):
                     fatal_log = instance.grep_in_log("Fatal", from_host=True)
+                    if 'Child process was terminated by signal 9 (KILL)' in fatal_log:
+                        fatal_log = None
+                        continue
                     logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
             try:
@@ -1744,7 +1748,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
                            " --log-file=/var/log/clickhouse-server/clickhouse-server.log " \
                            " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
-CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
@@ -1802,7 +1806,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1875,6 +1879,7 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
         self.is_up = False
+        self.config_root_name = config_root_name
 
 
     def is_built_with_sanitizer(self, sanitizer_name=''):
@@ -1996,10 +2001,18 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
-            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-            time.sleep(stop_wait_sec)
-            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
-            if ps_clickhouse != "  PID TTY      STAT   TIME COMMAND" :
+            sleep_time = 0.1
+            num_steps = int(stop_wait_sec / sleep_time)
+            stopped = False
+            for step in range(num_steps):
+                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+                time.sleep(sleep_time)
+                ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+                if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+                    stopped = True
+                    break
+
+            if not stopped:
                 logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
                 self.stop_clickhouse(kill=True)
         except Exception as e:
@@ -2219,9 +2232,8 @@ class ClickHouseInstance:
             finally:
                 sock.close()
 
-    @staticmethod
-    def dict_to_xml(dictionary):
-        xml_str = dict2xml(dictionary, wrap="yandex", indent="  ", newlines=True)
+    def dict_to_xml(self, dictionary):
+        xml_str = dict2xml(dictionary, wrap=self.config_root_name, indent="  ", newlines=True)
         return xml_str
 
     @property
@@ -2304,15 +2316,22 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
+        def write_embedded_config(name, dest_dir):
+            with open(p.join(HELPERS_DIR, name), 'r') as f:
+                data = f.read()
+                data = data.replace('yandex', self.config_root_name)
+                with open(p.join(dest_dir, name), 'w') as r:
+                    r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
+            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
 
-        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
+        write_embedded_config('0_common_instance_users.xml', users_d_dir)
+
         if len(self.custom_dictionaries_paths):
-            shutil.copy(p.join(HELPERS_DIR, '0_common_enable_dictionaries.xml'), self.config_d_dir)
+            write_embedded_config('0_common_enable_dictionaries.xml', self.config_d_dir)
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
@@ -2408,6 +2427,8 @@ class ClickHouseInstance:
 
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace("{main_config_file}", self.main_config_name)
+        else:
+            entrypoint_cmd = '[' + ', '.join(map(lambda x: '"' + x + '"', entrypoint_cmd.split())) + ']'
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
