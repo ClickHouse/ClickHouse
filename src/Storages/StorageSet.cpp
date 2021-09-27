@@ -82,7 +82,7 @@ SetOrJoinSink::SetOrJoinSink(
 void SetOrJoinSink::consume(Chunk chunk)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
     table.insertBlock(sorted_block);
     if (persistent)

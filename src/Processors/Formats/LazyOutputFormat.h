@@ -44,6 +44,8 @@ public:
         queue.emplace(Chunk());
     }
 
+    bool expectMaterializedColumns() const override { return false; }
+
 protected:
     void consume(Chunk chunk) override
     {

@@ -266,7 +266,7 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteBlockOutputStream & remote, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
         NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
@@ -287,7 +287,7 @@ namespace
 
     void writeRemoteConvert(
         const DistributedHeader & distributed_header,
-        RemoteBlockOutputStream & remote,
+        RemoteInserter & remote,
         bool compression_expected,
         ReadBufferFromFile & in,
         Poco::Logger * log)
@@ -619,14 +619,13 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
-        RemoteBlockOutputStream remote{*connection, timeouts,
+        RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
             distributed_header.client_info};
-        remote.writePrefix();
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
-        remote.writeSuffix();
+        remote.onFinish();
     }
     catch (Exception & e)
     {
@@ -833,7 +832,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 private:
     void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
     {
-        std::unique_ptr<RemoteBlockOutputStream> remote;
+        std::unique_ptr<RemoteInserter> remote;
 
         for (UInt64 file_idx : file_indices)
         {
@@ -847,18 +846,17 @@ private:
 
             if (!remote)
             {
-                remote = std::make_unique<RemoteBlockOutputStream>(connection, timeouts,
+                remote = std::make_unique<RemoteInserter>(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote->writePrefix();
             }
             bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
 
         if (remote)
-            remote->writeSuffix();
+            remote->onFinish();
     }
 
     void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
@@ -880,14 +878,13 @@ private:
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-                RemoteBlockOutputStream remote(connection, timeouts,
+                RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote.writePrefix();
                 bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
-                remote.writeSuffix();
+                remote.onFinish();
             }
             catch (Exception & e)
             {
@@ -972,7 +969,7 @@ private:
     Data data;
 };
 
-ProcessorPtr StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
+std::shared_ptr<ISource> StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
 {
     return std::make_shared<DirectoryMonitorSource>(file_name);
 }
