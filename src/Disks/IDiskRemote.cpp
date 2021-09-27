@@ -500,7 +500,9 @@ String IDiskRemote::getUniqueId(const String & path) const
 
 AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
 {
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(16, 1000000);
+    constexpr size_t pool_size = 16;
+    constexpr size_t queue_size = 1000000;
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
     return reader;
 }
 

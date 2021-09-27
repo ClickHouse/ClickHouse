@@ -50,7 +50,7 @@ bool ReadBufferFromRemoteFS::nextImpl()
     /// If current buffer has remaining data - use it.
     if (current_buf)
     {
-        if (readImpl())
+        if (read())
             return true;
     }
 
@@ -63,11 +63,11 @@ bool ReadBufferFromRemoteFS::nextImpl()
     const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
     current_buf = createReadBuffer(path);
 
-    return readImpl();
+    return read();
 }
 
 
-bool ReadBufferFromRemoteFS::readImpl()
+bool ReadBufferFromRemoteFS::read()
 {
     /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*current_buf);
@@ -75,26 +75,40 @@ bool ReadBufferFromRemoteFS::readImpl()
     auto result = current_buf->next();
     /// Assign result to current buffer.
     swap(*current_buf);
-    /// Absolute position is updated by *IndirectBufferFromRemoteFS only.
+
+    if (result)
+        absolute_position += working_buffer.size();
 
     return result;
 }
 
 
-off_t ReadBufferFromRemoteFS::seek([[maybe_unused]] off_t offset_, int whence)
+size_t ReadBufferFromRemoteFS::fetch(size_t offset)
+{
+    absolute_position = offset;
+    auto result = nextImpl();
+    if (result)
+        return working_buffer.size();
+    return 0;
+}
+
+
+off_t ReadBufferFromRemoteFS::seek(off_t offset, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET is allowed");
 
-    // current_buf = initialize();
+    absolute_position = offset;
+    current_buf = initialize();
     return absolute_position;
 }
 
 
-void ReadBufferFromRemoteFS::reset()
+void ReadBufferFromRemoteFS::reset(bool reset_inner_buf)
 {
-    current_buf.reset();
-    // set(nullptr, 0);
+    if (reset_inner_buf)
+        current_buf.reset();
+    set(working_buffer.begin(), working_buffer.size());
 }
 
 }

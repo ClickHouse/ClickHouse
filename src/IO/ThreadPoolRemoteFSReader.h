@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class ReadBufferFromRemoteFS;
+
 class ThreadPoolRemoteFSReader : public IAsynchronousReader
 {
 
@@ -20,11 +22,19 @@ public:
 
     std::future<Result> submit(Request request) override;
 
-    struct RemoteFSFileDescriptor : public IFileDescriptor
-    {
-        ReadBufferPtr impl;
-    };
+    struct RemoteFSFileDescriptor;
+};
 
+
+struct ThreadPoolRemoteFSReader::RemoteFSFileDescriptor : public IFileDescriptor
+{
+public:
+    RemoteFSFileDescriptor(std::shared_ptr<ReadBufferFromRemoteFS> reader_) : reader(reader_) {}
+
+    size_t fetch(size_t offset);
+
+private:
+    std::shared_ptr<ReadBufferFromRemoteFS> reader;
 };
 
 }
