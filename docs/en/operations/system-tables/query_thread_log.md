@@ -11,6 +11,8 @@ The flushing period of data is set in `flush_interval_milliseconds` parameter of
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
+You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
+
 Columns:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.

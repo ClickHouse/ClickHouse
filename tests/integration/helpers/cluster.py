@@ -1676,6 +1676,9 @@ class ClickHouseCluster:
 
                 if instance.contains_in_log("Fatal", from_host=True):
                     fatal_log = instance.grep_in_log("Fatal", from_host=True)
+                    if 'Child process was terminated by signal 9 (KILL)' in fatal_log:
+                        fatal_log = None
+                        continue
                     logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
             try:
