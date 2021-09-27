@@ -66,7 +66,7 @@ public:
     {
         String file_name;
         UInt64 last_writen_position = 0;
-        UInt64 last_open_end;
+        UInt64 last_open_end = 0;
     };
 
     using FileNameToInode = std::unordered_map<String, UInt64>;
