@@ -28,6 +28,8 @@ public:
 
     bool noRecords() { return !buffer || buffer->noRecords(); }
 
+    virtual ~FileLogSource() override;
+
 protected:
     Chunk generate() override;
 
@@ -38,6 +40,9 @@ private:
     UInt64 max_block_size;
 
     size_t poll_time_out;
+
+    size_t stream_number;
+    size_t max_streams_number;
 
     std::unique_ptr<ReadBufferFromFileLog> buffer;
 

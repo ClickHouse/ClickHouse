@@ -294,9 +294,6 @@ Pipe StorageFileLog::read(
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->filelog_max_threads, file_infos.file_names.size());
 
-    /// When call closeFilesAndStoreMeta() ?
-    openFilesAndSetPos();
-
     Pipes pipes;
     pipes.reserve(max_streams_number);
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
@@ -522,8 +519,6 @@ bool StorageFileLog::streamToViews()
     InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    openFilesAndSetPos();
-
     Pipes pipes;
     pipes.reserve(max_streams_number);
     for (size_t stream_number = 0; stream_number < max_streams_number; ++stream_number)
@@ -561,8 +556,6 @@ bool StorageFileLog::streamToViews()
         serialize(true);
     }
     block_io.out->writeSuffix();
-
-    closeFilesAndStoreMeta();
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
