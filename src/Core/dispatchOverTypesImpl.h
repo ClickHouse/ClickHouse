@@ -36,7 +36,7 @@ constexpr auto Other = MakeCTArray(TypeIndex::String, TypeIndex::FixedString, Ty
  * We also want to differentiate between "function returned false" and "function was not called"
  */
 template <CTArray Container>
-constexpr DispatchRet static_for_with_ret(returns_on_elem<Container[0], DispatchRet> auto && func)
+constexpr DispatchRet static_for_with_ret(auto && func)
 {
     DispatchRet ret {.func_was_called = false, .func_ret = false };
 

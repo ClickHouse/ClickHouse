@@ -4,8 +4,8 @@
 #include <utility>
 
 /**
- * Type that defeats implicit C++ conversions
- * E.g. If you have StrongTypedefInt a, you can't initialize a = 0,
+ * Type that defeats implicit C++ conversions.
+ * @example StrongTypedefInt a; a = 0 won't compile.
  */
 template <class T, class Tag>
 struct StrongTypedef
@@ -45,7 +45,7 @@ public:
     constexpr operator const T & () const { return t; }
     constexpr operator T & () { return t; } //NOLINT
 
-    // How great would the world be if we could just use <=> or use =default.
+    // How great would the world be if we could just use <=> or =default.
     constexpr bool operator<(const Self& other) const { return t < other.t; }
     constexpr bool operator>(const Self& other) const { return t > other.t; }
     constexpr bool operator==(const Self& other) const { return t == other.t; }

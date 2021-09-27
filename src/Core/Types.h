@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <common/strong_typedef.h>
+#include <common/StrongTypedef.h>
 #include <common/Decimal.h>
 #include <common/defines.h>
 #include <common/UUID.h>

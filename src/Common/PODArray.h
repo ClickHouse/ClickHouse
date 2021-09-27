@@ -8,7 +8,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/strong_typedef.h>
+#include <common/StrongTypedef.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>

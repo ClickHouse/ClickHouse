@@ -113,16 +113,16 @@ TEST(DispatchOverType, Types)
             }));
 }
 
-template <Dispatch D, CTArray arr>
+template <Dispatch D, CTArray Arr>
 void checkWithConstraints()
 {
     static_for<TypeIndex>([](auto type)
     {
         if constexpr(HasReverseTypeId<type> && !D.other) // FixedString in Other cannot be passed to ReverseTypeId
-            EXPECT_EQ(dispatchOverType<D>(type, [](auto) { return true; }), arr.contains(type));
+            EXPECT_EQ(dispatchOverType<D>(type, [](auto) { return true; }), Arr.contains(type));
 
         if constexpr (HasReverseDataTypeId<type>)
-            EXPECT_EQ(dispatchOverDataType<D>(type, [](auto) { return true; }), arr.contains(type));
+            EXPECT_EQ(dispatchOverDataType<D>(type, [](auto) { return true; }), Arr.contains(type));
 
         return false;
     });

@@ -509,13 +509,6 @@ if (ENABLE_TESTS AND USE_GTEST)
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
-
-    # special case: tests in base/common/tests
-    set(dbms_common_gtest_sources
-        ../base/common/tests/gtest_static_for.cpp
-        ../base/common/tests/gtest_enum_reflection.cpp)
-    list(APPEND dbms_gtest_sources ${dbms_common_gtest_sources})
-
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code

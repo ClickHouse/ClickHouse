@@ -5,7 +5,7 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
+#include <common/FnCache.h>
 #include <common/demangle.h>
 
 #include <cstring>
@@ -429,9 +429,9 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
-static SimpleCache<decltype(toStringImpl), &toStringImpl> & cacheInstance()
+static FnCache<&toStringImpl> & cacheInstance()
 {
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> cache;
+    static FnCache<&toStringImpl> cache;
     return cache;
 }
 

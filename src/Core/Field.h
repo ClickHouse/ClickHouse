@@ -13,7 +13,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 #include <common/DayNum.h>
-#include <common/strong_typedef.h>
 #include <common/EnumReflection.h>
 
 namespace DB

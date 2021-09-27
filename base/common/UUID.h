@@ -1,6 +1,6 @@
 #pragma once
 
-#include "strong_typedef.h"
+#include "StrongTypedef.h"
 #include "extended_types.h"
 
 namespace DB

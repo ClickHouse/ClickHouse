@@ -1,4 +1,4 @@
-#include <common/strong_typedef.h>
+#include <common/StrongTypedef.h>
 #include <set>
 #include <unordered_set>
 #include <memory>
@@ -9,7 +9,7 @@
 #define STRONG_TYPEDEF(T, D) using D = StrongTypedef<T, struct D ## Tag>;
 
 
-TEST(StrongTypedefSuite, TypedefsOfTheSameType)
+TEST(StrongTypedef, TypedefsOfTheSameType)
 {
     /// check that strong typedefs of same type differ
     STRONG_TYPEDEF(int, Int)
@@ -18,7 +18,7 @@ TEST(StrongTypedefSuite, TypedefsOfTheSameType)
     EXPECT_TRUE(!(std::is_same<Int, AnotherInt>::value));
 }
 
-TEST(StrongTypedefSuite, Map)
+TEST(StrongTypedef, Map)
 {
     STRONG_TYPEDEF(int, Int)
 
@@ -29,7 +29,7 @@ TEST(StrongTypedefSuite, Map)
     int_unorderd_set.insert(Int(2));
 }
 
-TEST(StrongTypedefSuite, ZeroAssignment)
+TEST(StrongTypedef, ZeroAssignment)
 {
     STRONG_TYPEDEF(int, Int)
 
@@ -44,7 +44,7 @@ TEST(StrongTypedefSuite, ZeroAssignment)
     EXPECT_EQ(d, 0);
 }
 
-TEST(StrongTypedefSuite, CopyAndMoveCtor)
+TEST(StrongTypedef, CopyAndMoveCtor)
 {
     STRONG_TYPEDEF(int, Int)
     Int a(1);
@@ -65,7 +65,7 @@ TEST(StrongTypedefSuite, CopyAndMoveCtor)
     }
 }
 
-TEST(StrongTypedefSuite, NoDefaultCtor)
+TEST(StrongTypedef, NoDefaultCtor)
 {
     struct NoDefaultCtor
     {

@@ -6,7 +6,7 @@
 
 template <class T> concept is_enum = std::is_enum_v<T>;
 
-/// Iterate over enum values in compile time. See tests/gtest_enum_reflection.cpp for examples
+/// Iterate over enum values in compile time. See Common/tests/gtest_enum_reflection.cpp for examples
 template <is_enum E>
 constexpr bool static_for(auto && f)
 {
@@ -14,7 +14,7 @@ constexpr bool static_for(auto && f)
     return static_for<arr>(std::forward<decltype(f)>(f));
 }
 
-/// Enable printing enum values as strings via fmt + magic_enum
+/// Print enum values as strings via fmt + magic_enum
 template <is_enum T>
 struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {

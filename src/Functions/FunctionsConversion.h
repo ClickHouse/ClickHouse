@@ -170,7 +170,7 @@ struct ConvertImpl
             {
                 UInt32 scale;
 
-                if constexpr(accurate_convert_strategy || accurate_or_null_convert_strategy)
+                if constexpr (accurate_convert_strategy || accurate_or_null_convert_strategy)
                     scale = additions.scale;
                 else
                     scale = additions;
@@ -281,7 +281,7 @@ struct ConvertImpl
                 }
             }
 
-            if constexpr(accurate_or_null_convert_strategy)
+            if constexpr (accurate_or_null_convert_strategy)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             else
                 return col_to;
@@ -3282,7 +3282,7 @@ private:
                 std::is_same_v<To, DataTypeDate> ||
                 std::is_same_v<To, DataTypeDate32> ||
                 std::is_same_v<To, DataTypeDateTime> ||
-                std::is_same_v<To, DataTypeUUID>)
+                dt::is_uuid<To>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);
                 return true;
