@@ -18,6 +18,7 @@
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
+#include <Processors/QueryPipeline.h>
 
 
 namespace DB
@@ -199,7 +200,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    return readInvalidateQuery(loadFromQuery(invalidate_url, invalidate_sample_block, request));
+    return readInvalidateQuery(QueryPipeline(loadFromQuery(invalidate_url, invalidate_sample_block, request)));
 }
 
 
