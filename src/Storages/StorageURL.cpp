@@ -19,7 +19,7 @@
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <common/logger_useful.h>
 #include <algorithm>
@@ -111,14 +111,15 @@ namespace
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            pipeline = std::make_unique<QueryPipeline>();
-            pipeline->init(Pipe(input_format));
+            QueryPipelineBuilder builder;
+            builder.init(Pipe(input_format));
 
-            pipeline->addSimpleTransform([&](const Block & cur_header)
+            builder.addSimpleTransform([&](const Block & cur_header)
             {
                 return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
             });
 
+            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
             reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
         }
 
@@ -176,7 +177,7 @@ void StorageURLSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void StorageURLSink::onFinish()

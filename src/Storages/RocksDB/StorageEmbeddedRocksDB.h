@@ -69,6 +69,6 @@ private:
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
 
-    void initDb();
+    void initDB();
 };
 }
