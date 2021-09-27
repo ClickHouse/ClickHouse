@@ -19,13 +19,13 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, Int32 priority_, ReadBufferFromRemoteFSImpl impl_);
+        AsynchronousReaderPtr reader_, Int32 priority_, std::shared_ptr<ReadBufferFromRemoteFS> impl_);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override { return impl->absolute_position - available(); }
+    off_t getPosition() override { return absolute_position - available(); }
 
     String getFileName() const override { return impl->getFileName(); }
 
@@ -40,8 +40,10 @@ private:
 
     AsynchronousReaderPtr reader;
     Int32 priority;
-    ReadBufferFromRemoteFSImpl impl;
+    std::shared_ptr<ReadBufferFromRemoteFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
+
+    size_t absolute_position = 0;
 };
 
 }
