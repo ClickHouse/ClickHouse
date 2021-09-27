@@ -78,8 +78,8 @@ private:
     Records records;
     Records::const_iterator current;
 
-    String current_file;
-    UInt64 current_offset;
+    String current_file = {};
+    UInt64 current_offset = 0;
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
