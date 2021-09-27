@@ -74,7 +74,7 @@ public:
         chunks.back().push_back(obj);
     }
 
-    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
+    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
     {
         for (auto & chunk : chunks)
             remove_chunk_func(std::move(chunk));

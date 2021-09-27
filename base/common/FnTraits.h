@@ -1,25 +1,27 @@
 #pragma once
 
 #include <tuple>
+#include <concepts>
 #include <type_traits>
 
 namespace detail
 {
 template <class T>
-struct FnTraits;
+struct FnTraits { template <class> static constexpr bool value = false; };
 
-template <class R, class ...Args>
-struct FnTraits<R(*)(Args...)>
+template <class R, class ...A>
+struct FnTraits<R(A...)>
 {
+    template <class F>
+    static constexpr bool value = std::is_invocable_r_v<R, F, A...>;
+
     using Ret = R;
-    using DecayedArgs = std::tuple<typename std::decay<Args>::type...>;
+    using Args = std::tuple<A...>;
+    using DecayedArgs = std::tuple<typename std::decay<A>::type...>;
 };
 
-template<class F, class> struct Fn;
-template<class F, class R, class ...Args> struct Fn<F, R(Args...)>
-{
-    static constexpr bool value = std::is_invocable_r_v<R, F, Args...>;
-};
+template <class R, class ...A>
+struct FnTraits<R(*)(A...)> : FnTraits<R(A...)> {};
 }
 
 template <class T> using FnTraits = detail::FnTraits<T>;
@@ -28,8 +30,8 @@ template <class T> using FnTraits = detail::FnTraits<T>;
  * A less-typing alias for std::is_invokable_r_v.
  * @example void foo(Fn<bool(int, char)> auto && functor)
  */
-template <class F, class ArgsAndRet>
-concept Fn = detail::Fn<F, ArgsAndRet>::value;
+template <class F, class FS>
+concept Fn = FnTraits<FS>::template value<F>;
 
 template <auto Value>
 using Constant = std::integral_constant<decltype(Value), Value>;
