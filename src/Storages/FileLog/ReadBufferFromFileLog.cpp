@@ -23,7 +23,7 @@ ReadBufferFromFileLog::ReadBufferFromFileLog(
     size_t stream_number_,
     size_t max_streams_number_)
     : ReadBuffer(nullptr, 0)
-    , log(&Poco::Logger::get("ReadBufferFromFileLog " + toString(stream_number)))
+    , log(&Poco::Logger::get("ReadBufferFromFileLog " + toString(stream_number_)))
     , storage(storage_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
