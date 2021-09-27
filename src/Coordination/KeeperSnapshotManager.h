@@ -79,7 +79,7 @@ public:
     SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
     /// Compress snapshot and serialize it to buffer
-    nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot);
+    nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Serialize already compressed snapshot to disk (return path)
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
@@ -114,7 +114,7 @@ private:
 
     /// Checks first 4 buffer bytes to became sure that snapshot compressed with
     /// ZSTD codec.
-    bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer) const;
+    static bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer);
 
     const std::string snapshots_path;
     /// How many snapshots to keep before remove
