@@ -3,7 +3,7 @@ import pytz
 import itertools
 from testflows.core import *
 import dateutil.relativedelta as rd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from datetime64_extended_range.requirements.requirements import *
 from datetime64_extended_range.common import *
@@ -1536,9 +1536,10 @@ def date_time_funcs(self, node="clickhouse1"):
     """
     self.context.node = self.context.cluster.node(node)
 
+    tasks = []
     with Pool(4) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                Scenario(run=scenario, parallel=True, executor=pool)
+                run_scenario(pool, tasks, Scenario(test=scenario))
         finally:
-            join()
+            join(tasks)

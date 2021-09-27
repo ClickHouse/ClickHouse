@@ -82,7 +82,6 @@ private:
 
 
 std::string getExceptionStackTraceString(const std::exception & e);
-std::string getExceptionStackTraceString(std::exception_ptr e);
 
 
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.
@@ -168,7 +167,6 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
-int getExceptionErrorCode(std::exception_ptr e);
 
 
 /// An execution status of any piece of code, contains return code and optional error

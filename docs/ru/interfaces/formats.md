@@ -22,19 +22,20 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
+| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
+| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -58,7 +59,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -442,7 +442,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 -   Формат [JSONEachRow](#jsoneachrow)
 -   Настройка [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)
 
-## JSONStrings {#jsonstrings}
+## JSONString {#jsonstring}
 
 Отличается от JSON только тем, что поля данных выводятся в строках, а не в типизированных значениях JSON.
 
@@ -519,7 +519,7 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactStrings {#jsoncompactstrings}
+## JSONCompactString {#jsoncompactstring}
 
 Отличается от JSON только тем, что строчки данных выводятся в массивах, а не в object-ах.
 
@@ -558,7 +558,7 @@ SELECT * FROM json_as_string;
 ```
 
 ```json
-// JSONCompactStrings
+// JSONCompactString
 {
         "meta":
         [
@@ -590,9 +590,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringsEachRow {#jsonstringseachrow}
+## JSONStringEachRow {#jsonstringeachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
+## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
 При использовании этих форматов ClickHouse выводит каждую запись как значения JSON (каждое значение отдельной строкой), при этом данные в целом — невалидный JSON.
 
@@ -605,9 +605,9 @@ SELECT * FROM json_as_string;
 При вставке данных вы должны предоставить отдельное значение JSON для каждой строки.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
+## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
 
-Отличается от `JSONEachRow`/`JSONStringsEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
+Отличается от `JSONEachRow`/`JSONStringEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -617,9 +617,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
+## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
 
-Отличается от `JSONCompactEachRow`/`JSONCompactStringsEachRow` тем, что имена и типы столбцов записываются как первые две строки.
+Отличается от `JSONCompactEachRow`/`JSONCompactStringEachRow` тем, что имена и типы столбцов записываются как первые две строки.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -915,6 +915,10 @@ test: string with 'quotes' and   with some special
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
+## VerticalRaw {#verticalraw}
+
+Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+
 ## XML {#xml}
 
 Формат XML подходит только для вывода данных, не для парсинга. Пример:
@@ -1161,14 +1165,12 @@ SELECT * FROM topic1_stream;
 | `DOUBLE`                      | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                      |
 | `DATE32`                      | [Date](../sql-reference/data-types/date.md)               | `UINT16`                      |
 | `DATE64`, `TIMESTAMP`         | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                      |
-| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `BINARY`                      |
-| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                      |
+| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
+| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
 | `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
 | `LIST`                        | [Array](../sql-reference/data-types/array.md)             | `LIST`                        |
-| `STRUCT`                      | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                      |
-| `MAP`                         | [Map](../sql-reference/data-types/map.md)                 | `MAP`                         |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -1176,15 +1178,13 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
-### Вставка и выборка данных {#inserting-and-selecting-data}
+### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
@@ -1218,17 +1218,12 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `DOUBLE`                    | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                   |
 | `DATE32`                    | [Date](../sql-reference/data-types/date.md)         | `UINT16`                    |
 | `DATE64`, `TIMESTAMP`       | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                    |
-| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `BINARY`                    |
-| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
+| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `UTF8`                      |
+| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
 | `DECIMAL`                   | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                   |
-| `DECIMAL256`                | [Decimal256](../sql-reference/data-types/decimal.md)| `DECIMAL256`                |
 | `LIST`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                      |
-| `STRUCT`                    | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                    |
-| `MAP`                       | [Map](../sql-reference/data-types/map.md)           | `MAP`                       |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
-
-Тип `DICTIONARY` поддерживается для запросов `INSERT`. Для запросов `SELECT` есть настройка [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary), которая позволяет выводить тип [LowCardinality](../sql-reference/data-types/lowcardinality.md) как `DICTIONARY`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Arrow `DECIMAL` как `Decimal128`.
 
@@ -1243,8 +1238,6 @@ ClickHouse поддерживает настраиваемую точность 
 ``` bash
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
 
 ### Вывод данных {#selecting-data-arrow}
 
@@ -1283,10 +1276,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 | `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     | `BINARY`                  |
 | `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                 |
 | `LIST`                    | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
-| `STRUCT`                  | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                  |
-| `MAP`                     | [Map](../sql-reference/data-types/map.md)           | `MAP`                     |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 
@@ -1294,7 +1285,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
-### Вставка данных {#inserting-data-2}
+### Вставка данных {#vstavka-dannykh-1}
 
 Чтобы вставить в ClickHouse данные из файла в формате ORC, используйте команду следующего вида:
 
@@ -1302,9 +1293,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
-
-### Вывод данных {#selecting-data-2}
+### Вывод данных {#vyvod-dannykh-1}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
 
@@ -1459,33 +1448,4 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 
 ``` text
 f9725a22f9191e064120d718e26862a9  -
-```
-
-## MsgPack {#msgpack}
-
-ClickHouse поддерживает запись и чтение из файлов в формате [MessagePack](https://msgpack.org/).
-
-### Соответствие типов данных {#data-types-matching-msgpack}
-
-| Тип данных MsgPack              | Тип данных ClickHouse                                                              |
-|---------------------------------|------------------------------------------------------------------------------------|
-| `uint N`, `positive fixint`         | [UIntN](../sql-reference/data-types/int-uint.md)                               |
-| `int N`                           | [IntN](../sql-reference/data-types/int-uint.md)                                  |
-| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
-| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
-| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
-| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
-| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
-| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
-| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
-| `nil`                             | [Nothing](../sql-reference/data-types/special-data-types/nothing.md)             |
-
-Пример:
-
-Запись в файл ".msgpk":
-
-```sql
-$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
-$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
-$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
 ```

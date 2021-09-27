@@ -76,8 +76,11 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        size_t estimated_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -94,24 +97,24 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
 
-    DiskType getType() const override { return DiskType::S3; }
-    bool isRemote() const override { return true; }
-
-    bool supportZeroCopyReplication() const override { return true; }
+    DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
 
     void startup() override;
 
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId(const String & path) const override;
+
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in remote disk
-    /// Required for remote disk to ensure that replica has access to data written by other node
+    /// Required for S3 to ensure that replica has access to data wroten by other node
     bool checkUniqueId(const String & id) const override;
 
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);

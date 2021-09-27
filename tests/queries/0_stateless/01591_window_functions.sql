@@ -1,5 +1,7 @@
 -- { echo }
 
+set allow_experimental_window_functions = 1;
+
 -- just something basic
 select number, count() over (partition by intDiv(number, 3) order by number rows unbounded preceding) from numbers(10);
 
@@ -377,19 +379,7 @@ settings max_block_size = 3;
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
--- to make lagInFrame return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    lagInFrame(toNullable(number), 1) OVER w,
-    lagInFrame(toNullable(number), 2) OVER w,
-    lagInFrame(number, 1) OVER w,
-    lagInFrame(number, 2) OVER w
-FROM numbers(4)
-WINDOW w AS (ORDER BY number ASC)
-;
 
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
@@ -400,61 +390,6 @@ from numbers(10)
 window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
-
--- nth_value without specific frame range given
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number)
-order by number
-;
-
--- nth_value with frame range specified
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number range between 1 preceding and 1 following)
-order by number
-;
-
--- to make nth_value return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    nth_value(toNullable(number), 1) OVER w as firstValue,
-    nth_value(toNullable(number), 3) OVER w as thridValue
-FROM numbers(5)
-WINDOW w AS (ORDER BY number ASC)
-;
-
--- nth_value UBsan
-SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT nth_value(1, 1) OVER ();
-
--- lagInFrame UBsan
-SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, 0) OVER ();
-SELECT lagInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT lagInFrame(1, 1) OVER ();
-
--- leadInFrame UBsan
-SELECT leadInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, 0) OVER ();
-SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT leadInFrame(1, 1) OVER ();
 
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.

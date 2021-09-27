@@ -2,7 +2,8 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include <Interpreters/Session.h>
+#include <Access/User.h>
+#include <Access/AccessControlManager.h>
 
 #include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
@@ -72,7 +73,7 @@ Native41::Native41(const String & password, const String & auth_plugin_data)
 }
 
 void Native41::authenticate(
-    const String & user_name, Session & session, std::optional<String> auth_response,
+    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -85,7 +86,7 @@ void Native41::authenticate(
 
     if (auth_response->empty())
     {
-        session.authenticate(user_name, "", address);
+        context->setUser(user_name, "", address);
         return;
     }
 
@@ -95,7 +96,9 @@ void Native41::authenticate(
                 + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
             ErrorCodes::UNKNOWN_EXCEPTION);
 
-    Poco::SHA1Engine::Digest double_sha1_value = session.getPasswordDoubleSHA1(user_name);
+    auto user = context->getAccessControlManager().read<User>(user_name);
+
+    Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
     assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
     Poco::SHA1Engine engine;
@@ -108,7 +111,7 @@ void Native41::authenticate(
     {
         password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
     }
-    session.authenticate(user_name, password_sha1, address);
+    context->setUser(user_name, password_sha1, address);
 }
 
 #if USE_SSL
@@ -133,7 +136,7 @@ Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logg
 }
 
 void Sha256Password::authenticate(
-    const String & user_name, Session & session, std::optional<String> auth_response,
+    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -228,7 +231,7 @@ void Sha256Password::authenticate(
         password.pop_back();
     }
 
-    session.authenticate(user_name, password, address);
+    context->setUser(user_name, password, address);
 }
 
 #endif

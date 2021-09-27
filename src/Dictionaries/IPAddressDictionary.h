@@ -64,10 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.getAttribute(attribute_name).injective;
+        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -78,7 +78,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
 

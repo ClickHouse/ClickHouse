@@ -26,7 +26,7 @@ namespace DB
   *  3. write collected stack trace to trace_pipe for TraceCollector
   *
   * Destructor tries to unset timer and restore previous signal handler.
-  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
+  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
   */
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -62,10 +62,10 @@ public:
 };
 
 /// Query profiler with timer based on CPU clock
-class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
+class QueryProfilerCpu : public QueryProfilerBase<QueryProfilerCpu>
 {
 public:
-    QueryProfilerCPU(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerCpu(const UInt64 thread_id, const UInt32 period);
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

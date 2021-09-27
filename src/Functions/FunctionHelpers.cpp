@@ -303,14 +303,4 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
     return res;
 }
 
-bool isDecimalOrNullableDecimal(const DataTypePtr & type)
-{
-    WhichDataType which(type);
-    if (which.isDecimal())
-        return true;
-    if (!which.isNullable())
-        return false;
-    return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
-}
-
 }

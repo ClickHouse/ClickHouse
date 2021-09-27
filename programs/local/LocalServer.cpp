@@ -8,13 +8,10 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
-#include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -180,17 +177,19 @@ void LocalServer::tryInitPath()
 }
 
 
-static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
+static void attachSystemTables(ContextPtr context)
 {
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(database_name, context);
-        DatabaseCatalog::instance().attachDatabase(database_name, system_database);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
-    return system_database;
+
+    attachSystemTablesLocal(*system_database);
 }
+
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
@@ -245,8 +244,6 @@ try
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
 
-    global_context->initializeBackgroundExecutors();
-
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
@@ -272,9 +269,6 @@ try
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
-    /// We load temporary database first, because projections need it.
-    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
-
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
@@ -292,28 +286,18 @@ try
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 
-        fs::create_directories(fs::path(path) / "user_defined/");
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
-        LOG_DEBUG(log, "Loaded user defined objects.");
-
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");
         fs::create_directories(fs::path(path) / "metadata/");
         loadMetadataSystem(global_context);
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        attachSystemTables(global_context);
         loadMetadata(global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        attachSystemTables(global_context);
     }
 
     processQueries();
@@ -390,45 +374,37 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// Authenticate and create a context to execute queries.
-    Session session{global_context, ClientInfo::Interface::LOCAL};
-    session.authenticate("default", "", {});
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    auto context = Context::createCopy(global_context);
 
-    /// Use the same context for all queries.
-    auto context = session.makeQueryContext();
-    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    context->makeSessionContext();
+    context->makeQueryContext();
+
+    context->setUser("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
-
     applyCmdSettings(context);
 
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(context);
 
-    /// Set progress show
+    ///Set progress show
     need_render_progress = config().getBool("progress", false);
 
-    std::function<void()> finalize_progress;
     if (need_render_progress)
     {
-        /// Set progress callback, which can be run from multiple threads.
         context->setProgressCallback([&](const Progress & value)
         {
             /// Write progress only if progress was updated
             if (progress_indication.updateProgress(value))
                 progress_indication.writeProgress();
         });
-
-        /// Set finalizing callback for progress, which is called right before finalizing query output.
-        finalize_progress = [&]()
-        {
-            progress_indication.clearProgressOutput();
-        };
-
-        /// Set callback for file processing progress.
-        progress_indication.setFileProgressCallback(context);
     }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+
+    if (need_render_progress)
+        progress_indication.setFileProgressCallback(context);
 
     std::exception_ptr exception;
 
@@ -449,7 +425,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
         }
         catch (...)
         {

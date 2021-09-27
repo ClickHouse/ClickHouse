@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISink.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 /// Sink which writes data to IBlockOutputStream.
 /// It's a temporary wrapper.
-class SinkToOutputStream : public SinkToStorage
+class SinkToOutputStream : public ISink
 {
 public:
     explicit SinkToOutputStream(BlockOutputStreamPtr stream);

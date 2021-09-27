@@ -45,7 +45,7 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return !has_elems; }
 

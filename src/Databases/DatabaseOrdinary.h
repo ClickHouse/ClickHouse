@@ -20,9 +20,7 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
-
-    void startupTables() override;
+    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach) override;
 
     void alterTable(
         ContextPtr context,
@@ -37,7 +35,7 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
-    void startupTablesImpl(ThreadPool & thread_pool);
+    void startupTables(ThreadPool & thread_pool);
 };
 
 }

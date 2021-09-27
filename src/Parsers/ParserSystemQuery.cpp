@@ -6,8 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
-#include <span>
-#include <common/EnumReflection.h>
 
 namespace ErrorCodes
 {
@@ -69,19 +67,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
-
-    // If query is executed on single replica, we want to parse input like FLUSH DISTRIBUTED
-    // If query is executed on cluster, we also want to parse serialized input like FLUSH_DISTRIBUTED
-    for (const auto & [entry, str] : magic_enum::enum_entries<Type>())
+    for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
     {
-        String underscore_to_space(str);
-        std::replace(underscore_to_space.begin(), underscore_to_space.end(), '_', ' ');
-
-        if (ParserKeyword(underscore_to_space).ignore(pos, expected) || ParserKeyword(str).ignore(pos, expected))
+        Type t = static_cast<Type>(i);
+        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
         {
-            res->type = entry;
+            res->type = t;
             found = true;
-            break;
         }
     }
 

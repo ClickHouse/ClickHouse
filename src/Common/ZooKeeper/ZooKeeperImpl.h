@@ -80,10 +80,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperSession;
 }
 
-namespace DB
-{
-    class ZooKeeperLog;
-}
 
 namespace Coordination
 {
@@ -114,14 +110,13 @@ public:
         const String & auth_data,
         Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        Poco::Timespan operation_timeout_);
 
     ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return requests_queue.isClosed(); }
+    bool isExpired() const override { return expired; }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -189,8 +184,6 @@ public:
 
     void finalize()  override { finalize(false, false); }
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
 private:
     String root_path;
     ACLs default_acls;
@@ -199,17 +192,17 @@ private:
     Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
-    /// To avoid excessive getpeername(2) calls.
-    Poco::Net::SocketAddress socket_address;
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
     int64_t session_id = 0;
 
     std::atomic<XID> next_xid {1};
+    std::atomic<bool> expired {false};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
     std::atomic<bool> finalization_started {false};
+    std::mutex push_request_mutex;
 
     using clock = std::chrono::steady_clock;
 
@@ -223,7 +216,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024};
+    RequestsQueue requests_queue{1};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -265,10 +258,7 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
-    std::shared_ptr<ZooKeeperLog> zk_log;
 };
 
 }
