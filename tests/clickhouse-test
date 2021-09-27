@@ -609,7 +609,7 @@ class TestCase:
             if skip_reason is not None:
                 return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0., "")
 
-            if args.testname and self.send_test_name_failed(suite, self.case):
+            if args.testname and self.send_test_name_failed(suite.suite, self.case):
                 description = "\nServer does not respond to health check\n"
                 return TestResult(self.name, TestStatus.FAIL, FailureReason.SERVER_DIED, 0., description)
 

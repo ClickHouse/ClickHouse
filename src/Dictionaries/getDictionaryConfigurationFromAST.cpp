@@ -28,12 +28,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
+
 /// There are a lot of code, but it's very simple and straightforward
-/// We just convert
+/// We just perform conversion.
 namespace
 {
 
 using NamesToTypeNames = std::unordered_map<std::string, std::string>;
+
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String getFieldAsString(const Field & field)
@@ -46,8 +48,8 @@ String getFieldAsString(const Field & field)
 
 using namespace Poco;
 using namespace Poco::XML;
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  LIFETIME(MIN 10, MAX 100)
  * to the next configuration
  *  <lifetime>
@@ -76,8 +78,7 @@ void buildLifetimeConfiguration(
     }
 }
 
-/*
- * Transforms next definition
+/* Transforms next definition
  *  LAYOUT(FLAT())
  * to the next configuration
  *  <layout>
@@ -104,6 +105,7 @@ void buildLayoutConfiguration(
     layout_element->appendChild(layout_type_element);
 
     if (layout->parameters)
+    {
         for (const auto & param : layout->parameters->children)
         {
             const ASTPair * pair = param->as<ASTPair>();
@@ -136,10 +138,11 @@ void buildLayoutConfiguration(
             layout_type_parameter_element->appendChild(value_to_append);
             layout_type_element->appendChild(layout_type_parameter_element);
         }
+    }
 }
 
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  RANGE(MIN StartDate, MAX EndDate)
  * to the next configuration
  *  <range_min><name>StartDate</name></range_min>
@@ -216,8 +219,7 @@ void buildAttributeExpressionIfNeeded(
     }
 }
 
-/**
-  * Transofrms single dictionary attribute to configuration
+/** Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -281,8 +283,7 @@ void buildSingleAttribute(
 }
 
 
-/**
-  * Transforms
+/** Transforms
   *   PRIMARY KEY Attr1 ,..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
@@ -369,8 +370,7 @@ void buildPrimaryKeyConfiguration(
 }
 
 
-/**
-  * Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
+/** Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
 NamesToTypeNames buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
