@@ -264,6 +264,17 @@ private:
         return date + (x - date) / divisor * divisor;
     }
 
+    using IndexUnder = typename LUTIndex::UnderlyingType;
+    using ExtendedDayUnder = typename ExtendedDayNum::UnderlyingType;
+    using DayUnder = typename DayNum::UnderlyingType;
+
+    template <class T>
+    static constexpr bool suitable_underlying =
+        std::is_same_v<T, Time>
+        || std::is_same_v<T, IndexUnder>
+        || std::is_same_v<T, DayUnder>
+        || std::is_same_v<T, ExtendedDayUnder>;
+
 public:
     const std::string & getTimeZone() const { return time_zone; }
 
@@ -274,6 +285,19 @@ public:
     auto getDayNumOffsetEpoch() const { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
+
+    template <class T>
+    inline auto underlyingToDayNum(T value) const requires(suitable_underlying<T>)
+    {
+        if constexpr (std::is_same_v<T, Time>)
+            return toDayNum(value);
+        else if constexpr(std::is_same_v<T, IndexUnder>)
+            return toDayNum(LUTIndex(value));
+        else if constexpr(std::is_same_v<T, ExtendedDayUnder>)
+            return ExtendedDayNum(value);
+        else
+            return DayNum(value);
+    }
 
     template <class T>
     inline ExtendedDayNum toDayNum(T value) const

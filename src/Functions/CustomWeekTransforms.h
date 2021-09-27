@@ -28,19 +28,6 @@ concept is_week_arg = std::is_same_v<T, Int64>
     || std::is_same_v<T, UInt32>
     || std::is_same_v<T, UInt16>;
 
-template <class T>
-static auto convertArg(T value, const DateLUTImpl & time_zone)
-{
-    if constexpr (std::is_same_v<T, UInt64>)
-        return time_zone.toDayNum(value);
-    else if constexpr(std::is_same_v<T, UInt32>)
-        return time_zone.toDayNum(value); //maybe should use lutindex
-    else if constexpr(std::is_same_v<T, Int32>)
-        return ExtendedDayNum(value);
-    else
-        return DayNum(value);
-}
-
 /**
  * CustomWeek Transformations.
   */
@@ -49,12 +36,26 @@ struct ToYearWeekImpl
 {
     static constexpr auto name = "toYearWeek";
 
-    static inline UInt32 execute(is_week_arg auto value, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const auto [year, week] = time_zone.toYearWeek(
-            convertArg(value, time_zone), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
 
-        return year * 100 + week;
+    static inline UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+    static inline UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+    static inline UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
     }
 
     using FactorTransform = ZeroTransform;
@@ -64,16 +65,22 @@ struct ToStartOfWeekImpl
 {
     static constexpr auto name = "toStartOfWeek";
 
-    static inline UInt16 execute(is_week_arg auto value, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(convertArg(value, time_zone), week_mode);
+        return time_zone.toFirstDayNumOfWeek(time_zone.underlyingToDayNum(t), week_mode);
     }
-
-    //FIXME Not DayNum
-    //static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    //{
-    //    return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    //}
+    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.underlyingToDayNum(t), week_mode);
+    }
+    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.underlyingToDayNum(d), week_mode);
+    }
+    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.underlyingToDayNum(d), week_mode);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -82,9 +89,25 @@ struct ToWeekImpl
 {
     static constexpr auto name = "toWeek";
 
-    static inline UInt8 execute(is_week_arg auto value, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        YearWeek yw = time_zone.toYearWeek(convertArg(value, time_zone), week_mode);
+        // TODO: ditch conversion to DayNum, since it doesn't support extended range.
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(t), week_mode);
+        return yw.second;
+    }
+    static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(t), week_mode);
+        return yw.second;
+    }
+    static inline UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(d), week_mode);
+        return yw.second;
+    }
+    static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.underlyingToDayNum(d), week_mode);
         return yw.second;
     }
 
