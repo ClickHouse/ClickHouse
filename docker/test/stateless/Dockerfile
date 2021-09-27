@@ -1,6 +1,6 @@
 # docker build -t clickhouse/stateless-test .
-FROM clickhouse/test-base
 FROM clickhouse/test-util
+FROM clickhouse/test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
