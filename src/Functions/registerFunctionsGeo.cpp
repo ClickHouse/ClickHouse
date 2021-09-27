@@ -42,7 +42,7 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
-void registerFunctionH3ResIsClassIII(FunctionFactory &);
+void registerFunctionH3IsResClassIII(FunctionFactory &);
 void registerFunctionH3IsPentagon(FunctionFactory &);
 void registerFunctionH3GetFaces(FunctionFactory &);
 #endif
@@ -98,7 +98,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
-    registerFunctionH3ResIsClassIII(factory);
+    registerFunctionH3IsResClassIII(factory);
     registerFunctionH3IsPentagon(factory);
     registerFunctionH3GetFaces(factory);
 #endif
