@@ -93,7 +93,7 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## use_skip_indexes {#settings-force_data_skipping_indices}
+## use_skip_indexes {#settings-use_skip_indexes}
 
 Use data skipping indexes during query execution.
 
