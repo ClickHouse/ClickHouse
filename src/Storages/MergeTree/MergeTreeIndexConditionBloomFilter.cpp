@@ -511,6 +511,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     RPNElement & out,
     const ASTPtr & parent)
 {
+    std::cerr << "MergeTreeIndexConditionBloomFilter::traverseASTEquals " << function_name << " ast " << key_ast->formatForErrorMessage() << std::endl;
+
     if (header.has(key_ast->getColumnName()))
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
@@ -622,7 +624,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             return match_with_subtype;
         }
 
-        if (function->name == "arrayElement")
+        if (function->name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
         {
             /** Try to parse arrayElement for mapKeys index.
               * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
@@ -637,25 +639,38 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             const auto & col_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
 
             auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
+            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
 
-            if (!header.has(map_keys_index_column_name))
-                return false;
+            size_t position = 0;
+            Field const_value = value_field;
 
-            size_t position = header.getPositionByName(map_keys_index_column_name);
-            const DataTypePtr & index_type = header.getByPosition(position).type;
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-
-            auto & argument = function->arguments.get()->children[1];
-
-            if (const auto * literal = argument->as<ASTLiteral>())
+            if (header.has(map_keys_index_column_name))
             {
-                auto element_key = literal->value;
-                const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
-                return true;
+                position = header.getPositionByName(map_keys_index_column_name);
+
+                auto & argument = function->arguments.get()->children[1];
+
+                if (const auto * literal = argument->as<ASTLiteral>())
+                    const_value = literal->value;
+                else
+                    return false;
+            }
+            else if (header.has(map_values_index_column_name))
+            {
+                position = header.getPositionByName(map_values_index_column_name);
+            }
+            else
+            {
+                return false;
             }
 
-            return false;
+            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+
+            const auto & index_type = header.getByPosition(position).type;
+            const auto actual_type = BloomFilter::getPrimitiveType(index_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+
+            return true;
         }
     }
 

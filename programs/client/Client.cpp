@@ -34,7 +34,7 @@
 #include <Poco/Util/Application.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -2050,8 +2050,7 @@ private:
             });
         }
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;
