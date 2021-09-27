@@ -78,8 +78,8 @@ A function configuration contains the following settings:
 -   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 -   `return_type` - the type of a returned value.
 -   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
--   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` fuctions only. Optional. Default value is `10`.
--   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time SIGTERM is sent to the process executing the command. This setting is valid for `executable_pool` fuctions only. Optional. Default value is `10`.
+-   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
+-   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time SIGTERM is sent to the process executing the command. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
 -   `pool_size` - the size of a command pool. Optional. Default value is `16`.
 -   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
