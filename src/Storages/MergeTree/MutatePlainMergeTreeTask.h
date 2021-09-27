@@ -42,7 +42,6 @@ public:
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() override;
-    IExecutableTask::Type getType() override { return IExecutableTask::Type::MUTATE; }
     UInt64 getPriority() override { return priority; }
 
 private:

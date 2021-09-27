@@ -16,12 +16,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/IExecutableTask.h>
-
-
 namespace DB
 {
-
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -55,8 +51,6 @@ struct TaskRuntimeData
         return lhs->task->getPriority() > rhs->task->getPriority();
     }
 };
-
-
 
 class IRuntimeQueue
 {

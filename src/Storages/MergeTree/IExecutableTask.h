@@ -28,19 +28,10 @@ namespace ErrorCodes
 class IExecutableTask
 {
 public:
-    /// This is used only to distinguish merges and mutations during execution
-    /// That's why there are no fetches, moves, etc.
-    enum class Type
-    {
-        MERGE,
-        MUTATE,
-        UNSPECIFIED
-    };
     using TaskResultCallback = std::function<void(bool)>;
     virtual bool executeStep() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
-    virtual Type getType() { return Type::UNSPECIFIED; }
     virtual UInt64 getPriority() = 0;
     virtual ~IExecutableTask() = default;
 };

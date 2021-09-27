@@ -21,7 +21,6 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
-    IExecutableTask::Type getType() override { return IExecutableTask::Type::MUTATE; }
     UInt64 getPriority() override { return priority; }
 
 private:

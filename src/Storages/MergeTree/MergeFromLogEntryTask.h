@@ -20,8 +20,6 @@ public:
     MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
-    IExecutableTask::Type getType() override { return IExecutableTask::Type::MERGE; }
-
     UInt64 getPriority() override { return priority; }
 
 protected:
