@@ -465,7 +465,7 @@ class TestCase:
             description += "\n{}\n".format(diff)
             return TestResult(self.name, TestStatus.FAIL, FailureReason.RESULT_DIFF, total_time, description)
 
-        if self.testcase_args.test_runs > 1 and total_time > 60 and 'long' not in self.name:
+        if self.testcase_args.test_runs > 1 and total_time > 60 and 'long' not in self.tags:
             # We're in Flaky Check mode, check the run time as well while we're at it.
             return TestResult(self.name, TestStatus.FAIL, FailureReason.TOO_LONG, total_time, description)
 
