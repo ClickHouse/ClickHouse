@@ -416,29 +416,30 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry * merge_entry,
-    TableLockHolder holder,
+    std::unique_ptr<MergeListElement> projection_merge_list_element,
+    TableLockHolder,
     time_t time_of_merge,
     ContextPtr context,
     ReservationSharedPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
-    const IMergeTreeDataPart * /*parent_part*/,
-    const String & /*prefix*/)
+    const IMergeTreeDataPart * parent_part,
+    const String & prefix)
 {
-    (void)holder;
     return std::make_shared<MergeTask>(
         future_part,
         const_cast<StorageMetadataPtr &>(metadata_snapshot),
         merge_entry,
+        std::move(projection_merge_list_element),
         time_of_merge,
         context,
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
         merging_params,
-        nullptr,
-        "",
+        parent_part,
+        prefix,
         &data,
         &merges_blocker,
         &ttl_merges_blocker);

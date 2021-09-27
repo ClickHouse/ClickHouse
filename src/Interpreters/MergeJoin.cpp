@@ -13,7 +13,7 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
@@ -580,13 +580,14 @@ void MergeJoin::mergeInMemoryRightBlocks()
     Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(source));
+    QueryPipelineBuilder builder;
+    builder.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(
-        pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
+    builder.addTransform(std::make_shared<MergeSortingTransform>(
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
     while (Block block = sorted_input.read())

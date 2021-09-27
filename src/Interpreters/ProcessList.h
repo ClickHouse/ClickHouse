@@ -103,13 +103,7 @@ protected:
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    mutable std::mutex query_streams_mutex;
-
-    /// Streams with query results, point to BlockIO from executeQuery()
-    /// This declaration is compatible with notes about BlockIO::process_list_entry:
-    ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
-    BlockInputStreamPtr query_stream_in;
-    BlockOutputStreamPtr query_stream_out;
+    mutable std::mutex executors_mutex;
 
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
     std::vector<PipelineExecutor *> executors;
@@ -172,18 +166,6 @@ public:
     }
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
-
-    /// Copies pointers to in/out streams
-    void setQueryStreams(const BlockIO & io);
-
-    /// Frees in/out streams
-    void releaseQueryStreams();
-
-    /// It means that ProcessListEntry still exists, but stream was already destroyed
-    bool streamsAreReleased();
-
-    /// Get query in/out pointers from BlockIO
-    bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 
     CancellationCode cancelQuery(bool kill);
 
