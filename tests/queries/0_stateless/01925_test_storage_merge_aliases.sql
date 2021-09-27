@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists merge;
 create table merge
 (

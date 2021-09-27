@@ -69,7 +69,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
 
--   `PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
+-   `PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional.
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../../sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
@@ -99,9 +99,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in “Server configuration parameters”.
     -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-    -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with delete TTL. Default value: `14400` seconds (4 hours).
-    -   `merge_with_recompression_ttl_timeout` — Minimum delay in seconds before repeating a merge with recompression TTL. Default value: `14400` seconds (4 hours).    
-    -   `try_fetch_recompressed_part_timeout` — Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression. Default value: `7200` seconds (2 hours).    
+    -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
     -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
@@ -335,7 +333,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
-    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID`.
+    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
 
     The following functions can use it: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md).
 
@@ -390,27 +388,20 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
 
-## Projections {#projections}
-Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+### Projections {#projections}
+Projections are like materialized views but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
-Projections are an experimental feature. To enable them you must set the [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) to `1`. See also the [force_optimize_projection](../../../operations/settings/settings.md#force-optimize-projection) setting.
+#### Query {#projection-query}
+A projection query is what defines a projection. It has the following grammar:
 
-Projections are not supported in the `SELECT` statements with the [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+`SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
 
-### Projection Query {#projection-query}
-A projection query is what defines a projection. It implicitly selects data from the parent table. 
-**Syntax**
+It implicitly selects data from the parent table.
 
-```sql
-SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
-```
+#### Storage {#projection-storage}
+Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to AggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
 
-Projections can be modified or dropped with the [ALTER](../../../sql-reference/statements/alter/projection.md) statement.
-
-### Projection Storage {#projection-storage}
-Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
-
-### Query Analysis {#projection-query-analysis}
+#### Query Analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
 2. Select the best feasible match, which contains the least granules to read.
 3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
@@ -425,20 +416,18 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
+The `TTL` clause can be set for the whole table and for each individual column. Table-level TTL can also specify logic of automatic move of data between disks and volumes.
 
 Expressions must evaluate to [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md) data type.
 
-**Syntax**
-
-Setting time-to-live for a column:
+Example:
 
 ``` sql
 TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](../../../sql-reference/operators/index.md#operators-datetime) operators, for example:
+To define `interval`, use [time interval](../../../sql-reference/operators/index.md#operators-datetime) operators.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -451,9 +440,9 @@ When the values in the column expire, ClickHouse replaces them with the default 
 
 The `TTL` clause can’t be used for key columns.
 
-**Examples**
+Examples:
 
-Creating a table with `TTL`:
+Creating a table with TTL
 
 ``` sql
 CREATE TABLE example_table
@@ -486,11 +475,11 @@ ALTER TABLE example_table
 
 ### Table TTL {#mergetree-table-ttl}
 
-Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
+Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ``` sql
 TTL expr
-    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
 ```
@@ -498,12 +487,11 @@ TTL expr
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
 -   `DELETE` - delete expired rows (default action);
--   `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
 -   `TO DISK 'aaa'` - move part to the disk `aaa`;
 -   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
 -   `GROUP BY` - aggregate expired rows.
 
-With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves or recompression).
+With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves).
 
 `GROUP BY` expression must be a prefix of the table primary key.
 
@@ -511,7 +499,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 **Examples**
 
-Creating a table with `TTL`:
+Creating a table with TTL:
 
 ``` sql
 CREATE TABLE example_table
@@ -527,7 +515,7 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Altering `TTL` of the table:
+Altering TTL of the table:
 
 ``` sql
 ALTER TABLE example_table
@@ -548,21 +536,6 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-Creating a table, where expired rows are recompressed: 
-
-```sql
-CREATE TABLE table_for_recompression
-(
-    d DateTime,
-    key UInt64,
-    value String
-) ENGINE MergeTree()
-ORDER BY tuple()
-PARTITION BY key
-TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPRESS CODEC(LZ4HC(10))
-SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
-```
-
 Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
 ``` sql
@@ -579,18 +552,13 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-### Removing Expired Data {#mergetree-removing-expired-data}
+**Removing Data**
 
-Data with an expired `TTL` is removed when ClickHouse merges data parts.
+Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse detects that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query before `SELECT`.
-
-**See Also**
-
-- [ttl_only_drop_parts](../../../operations/settings/settings.md#ttl_only_drop_parts) setting
-
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 

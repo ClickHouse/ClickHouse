@@ -1,8 +1,6 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
 
+#include "config_formats.h"
 #if USE_PARQUET
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Formats/FormatSettings.h>

@@ -36,7 +36,9 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, bool /* has_force_restore_data_flag */, bool /*force_attach*/, bool /* skip_startup_tables */)
+    ContextMutablePtr local_context,
+    bool /* has_force_restore_data_flag */,
+    bool /*force_attach*/)
 {
     iterateMetadataFiles(local_context, [this](const String & file_name)
     {
@@ -141,7 +143,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -244,8 +246,6 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 
         if (!ast || !endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
-
-        table->startup();
         {
             std::lock_guard lock(mutex);
             auto it = tables_cache.find(table_name);
@@ -304,7 +304,7 @@ void DatabaseLazy::clearExpiredTables() const
 }
 
 
-DatabaseLazyIterator::DatabaseLazyIterator(const DatabaseLazy & database_, Strings && table_names_)
+DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, Strings && table_names_)
     : IDatabaseTablesIterator(database_.database_name)
     , database(database_)
     , table_names(std::move(table_names_))
