@@ -91,7 +91,7 @@ SYSTEM RELOAD MODEL <model_name>
 ```sql
 RELOAD FUNCTIONS
 RELOAD FUNCTION function_name
-
+```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
