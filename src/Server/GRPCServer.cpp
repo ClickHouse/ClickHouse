@@ -1077,7 +1077,7 @@ namespace
 
     void Call::generateOutput()
     {
-        if (!io.pipeline.initialized())
+        if (!io.pipeline.initialized() || io.pipeline.pushing())
             return;
 
         Block header;
@@ -1148,8 +1148,6 @@ namespace
             auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
             auto callback = [&]() -> bool
             {
-                if (isQueryCancelled())
-                    return true;
 
                 throwIfFailedToSendResult();
                 addProgressToResult();
@@ -1160,7 +1158,8 @@ namespace
                     sendResult();
 
                 throwIfFailedToSendResult();
-                return false;
+
+                return isQueryCancelled();
             };
             executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
             executor->execute();
