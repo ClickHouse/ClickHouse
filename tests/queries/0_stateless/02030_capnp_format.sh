@@ -12,7 +12,7 @@ touch $CAPN_PROTO_FILE
 SCHEMADIR=/$(clickhouse-client --query "select * from file('data.capnp', 'CapnProto', 'val1 char') settings format_schema='nonexist:Message'" 2>&1 | grep Exception | grep -oP "file \K.*(?=/nonexist.capnp)")
 CLIENT_SCHEMADIR=$CURDIR/format_schemas
 SERVER_SCHEMADIR=test_02030
-mkdir -p $SCHEMADIR/$SERVER_SCHEMADIR
+mkdir -p ${SCHEMADIR:?}/${SERVER_SCHEMADIR:?}
 cp -r $CLIENT_SCHEMADIR/02030_* $SCHEMADIR/$SERVER_SCHEMADIR/
 
 
