@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <cstddef>
 #include <memory>
 
@@ -24,7 +25,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 Pipe getSourceFromASTInsertQuery(
         const ASTPtr & ast,
         bool with_buffers,
-        const Block & header,
+        const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const ASTPtr & input_function);
 

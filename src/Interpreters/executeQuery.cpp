@@ -570,9 +570,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     StoragePtr storage = context->executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
                     auto pipe = getSourceFromASTInsertQuery(
-                        ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                        ast, true, input_storage.getInMemoryMetadataPtr(), context, input_function);
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1025,7 +1024,9 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
-            auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            const auto * ast_insert_query = ast->as<ASTInsertQuery>();
+            StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
+            auto pipe = getSourceFromASTInsertQuery(ast, true, storage->getInMemoryMetadataPtr(), context, nullptr);
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())

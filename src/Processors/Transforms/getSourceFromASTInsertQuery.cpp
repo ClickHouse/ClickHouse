@@ -68,18 +68,16 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 Pipe getSourceFromASTInsertQuery(
     const ASTPtr & ast,
     bool with_buffers,
-    const Block & header,
+    const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const ASTPtr & input_function)
 {
-    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
+    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, metadata_snapshot->getSampleBlock(), context, input_function);
     Pipe pipe(source);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
         {

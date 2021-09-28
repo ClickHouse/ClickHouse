@@ -428,7 +428,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
-            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, metadata_snapshot, getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
     }
