@@ -194,6 +194,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             future_merged_part,
             metadata_snapshot,
             merge_mutate_entry.get(),
+            {} /* projection_merge_list_element */,
             table_lock_holder,
             entry.create_time,
             storage.getContext(),
