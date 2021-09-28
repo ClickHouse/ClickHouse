@@ -419,4 +419,9 @@ struct MatchImpl
     }
 };
 
+struct NameLike
+{
+    static constexpr auto name = "like";
+};
+
 }
