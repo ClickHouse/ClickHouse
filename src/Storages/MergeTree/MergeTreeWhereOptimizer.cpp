@@ -119,41 +119,50 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
+static const ASTFunction * getAsTuple(const ASTPtr & node)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
+        return func;
+    return {};
+};
+
+static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
+{
+    if (const auto * value_tuple = node->as<ASTLiteral>())
+        return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
+    return false;
+};
+
 bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
 {
-    if (!func || func->name != "equals" || func->arguments->children.empty())
+    if (!func || func->name != "equals" || func->arguments->children.size() != 2)
         return false;
 
-    const auto * func_tuple = func->arguments->children[0]->as<ASTFunction>();
-    if (!func_tuple || func_tuple->name != "tuple")
+    Tuple tuple_lit;
+    const ASTFunction * tuple_other = nullptr;
+    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[1]);
+    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[0]);
+
+    if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size())
         return false;
 
-    if (func->arguments->children.size() <= 1)
-        return false;
-
-    Tuple tuple;
+    for (size_t i = 0; i < tuple_lit.size(); ++i)
     {
-        const auto * value_tuple = func->arguments->children[1]->as<ASTLiteral>();
-        if (!value_tuple || !value_tuple->value.tryGet<Tuple>(tuple))
-            return false;
-    }
-
-    int index = 0;
-    for (const auto & child : func_tuple->arguments->children)
-    {
+        const auto & child = tuple_other->arguments->children[i];
         std::shared_ptr<IAST> fetch_sign_column = nullptr;
         /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
-        if (const auto * child_func = child->as<ASTFunction>(); child_func && child_func->name == "tuple")
+        if (const auto * child_func = getAsTuple(child))
             fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
         else if (const auto * child_ident = child->as<ASTIdentifier>())
             fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
         else
             return false;
 
-        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple.at(index));
+        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
         ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
         analyzeImpl(res, func_node, is_final);
-        index++;
     }
 
     return true;
