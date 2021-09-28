@@ -48,9 +48,6 @@ public:
 
     ~WriteHelper()
     {
-        if (buffer.count())
-            rowWritten();
-
         buffer.finalize();
     }
 
