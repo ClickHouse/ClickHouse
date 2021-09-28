@@ -28,13 +28,22 @@ void finalizeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ActionsDAG * expression, bool final)
+Block TotalsHavingTransform::transformHeader(
+    Block block,
+    const ActionsDAG * expression,
+    const std::string & filter_column_name,
+    bool remove_filter,
+    bool final)
 {
     if (final)
         finalizeBlock(block);
 
     if (expression)
+    {
         block = expression->updateHeader(std::move(block));
+        if (remove_filter)
+            block.erase(filter_column_name);
+    }
 
     return block;
 }
@@ -44,13 +53,15 @@ TotalsHavingTransform::TotalsHavingTransform(
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
     const std::string & filter_column_,
+    bool remove_filter_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
+    , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
@@ -67,6 +78,8 @@ TotalsHavingTransform::TotalsHavingTransform(
         auto totals_header = finalized_header;
         size_t num_rows = totals_header.rows();
         expression->execute(totals_header, num_rows);
+        if (remove_filter)
+            totals_header.erase(filter_column_name);
         outputs.emplace_back(totals_header, this);
     }
     else
@@ -167,6 +180,8 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         }
 
         expression->execute(finalized_block, num_rows);
+        if (remove_filter)
+            finalized_block.erase(filter_column_name);
         auto columns = finalized_block.getColumns();
 
         ColumnPtr filter_column_ptr = columns[filter_column_pos];
@@ -270,6 +285,8 @@ void TotalsHavingTransform::prepareTotals()
         size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block, num_rows);
+        if (remove_filter)
+            block.erase(filter_column_name);
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
         totals = Chunk(block.getColumns(), num_rows);
     }
