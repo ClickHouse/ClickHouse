@@ -84,7 +84,12 @@ constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && 
     static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
     {
         if (type == other)
+        {
             func(DictionaryAttributeType<other>{});
+            return true;
+        }
+
+        return false;
     });
 };
 

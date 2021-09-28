@@ -1,7 +1,7 @@
 #pragma once
 
 #include <array>
-#include <common/constexpr_helpers.h>
+#include <common/static_for.h>
 
 #include <Interpreters/HashJoin.h>
 
