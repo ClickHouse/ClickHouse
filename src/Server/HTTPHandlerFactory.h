@@ -103,12 +103,12 @@ public:
         });
     }
 
-    /// Handle POST or GET with params
-    void allowPostAndGetParamsRequest()
+    /// Handle POST or GET
+    void allowPostAndGetRequest()
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
         });
     }
