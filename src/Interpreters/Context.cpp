@@ -2790,16 +2790,19 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
 void Context::initializeBackgroundExecutors()
 {
-    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
+    const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
     (
         "MergeMutate",
         /*max_threads_count*/getSettingsRef().background_pool_size,
-        /*max_tasks_count*/getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio,
+        /*max_tasks_count*/max_merges_and_mutations,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
+
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_pool_size, max_merges_and_mutations);
 
     shared->moves_executor = OrdinaryBackgroundExecutor::create
     (
@@ -2809,6 +2812,9 @@ void Context::initializeBackgroundExecutors()
         CurrentMetrics::BackgroundMovePoolTask
     );
 
+    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_move_pool_size, getSettingsRef().background_move_pool_size);
+
     shared->fetch_executor = OrdinaryBackgroundExecutor::create
     (
         "Fetch",
@@ -2817,6 +2823,9 @@ void Context::initializeBackgroundExecutors()
         CurrentMetrics::BackgroundFetchesPoolTask
     );
 
+    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
+        getSettingsRef().background_fetches_pool_size, getSettingsRef().background_fetches_pool_size);
+
     shared->common_executor = OrdinaryBackgroundExecutor::create
     (
         "Common",
@@ -2824,6 +2833,9 @@ void Context::initializeBackgroundExecutors()
         getSettingsRef().background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask
     );
+
+    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
+        getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
 }
 
 
