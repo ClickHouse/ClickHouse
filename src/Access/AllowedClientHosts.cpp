@@ -1,6 +1,5 @@
 #include <Access/AllowedClientHosts.h>
 #include <Common/Exception.h>
-#include <common/SimpleCache.h>
 #include <common/logger_useful.h>
 #include <common/scope_guard.h>
 #include <Functions/likePatternToRegexp.h>

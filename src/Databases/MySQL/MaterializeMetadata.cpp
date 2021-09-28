@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <filesystem>
+#include <common/FnTraits.h>
 
 namespace fs = std::filesystem;
 
@@ -221,7 +222,7 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
     return false;
 }
 
-void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path, const String & persistent_path)
+void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_path, const String & persistent_path)
 {
     try
     {
