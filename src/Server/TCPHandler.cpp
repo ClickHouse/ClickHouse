@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -47,6 +48,10 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric QueryThread;
+}
 
 namespace DB
 {
