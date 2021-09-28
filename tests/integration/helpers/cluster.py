@@ -1921,11 +1921,25 @@ class ClickHouseInstance:
         return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-              ignore_error=False):
-        logging.debug(f"Executing query {sql} on {self.name}")
-        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
-                                 database=database, ignore_error=ignore_error)
+    def query(self, sql,
+              stdin=None,
+              timeout=None,
+              settings=None,
+              user=None,
+              password=None,
+              database=None,
+              ignore_error=False,
+              query_id=None):
+        logging.debug("Executing query %s on %s", sql, self.name)
+        return self.client.query(sql,
+                                 stdin=stdin,
+                                 timeout=timeout,
+                                 settings=settings,
+                                 user=user,
+                                 password=password,
+                                 database=database,
+                                 ignore_error=ignore_error,
+                                 query_id=query_id)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
