@@ -29,7 +29,7 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
-You can also download and install packages manually from [here](https://repo.clickhouse.tech/deb/stable/main/).
+You can also download and install packages manually from [here](https://repo.clickhouse.com/deb/stable/main/).
 
 #### Packages {#packages}
 
@@ -50,8 +50,8 @@ First, you need to add the official repository:
 
 ``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/stable/x86_64
 ```
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
@@ -62,21 +62,21 @@ Then run these commands to install packages:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-You can also download and install packages manually from [here](https://repo.clickhouse.tech/rpm/stable/x86_64).
+You can also download and install packages manually from [here](https://repo.clickhouse.com/rpm/stable/x86_64).
 
 ### From Tgz Archives {#from-tgz-archives}
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
-The required version can be downloaded with `curl` or `wget` from repository https://repo.clickhouse.tech/tgz/.
+The required version can be downloaded with `curl` or `wget` from repository https://repo.clickhouse.com/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 
 ``` bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
