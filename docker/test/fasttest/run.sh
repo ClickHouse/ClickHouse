@@ -315,7 +315,9 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests
-    /process_functional_tests_result.py "$FASTTEST_OUTPUT/" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
+    /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+        --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
+        --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;
 *)
     echo "Unknown test stage '$stage'"
