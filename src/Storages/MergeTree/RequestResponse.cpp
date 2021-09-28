@@ -21,6 +21,21 @@ void PartitionReadRequest::serialize(WriteBuffer & out) const
 }
 
 
+void PartitionReadRequest::describe(WriteBuffer & out) const
+{
+    String result;
+    result += fmt::format("partition_id: {} \n", partition_id);
+    result += fmt::format("part_name: {} \n", part_name);
+    result += fmt::format("projection_name: {} \n", projection_name);
+    result += fmt::format("block_range: ({}, {}) \n", block_range.begin, block_range.end);
+    result += "mark_ranges: ";
+    for (const auto & range : mark_ranges)
+        result += fmt::format("({}, {}) ", range.begin, range.end);
+    result += '\n';
+    out.write(result.c_str(), result.size());
+}
+
+
 void PartitionReadRequest::deserialize(ReadBuffer & in)
 {
     readStringBinary(partition_id, in);

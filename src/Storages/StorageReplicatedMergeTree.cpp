@@ -4076,9 +4076,10 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-
     if (local_context->getSettingsRef().parallel_reading_from_replicas && local_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
+        LOG_TEST(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Parallel reading is enabled");
+
         /// First get a set of replicas
         auto zookeeper = getZooKeeper();
 
@@ -4150,8 +4151,12 @@ void StorageReplicatedMergeTree::read(
         return;
     }
 
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
+    if (auto plan = reader.read(
+        column_names, metadata_snapshot, query_info, local_context,
+        max_block_size, num_streams, processed_stage, nullptr, /**enable_parallel_reading=*/true))
+    {
         query_plan = std::move(*plan);
+    }
 }
 
 Pipe StorageReplicatedMergeTree::read(

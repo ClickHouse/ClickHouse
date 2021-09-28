@@ -10,7 +10,10 @@
 #include <set>
 #include <cassert>
 
+
+#include <common/logger_useful.h>
 #include <common/types.h>
+#include "IO/WriteBufferFromString.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
 
@@ -46,9 +49,9 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 {
     std::lock_guard lock(mutex);
 
-    // WriteBufferFromOwnString wb;
-    // request.serialize(wb);
-    // std::cout << wb.str() << std::endl;
+    WriteBufferFromOwnString wb;
+    request.describe(wb);
+    LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Got request {}", wb.str());
 
     auto partition_it = partitions.find(request.partition_id);
 
