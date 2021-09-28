@@ -8,27 +8,27 @@ tags: ['article', 'CDN', 'Cloudflare', 'repository', 'deb', 'rpm', 'tgz']
 On initial open-source launch, ClickHouse packages were published at an independent repository implemented on Yandex infrastructure. We'd love to use the default repositories of Linux distributions, but, unfortunately, they have their own strict rules on third-party library usage and software compilation options. These rules happen to contradict with how ClickHouse is produced. In 2018 ClickHouse was added to [official Debian repository](https://packages.debian.org/sid/clickhouse-server) as an experiment, but it didn't get much traction. Adaptation to those rules ended up producing more like a demo version of ClickHouse with crippled performance and limited features.
 
 !!! info "TL;DR"
-    If you have configured your system to use <http://repo.yandex.ru/clickhouse/> for fetching ClickHouse packages, replace it with <https://repo.clickhouse.tech/>.
+    If you have configured your system to use <http://repo.yandex.ru/clickhouse/> for fetching ClickHouse packages, replace it with <https://repo.clickhouse.com/>.
 
 Distributing packages via our own repository was working totally fine until ClickHouse has started getting traction in countries far from Moscow, most notably the USA and China. Downloading large files of packages from remote location was especially painful for Chinese ClickHouse users, likely due to how China is connected to the rest of the world via its famous firewall. But at least it worked (with high latencies and low throughput), while in some smaller countries there was completely no access to this repository and people living there had to host their own mirrors on neutral ground as a workaround.
 
-Earlier this year we made the ClickHouse official website to be served via global CDN by [Cloudflare](https://www.cloudflare.com) on a `clickhouse.tech` domain. To solve the download issues discussed above, we have also configured a new location for ClickHouse packages that are also served by Cloudflare at [repo.clickhouse.tech](https://repo.clickhouse.tech). It used to have some quirks, but now it seems to be working fine while improving throughput and latencies in remote geographical locations by over an order of magnitude.
+Earlier this year we made the ClickHouse official website to be served via global CDN by [Cloudflare](https://www.cloudflare.com) on a `clickhouse.tech` domain. To solve the download issues discussed above, we have also configured a new location for ClickHouse packages that are also served by Cloudflare at [repo.clickhouse.com](https://repo.clickhouse.com). It used to have some quirks, but now it seems to be working fine while improving throughput and latencies in remote geographical locations by over an order of magnitude.
 
 ## Switching To Repository Behind CDN
 
-This transition has some more benefits besides improving the package fetching, but let's get back to them in a minute. One of the key reasons for this post is that we can't actually influence the repository configuration of ClickHouse users. We have updated all instructions, but for people who have followed these instructions earlier, **action is required** to use the new location behind CDN. Basically, you need to replace `http://repo.yandex.ru/clickhouse/` with `https://repo.clickhouse.tech/` in your package manager configuration.
+This transition has some more benefits besides improving the package fetching, but let's get back to them in a minute. One of the key reasons for this post is that we can't actually influence the repository configuration of ClickHouse users. We have updated all instructions, but for people who have followed these instructions earlier, **action is required** to use the new location behind CDN. Basically, you need to replace `http://repo.yandex.ru/clickhouse/` with `https://repo.clickhouse.com/` in your package manager configuration.
 
 One-liner for Ubuntu or Debian:
 ```bash
-sudo apt-get install apt-transport-https ca-certificates && sudo perl -pi -e 's|http://repo.yandex.ru/clickhouse/|https://repo.clickhouse.tech/|g' /etc/apt/sources.list.d/clickhouse.list && sudo apt-get update
+sudo apt-get install apt-transport-https ca-certificates && sudo perl -pi -e 's|http://repo.yandex.ru/clickhouse/|https://repo.clickhouse.com/|g' /etc/apt/sources.list.d/clickhouse.list && sudo apt-get update
 ```
 
 One-liner for RedHat or CentOS:
 ```bash
-sudo perl -pi -e 's|http://repo.yandex.ru/clickhouse/|https://repo.clickhouse.tech/|g' /etc/yum.repos.d/clickhouse*
+sudo perl -pi -e 's|http://repo.yandex.ru/clickhouse/|https://repo.clickhouse.com/|g' /etc/yum.repos.d/clickhouse*
 ```
 
-As you might have noticed, the domain name is not the only thing that has changed: the new URL uses `https://` protocol. Usually, it's considered less important for package repositories compared to normal websites because most package managers check [GPG signatures](https://en.wikipedia.org/wiki/GNU_Privacy_Guard) for what they download anyway. However it still has some benefits: for example, it's not so uncommon for people to download packages via browser, `curl` or `wget`, and install them manually (while for [tgz](https://repo.clickhouse.tech/tgz/) builds it's the only option). Fewer opportunities for sniffing traffic can't hurt either. The downside is that `apt` in some Debian flavors has no HTTPS support by default and needs a couple more packages to be installed (`apt-transport-https` and `ca-certificates`).
+As you might have noticed, the domain name is not the only thing that has changed: the new URL uses `https://` protocol. Usually, it's considered less important for package repositories compared to normal websites because most package managers check [GPG signatures](https://en.wikipedia.org/wiki/GNU_Privacy_Guard) for what they download anyway. However it still has some benefits: for example, it's not so uncommon for people to download packages via browser, `curl` or `wget`, and install them manually (while for [tgz](https://repo.clickhouse.com/tgz/) builds it's the only option). Fewer opportunities for sniffing traffic can't hurt either. The downside is that `apt` in some Debian flavors has no HTTPS support by default and needs a couple more packages to be installed (`apt-transport-https` and `ca-certificates`).
 
 ## Investigating Repository Usage
 
@@ -61,7 +61,7 @@ There's not so much data collected yet, but here's a live example of how the res
 While here we confirmed that `rpm` is at least as popular as `deb`:
 ![iframe](https://datalens.yandex/lfvldsf92i2uh?_embedded=1)
 
-Or you can take a look at all key charts for `repo.clickhouse.tech` together on a handy **[dashboard](https://datalens.yandex/pjzq4rot3t2ql)** with a filtering possibility.
+Or you can take a look at all key charts for `repo.clickhouse.com` together on a handy **[dashboard](https://datalens.yandex/pjzq4rot3t2ql)** with a filtering possibility.
 
 ## Lessons Learned
 
