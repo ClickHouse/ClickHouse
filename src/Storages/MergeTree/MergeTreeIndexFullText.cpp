@@ -16,8 +16,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Core/Defines.h>
-#include <Columns/ColumnMap.h>
-#include <DataTypes/DataTypeMap.h>
 
 #include <Poco/Logger.h>
 
@@ -550,7 +548,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
     else if (function_name == "equals")
     {
         out.key_column = key_column_num;
-        return createFunctionEqualsCondition(out, value_field, params, token_extractor);
+        return createFunctionEqualsCondition(out, const_value, params, token_extractor);
     }
     else if (function_name == "like")
     {
