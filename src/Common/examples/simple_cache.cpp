@@ -1,5 +1,5 @@
 #include <iostream>
-#include <common/SimpleCache.h>
+#include <common/CachedFn.h>
 
 
 static int func(int x, int y)
@@ -11,7 +11,7 @@ static int func(int x, int y)
 
 int main(int, char **)
 {
-    SimpleCache<decltype(func), &func> func_cached;
+    CachedFn<&func> func_cached;
 
     std::cerr << func_cached(1, 2) << "\n";
     std::cerr << func_cached(1, 2) << "\n";
