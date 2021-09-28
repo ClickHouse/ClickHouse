@@ -53,6 +53,7 @@ struct QueryState
     /// Where to write result data.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     BlockOutputStreamPtr block_out;
+    Block block_for_insert;
 
     /// Query text.
     String query;

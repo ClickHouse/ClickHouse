@@ -64,6 +64,18 @@ INSERT INTO map_test_index_map_values VALUES (0, {'K0':'V0'}), (1, {'K1':'V1'});
 
 SELECT 'Map bloom filter mapValues';
 
+SELECT 'Equals with existing key';
+SELECT * FROM map_test_index_map_values WHERE map['K0'] = 'V0';
+SELECT 'Equals with non existing key';
+SELECT * FROM map_test_index_map_values WHERE map['K2'] = 'V2';
+SELECT 'Equals with non existing key and default value';
+SELECT * FROM map_test_index_map_values WHERE map['K3'] = '';
+SELECT 'Not equals with existing key';
+SELECT * FROM map_test_index_map_values WHERE map['K0'] != 'V0';
+SELECT 'Not equals with non existing key';
+SELECT * FROM map_test_index_map_values WHERE map['K2'] != 'V2';
+SELECT 'Not equals with non existing key and default value';
+SELECT * FROM map_test_index_map_values WHERE map['K3'] != '';
 SELECT 'IN with existing key';
 SELECT * FROM map_test_index_map_values WHERE map['K0'] IN 'V0';
 SELECT 'IN with non existing key';
