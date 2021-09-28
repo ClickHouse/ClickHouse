@@ -1798,6 +1798,21 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: `0`.
 
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Включает или отключает оптимизацию простого запроса `SELECT count() FROM table` с использованием метаданных MergeTree. Если в таблице установлена безопасность на уровне строк, отключите оптимизацию.
+
+Возможные значения:
+
+   - 0 — оптимизация отключена.
+   - 1 — оптимизация включена.
+   
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Тип: секунды
