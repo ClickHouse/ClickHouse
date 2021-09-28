@@ -12,6 +12,10 @@
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -52,6 +56,8 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }
