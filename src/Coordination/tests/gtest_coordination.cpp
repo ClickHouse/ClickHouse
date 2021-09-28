@@ -1469,7 +1469,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
 
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotDifferenCompressions)
+TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 {
     auto params = GetParam();
 
