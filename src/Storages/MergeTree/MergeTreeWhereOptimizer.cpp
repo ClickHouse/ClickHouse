@@ -119,6 +119,45 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
+bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
+{
+    if (!func || func->name != "equals" || func->arguments->children.empty())
+        return false;
+
+    const auto * func_tuple = func->arguments->children[0]->as<ASTFunction>();
+    if (!func_tuple || func_tuple->name != "tuple")
+        return false;
+
+    if (func->arguments->children.size() <= 1)
+        return false;
+
+    Tuple tuple;
+    {
+        const auto * value_tuple = func->arguments->children[1]->as<ASTLiteral>();
+        if (!value_tuple || !value_tuple->value.tryGet<Tuple>(tuple))
+            return false;
+    }
+
+    int index = 0;
+    for (const auto & child : func_tuple->arguments->children)
+    {
+        std::shared_ptr<IAST> fetch_sign_column = nullptr;
+        /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
+        if (const auto * child_func = child->as<ASTFunction>(); child_func && child_func->name == "tuple")
+            fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+        else if (const auto * child_ident = child->as<ASTIdentifier>())
+            fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
+        else
+            return false;
+
+        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple.at(index));
+        ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
+        analyzeImpl(res, func_node, is_final);
+        index++;
+    }
+
+    return true;
+}
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
@@ -129,63 +168,35 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         for (const auto & elem : func->arguments->children)
             analyzeImpl(res, elem, is_final);
     }
+    else if (tryAnalyzeTuple(res, func, is_final))
+    {
+        /// analyzed
+    }
     else
     {
-        ASTFunction * func_tuple = nullptr;
-        if (func && func->name == "equals")
-            func_tuple = func->arguments->children[0]->as<ASTFunction>();
+        Condition cond;
+        cond.node = node;
 
-        if (func_tuple && func_tuple->name == "tuple")
-        {
-            const auto * value_tuple = func->arguments->children[1]->as<ASTLiteral>();
-            auto & tuple = value_tuple->value.safeGet<Tuple>();
+        collectIdentifiersNoSubqueries(node, cond.identifiers);
 
-            int index = 0;
+        cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
 
-            for (auto child : func_tuple->arguments->children)
-            {
-                const auto * child_func = child->as<ASTFunction>();
-                const auto & fetch_sign_value = std::make_shared<ASTLiteral>(tuple.at(index));
-                std::shared_ptr<IAST> fetch_sign_column = nullptr;
+        cond.viable =
+            /// Condition depend on some column. Constant expressions are not moved.
+            !cond.identifiers.empty()
+            && !cannotBeMoved(node, is_final)
+            /// Do not take into consideration the conditions consisting only of the first primary key column
+            && !hasPrimaryKeyAtoms(node)
+            /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
+            && isSubsetOfTableColumns(cond.identifiers)
+            /// Do not move conditions involving all queried columns.
+            && cond.identifiers.size() < queried_columns.size();
 
-                // tuple in tuple like (a, (b,c)) = (1, (2,3))
-                if (child_func && child_func->name == "tuple")
-                    fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
-                else
-                    fetch_sign_column = std::make_shared<ASTIdentifier>(child->as<ASTIdentifier>()->name());
+        if (cond.viable)
+            cond.good = isConditionGood(node);
 
-                auto func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
-                analyzeImpl(res, func_node, is_final);
-                index++;
-            }
-        }
-        else
-        {
-            Condition cond;
-            cond.node = node;
-
-            collectIdentifiersNoSubqueries(node, cond.identifiers);
-
-            cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
-
-            cond.viable =
-                /// Condition depend on some column. Constant expressions are not moved.
-                !cond.identifiers.empty()
-                && !cannotBeMoved(node, is_final)
-                /// Do not take into consideration the conditions consisting only of the first primary key column
-                && !hasPrimaryKeyAtoms(node)
-                /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
-                && isSubsetOfTableColumns(cond.identifiers)
-                /// Do not move conditions involving all queried columns.
-                && cond.identifiers.size() < queried_columns.size();
-
-            if (cond.viable)
-                cond.good = isConditionGood(node);
-
-            res.emplace_back(std::move(cond));
-        }
+        res.emplace_back(std::move(cond));
     }
-
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
