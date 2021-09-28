@@ -199,6 +199,8 @@ then
     dpkg --remove clickhouse-common-static-dbg
     dpkg --remove clickhouse-common-static
 
+    rm -rf /var/lib/clickhouse/*
+
     # Install previous release packages
     install_packages previous_release_package_folder
 
@@ -234,8 +236,8 @@ then
     
     stop
 
-    # Error messages (we ignore Cancelled merging parts, REPLICA_IS_ALREADY_ACTIVE and  errors)
-    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" -e "REPLICA_IS_ALREADY_ACTIVE" -e "RaftInstance: failed to accept a rpc connection due to error 125" \
+    # Error messages (we should ignore some errors)
+    zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" -e "REPLICA_IS_ALREADY_ACTIVE" -e "DDLWorker: Cannot parse DDL task query" -e "RaftInstance: failed to accept a rpc connection due to error 125" \
         /var/log/clickhouse-server/clickhouse-server.log | zgrep -Fa "<Error>" > /dev/null \
         && echo -e 'Error message in clickhouse-server.log\tFAIL' >> /test_output/backward_compatibility_check_results.tsv \
         || echo -e 'No Error messages in clickhouse-server.log\tOK' >> /test_output/backward_compatibility_check_results.tsv
