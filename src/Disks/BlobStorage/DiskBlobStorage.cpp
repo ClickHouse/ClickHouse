@@ -1,4 +1,4 @@
-#include "Blob.h"
+#include <Disks/BlobStorage/DiskBlobStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
