@@ -4,8 +4,8 @@ set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
-BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.tech}"
-GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-website-content.git}"
+BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.com}"
+GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-com-content.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
 EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---minify --verbose}"
 
