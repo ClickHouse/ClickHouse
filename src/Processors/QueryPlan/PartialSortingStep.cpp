@@ -28,11 +28,13 @@ PartialSortingStep::PartialSortingStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
     UInt64 limit_,
-    SizeLimits size_limits_)
+    SizeLimits size_limits_,
+    bool is_limit_positive_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , sort_description(std::move(sort_description_))
     , limit(limit_)
     , size_limits(size_limits_)
+    , is_limit_positive(is_limit_positive_)
 {
     output_stream->sort_description = sort_description;
     output_stream->sort_mode = DataStream::SortMode::Chunk;
@@ -40,7 +42,7 @@ PartialSortingStep::PartialSortingStep(
 
 void PartialSortingStep::updateLimit(size_t limit_)
 {
-    if (limit_ && (limit == 0 || limit_ < limit))
+    if (limit_ && (limit == 0 || limit_ < limit) && is_limit_positive)
     {
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;

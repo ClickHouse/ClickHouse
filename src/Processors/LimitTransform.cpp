@@ -10,11 +10,11 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
+    const Block & header_, UInt64 limit_, UInt64 offset_, bool is_limit_positive_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , limit(limit_), offset(offset_)
+    , limit(limit_), offset(offset_), is_limit_positive(is_limit_positive_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
@@ -257,89 +257,161 @@ void LimitTransform::splitChunk(PortsData & data)
     UInt64 num_rows = data.current_chunk.getNumRows();
     UInt64 num_columns = data.current_chunk.getNumColumns();
 
-    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+    bool limit_is_unreachable;
+    UInt64 start = 0u;
+    UInt64 length = 0u;
 
-    if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
+    if (is_limit_positive)
     {
-        /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
-        UInt64 current_row_num = 0;
-        for (; current_row_num < num_rows; ++current_row_num)
+        limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+
+        if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
         {
-            if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
-                break;
-        }
+            /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
+            UInt64 current_row_num = 0;
+            for (; current_row_num < num_rows; ++current_row_num)
+            {
+                if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
+                    break;
+            }
 
-        auto columns = data.current_chunk.detachColumns();
+            auto columns = data.current_chunk.detachColumns();
 
-        if (current_row_num < num_rows)
-        {
-            previous_row_chunk = {};
-            for (UInt64 i = 0; i < num_columns; ++i)
-                columns[i] = columns[i]->cut(0, current_row_num);
-        }
-
-        data.current_chunk.setColumns(std::move(columns), current_row_num);
-        return;
-    }
-
-    /// return a piece of the block
-    UInt64 start = 0;
-
-    /// ------------[....(...).]
-    /// <----------------------> rows_read
-    ///             <----------> num_rows
-    /// <---------------> offset
-    ///             <---> start
-
-    assert(offset < rows_read);
-
-    if (offset + num_rows > rows_read)
-        start = offset + num_rows - rows_read;
-
-    /// ------------[....(...).]
-    /// <----------------------> rows_read
-    ///             <----------> num_rows
-    /// <---------------> offset
-    ///                  <---> limit
-    ///                  <---> length
-    ///             <---> start
-
-    /// Or:
-
-    /// -----------------(------[....)....]
-    /// <---------------------------------> rows_read
-    ///                         <---------> num_rows
-    /// <---------------> offset
-    ///                  <-----------> limit
-    ///                         <----> length
-    ///                         0 = start
-
-    UInt64 length = num_rows - start;
-
-    if (!limit_is_unreachable && offset + limit < rows_read)
-    {
-        if (offset + limit < rows_read - num_rows)
-            length = 0;
-        else
-            length = offset + limit - (rows_read - num_rows) - start;
-    }
-
-    /// check if other rows in current block equals to last one in limit
-    if (with_ties && length)
-    {
-        UInt64 current_row_num = start + length;
-        previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
-
-        for (; current_row_num < num_rows; ++current_row_num)
-        {
-            if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
+            if (current_row_num < num_rows)
             {
                 previous_row_chunk = {};
-                break;
+                for (UInt64 i = 0; i < num_columns; ++i)
+                    columns[i] = columns[i]->cut(0, current_row_num);
             }
+
+            data.current_chunk.setColumns(std::move(columns), current_row_num);
+            return;
         }
 
-        length = current_row_num - start;
+        /// return a piece of the block
+        start = 0;
+
+        /// ------------[....(...).]
+        /// <----------------------> rows_read
+        ///             <----------> num_rows
+        /// <---------------> offset
+        ///             <---> start
+
+        assert(offset < rows_read);
+
+        if (offset + num_rows > rows_read)
+            start = offset + num_rows - rows_read;
+
+        /// ------------[....(...).]
+        /// <----------------------> rows_read
+        ///             <----------> num_rows
+        /// <---------------> offset
+        ///                  <---> limit
+        ///                  <---> length
+        ///             <---> start
+
+        /// Or:
+
+        /// -----------------(------[....)....]
+        /// <---------------------------------> rows_read
+        ///                         <---------> num_rows
+        /// <---------------> offset
+        ///                  <-----------> limit
+        ///                         <----> length
+        ///                         0 = start
+
+        length = num_rows - start;
+
+        if (!limit_is_unreachable && offset + limit < rows_read)
+        {
+            if (offset + limit < rows_read - num_rows)
+                length = 0;
+            else
+                length = offset + limit - (rows_read - num_rows) - start;
+        }
+
+        /// check if other rows in current block equals to last one in limit
+        if (with_ties && length)
+        {
+            UInt64 current_row_num = start + length;
+            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
+
+            for (; current_row_num < num_rows; ++current_row_num)
+            {
+                if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
+                {
+                    previous_row_chunk = {};
+                    break;
+                }
+            }
+
+            length = current_row_num - start;
+        }
+    }
+    else
+    {
+        limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+
+        if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
+        {
+            /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
+            UInt64 current_row_num = 0;
+            for (; current_row_num < num_rows; ++current_row_num)
+            {
+                if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
+                    break;
+            }
+
+            auto columns = data.current_chunk.detachColumns();
+
+            if (current_row_num < num_rows)
+            {
+                previous_row_chunk = {};
+                for (UInt64 i = 0; i < num_columns; ++i)
+                    columns[i] = columns[i]->cut(0, current_row_num);
+            }
+
+            data.current_chunk.setColumns(std::move(columns), current_row_num);
+            return;
+        }
+
+        start = 0;
+
+        assert(offset < rows_read);
+
+        if (offset + limit <= num_rows)
+            start = num_rows - offset - limit;
+
+        length = num_rows - start;
+
+        if (!limit_is_unreachable && offset + limit <= rows_read)
+        {
+            if (offset >= num_rows)
+                length = num_rows;
+            else if (offset < num_rows && offset + limit > num_rows)
+                length = num_rows - offset;
+            else if (offset + limit <= num_rows)
+                length = limit;
+        }
+
+        /// check if other rows in current block equals to last one in limit
+        if (with_ties && length)
+        {
+            Int128 current_row_num = start;
+            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
+
+            for (; current_row_num >= 0u; --current_row_num)
+            {
+                if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
+                {
+                    previous_row_chunk = {};
+                    break;
+                }
+            }
+
+            length = start - current_row_num + length - 1;
+            start = current_row_num + 1;
+        }
     }
 
     if (length == num_rows)

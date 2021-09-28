@@ -32,7 +32,8 @@ MergeSortingStep::MergeSortingStep(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    bool is_limit_positive_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
@@ -41,6 +42,7 @@ MergeSortingStep::MergeSortingStep(
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
+    , is_limit_positive(is_limit_positive_)
 {
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = description;
@@ -50,7 +52,7 @@ MergeSortingStep::MergeSortingStep(
 
 void MergeSortingStep::updateLimit(size_t limit_)
 {
-    if (limit_ && (limit == 0 || limit_ < limit))
+    if (limit_ && (limit == 0 || limit_ < limit) && is_limit_positive)
     {
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;

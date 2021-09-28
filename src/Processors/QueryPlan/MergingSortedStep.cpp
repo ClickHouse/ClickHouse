@@ -27,11 +27,13 @@ MergingSortedStep::MergingSortedStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
     size_t max_block_size_,
-    UInt64 limit_)
+    UInt64 limit_,
+    bool is_limit_positive_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , sort_description(std::move(sort_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
+    , is_limit_positive(is_limit_positive_)
 {
     /// TODO: check input_stream is partially sorted (each port) by the same description.
     output_stream->sort_description = sort_description;
@@ -40,7 +42,7 @@ MergingSortedStep::MergingSortedStep(
 
 void MergingSortedStep::updateLimit(size_t limit_)
 {
-    if (limit_ && (limit == 0 || limit_ < limit))
+    if (limit_ && (limit == 0 || limit_ < limit) && is_limit_positive)
     {
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;

@@ -21,6 +21,7 @@ private:
     UInt64 limit;
     UInt64 offset;
 
+    bool is_limit_positive;
     bool always_read_till_end;
 
     bool with_ties;
@@ -52,7 +53,7 @@ private:
 
 public:
     LimitTransform(
-        const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
+        const Block & header_, UInt64 limit_, UInt64 offset_, bool is_limit_positive_ = true, size_t num_streams = 1,
         bool always_read_till_end_ = false, bool with_ties_ = false,
         SortDescription description_ = {});
 

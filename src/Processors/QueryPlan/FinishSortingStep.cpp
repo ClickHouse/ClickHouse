@@ -32,13 +32,15 @@ FinishSortingStep::FinishSortingStep(
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_,
-    bool has_filtration_)
+    bool has_filtration_,
+    bool is_limit_positive_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
     , has_filtration(has_filtration_)
+    , is_limit_positive(is_limit_positive_)
 {
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
@@ -47,7 +49,7 @@ FinishSortingStep::FinishSortingStep(
 
 void FinishSortingStep::updateLimit(size_t limit_)
 {
-    if (limit_ && (limit == 0 || limit_ < limit))
+    if (limit_ && (limit == 0 || limit_ < limit) && is_limit_positive)
     {
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;

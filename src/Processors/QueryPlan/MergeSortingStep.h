@@ -20,7 +20,8 @@ public:
             double remerge_lowered_memory_bytes_ratio_,
             size_t max_bytes_before_external_sort_,
             VolumePtr tmp_volume_,
-            size_t min_free_disk_space_);
+            size_t min_free_disk_space_,
+            bool is_limit_positive_ = false);
 
     String getName() const override { return "MergeSorting"; }
 
@@ -42,6 +43,7 @@ private:
     size_t max_bytes_before_external_sort;
     VolumePtr tmp_volume;
     size_t min_free_disk_space;
+    bool is_limit_positive;
 };
 
 }

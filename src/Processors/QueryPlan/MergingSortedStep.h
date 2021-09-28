@@ -15,7 +15,8 @@ public:
         const DataStream & input_stream,
         SortDescription sort_description_,
         size_t max_block_size_,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        bool is_limit_positive_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -31,6 +32,7 @@ private:
     SortDescription sort_description;
     size_t max_block_size;
     UInt64 limit;
+    bool is_limit_positive;
 };
 
 }
