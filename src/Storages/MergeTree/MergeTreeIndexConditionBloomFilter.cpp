@@ -511,8 +511,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     RPNElement & out,
     const ASTPtr & parent)
 {
-    std::cerr << "MergeTreeIndexConditionBloomFilter::traverseASTEquals " << function_name << " ast " << key_ast->formatForErrorMessage() << std::endl;
-
     if (header.has(key_ast->getColumnName()))
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
