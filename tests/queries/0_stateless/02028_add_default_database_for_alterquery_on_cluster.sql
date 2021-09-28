@@ -1,4 +1,6 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed, no-parallel, no-replicated-database
+-- Tag no-replicated-database: ON CLUSTER is not allowed
+
 DROP DATABASE IF EXISTS 02028_db ON CLUSTER test_shard_localhost;
 CREATE DATABASE 02028_db ON CLUSTER test_shard_localhost;
 USE 02028_db;
