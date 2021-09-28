@@ -9,14 +9,15 @@
 #include <IO/Operators.h>
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int NETWORK_ERROR;
-extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
@@ -122,6 +123,12 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
+    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
+    const String & libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+    }
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
@@ -144,6 +151,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
+
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     if (port != 0)
     {

@@ -9,7 +9,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
@@ -53,7 +53,7 @@ NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
         {"is_randomized_interval", std::make_shared<DataTypeUInt8>()},
     };
 
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         const auto & type_info = ResourceTypeInfo::get(resource_type);
         String column_name = "max_" + type_info.name;
@@ -82,7 +82,7 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
 
     IColumn * column_max[MAX_RESOURCE_TYPE];
     NullMap * column_max_null_map[MAX_RESOURCE_TYPE];
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         column_max[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
         column_max_null_map[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
@@ -94,7 +94,7 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
         column_duration.push_back(limits.duration.count());
         column_is_randomized_interval.push_back(limits.randomize_interval);
 
-        for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
             const auto & type_info = ResourceTypeInfo::get(resource_type);
             addValue(*column_max[resource_type], *column_max_null_map[resource_type], limits.max[resource_type], type_info);

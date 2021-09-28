@@ -4,9 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
-#include <Poco/File.h>
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -42,12 +42,17 @@ void DatabaseMemory::dropTable(
     try
     {
         table->drop();
-        Poco::File table_data_dir{getTableDataPath(table_name)};
-        if (table_data_dir.exists())
-            table_data_dir.remove(true);
+        if (table->storesDataOnDisk())
+        {
+            assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
+            fs::path table_data_dir{getTableDataPath(table_name)};
+            if (fs::exists(table_data_dir))
+                fs::remove_all(table_data_dir);
+        }
     }
     catch (...)
     {
+        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table, lock);
         throw;
     }

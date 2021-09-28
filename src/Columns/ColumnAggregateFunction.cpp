@@ -1,11 +1,12 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -13,7 +14,6 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
-#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -167,7 +167,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto * machine_learning_function = func.get();
+    const auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -309,6 +309,10 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
+void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
+{
+    expandDataByMask<char *>(data, mask, inverted);
+}
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
@@ -485,7 +489,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
@@ -502,8 +506,9 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
-        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
-                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
+            x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)

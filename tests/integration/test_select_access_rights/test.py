@@ -96,7 +96,7 @@ def test_alias_columns():
 
     select_query = "SELECT s FROM table1"
     assert "it's necessary to have grant SELECT(s) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
-    
+
     instance.query("GRANT SELECT(s) ON default.table1 TO A")
     assert instance.query(select_query, user = 'A') == ""
 
@@ -177,3 +177,61 @@ def test_select_count():
 
     instance.query("GRANT SELECT ON default.table1 TO A")
     assert instance.query(select_query, user = 'A') == "0\n"
+
+
+def test_select_where():
+    # User should have grants for the columns used in WHERE.
+    instance.query("CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b")
+    instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
+    instance.query("GRANT SELECT(a) ON default.table1 TO A")
+
+    select_query = "SELECT a FROM table1 WHERE b = 0"
+    assert "it's necessary to have grant SELECT(a, b) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT(b) ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "xxx\nzzz\n"
+
+    instance.query("REVOKE SELECT ON default.table1 FROM A")
+    assert "it's necessary to have grant SELECT(a, b) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "xxx\nzzz\n"
+
+
+def test_select_prewhere():
+    # User should have grants for the columns used in PREWHERE.
+    instance.query("CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b")
+    instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
+    instance.query("GRANT SELECT(a) ON default.table1 TO A")
+
+    select_query = "SELECT a FROM table1 PREWHERE b = 0"
+    assert "it's necessary to have grant SELECT(a, b) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT(b) ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "xxx\nzzz\n"
+
+    instance.query("REVOKE SELECT ON default.table1 FROM A")
+    assert "it's necessary to have grant SELECT(a, b) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "xxx\nzzz\n"
+
+
+def test_select_with_row_policy():
+    # Normal users should not aware of the existence of row policy filters.
+    instance.query("CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b")
+    instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
+    instance.query("CREATE ROW POLICY pol1 ON table1 USING b = 0 TO A")
+
+    select_query = "SELECT a FROM table1"
+    select_query2 = "SELECT count() FROM table1"
+    assert "it's necessary to have grant SELECT(a) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+    assert "it's necessary to have grant SELECT for at least one column on default.table1" in instance.query_and_get_error(select_query2, user = 'A')
+
+    instance.query("GRANT SELECT(a) ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "xxx\nzzz\n"
+    assert instance.query(select_query2, user = 'A') == "2\n"
+
+    instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
+    assert "it's necessary to have grant SELECT(a) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+    assert "it's necessary to have grant SELECT for at least one column on default.table1" in instance.query_and_get_error(select_query2, user = 'A')

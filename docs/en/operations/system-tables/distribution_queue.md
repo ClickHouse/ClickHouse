@@ -18,6 +18,10 @@ Columns:
 
 -   `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in local files, in bytes.
 
+-   `broken_data_files` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of files that has been marked as broken (due to an error).
+
+-   `broken_data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in broken files, in bytes.
+
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
 
 **Example**
@@ -36,11 +40,11 @@ is_blocked:            1
 error_count:           0
 data_files:            1
 data_compressed_bytes: 499
-last_exception:        
+last_exception:
 ```
 
 **See Also**
 
 -   [Distributed table engine](../../engines/table-engines/special/distributed.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/distribution_queue) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/distribution_queue) <!--hide-->

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeString.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,9 +13,9 @@ class Context;
 
 /** Information about macros for introspection.
   */
-class StorageSystemMacros final : public ext::shared_ptr_helper<StorageSystemMacros>, public IStorageSystemOneBlock<StorageSystemMacros>
+class StorageSystemMacros final : public shared_ptr_helper<StorageSystemMacros>, public IStorageSystemOneBlock<StorageSystemMacros>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemMacros>;
+    friend struct shared_ptr_helper<StorageSystemMacros>;
 public:
     std::string getName() const override { return "SystemMacros"; }
 

@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -41,6 +41,11 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return is_injective;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

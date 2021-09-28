@@ -17,6 +17,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -119,7 +121,7 @@ public:
     {
         if (samples.empty())
         {
-            if (DB::IsDecimalNumber<T>)
+            if (DB::is_decimal<T>)
                 return 0;
             return onEmpty<double>();
         }
@@ -131,12 +133,20 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return static_cast<double>(samples[left_index]);
+        {
+            if constexpr (DB::is_decimal<T>)
+                return static_cast<double>(samples[left_index].value);
+            else
+                return static_cast<double>(samples[left_index]);
+        }
 
         double left_coef = right_index - index;
         double right_coef = index - left_index;
 
-        return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
+        if constexpr (DB::is_decimal<T>)
+            return static_cast<double>(samples[left_index].value) * left_coef + static_cast<double>(samples[right_index].value) * right_coef;
+        else
+            return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
     }
 
     void merge(const ReservoirSampler<T, OnEmpty> & b)

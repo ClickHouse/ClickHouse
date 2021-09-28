@@ -45,9 +45,13 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+
+    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;
@@ -58,6 +62,7 @@ public:
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
@@ -70,8 +75,6 @@ protected:
     [[nodiscard]] DetachedTables cleanupDetachedTables();
 
     void tryCreateMetadataSymlink();
-
-    void renameDictionaryInMemoryUnlocked(const StorageID & old_name, const StorageID & new_name);
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;

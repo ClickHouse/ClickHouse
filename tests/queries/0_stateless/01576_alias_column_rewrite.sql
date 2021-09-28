@@ -115,3 +115,23 @@ SELECT COUNT() == 1 FROM test_index WHERE key_uint32 = 1;
 SELECT COUNT() == 1 FROM test_index WHERE toUInt32(key_string) = 1;
 DROP TABLE IF EXISTS test_index;
 
+
+-- check alias column can be used to match projections
+drop table if exists p;
+create table pd (dt DateTime, i int, dt_m DateTime alias toStartOfMinute(dt)) engine Distributed(test_shard_localhost, currentDatabase(), 'pl');
+create table pl (dt DateTime, i int, projection p (select sum(i) group by toStartOfMinute(dt))) engine MergeTree order by dt;
+
+insert into pl values ('2020-10-24', 1);
+
+select sum(i) from pd group by dt_m settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+
+drop table pd;
+drop table pl;
+
+drop table if exists t;
+
+create temporary table t (x UInt64, y alias x);
+insert into t values (1);
+select sum(x), sum(y) from t;
+
+drop table t;

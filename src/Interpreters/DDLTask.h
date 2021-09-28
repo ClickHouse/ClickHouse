@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
 #include <Common/ZooKeeper/Types.h>
+#include <filesystem>
 
 namespace Poco
 {
@@ -14,8 +15,15 @@ namespace zkutil
 class ZooKeeper;
 }
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
@@ -98,11 +106,11 @@ struct DDLTaskBase
 
     virtual String getShardID() const = 0;
 
-    virtual ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
 
-    inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
-    inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
-    inline String getShardNodePath() const { return entry_path + "/shards/" + getShardID(); }
+    inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
+    inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
+    inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -126,8 +134,8 @@ private:
     String cluster_name;
     ClusterPtr cluster;
     Cluster::Address address_in_cluster;
-    size_t host_shard_num;
-    size_t host_replica_num;
+    size_t host_shard_num = 0;
+    size_t host_replica_num = 0;
 };
 
 struct DatabaseReplicatedTask : public DDLTaskBase
@@ -136,7 +144,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 
     String getShardID() const override;
     void parseQueryFromEntry(ContextPtr context) override;
-    ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };
@@ -161,13 +169,15 @@ class ZooKeeperMetadataTransaction
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
     bool is_initial_query;
+    String task_path;
     Coordination::Requests ops;
 
 public:
-    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_)
+    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
     : current_zookeeper(current_zookeeper_)
     , zookeeper_path(zookeeper_path_)
     , is_initial_query(is_initial_query_)
+    , task_path(task_path_)
     {
     }
 
@@ -177,15 +187,21 @@ public:
 
     String getDatabaseZooKeeperPath() const { return zookeeper_path; }
 
+    String getTaskZooKeeperPath() const { return task_path; }
+
+    ZooKeeperPtr getZooKeeper() const { return current_zookeeper; }
+
     void addOp(Coordination::RequestPtr && op)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         ops.emplace_back(op);
     }
 
     void moveOpsTo(Coordination::Requests & other_ops)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -193,7 +209,7 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);

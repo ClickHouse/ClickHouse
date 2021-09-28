@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <common/defines.h>
 
 namespace DB
 {
@@ -35,9 +37,9 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
         output_stream = DataStream{.header = header};
 }
 
-QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
-    auto pipeline = std::make_unique<QueryPipeline>();
+    auto pipeline = std::make_unique<QueryPipelineBuilder>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     if (pipelines.empty())
@@ -47,7 +49,29 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const Build
         return pipeline;
     }
 
-    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
+    for (auto & cur_pipeline : pipelines)
+    {
+#if !defined(NDEBUG)
+        assertCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header, "UnionStep");
+#endif
+        /// Headers for union must be equal.
+        /// But, just in case, convert it to the same header if not.
+        if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header))
+        {
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                cur_pipeline->getHeader().getColumnsWithTypeAndName(),
+                getOutputStream().header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            cur_pipeline->addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
+            });
+        }
+    }
+
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads);
 
     processors = collector.detachProcessors();
     return pipeline;

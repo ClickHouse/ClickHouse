@@ -32,12 +32,13 @@ public:
 
     bool canReadIncompleteGranules() const override { return true; }
 
-private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
     using Serializations = std::map<std::string, SerializationPtr>;
 
+private:
     FileStreams streams;
     Serializations serializations;
+    DiskPtr disk;
 
     void addStreams(const NameAndTypePair & name_and_type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
@@ -45,6 +46,13 @@ private:
     void readData(
         const NameAndTypePair & name_and_type, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
+        ISerialization::SubstreamsCache & cache);
+
+    /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers.
+    void prefetch(
+        const NameAndTypePair & name_and_type,
+        size_t from_mark,
+        bool continue_reading,
         ISerialization::SubstreamsCache & cache);
 };
 

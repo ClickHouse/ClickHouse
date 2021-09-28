@@ -17,6 +17,8 @@ namespace Loop
     static const UInt8 STOP = 2;
 }
 
+using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
+
 class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
@@ -26,11 +28,21 @@ public:
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
 
+    /// Loop for background thread worker.
     void startLoop();
+
+    /// Loop to wait for small tasks in a non-blocking mode.
+    /// Adds synchronization with main background loop.
     void iterateLoop();
 
-    bool connectionRunning() { return connection_running.load(); }
-    bool loopRunning() { return loop_running.load(); }
+    /// Loop to wait for small tasks in a blocking mode.
+    /// No synchronization is done with the main loop thread.
+    void startBlockingLoop();
+
+    void stopLoop();
+
+    bool connectionRunning() const { return connection_running.load(); }
+    bool loopRunning() const { return loop_running.load(); }
 
     void updateLoopState(UInt8 state) { loop_state.store(state); }
     UInt8 getLoopState() { return loop_state.load(); }
@@ -43,5 +55,7 @@ private:
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
 };
+
+using RabbitMQHandlerPtr = std::shared_ptr<RabbitMQHandler>;
 
 }

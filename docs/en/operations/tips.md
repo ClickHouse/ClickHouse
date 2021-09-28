@@ -30,14 +30,6 @@ Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge Pages {#huge-pages}
-
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
-
-``` bash
-$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-```
-
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
@@ -52,7 +44,7 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We don’t recommend using LVM.
+For Linux, software RAID is better (with `mdadm`). We do not recommend using LVM.
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
@@ -90,6 +82,15 @@ If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+
+## Huge Pages {#huge-pages}
+
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+On newer Linux kernels transparent huge pages are alright.
+
+``` bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
 
 ## Hypervisor configuration
 
@@ -258,4 +259,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

@@ -1,7 +1,8 @@
 #!/usr/bin/expect -f
+# Tags: no-unbundled, no-fasttest
 
 log_user 0
-set timeout 5
+set timeout 60
 match_max 100000
 # A default timeout action is to do nothing, change it to fail
 expect_after {
@@ -11,7 +12,7 @@ expect_after {
 }
 
 set basedir [file dirname $argv0]
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
 expect ":) "
 
 # regression for heap-buffer-overflow issue (under ASAN)

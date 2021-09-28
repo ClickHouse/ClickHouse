@@ -5,7 +5,7 @@ namespace DB
 {
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 }
 

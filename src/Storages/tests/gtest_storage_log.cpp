@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -16,10 +15,13 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Chain.h>
 #include <Processors/QueryPipeline.h>
 
-#if !__clang__
+#if !defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
@@ -33,7 +35,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, false, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, String{}, false, 1048576);
 
     table->startup();
 
@@ -53,7 +55,7 @@ public:
 
     void TearDown() override
     {
-        table->shutdown();
+        table->flushAndShutdown();
         destroyDisk<T>(disk);
     }
 
@@ -100,9 +102,11 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
-    out->write(block);
-    out->writeSuffix();
+    QueryPipeline pipeline(table->write({}, metadata_snapshot, context));
+
+    PushingPipelineExecutor executor(pipeline);
+    executor.push(block);
+    executor.finish();
 
     return data;
 }
@@ -118,16 +122,16 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     SelectQueryInfo query_info;
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, query_info);
+        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
-    QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
-    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    QueryPipeline pipeline(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    PullingPipelineExecutor executor(pipeline);
 
     Block sample;
     {
         ColumnWithTypeAndName col;
         col.type = std::make_shared<DataTypeUInt64>();
+        col.name = "a";
         sample.insert(std::move(col));
     }
 
@@ -136,8 +140,12 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     WriteBufferFromOwnString out_buf;
     BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
 
-    copyData(*in, *output);
+    Block data;
+    output->writePrefix();
+    while (executor.pull(data))
+        output->write(data);
 
+    output->writeSuffix();
     output->flush();
 
     return out_buf.str();

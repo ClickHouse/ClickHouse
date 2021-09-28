@@ -1,7 +1,12 @@
 [Unit]
 Description=ClickHouse Server (analytic DBMS for big data)
 Requires=network-online.target
-After=network-online.target
+# NOTE: that After/Wants=time-sync.target is not enough, you need to ensure
+# that the time was adjusted already, if you use systemd-timesyncd you are
+# safe, but if you use ntp or some other daemon, you should configure it
+# additionaly.
+After=time-sync.target network-online.target
+Wants=time-sync.target
 
 [Service]
 Type=simple
@@ -16,4 +21,5 @@ LimitNOFILE=500000
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE
 
 [Install]
+# ClickHouse should not start from the rescue shell (rescue.target).
 WantedBy=multi-user.target

@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Core/NamesAndAliases.h>
 #include <Access/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -22,19 +22,20 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /** Allows to create new table or database,
   *  or create an object for existing table or database.
   */
-class InterpreterCreateQuery : public IInterpreter, WithContext
+class InterpreterCreateQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
+    static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
-
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
+    static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -51,9 +52,14 @@ public:
         force_attach = force_attach_;
     }
 
+    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
+    {
+        load_database_without_tables = load_database_without_tables_;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool sanity_check_compression_codecs);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
@@ -66,14 +72,14 @@ private:
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
+        ProjectionsDescription projections;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
-    BlockIO createDictionary(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties setProperties(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
@@ -93,6 +99,7 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

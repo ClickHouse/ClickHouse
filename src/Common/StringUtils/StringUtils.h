@@ -123,7 +123,7 @@ inline bool isWhitespaceASCII(char c)
 /// Since |isWhiteSpaceASCII()| is used inside algorithms it's easier to implement another function than add extra argument.
 inline bool isWhitespaceASCIIOneLine(char c)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
+    return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
 
 inline bool isControlASCII(char c)
@@ -149,7 +149,11 @@ inline bool isPunctuationASCII(char c)
 
 inline bool isValidIdentifier(const std::string_view & str)
 {
-    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+    return !str.empty()
+        && isValidIdentifierBegin(str[0])
+        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
+        /// NULL is not a valid identifier in SQL, any case.
+        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
 }
 
 /// Works assuming isAlphaASCII.
@@ -272,14 +276,30 @@ inline void trimLeft(std::string_view & str, char c = ' ')
         str.remove_prefix(1);
 }
 
+inline void trimLeft(std::string & str, char c = ' ')
+{
+    str.erase(0, str.find_first_not_of(c));
+}
+
 inline void trimRight(std::string_view & str, char c = ' ')
 {
     while (str.ends_with(c))
         str.remove_suffix(1);
 }
 
+inline void trimRight(std::string & str, char c = ' ')
+{
+    str.erase(str.find_last_not_of(c) + 1);
+}
+
 inline void trim(std::string_view & str, char c = ' ')
 {
     trimLeft(str, c);
     trimRight(str, c);
+}
+
+inline void trim(std::string & str, char c = ' ')
+{
+    trimRight(str, c);
+    trimLeft(str, c);
 }

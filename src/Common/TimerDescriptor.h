@@ -24,7 +24,8 @@ public:
 
     void reset() const;
     void drain() const;
-    void setRelative(const Poco::Timespan & timespan) const;
+    void setRelative(uint64_t usec) const;
+    void setRelative(Poco::Timespan timespan) const;
 };
 
 }

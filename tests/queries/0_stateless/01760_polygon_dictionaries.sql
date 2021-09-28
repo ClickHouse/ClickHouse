@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01760_db;
 CREATE DATABASE 01760_db;
 
@@ -65,3 +67,4 @@ SELECT tuple(inf, inf) as key, dictGet('01760_db.dict_array', 'name', key); --{s
 DROP DICTIONARY 01760_db.dict_array;
 DROP TABLE 01760_db.points;
 DROP TABLE 01760_db.polygons;
+DROP DATABASE 01760_db;

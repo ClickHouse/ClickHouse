@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -15,15 +14,15 @@ namespace DB
 class Context;
 class QueryPlan;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context_copy
+    ContextMutablePtr context_copy
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -54,10 +53,30 @@ public:
     BlockInputStreamPtr execute();
 
     /// Only changed columns.
-    const Block & getUpdatedHeader() const;
+    Block getUpdatedHeader() const;
+
+    const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
+
+    NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
+
+    NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
+
+    struct MutationKind
+    {
+        enum MutationKindEnum
+        {
+            MUTATE_UNKNOWN,
+            MUTATE_INDEX_PROJECTION,
+            MUTATE_OTHER,
+        } mutation_kind = MUTATE_UNKNOWN;
+
+        void set(const MutationKindEnum & kind);
+    };
+
+    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
 private:
     ASTPtr prepare(bool dry_run);
@@ -65,7 +84,7 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    QueryPipelineBuilderPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
@@ -125,6 +144,14 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
+
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+
+    MutationKind mutation_kind; /// Do we meet any index or projection mutation.
+
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    ColumnDependencies dependencies;
 };
 
 }

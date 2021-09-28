@@ -32,26 +32,33 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
     enablePeriodicUpdates(true);
 }
 
-
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
-    bool dictionary_from_database = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
+    bool created_from_ddl = !repository_name.empty();
+    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
+        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
+
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
@@ -67,58 +74,68 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
 
     auto load_result = getLoadResult(resolved_name);
+
+    if (load_result.object)
+    {
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
+        return dictionary->getStructure();
+    }
+
     if (!load_result.config)
-        throw Exception("Dictionary " + backQuote(dictionary_name) + " config not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
-    bool has_dictionary = has(resolved_name);
+    if (has(dictionary_name))
+        return dictionary_name;
 
-    if (!has_dictionary)
-    {
-        /// If dictionary not found. And database was not implicitly specified
-        /// we can qualify dictionary name with current database name.
-        /// It will help if dictionary is created with DDL and is in current database.
-        if (dictionary_name.find('.') == std::string::npos)
-        {
-            String dictionary_name_with_database = current_database_name + '.' + dictionary_name;
-            resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name_with_database);
-            has_dictionary = has(resolved_name);
-        }
-    }
+    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
-    if (!has_dictionary)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+    if (has(resolved_name))
+        return resolved_name;
 
-    return resolved_name;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name) const
+std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
 {
     /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
-    auto pos = name.find('.');
-    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
-        return name;
+    String res = name;
 
-    std::string maybe_database_name = name.substr(0, pos);
-    std::string maybe_table_name = name.substr(pos + 1);
+    auto qualified_name = QualifiedTableName::tryParseFromString(name);
+    if (!qualified_name)
+        return res;
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
+    if (qualified_name->database.empty())
+    {
+        /// Ether database name is not specified and we should use current one
+        /// or it's an XML dictionary.
+        bool is_xml_dictionary = has(name);
+        if (is_xml_dictionary)
+            return res;
+
+        qualified_name->database = current_database_name;
+        res = current_database_name + '.' + name;
+    }
+
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+        {qualified_name->database, qualified_name->table},
+        const_pointer_cast<Context>(getContext()));
+
     if (!db)
-        return name;
+        return res;
     assert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
-        return name;
+        return res;
     if (table->getName() != "Dictionary")
-        return name;
+        return res;
 
     return toString(table->getStorageID().uuid);
 }
@@ -126,7 +143,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 DictionaryStructure
 ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
 {
-    return {config, key_in_config};
+    return DictionaryStructure(config, key_in_config);
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)

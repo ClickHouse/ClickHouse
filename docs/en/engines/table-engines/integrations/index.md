@@ -19,3 +19,4 @@ List of supported integrations:
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
+-   [SQLite](../../../engines/table-engines/integrations/sqlite.md)

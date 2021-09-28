@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/FieldVisitors.h>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -73,40 +72,6 @@ struct WindowFrame
             && other.end_offset == end_offset
             && other.end_preceding == end_preceding
             ;
-    }
-
-    static std::string toString(FrameType type)
-    {
-        switch (type)
-        {
-            case FrameType::Rows:
-                return "ROWS";
-            case FrameType::Groups:
-                return "GROUPS";
-            case FrameType::Range:
-                return "RANGE";
-        }
-
-        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
-        assert(false);
-        return "<unknown frame>";
-    }
-
-    static std::string toString(BoundaryType type)
-    {
-        switch (type)
-        {
-            case BoundaryType::Unbounded:
-                return "UNBOUNDED";
-            case BoundaryType::Offset:
-                return "OFFSET";
-            case BoundaryType::Current:
-                return "CURRENT ROW";
-        }
-
-        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
-        assert(false);
-        return "<unknown frame boundary>";
     }
 };
 

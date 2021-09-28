@@ -17,7 +17,8 @@ public:
         int server_id_,
         const std::string & config_prefix,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings);
+        const CoordinationSettingsPtr & coordination_settings,
+        bool standalone_keeper);
 
     KeeperStateManager(
         int server_id_,
@@ -52,6 +53,11 @@ public:
         return start_as_follower_servers.count(my_server_id);
     }
 
+    bool isSecure() const
+    {
+        return secure;
+    }
+
     nuraft::ptr<KeeperLogStore> getLogStore() const { return log_store; }
 
     uint64_t getTotalServers() const { return total_servers; }
@@ -59,6 +65,7 @@ public:
 private:
     int my_server_id;
     int my_port;
+    bool secure;
     uint64_t total_servers{0};
     std::unordered_set<int> start_as_follower_servers;
     nuraft::ptr<KeeperLogStore> log_store;

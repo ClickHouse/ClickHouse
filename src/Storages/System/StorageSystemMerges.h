@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,9 +13,9 @@ namespace DB
 class Context;
 
 
-class StorageSystemMerges final : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>
+class StorageSystemMerges final : public shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemMerges>;
+    friend struct shared_ptr_helper<StorageSystemMerges>;
 public:
     std::string getName() const override { return "SystemMerges"; }
 

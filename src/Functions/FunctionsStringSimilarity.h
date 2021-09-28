@@ -5,7 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -36,6 +36,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSimilarity>(); }
 
     String getName() const override { return name; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -3,9 +3,10 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
+#include <MurmurHash2.h>
+#include <MurmurHash3.h>
+
 #if !defined(ARCADIA_BUILD)
-#    include <murmurhash2.h>
-#    include <murmurhash3.h>
 #    include "config_functions.h"
 #    include "config_core.h"
 #endif
@@ -39,12 +40,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
-#include <ext/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -190,6 +191,20 @@ struct SHA256Impl
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA256_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA512Impl
+{
+    static constexpr auto name = "SHA512";
+    enum { length = 64 };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        SHA512_CTX ctx;
+        SHA512_Init(&ctx);
+        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        SHA512_Final(out_char_data, &ctx);
     }
 };
 #endif
@@ -555,6 +570,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
@@ -618,7 +635,7 @@ private:
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+        using ColVecType = ColumnVectorOrDecimal<FromType>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
@@ -659,6 +676,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -682,6 +701,8 @@ public:
             return executeType<Int64>(arguments);
         else if (which.isDate())
             return executeType<UInt16>(arguments);
+        else if (which.isDate32())
+            return executeType<Int32>(arguments);
         else if (which.isDateTime())
             return executeType<UInt32>(arguments);
         else if (which.isDecimal32())
@@ -741,7 +762,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+        using ColVecType = ColumnVectorOrDecimal<FromType>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -754,9 +775,9 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
+                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                     else
-                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
+                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -774,9 +795,9 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             else
-                hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
+                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
 
             size_t size = vec_to.size();
             if constexpr (first)
@@ -798,7 +819,7 @@ private:
     template <typename FromType, bool first>
     void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+        using ColVecType = ColumnVectorOrDecimal<FromType>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -973,7 +994,7 @@ private:
         else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
-        else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
+        else if (which.isUInt128()) executeBigIntType<UInt128, first>(icolumn, vec_to);
         else if (which.isUInt256()) executeBigIntType<UInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
@@ -981,9 +1002,11 @@ private:
         else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
+        else if (which.isUUID()) executeBigIntType<UUID, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isDate32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
         /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
         else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
@@ -1041,6 +1064,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -1187,6 +1211,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1307,6 +1332,7 @@ using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;

@@ -6,12 +6,14 @@
 
 namespace DB
 {
+struct Settings;
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
+void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
@@ -25,6 +27,7 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
+void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory &);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory &);
@@ -45,6 +48,11 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
+void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
+void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
+void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -60,7 +68,6 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
-
 void registerAggregateFunctions()
 {
     {
@@ -70,6 +77,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionDeltaSum(factory);
+        registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
@@ -83,6 +91,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
         registerAggregateFunctionSum(factory);
+        registerAggregateFunctionSumCount(factory);
         registerAggregateFunctionSumMap(factory);
         registerAggregateFunctionsUniq(factory);
         registerAggregateFunctionUniqCombined(factory);
@@ -103,8 +112,13 @@ void registerAggregateFunctions()
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
         registerAggregateFunctionMannWhitney(factory);
+        registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
+        registerAggregateFunctionSingleValueOrNull(factory);
+        registerAggregateFunctionIntervalLengthSum(factory);
+        registerAggregateFunctionExponentialMovingAverage(factory);
+        registerAggregateFunctionSparkbar(factory);
 
         registerWindowFunctions(factory);
     }

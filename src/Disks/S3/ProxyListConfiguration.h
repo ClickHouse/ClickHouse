@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
+#if USE_AWS_S3
+
 #include <atomic> // for std::atomic<size_t>
 
 #include "ProxyConfiguration.h"
@@ -14,6 +20,7 @@ class ProxyListConfiguration : public ProxyConfiguration
 public:
     explicit ProxyListConfiguration(std::vector<Poco::URI> proxies_);
     Aws::Client::ClientConfigurationPerRequest getConfiguration(const Aws::Http::HttpRequest & request) override;
+    void errorReport(const Aws::Client::ClientConfigurationPerRequest &) override {}
 
 private:
     /// List of configured proxies.
@@ -23,3 +30,5 @@ private:
 };
 
 }
+
+#endif

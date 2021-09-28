@@ -4,17 +4,20 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Core/Names.h>
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/isLocalAddress.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -25,12 +28,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
+
 /// There are a lot of code, but it's very simple and straightforward
-/// We just convert
+/// We just perform conversion.
 namespace
 {
 
 using NamesToTypeNames = std::unordered_map<std::string, std::string>;
+
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String getFieldAsString(const Field & field)
@@ -43,8 +48,8 @@ String getFieldAsString(const Field & field)
 
 using namespace Poco;
 using namespace Poco::XML;
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  LIFETIME(MIN 10, MAX 100)
  * to the next configuration
  *  <lifetime>
@@ -73,8 +78,7 @@ void buildLifetimeConfiguration(
     }
 }
 
-/*
- * Transforms next definition
+/* Transforms next definition
  *  LAYOUT(FLAT())
  * to the next configuration
  *  <layout>
@@ -101,6 +105,7 @@ void buildLayoutConfiguration(
     layout_element->appendChild(layout_type_element);
 
     if (layout->parameters)
+    {
         for (const auto & param : layout->parameters->children)
         {
             const ASTPair * pair = param->as<ASTPair>();
@@ -133,10 +138,11 @@ void buildLayoutConfiguration(
             layout_type_parameter_element->appendChild(value_to_append);
             layout_type_element->appendChild(layout_type_parameter_element);
         }
+    }
 }
 
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  RANGE(MIN StartDate, MAX EndDate)
  * to the next configuration
  *  <range_min><name>StartDate</name></range_min>
@@ -161,6 +167,13 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         root->appendChild(element);
     };
 
+    if (!all_attrs.count(range->min_attr_name))
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MIN ({}) attribute is not defined in the dictionary attributes", range->min_attr_name);
+    if (!all_attrs.count(range->max_attr_name))
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MAX ({}) attribute is not defined in the dictionary attributes", range->max_attr_name);
+
     append_element("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
     append_element("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
 }
@@ -172,9 +185,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (size_t index = 0; index != children.size(); ++index)
+    for (const auto & child : children)
     {
-        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -206,8 +219,7 @@ void buildAttributeExpressionIfNeeded(
     }
 }
 
-/**
-  * Transofrms single dictionary attribute to configuration
+/** Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -271,8 +283,7 @@ void buildSingleAttribute(
 }
 
 
-/**
-  * Transforms
+/** Transforms
   *   PRIMARY KEY Attr1 ,..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
@@ -307,7 +318,22 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> name_element(doc->createElement("name"));
         id_element->appendChild(name_element);
 
-        const ASTDictionaryAttributeDeclaration * dict_attr = children.front()->as<const ASTDictionaryAttributeDeclaration>();
+        auto identifier_name = key_names.front();
+
+        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
+        {
+            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+            return dict_attr->name == identifier_name;
+        });
+
+        if (it == children.end())
+        {
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                "Primary key field '{}' not found among attributes",
+                identifier_name);
+        }
+
+        const ASTDictionaryAttributeDeclaration * dict_attr = (*it)->as<const ASTDictionaryAttributeDeclaration>();
 
         AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
         name_element->appendChild(name);
@@ -344,8 +370,7 @@ void buildPrimaryKeyConfiguration(
 }
 
 
-/**
-  * Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
+/** Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
 NamesToTypeNames buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
@@ -378,9 +403,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (size_t i = 0; i != children.size(); ++i)
+    for (const auto & child : children)
     {
-        const ASTPair * pair = children[i]->as<const ASTPair>();
+        const ASTPair * pair = child->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
@@ -472,9 +497,6 @@ void checkAST(const ASTCreateQuery & query)
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
 
-    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
-
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
 
@@ -488,8 +510,6 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
-
-    /// Range can be empty
 }
 
 void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
@@ -555,6 +575,30 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     conf->load(xml_document);
     return conf;
+}
+
+std::optional<ClickHouseDictionarySourceInfo>
+getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context)
+{
+    ClickHouseDictionarySourceInfo info;
+
+    String host = config->getString("dictionary.source.clickhouse.host", "");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
+    String database = config->getString("dictionary.source.clickhouse.db", "");
+    String table = config->getString("dictionary.source.clickhouse.table", "");
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
+
+    if (host.empty() || port == 0 || table.empty())
+        return {};
+
+    info.table_name = {database, table};
+
+    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+    if (!isLocalAddress({host, port}, default_port))
+        return info;
+
+    info.is_local = true;
+    return info;
 }
 
 }

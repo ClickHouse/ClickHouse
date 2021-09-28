@@ -1,11 +1,14 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -167,8 +170,8 @@ struct ConfigReloader::FileWithTimestamp
 
 void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path_to_add)
 {
-    if (!path_to_add.empty() && Poco::File(path_to_add).exists())
-        files.emplace(path_to_add, Poco::File(path_to_add).getLastModified().epochTime());
+    if (!path_to_add.empty() && fs::exists(path_to_add))
+        files.emplace(path_to_add, FS::getModificationTime(path_to_add));
 }
 
 bool ConfigReloader::FilesChangesTracker::isDifferOrNewerThan(const FilesChangesTracker & rhs)

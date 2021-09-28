@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.5.1.*
+ARG version=21.11.1.*
 ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
@@ -25,6 +25,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
@@ -64,6 +66,8 @@ RUN groupadd -r clickhouse --gid=101 \
                 clickhouse-client=$version \
                 clickhouse-server=$version ; \
        fi \
+    && wget --progress=bar:force:noscroll "https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-$(dpkg --print-architecture)" -O /bin/gosu \
+    && chmod +x /bin/gosu \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -76,8 +80,6 @@ RUN groupadd -r clickhouse --gid=101 \
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
 
-ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
-
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
@@ -88,10 +90,7 @@ RUN mkdir /docker-entrypoint-initdb.d
 
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
-
-RUN chmod +x \
-    /entrypoint.sh \
-    /bin/gosu
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse

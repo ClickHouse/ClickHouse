@@ -7,21 +7,97 @@ toc_title: Arrays
 
 ## empty {#function-empty}
 
-Returns 1 for an empty array, or 0 for a non-empty array.
-The result type is UInt8.
-The function also works for strings.
+Checks whether the input array is empty.
+
+**Syntax**
+
+``` sql
+empty([x])
+```
+
+An array is considered empty if it does not contain any elements.
+
+!!! note "Note"
+    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+
+The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
+
+**Arguments**
+
+-   `[x]` — Input array. [Array](../data-types/array.md).
+
+**Returned value**
+
+-   Returns `1` for an empty array or `0` for a non-empty array.
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT empty([]);
+```
+
+Result:
+
+```text
+┌─empty(array())─┐
+│              1 │
+└────────────────┘
+```
 
 ## notEmpty {#function-notempty}
 
-Returns 0 for an empty array, or 1 for a non-empty array.
-The result type is UInt8.
-The function also works for strings.
+Checks whether the input array is non-empty.
+
+**Syntax**
+
+``` sql
+notEmpty([x])
+```
+
+An array is considered non-empty if it contains at least one element.
+
+!!! note "Note"
+    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+
+The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
+
+**Arguments**
+
+-   `[x]` — Input array. [Array](../data-types/array.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty array or `0` for an empty array.
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT notEmpty([1,2]);
+```
+
+Result:
+
+```text
+┌─notEmpty([1, 2])─┐
+│                1 │
+└──────────────────┘
+```
 
 ## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -39,13 +115,44 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end), range(start, end \[, step\]) {#rangeend-rangestart-end-step}
 
-Returns an array of numbers from start to end-1 by step.
-If the argument `start` is not specified, defaults to 0.
-If the argument `step` is not specified, defaults to 1.
-It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
-Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
+## range(end), range(\[start, \] end \[, step\]) {#range}
+
+Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
+
+**Syntax**
+``` sql
+range([start, ] end [, step])
+```
+
+**Arguments**
+
+-   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
+-   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
+-   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
+
+**Returned value**
+
+-   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+
+**Implementation details**
+
+-   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
+-   An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+
+
+**Examples**
+
+Query:
+``` sql
+SELECT range(5), range(1, 5), range(1, 5, 2);
+```
+Result:
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
+```
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
@@ -125,7 +232,7 @@ hasAll(set, subset)
 
 -   An empty array is a subset of any array.
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -162,7 +269,7 @@ hasAny(array1, array2)
 **Peculiar properties**
 
 -   `Null` processed as a value.
--   Order of values in both of arrays doesn’t matter.
+-   Order of values in both of arrays does not matter.
 
 **Examples**
 
@@ -602,7 +709,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, actual values of the source array don’t affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
 
 Other examples are shown below.
 
@@ -753,13 +860,13 @@ arrayDifference(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
 Returns an array of differences between adjacent elements.
 
-Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.tech/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 **Example**
 
@@ -805,7 +912,7 @@ arrayDistinct(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -845,7 +952,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
+Takes multiple arrays, returns an array with elements that are present in all source arrays.
 
 Example:
 
@@ -1544,3 +1651,52 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
+## arrayProduct {#arrayproduct}
+
+Multiplies elements of an [array](../../sql-reference/data-types/array.md).
+
+**Syntax**
+
+``` sql
+arrayProduct(arr)
+```
+
+**Arguments**
+
+-   `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
+
+**Returned value**
+
+-   A product of array's elements.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayProduct([1,2,3,4,5,6]) as res;
+```
+
+Result:
+
+``` text
+┌─res───┐
+│ 720   │
+└───────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
+```
+
+Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
+
+``` text
+┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
+│ 6   │ Float64                                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
+```

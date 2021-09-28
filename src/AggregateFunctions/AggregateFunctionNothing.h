@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
