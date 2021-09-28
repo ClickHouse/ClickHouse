@@ -1050,7 +1050,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(interval)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to URL:{}".format(errors))
         raise Exception("Cannot wait URL {}(interval={}, timeout={}, attempts={})".format(
             url, interval, timeout, attempts))
@@ -1434,6 +1434,7 @@ class ClickHouseCluster:
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
                 for command in self.pre_zookeeper_commands:
@@ -1459,6 +1460,7 @@ class ClickHouseCluster:
                         shutil.copy(os.path.join(HELPERS_DIR, f'keeper_config{i}.xml'), os.path.join(self.keeper_instance_dir_prefix + f"{i}", "config" ))
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                self.up_called = True
 
                 self.wait_zookeeper_to_start()
                 for command in self.pre_zookeeper_commands:
@@ -1476,6 +1478,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
+                self.up_called = True
                 self.wait_mysql_to_start()
 
             if self.with_mysql8 and self.base_mysql8_cmd:
@@ -1495,6 +1498,7 @@ class ClickHouseCluster:
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
             if self.with_postgres and self.base_postgres_cmd:
@@ -1505,6 +1509,7 @@ class ClickHouseCluster:
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
                 self.wait_postgres_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
@@ -1516,17 +1521,20 @@ class ClickHouseCluster:
                 os.makedirs(self.postgres4_logs_dir)
                 os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start()
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug('Setup kerberized kafka')
                 run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.wait_kafka_is_available(self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
@@ -1536,6 +1544,7 @@ class ClickHouseCluster:
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    self.up_called = True
                     self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
                     logging.debug(f"RabbitMQ checking container try: {i}")
                     if self.wait_rabbitmq_to_start(throw=(i==4)):
@@ -1546,6 +1555,7 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_logs_dir)
                 os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.up_called = True
                 self.make_hdfs_api()
                 self.wait_hdfs_to_start()
 
@@ -1554,23 +1564,27 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_kerberized_logs_dir)
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
+                self.up_called = True
                 self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(check_marker=True)
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug('Setup nginx')
                 subprocess_check_call(self.base_nginx_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.nginx_docker_id = self.get_instance_docker_id('nginx')
                 self.wait_nginx_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
                 run_and_check(self.base_mongo_cmd + common_opts)
+                self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug('Setup Redis')
                 subprocess_check_call(self.base_redis_cmd + common_opts)
+                self.up_called = True
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
@@ -1585,11 +1599,13 @@ class ClickHouseCluster:
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
                 run_and_check(minio_start_cmd)
+                self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
+                self.up_called = True
                 self.wait_cassandra_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
@@ -1597,6 +1613,7 @@ class ClickHouseCluster:
                 os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
+                self.up_called = True
                 self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
                 self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
 
@@ -1668,6 +1685,8 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
             except Exception as e:
                 logging.debug("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
+        else:
+            logging.warning("docker-compose up was not called. Trying to export docker.log for running containers")
 
         self.cleanup()
 
@@ -1750,6 +1769,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
 
 CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
+# /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
 services:
@@ -1761,6 +1781,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /run/xtables.lock:/run/xtables.lock:ro
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
