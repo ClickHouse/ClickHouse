@@ -29,7 +29,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。
 
-你也可以从这里手动下载安装包：[下载](https://repo.clickhouse.tech/deb/stable/main/)。
+你也可以从这里手动下载安装包：[下载](https://repo.clickhouse.com/deb/stable/main/)。
 
 安装包列表：
 
@@ -46,8 +46,8 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/stable/x86_64
 ```
 
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。`prestable`有时也可用。
@@ -58,22 +58,22 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-你也可以从这里手动下载安装包：[下载](https://repo.clickhouse.tech/rpm/stable/x86_64)。
+你也可以从这里手动下载安装包：[下载](https://repo.clickhouse.com/rpm/stable/x86_64)。
 
 ### `Tgz`安装包 {#from-tgz-archives}
 
 如果您的操作系统不支持安装`deb`或`rpm`包，建议使用官方预编译的`tgz`软件包。
 
-所需的版本可以通过`curl`或`wget`从存储库`https://repo.clickhouse.tech/tgz/`下载。
+所需的版本可以通过`curl`或`wget`从存储库`https://repo.clickhouse.com/tgz/`下载。
 
 下载后解压缩下载资源文件并使用安装脚本进行安装。以下是一个最新版本的安装示例:
 
 ``` bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
