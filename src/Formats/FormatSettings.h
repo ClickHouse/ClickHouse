@@ -184,7 +184,7 @@ struct FormatSettings
         bool import_nested = false;
     } orc;
 
-    /// For apnProto format we should determine how to
+    /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
     enum class EnumComparingMode
     {
