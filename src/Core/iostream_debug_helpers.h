@@ -10,9 +10,6 @@ class Field;
 template <typename T, typename U = std::enable_if_t<std::is_same_v<T, Field>>>
 std::ostream & operator<<(std::ostream & stream, const T & what);
 
-class IBlockInputStream;
-std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
-
 struct NameAndTypePair;
 std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);
 

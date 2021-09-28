@@ -27,7 +27,6 @@ CLANG_SOURCES_BRANCH=trunk          # or tags/RELEASE_600/final
 GCC_SOURCES_VERSION=latest          # or gcc-7.1.0
 
 # install-libraries
-USE_LLVM_LIBRARIES_FROM_SYSTEM=0    # 0 or 1
 ENABLE_EMBEDDED_COMPILER=1
 
 # build

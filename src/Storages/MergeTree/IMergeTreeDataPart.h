@@ -1,8 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -16,8 +13,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <Poco/Path.h>
 
 #include <shared_mutex>
 
@@ -44,11 +39,6 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
-
-namespace ErrorCodes
-{
-}
-
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
@@ -74,14 +64,16 @@ public:
         const MergeTreePartInfo & info_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -131,7 +123,9 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove(bool keep_s3 = false) const;
+    void remove() const;
+
+    void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -200,18 +194,21 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// Flag for keep S3 data when zero-copy replication over S3 turned on.
+    mutable bool force_keep_shared_data = false;
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:    we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:   we successfully committed a part to active dataset
-     * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:        a cleaner selected this part for deletion
-     * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Committed -> DeleteOnDestroy if part was moved to another disk
+     * Temporary -> Precommitted:    we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:     we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * Precommitted -> Committed:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:     a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:         a cleaner selected this part for deletion
+     * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Committed -> DeleteOnDestroy: if part was moved to another disk
      */
     enum class State
     {
@@ -232,14 +229,10 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    /// Returns name of state
-    static String stateToString(State state);
-    String stateString() const;
+    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
+    constexpr std::string_view stateString() const { return stateString(state); }
 
-    String getNameWithState() const
-    {
-        return name + " (state " + stateString() + ")";
-    }
+    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
@@ -295,7 +288,9 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    MinMaxIndex minmax_idx;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 
@@ -350,8 +345,25 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+    bool isProjectionPart() const { return parent_part != nullptr; }
 
-    /// Return set of metadat file names without checksums. For example,
+    const IMergeTreeDataPart * getParentPart() const { return parent_part; }
+
+    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
+
+    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
+    {
+        projection_parts.emplace(projection_name, std::move(projection_part));
+    }
+
+    bool hasProjection(const String & projection_name) const
+    {
+        return projection_parts.find(projection_name) != projection_parts.end();
+    }
+
+    void loadProjections(bool require_columns_checksums, bool check_consistency);
+
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
@@ -392,6 +404,11 @@ protected:
     NamesAndTypesList columns;
     const Type part_type;
 
+    /// Not null when it's a projection part.
+    const IMergeTreeDataPart * parent_part;
+
+    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+
     void removeIfNeeded();
 
     virtual void checkConsistency(bool require_part_metadata) const;
@@ -402,6 +419,8 @@ protected:
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     String getRelativePathForDetachedPart(const String & prefix) const;
+
+    std::optional<bool> keepSharedDataInDecoupledStorage() const;
 
 private:
     /// In compact parts order of columns is necessary

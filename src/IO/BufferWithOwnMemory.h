@@ -48,18 +48,22 @@ struct Memory : boost::noncopyable, Allocator
         dealloc();
     }
 
-    Memory(Memory && rhs) noexcept
-    {
-        *this = std::move(rhs);
-    }
-
-    Memory & operator=(Memory && rhs) noexcept
+    void swap(Memory & rhs) noexcept
     {
         std::swap(m_capacity, rhs.m_capacity);
         std::swap(m_size, rhs.m_size);
         std::swap(m_data, rhs.m_data);
         std::swap(alignment, rhs.alignment);
+    }
 
+    Memory(Memory && rhs) noexcept
+    {
+        swap(rhs);
+    }
+
+    Memory & operator=(Memory && rhs) noexcept
+    {
+        swap(rhs);
         return *this;
     }
 

@@ -10,6 +10,8 @@ The list of available `SYSTEM` statements:
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [RELOAD MODELS](#query_language-system-reload-models)
+-   [RELOAD MODEL](#query_language-system-reload-model)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -36,6 +38,7 @@ The list of available `SYSTEM` statements:
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTORE REPLICA](#query_language-system-restore-replica)
 -   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES {#query_language-system-reload-emdedded-dictionaries}
@@ -58,6 +61,26 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 
 ``` sql
 SELECT name, status FROM system.dictionaries;
+```
+
+## RELOAD MODELS {#query_language-system-reload-models}
+
+Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server.
+
+**Syntax**
+
+```sql
+SYSTEM RELOAD MODELS
+```
+
+## RELOAD MODEL {#query_language-system-reload-model}
+
+Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
+
+**Syntax**
+
+```sql
+SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -96,7 +119,7 @@ For manage uncompressed data cache parameters use following server level setting
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
 Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Complied expression cache used when query/user/profile enable option [compile](../../operations/settings/settings.md#compile)
+Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
@@ -169,7 +192,7 @@ SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
 
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table doesn’t exist or table has not MergeTree engine. Returns error when database doesn’t exist:
+Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
 ``` sql
 SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
@@ -178,7 +201,7 @@ SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ### START TTL MERGES {#query_language-start-ttl-merges}
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
+Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
 SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
@@ -187,7 +210,7 @@ SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ### STOP MOVES {#query_language-stop-moves}
 
 Provides possibility to stop background move data according to [TTL table expression with TO VOLUME or TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
+Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
@@ -196,10 +219,10 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ### START MOVES {#query_language-start-moves}
 
 Provides possibility to start background move data according to [TTL table expression with TO VOLUME and TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
+Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
-SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
@@ -209,7 +232,7 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 ### STOP FETCHES {#query_language-system-stop-fetches}
 
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
+Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
 ``` sql
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -218,7 +241,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ### START FETCHES {#query_language-system-start-fetches}
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
+Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -264,17 +287,68 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from
-the common replicated log into its own replication queue, and then the query waits till the replica processes all
-of the fetched commands.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
-Initialization replication quene based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
+Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed.
+Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+### RESTORE REPLICA {#query_language-system-restore-replica}
+
+Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
+
+Works only on readonly `ReplicatedMergeTree` tables.
+
+One may execute query after:
+
+  - ZooKeeper root `/` loss.
+  - Replicas path `/replicas` loss.
+  - Individual replica path `/replicas/replica_name/` loss.
+
+Replica attaches locally found parts and sends info about them to Zookeeper.
+Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
+
+!!! warning "Warning"
+    Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
+
+**Syntax**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+Alternative syntax:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**Example**
+
+Creating a table on multiple servers. After the replica's metadata in ZooKeeper is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+Another way:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}

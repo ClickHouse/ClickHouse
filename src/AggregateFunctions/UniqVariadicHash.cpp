@@ -5,6 +5,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /// If some arguments are not contiguous, we cannot use simple hash function,
 ///  because it requires method IColumn::getDataAt to work.

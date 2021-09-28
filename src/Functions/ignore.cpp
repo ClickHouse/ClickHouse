@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -30,6 +30,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// We should never return LowCardinality result, cause we declare that result is always constant zero.
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
@@ -48,11 +49,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
-    }
-
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
-    {
-        return DataTypeUInt8().createColumnConst(1, 0u);
     }
 };
 

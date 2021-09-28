@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <utility>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -17,13 +18,37 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
+using MergeTreeIndexVersion = uint8_t;
+struct MergeTreeIndexFormat
+{
+    MergeTreeIndexVersion version;
+    const char* extension;
+
+    operator bool() const { return version != 0; }
+};
+
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
     virtual ~IMergeTreeIndexGranule() = default;
 
+    /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(ReadBuffer & istr) = 0;
+
+    /// Version of the index to deserialize:
+    ///
+    /// - 2 -- minmax index for proper Nullable support,
+    /// - 1 -- everything else.
+    ///
+    /// Implementation is responsible for version check,
+    /// and throw LOGICAL_ERROR in case of unsupported version.
+    ///
+    /// See also:
+    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getDeserializedFormat()
+    /// - MergeTreeDataMergerMutator::collectFilesToSkip()
+    /// - MergeTreeDataMergerMutator::collectFilesForRenames()
+    virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
 };
@@ -73,8 +98,25 @@ struct IMergeTreeIndex
 
     virtual ~IMergeTreeIndex() = default;
 
-    /// gets filename without extension
+    /// Returns filename without extension.
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
+
+    /// Returns extension for serialization.
+    /// Reimplement if you want new index format.
+    ///
+    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// getDeserializedFormat() should be reimplemented too,
+    /// and check all previous extensions too
+    /// (to avoid breaking backward compatibility).
+    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+
+    /// Returns extension for deserialization.
+    ///
+    /// Return pair<extension, version>.
+    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr, const std::string & /* relative_path_prefix */) const
+    {
+        return {1, ".idx"};
+    }
 
     /// Checks whether the column is in data skipping index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;

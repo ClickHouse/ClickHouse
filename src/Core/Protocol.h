@@ -76,8 +76,10 @@ namespace Protocol
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
             PartUUIDs = 12,           /// List of unique parts ids.
-
-            MAX = PartUUIDs,
+            ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
+                                      /// This is such an inverted logic, where server sends requests
+                                      /// And client returns back response
+            MAX = ReadTaskRequest,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -100,6 +102,7 @@ namespace Protocol
                 "Log",
                 "TableColumns",
                 "PartUUIDs",
+                "ReadTaskRequest"
             };
             return packet <= MAX
                 ? data[packet]
@@ -135,8 +138,9 @@ namespace Protocol
             KeepAlive = 6,           /// Keep the connection alive
             Scalar = 7,              /// A block of data (compressed or not).
             IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
+            ReadTaskResponse = 9,     /// TODO:
 
-            MAX = IgnoredPartUUIDs,
+            MAX = ReadTaskResponse,
         };
 
         inline const char * toString(UInt64 packet)
@@ -151,6 +155,7 @@ namespace Protocol
                 "KeepAlive",
                 "Scalar",
                 "IgnoredPartUUIDs",
+                "ReadTaskResponse",
             };
             return packet <= MAX
                 ? data[packet]

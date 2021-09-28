@@ -2,7 +2,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Core/SortCursor.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 
 namespace DB
 {
@@ -93,7 +93,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
         if (!states[i].isValid() || i == *best_input)
             continue;
 
-        auto indices = ext::range(states[i].current_row, states[i].num_rows);
+        auto indices = collections::range(states[i].current_row, states[i].num_rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), best_state.num_rows - 1,
             [&](size_t lhs_pos, size_t rhs_pos)
             {

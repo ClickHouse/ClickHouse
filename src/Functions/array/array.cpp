@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -23,6 +23,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

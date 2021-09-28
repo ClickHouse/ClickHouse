@@ -1,6 +1,5 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -27,6 +26,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -38,6 +39,8 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -186,9 +189,11 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
                 /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
+
                 if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
-                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type of set. Expected tuple, got {}",
+                        function_result.getTypeName());
 
                 tuple = &function_result.get<Tuple>();
             }
@@ -199,13 +204,16 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             {
                 /// The literal must be tuple.
                 if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type in set. Expected tuple, got "
-                        + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type in set. Expected tuple, got {}",
+                        literal->value.getTypeName());
 
                 tuple = &literal->value.get<Tuple>();
             }
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
+            assert(tuple || func);
+
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
                 throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -373,8 +381,8 @@ SetPtr makeExplicitSet(
 
     SetPtr set
         = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty());
-    set->insertFromBlock(block);
+    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+    set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
     prepared_sets[set_key] = set;
@@ -602,6 +610,7 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
     /// Visit children themself
     if (node->as<ASTIdentifier>() ||
+        node->as<ASTTableIdentifier>() ||
         node->as<ASTFunction>() ||
         node->as<ASTLiteral>() ||
         node->as<ASTExpressionList>())
@@ -619,6 +628,8 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
+    else if (const auto * table = ast->as<ASTTableIdentifier>())
+        visit(*table, ast, data);
     else if (const auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
     else if (const auto * literal = ast->as<ASTLiteral>())
@@ -650,7 +661,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
+        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
                         ErrorCodes::UNKNOWN_IDENTIFIER);
 
     return {};
@@ -682,7 +693,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    for (const auto & name : tuple_type->getElementNames())
+    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
         if (tid != 0)
@@ -692,11 +703,6 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-
-        if (tuple_type->haveExplicitNames())
-            func->setAlias(name);
-        else
-            func->setAlias(data.getUniqueName("_ut_" + name));
 
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
@@ -734,9 +740,10 @@ void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, 
     }
 }
 
-void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data)
+void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Data & data)
 {
-    auto column_name = ast->getColumnName();
+
+    auto column_name = identifier.getColumnName();
     if (data.hasColumn(column_name))
         return;
 
@@ -811,6 +818,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    /// A special function `indexHint`. Everything that is inside it is not calculated
+    if (node.name == "indexHint")
+    {
+        // Arguments are removed. We add function instead of constant column to avoid constant folding.
+        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        return;
+    }
+
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
@@ -843,17 +858,21 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    FunctionOverloadResolverPtr function_builder;
-    try
+    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+
+    if (!function_builder)
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.getContext());
-    }
-    catch (Exception & e)
-    {
-        auto hints = AggregateFunctionFactory::instance().getHints(node.name);
-        if (!hints.empty())
-            e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
-        throw;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+        }
+        catch (Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node.name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
+            throw;
+        }
     }
 
     Names argument_names;
@@ -871,7 +890,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             auto & child = node.arguments->children[arg];
 
             const auto * function = child->as<ASTFunction>();
-            const auto * identifier = child->as<ASTIdentifier>();
+            const auto * identifier = child->as<ASTTableIdentifier>();
             if (function && function->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
@@ -940,7 +959,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
-                auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+                auto table_id = identifier->getTableId();
                 table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
@@ -1005,7 +1024,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
                         lambda_dag,
-                        ExpressionActionsSettings::fromContext(data.getContext()));
+                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -1019,10 +1038,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
-                    auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
+                    auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                    data.addFunction(function_capture_adapter, captured, lambda_name);
+                    data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;
@@ -1112,7 +1130,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     const ASTPtr & right_in_operand = args.children.at(1);
 
     /// If the subquery or table name for SELECT.
-    const auto * identifier = right_in_operand->as<ASTIdentifier>();
+    const auto * identifier = right_in_operand->as<ASTTableIdentifier>();
     if (right_in_operand->as<ASTSubquery>() || identifier)
     {
         if (no_subqueries)

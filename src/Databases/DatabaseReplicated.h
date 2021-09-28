@@ -40,10 +40,6 @@ public:
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
-    void createDictionary(ContextPtr context,
-                          const String & dictionary_name,
-                          const ASTPtr & query) override;
-    void removeDictionary(ContextPtr context, const String & dictionary_name) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const override;
 
@@ -61,7 +57,12 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+
+    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+
     void shutdown() override;
 
     friend struct DatabaseReplicatedTask;
@@ -82,7 +83,7 @@ private:
     ClusterPtr getClusterImpl() const;
     void setCluster(ClusterPtr && new_cluster);
 
-    void createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper);
+    void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
     String zookeeper_path;
     String shard_name;

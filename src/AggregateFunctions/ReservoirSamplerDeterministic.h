@@ -16,6 +16,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -30,6 +32,8 @@ namespace ErrorCodes
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -55,9 +59,10 @@ template <typename T,
     ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
-    bool good(const UInt32 hash)
+private:
+    bool good(UInt32 hash) const
     {
-        return !(hash & skip_mask);
+        return (hash & skip_mask) == 0;
     }
 
 public:
@@ -73,15 +78,12 @@ public:
         total_values = 0;
     }
 
-    void insert(const T & v, const UInt64 determinator)
+    void insert(const T & v, UInt64 determinator)
     {
         if (isNaN(v))
             return;
 
-        const UInt32 hash = intHash64(determinator);
-        if (!good(hash))
-            return;
-
+        UInt32 hash = intHash64(determinator);
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -140,8 +142,7 @@ public:
             setSkipDegree(b.skip_degree);
 
         for (const auto & sample : b.samples)
-            if (good(sample.second))
-                insertImpl(sample.first, sample.second);
+            insertImpl(sample.first, sample.second);
 
         total_values += b.total_values;
     }
@@ -163,7 +164,7 @@ public:
         sorted = false;
     }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
@@ -191,7 +192,7 @@ public:
         }
     }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -216,9 +217,18 @@ private:
 
     void insertImpl(const T & v, const UInt32 hash)
     {
+        if (!good(hash))
+            return;
+
         /// Make a room for plus one element.
         while (samples.size() >= max_sample_size)
+        {
             setSkipDegree(skip_degree + 1);
+
+            /// Still good?
+            if (!good(hash))
+                return;
+        }
 
         samples.emplace_back(v, hash);
     }

@@ -73,8 +73,7 @@ void testCreateList(zkutil::ZooKeeper & zk)
 void testCreateSetVersionRequest(zkutil::ZooKeeper & zk)
 {
     zk.create("/data/check_data", "d", zkutil::CreateMode::Persistent);
-    Coordination::Stat stat;
-    std::string result = zk.get("/data/check_data", &stat);
+    Coordination::Stat stat{};
     try
     {
         zk.set("/data/check_data", "e", stat.version + 2);
@@ -224,7 +223,7 @@ std::string random_string(size_t length)
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";
         const size_t max_index = (sizeof(charset) - 1);
-        return charset[rand() % max_index];
+        return charset[rand() % max_index]; /// NOLINT
     };
     std::string str(length, 0);
     std::generate_n(str.begin(), length, randchar);
@@ -259,9 +258,9 @@ void createOnPrefix(const std::string & zkhost, const String & path_prefix, size
             holder_futures.push_back(zk.asyncCreate(path, random_string(datasize), zkutil::CreateMode::Persistent));
         }
 
-        for (size_t i = 0; i < holder_futures.size(); ++i)
-            holder_futures[i].get();
-        }
+        for (auto & future : holder_futures)
+            future.get();
+    }
     catch (...)
     {
         ::exit(-1);

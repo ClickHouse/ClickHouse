@@ -26,8 +26,8 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void FunctionFactory::registerFunction(const
-    std::string & name,
+void FunctionFactory::registerFunction(
+    const std::string & name,
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
@@ -50,7 +50,7 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
+FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
     ContextPtr context) const
 {
@@ -84,15 +84,15 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     ContextPtr context) const
 {
-    return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
+    return getImpl(name, context);
 }
 
-FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
+FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
-    FunctionOverloadResolverImplPtr res;
+    FunctionOverloadResolverPtr res;
 
     auto it = functions.find(name);
     if (functions.end() != it)
@@ -119,12 +119,11 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
-        const std::string & name,
-        ContextPtr context) const
+    const std::string & name,
+    ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
-    return impl ? std::make_shared<FunctionOverloadResolverAdaptor>(std::move(impl))
-                : nullptr;
+    return impl ? std::move(impl) : nullptr;
 }
 
 FunctionFactory & FunctionFactory::instance()

@@ -11,7 +11,7 @@ class StorageProxy : public IStorage
 {
 public:
 
-    StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
+    explicit StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
 
     virtual StoragePtr getNested() const = 0;
 
@@ -32,12 +32,15 @@ public:
     NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & ast) const override
+        ContextPtr context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageMetadataPtr &,
+        SelectQueryInfo & info) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, ast);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -60,7 +63,7 @@ public:
         return getNested()->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
         return getNested()->write(query, metadata_snapshot, context);
     }
@@ -130,6 +133,7 @@ public:
 
     void startup() override { getNested()->startup(); }
     void shutdown() override { getNested()->shutdown(); }
+    void flush() override { getNested()->flush(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 

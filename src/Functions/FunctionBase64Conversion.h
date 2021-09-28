@@ -76,6 +76,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override
     {
         return true;
@@ -146,7 +148,7 @@ public:
                     if (!outlen)
                     {
                         outlen = 0;
-                        dst_pos = savepoint;
+                        dst_pos = savepoint; //-V1048
                         // clean the symbol
                         dst_pos[0] = 0;
                     }

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -29,6 +30,8 @@ issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
 issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
 issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
 issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
+issue_25413 = "https://github.com/ClickHouse/ClickHouse/issues/25413"
+issue_26746 = "https://github.com/ClickHouse/ClickHouse/issues/26746"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -137,6 +140,26 @@ xfails = {
         [(Fail, issue_21083)],
     "privileges/: row policy/nested mat:":
         [(Fail, issue_21084)],
+    "privileges/show dictionaries/:/check privilege/check privilege=SHOW DICTIONARIES/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=CREATE DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/kill mutation/:/:/KILL ALTER : without privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked privilege":
+        [(Fail, issue_25413)],
+    "privileges/kill mutation/:/:/KILL ALTER : with revoked ALL privilege":
+        [(Fail, issue_25413)],
+    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted directly":
+        [(Fail, issue_26746)],
+    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted through a role":
+        [(Fail, issue_26746)],
+    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted directly":
+        [(Fail, issue_26746)],
+    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted through a role":
+        [(Fail, issue_26746)]
 }
 
 xflags = {
@@ -155,16 +178,20 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """RBAC regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "rbac_env")) as cluster:
+        self.context.cluster = cluster
 
         Feature(run=load("rbac.tests.syntax.feature", "feature"))
         Feature(run=load("rbac.tests.privileges.feature", "feature"))

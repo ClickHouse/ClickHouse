@@ -14,21 +14,23 @@ namespace DB
 {
 
 class ASTSelectQuery;
-class ASTIdentifier;
+class ASTTableIdentifier;
 struct ASTTableExpression;
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
 {
+    // TODO(ilezhankin): replace with ASTTableIdentifier
     String database;
     String table;
     String alias;
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;
@@ -59,7 +61,7 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    bool hasColumn(const String & name) const { return names.count(name); }
+    bool hasColumn(const String & name) const { return names.contains(name); }
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
@@ -80,12 +82,10 @@ private:
     void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
     {
         target.insert(target.end(), addition.begin(), addition.end());
-        for (auto & col : addition)
+        for (const auto & col : addition)
             names.insert(col.name);
     }
 
-
-private:
     NameSet names;
 };
 

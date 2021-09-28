@@ -1,4 +1,7 @@
 #include <sys/ioctl.h>
+#if defined(OS_SUNOS)
+#  include <sys/termios.h>
+#endif
 #include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>

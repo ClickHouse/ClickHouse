@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -15,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -24,13 +27,14 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    ExpressionActionsSettings actions_settings,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
+    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -40,12 +44,30 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , reader_settings(reader_settings_)
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
+    , partition_value_type(storage.getPartitionValueType())
 {
     header_without_virtual_columns = getPort().getHeader();
 
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
         if (header_without_virtual_columns.has(*it))
             header_without_virtual_columns.erase(*it);
+
+    if (prewhere_info)
+    {
+        prewhere_actions = std::make_unique<PrewhereExprInfo>();
+        if (prewhere_info->alias_actions)
+            prewhere_actions->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, actions_settings);
+
+        if (prewhere_info->row_level_filter)
+            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
+
+        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
+
+        prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
+        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
+        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+        prewhere_actions->need_filter = prewhere_info->need_filter;
+    }
 }
 
 
@@ -60,7 +82,7 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
         if (res.hasRows())
         {
-            injectVirtualColumns(res, task.get(), virt_column_names);
+            injectVirtualColumns(res, task.get(), partition_value_type, virt_column_names);
             return res;
         }
     }
@@ -75,14 +97,14 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
@@ -204,14 +226,25 @@ namespace
     {
         virtual ~VirtualColumnsInserter() = default;
 
+        virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
+
+        virtual void insertPartitionValueColumn(
+            size_t rows,
+            const Row & partition_value,
+            const DataTypePtr & partition_value_type,
+            const String & name) = 0;
     };
 }
 
-static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inserter,
-                                     MergeTreeReadTask * task, const Names & virtual_columns)
+static void injectVirtualColumnsImpl(
+    size_t rows,
+    VirtualColumnsInserter & inserter,
+    MergeTreeReadTask * task,
+    const DataTypePtr & partition_value_type,
+    const Names & virtual_columns)
 {
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
@@ -221,13 +254,20 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
             throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
                             ErrorCodes::LOGICAL_ERROR);
 
+        const IMergeTreeDataPart * part = nullptr;
+        if (rows)
+        {
+            part = task->data_part.get();
+            if (part->isProjectionPart())
+                part = part->getParentPart();
+        }
         for (const auto & virtual_column_name : virtual_columns)
         {
             if (virtual_column_name == "_part")
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
@@ -247,7 +287,7 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
+                    column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
                 else
                     column = DataTypeUUID().createColumn();
 
@@ -257,11 +297,18 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->info.partition_id)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
                 inserter.insertStringColumn(column, virtual_column_name);
+            }
+            else if (virtual_column_name == "_partition_value")
+            {
+                if (rows)
+                    inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
+                else
+                    inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
             }
         }
     }
@@ -272,6 +319,11 @@ namespace
     struct VirtualColumnsInserterIntoBlock : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoBlock(Block & block_) : block(block_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), name});
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String & name) final
         {
@@ -288,12 +340,30 @@ namespace
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
         }
 
+        void insertPartitionValueColumn(
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name) final
+        {
+            ColumnPtr column;
+            if (rows)
+                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
+                             ->convertToFullColumnIfConst();
+            else
+                column = partition_value_type->createColumn();
+
+            block.insert({column, partition_value_type, name});
+        }
+
         Block & block;
     };
 
     struct VirtualColumnsInserterIntoColumns : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoColumns(Columns & columns_) : columns(columns_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String &) final
         {
@@ -309,37 +379,53 @@ namespace
         {
             columns.push_back(column);
         }
+
+        void insertPartitionValueColumn(
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
+        {
+            ColumnPtr column;
+            if (rows)
+                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
+                             ->convertToFullColumnIfConst();
+            else
+                column = partition_value_type->createColumn();
+            columns.push_back(column);
+        }
+
         Columns & columns;
     };
 }
 
-void MergeTreeBaseSelectProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(
+    Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
-    VirtualColumnsInserterIntoBlock inserter { block };
-    injectVirtualColumnsImpl(block.rows(), inserter, task, virtual_columns);
+    VirtualColumnsInserterIntoBlock inserter{block};
+    injectVirtualColumnsImpl(block.rows(), inserter, task, partition_value_type, virtual_columns);
 }
 
-void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(
+    Chunk & chunk, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    VirtualColumnsInserterIntoColumns inserter { columns };
-    injectVirtualColumnsImpl(num_rows, inserter, task, virtual_columns);
+    VirtualColumnsInserterIntoColumns inserter{columns};
+    injectVirtualColumnsImpl(num_rows, inserter, task, partition_value_type, virtual_columns);
 
     chunk.setColumns(columns, num_rows);
 }
 
-void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
+Block MergeTreeBaseSelectProcessor::transformHeader(
+    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(block);
+            block = prewhere_info->alias_actions->updateHeader(std::move(block));
 
         if (prewhere_info->row_level_filter)
         {
-            prewhere_info->row_level_filter->execute(block);
+            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
@@ -351,7 +437,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         }
 
         if (prewhere_info->prewhere_actions)
-            prewhere_info->prewhere_actions->execute(block);
+            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
 
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -364,20 +450,34 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
-            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+            if (which.isInt() || which.isUInt())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            else if (which.isFloat())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+            else
+                throw Exception("Illegal type " + prewhere_column.type->getName() + " of column for filter.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
     }
-}
 
-Block MergeTreeBaseSelectProcessor::getHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
-{
-    executePrewhereActions(block, prewhere_info);
-    injectVirtualColumns(block, nullptr, virtual_columns);
+    injectVirtualColumns(block, nullptr, partition_value_type, virtual_columns);
     return block;
 }
 
+std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSizePredictor(
+    const MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns,
+    const Block & sample_block)
+{
+    const auto & required_column_names = task_columns.columns.getNames();
+    const auto & required_pre_column_names = task_columns.pre_columns.getNames();
+    NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+    complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+    return std::make_unique<MergeTreeBlockSizePredictor>(
+        data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);
+}
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 

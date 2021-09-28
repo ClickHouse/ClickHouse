@@ -48,8 +48,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(
-            "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
@@ -69,7 +68,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0;
+        settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -80,8 +79,11 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
     block.clear();
 
     Field field_rows;
@@ -392,7 +394,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and")
+    else if (func->name == "and" || func->name == "indexHint")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -448,7 +450,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);

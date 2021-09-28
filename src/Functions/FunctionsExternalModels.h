@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -24,6 +24,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool isDeterministic() const override { return false; }
 

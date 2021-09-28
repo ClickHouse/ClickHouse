@@ -65,7 +65,7 @@ By checking the row count:
 
 Query:
 
-``` sq;
+``` sql
 SELECT count() FROM recipes;
 ```
 
@@ -337,4 +337,4 @@ Result:
 
 The dataset is also available in the [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
 
-[Original article](https://clickhouse.tech/docs/en/getting-started/example-datasets/recipes/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting-started/example-datasets/recipes/) <!--hide-->

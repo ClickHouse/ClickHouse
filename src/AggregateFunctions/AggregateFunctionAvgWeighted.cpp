@@ -4,10 +4,11 @@
 #include <AggregateFunctions/AggregateFunctionAvgWeighted.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -60,7 +61,8 @@ static IAggregateFunction * create(const IDataType & first_type, const IDataType
 #undef LINE
 }
 
-AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr
+createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);

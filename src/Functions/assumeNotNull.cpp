@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
@@ -28,6 +28,8 @@ public:
     {
         return name;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }

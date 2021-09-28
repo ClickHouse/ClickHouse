@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Tags: no-replicated-database, no-parallel, no-fasttest
+
 import os
 import sys
 import signal
@@ -30,7 +32,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv AS SELECT toStartOfDay(time) AS day, location, avg(temperature) FROM test.mt GROUP BY day, location ORDER BY day, location')
     client1.expect(prompt)
     client1.send('WATCH test.lv FORMAT CSVWithNames')
-    client1.expect(r'_version')
     client2.send("INSERT INTO test.mt VALUES ('2019-01-01 00:00:00','New York',60),('2019-01-01 00:10:00','New York',70)")
     client2.expect(prompt)
     client1.expect(r'"2019-01-01 00:00:00","New York",65')
@@ -60,7 +61,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')

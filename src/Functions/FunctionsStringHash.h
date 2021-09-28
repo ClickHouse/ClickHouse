@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -41,6 +41,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

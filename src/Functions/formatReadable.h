@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -33,6 +33,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     size_t getNumberOfArguments() const override { return 1; }

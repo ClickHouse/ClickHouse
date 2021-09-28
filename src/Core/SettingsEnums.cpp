@@ -79,8 +79,8 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
      {"warning",     LogsLevel::warning},
      {"information", LogsLevel::information},
      {"debug",       LogsLevel::debug},
-     {"trace",       LogsLevel::trace}})
-
+     {"trace",       LogsLevel::trace},
+     {"test",        LogsLevel::test}})
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
     {{"QUERY_START",                QUERY_START},
@@ -111,4 +111,9 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      HandleKafkaErrorMode::DEFAULT},
      {"stream",       HandleKafkaErrorMode::STREAM}})
+
+IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
+     {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
+     {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 }

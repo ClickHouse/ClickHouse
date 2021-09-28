@@ -2,11 +2,12 @@
 #include <AggregateFunctions/AggregateFunctionMaxIntersections.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -32,11 +33,17 @@ namespace
 
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("maxIntersections", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
-        { return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Count, name, argument_types, parameters); });
+    factory.registerFunction("maxIntersections",
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Count, name, argument_types, parameters);
+        });
 
-    factory.registerFunction("maxIntersectionsPosition", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
-        { return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Position, name, argument_types, parameters); });
+    factory.registerFunction("maxIntersectionsPosition",
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Position, name, argument_types, parameters);
+        });
 }
 
 }

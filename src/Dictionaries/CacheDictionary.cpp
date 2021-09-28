@@ -1,11 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-
-#include <ext/range.h>
-#include <ext/size.h>
-#include <ext/map.h>
-#include <ext/chrono_io.h>
+#include <common/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,26 +10,29 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
 {
-extern const Event DictCacheKeysRequested;
-extern const Event DictCacheKeysRequestedMiss;
-extern const Event DictCacheKeysRequestedFound;
-extern const Event DictCacheKeysExpired;
-extern const Event DictCacheKeysNotFound;
-extern const Event DictCacheKeysHit;
-extern const Event DictCacheRequestTimeNs;
-extern const Event DictCacheRequests;
-extern const Event DictCacheLockWriteNs;
-extern const Event DictCacheLockReadNs;
+    extern const Event DictCacheKeysRequested;
+    extern const Event DictCacheKeysRequestedMiss;
+    extern const Event DictCacheKeysRequestedFound;
+    extern const Event DictCacheKeysExpired;
+    extern const Event DictCacheKeysNotFound;
+    extern const Event DictCacheKeysHit;
+    extern const Event DictCacheRequestTimeNs;
+    extern const Event DictCacheRequests;
+    extern const Event DictCacheLockWriteNs;
+    extern const Event DictCacheLockReadNs;
 }
 
 namespace CurrentMetrics
 {
-extern const Metric DictCacheRequests;
+    extern const Metric DictCacheRequests;
 }
 
 namespace DB
@@ -152,7 +151,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     * use default value.
     */
 
-    if (dictionary_key_type == DictionaryKeyType::complex)
+    if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -176,8 +175,9 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     MutableColumns & fetched_columns_from_storage = result_of_fetch_from_storage.fetched_columns;
     const PaddedPODArray<KeyState> & key_index_to_state_from_storage = result_of_fetch_from_storage.key_index_to_state;
@@ -268,7 +268,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     * Check that key was fetched during update for that key set true in result array.
     */
 
-    if (dictionary_key_type == DictionaryKeyType::complex)
+    if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
 
@@ -296,8 +296,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     size_t keys_to_update_size = expired_keys_size + not_found_keys_size;
     auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size);
@@ -363,10 +364,12 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr & key_type [[maybe_unused]]) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -379,10 +382,12 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
     ColumnPtr in_key_column [[maybe_unused]],
     const DataTypePtr & key_type [[maybe_unused]]) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -479,24 +484,24 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr CacheDictionary<dictionary_key_type>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
-    std::shared_ptr<DictionaryBlockInputStream> stream;
-
+    Pipe pipe;
+    std::optional<DictionarySourceData> data;
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, cache_storage_ptr->getCachedSimpleKeys(), column_names);
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
+            data.emplace(shared_from_this(), keys, column_names);
         }
     }
 
-    return stream;
+    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -520,8 +525,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     */
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
 
-    size_t found_keys_size = 0;
-
     Arena * complex_key_arena = update_unit_ptr->complex_keys_arena_holder.getComplexKeyArena();
     DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, complex_key_arena);
     auto requested_keys = requested_keys_extractor.extractAllKeys();
@@ -531,7 +534,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     std::vector<UInt64> requested_keys_vector;
     std::vector<size_t> requested_complex_key_rows;
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         requested_keys_vector.reserve(requested_keys.size());
     else
         requested_complex_key_rows.reserve(requested_keys.size());
@@ -543,7 +546,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         if (key_index_to_state_from_storage[i].isExpired()
             || key_index_to_state_from_storage[i].isNotFound())
         {
-            if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
                 requested_keys_vector.emplace_back(requested_keys[i]);
             else
                 requested_complex_key_rows.emplace_back(i);
@@ -567,21 +570,21 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
-            BlockInputStreamPtr stream;
+            QueryPipeline pipeline;
 
-            if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-                stream = current_source_ptr->loadIds(requested_keys_vector);
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
             else
-                stream = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
-
-            stream->readPrefix();
+                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            while (Block block = stream->read())
+            PullingPipelineExecutor executor(pipeline);
+            Block block;
+            while (executor.pull(block))
             {
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
@@ -610,9 +613,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     auto fetched_key_from_source = keys_extracted_from_block[i];
 
                     not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
                     found_keys_in_source.emplace_back(fetched_key_from_source);
-                    ++found_keys_size;
                 }
             }
 
@@ -625,8 +627,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto & update_unit_ptr_mutable_columns = update_unit_ptr->fetched_columns_during_update;
             for (const auto & fetched_column : fetched_columns_during_update)
                 update_unit_ptr_mutable_columns.emplace_back(fetched_column->assumeMutable());
-
-            stream->readSuffix();
 
             {
                 /// Lock for cache modification
@@ -651,7 +651,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
-                            "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
+                            "', next update is scheduled at " + to_string(backoff_end_time.load()));
             try
             {
                 std::rethrow_exception(last_exception);
@@ -666,9 +666,13 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
         }
 
+        /// The underlying source can have duplicates, so count only unique keys this formula is used.
+        size_t found_keys_size = requested_keys_size - not_found_keys.size();
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+
+        found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
     }
     else
     {
@@ -676,11 +680,11 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
             "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
             getDictionaryID().getNameForLogs(),
-            ext::to_string(backoff_end_time.load()));
+            to_string(backoff_end_time.load()));
     }
 }
 
-template class CacheDictionary<DictionaryKeyType::simple>;
-template class CacheDictionary<DictionaryKeyType::complex>;
+template class CacheDictionary<DictionaryKeyType::Simple>;
+template class CacheDictionary<DictionaryKeyType::Complex>;
 
 }

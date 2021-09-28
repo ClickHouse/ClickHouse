@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-
-#include <memory>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -12,7 +11,7 @@ struct ColumnMapping
 {
     /// Non-atomic because there is strict `happens-before` between read and write access
     /// See InputFormatParallelParsing
-    bool is_set;
+    bool is_set{false};
     /// Maps indexes of columns in the input file to indexes of table columns
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
@@ -22,11 +21,14 @@ struct ColumnMapping
     /// read the file header, and never changed afterwards.
     /// For other columns, it is updated on each read() call.
     std::vector<UInt8> read_columns;
+
+
+    /// Whether we have any columns that are not read from file at all,
+    /// and must be always initialized with defaults.
+    bool have_always_default_columns{false};
 };
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
-
-class ReadBuffer;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
@@ -38,7 +40,7 @@ protected:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
 
-    ReadBuffer & in [[maybe_unused]];
+    ReadBuffer * in [[maybe_unused]];
 
 #pragma GCC diagnostic pop
 
@@ -67,12 +69,19 @@ public:
     size_t getCurrentUnitNumber() const { return current_unit_number; }
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
 
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    void setReadBuffer(ReadBuffer & in_);
+
 protected:
     ColumnMappingPtr column_mapping{};
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)
     size_t current_unit_number = 0;
+
+    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
+
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 }

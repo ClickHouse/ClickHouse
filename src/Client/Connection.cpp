@@ -23,7 +23,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
@@ -130,10 +130,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
+        /// disconnect() will reset the socket, get timeouts before.
+        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
+            e.displayText(), getDescription(),
+            socket->getReceiveTimeout().totalMilliseconds(),
+            socket->getSendTimeout().totalMilliseconds());
+
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -413,7 +419,12 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+    /// Query is not executed within sendQuery() function.
+    ///
+    /// And what this means that temporary timeout (via TimeoutSetter) is not
+    /// enough, since next query can use timeout from the previous query in this case.
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
 
     if (settings)
     {
@@ -424,7 +435,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -551,6 +562,15 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     out->next();
 }
 
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -571,6 +591,12 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
+    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
+    /// dedicated revision after introducing scalars, so this will still break some versions with
+    /// revision 54428.
+    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
+        return;
+
     if (data.empty())
         return;
 
@@ -671,13 +697,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        QueryPipeline pipeline;
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
+        QueryPipelineBuilder pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
-            if (type != QueryPipeline::StreamType::Main)
+            if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
             return sink;
         });
@@ -807,6 +837,9 @@ Packet Connection::receivePacket()
                 readVectorBinary(res.part_uuids, *in);
                 return res;
 
+            case Protocol::Server::ReadTaskRequest:
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -907,13 +940,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -923,7 +956,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -931,7 +964,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

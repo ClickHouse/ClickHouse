@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -29,6 +29,8 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 

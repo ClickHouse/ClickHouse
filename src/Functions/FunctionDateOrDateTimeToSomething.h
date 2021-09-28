@@ -1,7 +1,8 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
@@ -32,13 +33,14 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() == 1)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -46,7 +48,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDateTime(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -57,7 +59,7 @@ public:
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
+            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>))
                 throw Exception(
                     "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -103,6 +105,8 @@ public:
 
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDate32())
+            return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
@@ -146,6 +150,12 @@ public:
                 == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
+        else if (checkAndGetDataType<DataTypeDate32>(&type))
+        {
+            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), date_lut)
+                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), date_lut)
+                   ? is_monotonic : is_not_monotonic;
+        }
         else
         {
             return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
@@ -156,4 +166,3 @@ public:
 };
 
 }
-

@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
@@ -46,7 +46,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -161,6 +161,11 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+}
+
+void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params.explain(map);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

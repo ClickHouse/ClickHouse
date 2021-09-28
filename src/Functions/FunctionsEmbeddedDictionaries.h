@@ -9,7 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
@@ -157,6 +157,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -165,14 +166,14 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getName() != TypeName<T>)
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
+                + " (must be " + String(TypeName<T>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
+                + " (must be " + String(TypeName<T>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
@@ -251,6 +252,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -259,19 +261,19 @@ public:
                 + toString(arguments.size()) + ", should be 2 or 3.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getName() != TypeName<T>)
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
+                + " (must be " + String(TypeName<T>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments[1]->getName() != TypeName<T>::get())
+        if (arguments[1]->getName() != TypeName<T>)
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
+                + " (must be " + String(TypeName<T>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>::get())
+        if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>)
             throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
+                + " (must be " + String(TypeName<String>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt8>();
@@ -389,6 +391,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -397,14 +400,14 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getName() != TypeName<T>)
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-            + " (must be " + String(TypeName<T>::get()) + ")",
+            + " (must be " + String(TypeName<T>) + ")",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
+                + " (must be " + String(TypeName<String>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeArray>(arguments[0]);
@@ -595,6 +598,8 @@ public:
     ///  even in face of fact that there are many different cities named Moscow.
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1 && arguments.size() != 2)
@@ -602,14 +607,14 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<UInt32>::get())
+        if (arguments[0]->getName() != TypeName<UInt32>)
             throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
-                + " (must be " + String(TypeName<UInt32>::get()) + ")",
+                + " (must be " + String(TypeName<UInt32>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
             throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
+                + " (must be " + String(TypeName<String>) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

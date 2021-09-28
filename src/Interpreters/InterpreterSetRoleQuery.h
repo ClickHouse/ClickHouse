@@ -11,10 +11,10 @@ class ASTSetRoleQuery;
 struct RolesOrUsersSet;
 struct User;
 
-class InterpreterSetRoleQuery : public IInterpreter, WithContext
+class InterpreterSetRoleQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterSetRoleQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterSetRoleQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 

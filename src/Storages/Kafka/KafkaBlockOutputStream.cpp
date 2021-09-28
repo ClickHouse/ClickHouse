@@ -6,22 +6,18 @@
 namespace DB
 {
 
-KafkaBlockOutputStream::KafkaBlockOutputStream(
+KafkaSink::KafkaSink(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_)
-    : storage(storage_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-Block KafkaBlockOutputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlockNonMaterialized();
-}
-
-void KafkaBlockOutputStream::writePrefix()
+void KafkaSink::onStart()
 {
     buffer = storage.createWriteBuffer(getHeader());
 
@@ -37,20 +33,17 @@ void KafkaBlockOutputStream::writePrefix()
         format_settings);
 }
 
-void KafkaBlockOutputStream::write(const Block & block)
+void KafkaSink::consume(Chunk chunk)
 {
-    child->write(block);
+    child->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void KafkaBlockOutputStream::writeSuffix()
+void KafkaSink::onFinish()
 {
     if (child)
         child->writeSuffix();
-    flush();
-}
+    //flush();
 
-void KafkaBlockOutputStream::flush()
-{
     if (buffer)
         buffer->flush();
 }

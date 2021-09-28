@@ -28,13 +28,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integer_v<T>;
+    return is_integer<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integer_v<T> && is_unsigned_v<T>;
+    return is_integer<T> && is_unsigned_v<T>;
 }
 
 
@@ -43,7 +43,7 @@ template class DataTypeNumberBase<UInt8>;
 template class DataTypeNumberBase<UInt16>;
 template class DataTypeNumberBase<UInt32>;
 template class DataTypeNumberBase<UInt64>;
-template class DataTypeNumberBase<UInt128>; // base for UUID
+template class DataTypeNumberBase<UInt128>;
 template class DataTypeNumberBase<UInt256>;
 template class DataTypeNumberBase<Int8>;
 template class DataTypeNumberBase<Int16>;

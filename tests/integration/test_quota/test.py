@@ -61,7 +61,7 @@ def copy_quota_xml(local_file_name, reload_immediately=True):
 def started_cluster():
     try:
         cluster.start()
-
+        instance.query("DROP TABLE IF EXISTS test_table")
         instance.query("CREATE TABLE test_table(x UInt32) ENGINE = MergeTree ORDER BY tuple()")
         instance.query("INSERT INTO test_table SELECT number FROM numbers(50)")
 
@@ -399,9 +399,9 @@ def test_consumption_of_show_tables():
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_databases():
-    assert instance.query("SHOW DATABASES") == "default\nsystem\n"
+    assert instance.query("SHOW DATABASES") == "INFORMATION_SCHEMA\ndefault\ninformation_schema\nsystem\n"
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t2\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t4\\t\\\\N.*",
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_clusters():

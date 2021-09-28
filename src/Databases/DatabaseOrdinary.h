@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Databases/DatabaseWithDictionaries.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Common/ThreadPool.h>
 
 
@@ -11,16 +11,25 @@ namespace DB
   * It stores tables list in filesystem using list of .sql files,
   *  that contain declaration of table represented by SQL ATTACH TABLE query.
   */
-class DatabaseOrdinary : public DatabaseWithDictionaries
+class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
     DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
     DatabaseOrdinary(
-        const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_);
+        const String & name_, const String & metadata_path_, const String & data_path_,
+        const String & logger, ContextPtr context_);
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+
+    bool supportsLoadingInTopologicalOrder() const override { return true; }
+
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
+
+    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     void alterTable(
         ContextPtr context,
@@ -34,8 +43,6 @@ protected:
         const String & table_metadata_path,
         const String & statement,
         ContextPtr query_context);
-
-    void startupTables(ThreadPool & thread_pool);
 };
 
 }

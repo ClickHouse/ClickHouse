@@ -53,7 +53,7 @@ LIMIT 10
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
-IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. 
+IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44.
 
 Примеры: `INET6_NTOA`.
 
@@ -137,7 +137,7 @@ HEX может быть в любом регистре.
 IPv6StringToNum(string)
 ```
 
-**Аргумент** 
+**Аргумент**
 
 -   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
@@ -281,7 +281,7 @@ toIPv6(string)
 
 **Возвращаемое значение**
 
--   IP адрес. 
+-   IP адрес.
 
 Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
@@ -397,9 +397,9 @@ SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0
 
 ## isIPAddressInRange {#isipaddressinrange}
 
-Проверяет попадает ли IP адрес в интервал, заданный в [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) нотации.
+Проверяет, попадает ли IP адрес в интервал, заданный в нотации [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing).
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 isIPAddressInRange(address, prefix)
@@ -409,7 +409,7 @@ isIPAddressInRange(address, prefix)
 **Аргументы**
 
 -   `address` — IPv4 или IPv6 адрес. [String](../../sql-reference/data-types/string.md).
--   `prefix` — IPv4 или IPv6 подсеть, заданная в CIDR нотации. [String](../../sql-reference/data-types/string.md).
+-   `prefix` — IPv4 или IPv6 подсеть, заданная в нотации CIDR. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -422,7 +422,7 @@ isIPAddressInRange(address, prefix)
 Запрос:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8')
+SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
 ```
 
 Результат:
@@ -436,7 +436,7 @@ SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8')
 Запрос:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16')
+SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ```
 
 Результат:

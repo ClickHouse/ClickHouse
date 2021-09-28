@@ -20,7 +20,7 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 -   `table` — имя таблицы на удалённом сервере.
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
--   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент.
 
 **Возвращаемое значение**
 
@@ -44,7 +44,19 @@ PostgreSQL массивы конвертируются в массивы ClickHo
 !!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
-При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
+Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+или
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.
 
 **Примеры**
 
@@ -65,16 +77,16 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Получение данных в ClickHouse:
 
 ```sql
-SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test'); 
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
 ``` text
@@ -117,4 +129,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [Движок таблиц PostgreSQL](../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/table-functions/postgresql.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->

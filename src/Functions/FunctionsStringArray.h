@@ -9,7 +9,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -32,6 +32,9 @@ namespace ErrorCodes
   * splitByChar(sep, s)
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
+  *
+  * splitByWhitespace(s)      - split the string by whitespace characters
+  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
   *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
@@ -111,6 +114,121 @@ public:
     }
 };
 
+class SplitByNonAlphaImpl
+{
+private:
+    Pos pos;
+    Pos end;
+
+public:
+    /// Get the name of the function.
+    static constexpr auto name = "splitByNonAlpha";
+    static String getName() { return name; }
+
+    static size_t getNumberOfArguments() { return 1; }
+
+    /// Check the type of the function's arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Returns the position of the argument, that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 0;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        /// Skip garbage
+        while (pos < end && (isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
+            ++pos;
+
+        if (pos == end)
+            return false;
+
+        token_begin = pos;
+
+        while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
+            ++pos;
+
+        token_end = pos;
+
+        return true;
+    }
+};
+
+class SplitByWhitespaceImpl
+{
+private:
+    Pos pos;
+    Pos end;
+
+public:
+    /// Get the name of the function.
+    static constexpr auto name = "splitByWhitespace";
+    static String getName() { return name; }
+
+    static size_t getNumberOfArguments() { return 1; }
+
+    /// Check the type of the function's arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Returns the position of the argument, that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 0;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        /// Skip garbage
+        while (pos < end && isWhitespaceASCII(*pos))
+            ++pos;
+
+        if (pos == end)
+            return false;
+
+        token_begin = pos;
+
+        while (pos < end && !isWhitespaceASCII(*pos))
+            ++pos;
+
+        token_end = pos;
+
+        return true;
+    }
+};
 
 class SplitByCharImpl
 {
@@ -263,6 +381,88 @@ public:
     }
 };
 
+class SplitByRegexpImpl
+{
+private:
+    Regexps::Pool::Pointer re;
+    OptimizedRegularExpression::MatchVec matches;
+
+    Pos pos;
+    Pos end;
+public:
+    static constexpr auto name = "splitByRegexp";
+    static String getName() { return name; }
+    static size_t getNumberOfArguments() { return 2; }
+
+    /// Check the type of function arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        SplitByStringImpl::checkArguments(arguments);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & arguments)
+    {
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+
+        if (!col)
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of first argument of function " + getName() + ". Must be constant string.",
+                            ErrorCodes::ILLEGAL_COLUMN);
+
+        if (!col->getValue<String>().empty())
+            re = Regexps::get<false, false>(col->getValue<String>());
+
+    }
+
+    /// Returns the position of the argument that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 1;
+    }
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        if (!re)
+        {
+            if (pos == end)
+                return false;
+
+            token_begin = pos;
+            pos += 1;
+            token_end = pos;
+        }
+        else
+        {
+            if (!pos || pos > end)
+                return false;
+
+            token_begin = pos;
+
+            if (!re->match(pos, end - pos, matches) || !matches[0].length)
+            {
+                token_end = end;
+                pos = end + 1;
+            }
+            else
+            {
+                token_end = pos + matches[0].offset;
+                pos = token_end + matches[0].length;
+            }
+        }
+
+        return true;
+    }
+};
+
 class ExtractAllImpl
 {
 private:
@@ -351,6 +551,8 @@ public:
     {
         return name;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
@@ -516,6 +718,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -580,8 +783,11 @@ public:
 
 
 using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
+using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
+using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 }

@@ -12,9 +12,9 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const String & config_prefix,
                                    Block & sample_block,
-                                   ContextPtr /* context */,
+                                   ContextPtr /* global_context */,
                                    const std::string & /* default_database */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
+                                   bool /* created_from_ddl */) -> DictionarySourcePtr {
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
     };
     factory.registerSource("redis", create_table_source);
@@ -30,9 +30,8 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
 
-#include "RedisBlockInputStream.h"
+#include "RedisSource.h"
 
 
 namespace DB
@@ -160,7 +159,7 @@ namespace DB
         __builtin_unreachable();
     }
 
-    BlockInputStreamPtr RedisDictionarySource::loadAll()
+    Pipe RedisDictionarySource::loadAll()
     {
         if (!client->isConnected())
             client->connect(host, port);
@@ -171,7 +170,7 @@ namespace DB
         /// Get only keys for specified storage type.
         auto all_keys = client->execute<RedisArray>(command_for_keys);
         if (all_keys.isNull())
-            return std::make_shared<RedisBlockInputStream>(client, RedisArray{}, storage_type, sample_block, max_block_size);
+            return Pipe(std::make_shared<RedisSource>(client, RedisArray{}, storage_type, sample_block, max_block_size));
 
         RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
@@ -210,11 +209,11 @@ namespace DB
             keys = std::move(hkeys);
         }
 
-        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
+        return Pipe(std::make_shared<RedisSource>(client, std::move(keys), storage_type, sample_block, max_block_size));
     }
 
 
-    BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
+    Pipe RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         if (!client->isConnected())
             client->connect(host, port);
@@ -230,10 +229,10 @@ namespace DB
         for (UInt64 id : ids)
             keys << DB::toString(id);
 
-        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
+        return Pipe(std::make_shared<RedisSource>(client, std::move(keys), storage_type, sample_block, max_block_size));
     }
 
-    BlockInputStreamPtr RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+    Pipe RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
     {
         if (!client->isConnected())
             client->connect(host, port);
@@ -259,7 +258,7 @@ namespace DB
             keys.add(key);
         }
 
-        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
+        return Pipe(std::make_shared<RedisSource>(client, std::move(keys), storage_type, sample_block, max_block_size));
     }
 
 

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: Unsupported type of ALTER query
+
 DROP TABLE IF EXISTS mt_01451;
 
 CREATE TABLE mt_01451 (v UInt8) ENGINE = MergeTree() order by tuple();
@@ -15,13 +18,13 @@ ALTER TABLE mt_01451 DETACH PART 'all_2_2_0';
 
 SELECT v FROM mt_01451 ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'mt_01451';
+SELECT name FROM system.detached_parts WHERE table = 'mt_01451' AND database = currentDatabase();
 
 ALTER TABLE mt_01451 ATTACH PART 'all_2_2_0';
 
 SELECT v FROM mt_01451 ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'mt_01451';
+SELECT name FROM system.detached_parts WHERE table = 'mt_01451' AND database = currentDatabase();
 
 SELECT '-- drop part --';
 
@@ -37,6 +40,6 @@ OPTIMIZE TABLE mt_01451 FINAL;
 
 SELECT v FROM mt_01451 ORDER BY v;
 
-SELECT name FROM system.parts WHERE table = 'mt_01451' AND active;
+SELECT name FROM system.parts WHERE table = 'mt_01451' AND active AND database = currentDatabase();
 
 DROP TABLE mt_01451;

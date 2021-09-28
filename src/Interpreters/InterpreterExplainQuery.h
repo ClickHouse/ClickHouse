@@ -2,7 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-
+#include <Parsers/ASTExplainQuery.h>
 
 namespace DB
 {
@@ -15,12 +15,12 @@ public:
 
     BlockIO execute() override;
 
-    static Block getSampleBlock();
+    static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
 
 private:
     ASTPtr query;
 
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
 };
 
 

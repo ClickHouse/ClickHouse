@@ -18,6 +18,8 @@ toc_title: "Применение модели CatBoost в ClickHouse"
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
 
+Вы можете перегрузить модели CatBoost, если их конфигурация была обновлена, без перезагрузки сервера. Для этого используйте системные запросы [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) и [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models).
+
 ## Перед началом работы {#prerequisites}
 
 Если у вас еще нет [Docker](https://docs.docker.com/install/), установите его.
@@ -158,6 +160,8 @@ FROM amazon_train
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
+!!! note "Примечание"
+    Вы можете позднее изменить путь к конфигурации модели CatBoost без перезагрузки сервера.
 
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 

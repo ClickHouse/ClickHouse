@@ -20,19 +20,16 @@ namespace DB
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const String & s = get<const String &>(field);
-    writeVarUInt(s.size(), ostr);
-    writeString(s, ostr);
+    const AggregateFunctionStateData & state = get<const AggregateFunctionStateData &>(field);
+    writeBinary(state.data, ostr);
 }
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    UInt64 size;
-    readVarUInt(size, istr);
-    field = String();
-    String & s = get<String &>(field);
-    s.resize(size);
-    istr.readStrict(s.data(), size);
+    field = AggregateFunctionStateData();
+    AggregateFunctionStateData & s = get<AggregateFunctionStateData &>(field);
+    readBinary(s.data, istr);
+    s.name = type_name;
 }
 
 void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const

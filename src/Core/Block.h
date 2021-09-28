@@ -39,14 +39,11 @@ public:
     Block(const ColumnsWithTypeAndName & data_);
 
     /// insert the column at the specified position
-    void insert(size_t position, const ColumnWithTypeAndName & elem);
-    void insert(size_t position, ColumnWithTypeAndName && elem);
+    void insert(size_t position, ColumnWithTypeAndName elem);
     /// insert the column to the end
-    void insert(const ColumnWithTypeAndName & elem);
-    void insert(ColumnWithTypeAndName && elem);
+    void insert(ColumnWithTypeAndName elem);
     /// insert the column to the end, if there is no column with that name yet
-    void insertUnique(const ColumnWithTypeAndName & elem);
-    void insertUnique(ColumnWithTypeAndName && elem);
+    void insertUnique(ColumnWithTypeAndName elem);
     /// remove the column at the specified position
     void erase(size_t position);
     /// remove the columns at the specified positions
@@ -68,7 +65,7 @@ public:
             const_cast<const Block *>(this)->findByName(name));
     }
 
-    const ColumnWithTypeAndName* findByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name) const;
 
     ColumnWithTypeAndName & getByName(const std::string & name)
     {
@@ -125,6 +122,7 @@ public:
 
     Columns getColumns() const;
     void setColumns(const Columns & columns);
+    void setColumn(size_t position, ColumnWithTypeAndName column);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
     Block cloneWithCutColumns(size_t start, size_t length) const;
@@ -154,6 +152,7 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
+    void reserve(size_t count);
 
     /// This is needed to allow function execution over data.
     /// It is safe because functions does not change column names, so index is unaffected.
@@ -184,7 +183,17 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 /// Throw exception when blocks are different.
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description);
 
+/// Actual header is compatible to desired if block have equal structure except constants.
+/// It is allowed when column from actual header is constant, but in desired is not.
+/// If both columns are constant, it is checked that they have the same value.
+bool isCompatibleHeader(const Block & actual, const Block & desired);
+void assertCompatibleHeader(const Block & actual, const Block & desired, const std::string & context_description);
+
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
+
+/// Helps in-memory storages to extract columns from block.
+/// Properly handles cases, when column is a subcolumn and when it is compressed.
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
 
 }

@@ -1,6 +1,8 @@
+#include <Interpreters/IdentifierSemantic.h>
+
 #include <Common/typeid_cast.h>
 
-#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
@@ -10,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
@@ -81,22 +82,6 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
     return {};
 }
 
-std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & node)
-{
-    if (node.semantic->special)
-        return node.name();
-    return {};
-}
-
-std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
-{
-    if (ast)
-        if (const auto * id = ast->as<ASTIdentifier>())
-            if (id->semantic->special)
-                return id->name();
-    return {};
-}
-
 std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & identifier)
 {
     if (identifier.semantic->covered)
@@ -146,16 +131,6 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
     return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous, true);
 }
 
-StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
-{
-    if (identifier.name_parts.size() > 2)
-        throw Exception("Syntax error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
-
-    if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name_parts[0], identifier.uuid };
-}
-
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
 {
     if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0])
@@ -187,7 +162,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return ColumnMatch::DbAndTable;
+        return ColumnMatch::DBAndTable;
 
     /// alias.column
     if (doesIdentifierBelongTo(identifier, db_and_table.alias))
@@ -224,7 +199,7 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
         case ColumnMatch::TableAlias:
             to_strip = 1;
             break;
-        case ColumnMatch::DbAndTable:
+        case ColumnMatch::DBAndTable:
             to_strip = 2;
             break;
         default:
@@ -307,7 +282,10 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
+    const auto & settings = context->getSettingsRef();
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
+                                             settings.asterisk_include_alias_columns,
+                                             settings.asterisk_include_materialized_columns);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

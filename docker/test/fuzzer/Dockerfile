@@ -1,9 +1,11 @@
-# docker build -t yandex/clickhouse-fuzzer .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/fuzzer .
+FROM clickhouse/test-base
 
 ENV LANG=C.UTF-8
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
@@ -14,6 +16,8 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
+            python3 \
+            python3-pip \
             rsync \
             tree \
             tzdata \
@@ -23,6 +27,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip3 install Jinja2
+
 COPY * /
 
 SHELL ["/bin/bash", "-c"]
@@ -30,5 +36,5 @@ CMD set -o pipefail \
     && cd /workspace \
     && /run-fuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
-# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-fuzzer
+# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/fuzzer
 
