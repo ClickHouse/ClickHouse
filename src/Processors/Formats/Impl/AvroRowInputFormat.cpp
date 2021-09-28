@@ -35,6 +35,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #include <avro/Compiler.hh>
 #include <avro/DataFile.hh>
@@ -178,7 +179,20 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    const WhichDataType target = removeLowCardinality(target_type);
+    if (target_type->lowCardinality())
+    {
+        const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
+        auto dict_deserialize = createDeserializeFn(root_node, lc_type->getDictionaryType());
+        return [dict_deserialize](IColumn & column, avro::Decoder & decoder)
+        {
+            auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
+            auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
+            dict_deserialize(*tmp_column, decoder);
+            lc_column.insertFromFullColumn(*tmp_column, 0);
+        };
+    }
+
+    const WhichDataType target = WhichDataType(target_type);
 
     switch (root_node->type())
     {
