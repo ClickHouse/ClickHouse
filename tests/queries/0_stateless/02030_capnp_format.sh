@@ -106,4 +106,4 @@ $CLICKHOUSE_CLIENT --query="SELECT toNullable(toString(number)) as nullable1 FRO
 $CLICKHOUSE_CLIENT --query="SELECT toNullable(toString(number)) as nullable2 FROM numbers(5) FORMAT CapnProto SETTINGS format_schema='$CLIENT_SCHEMADIR/02030_capnp_fake_nullable:Message'" 2>&1 | grep -F -q "CAPN_PROTO_BAD_CAST" && echo 'OK' || echo 'FAIL';
 
 rm $CAPN_PROTO_FILE
-rm -rf $SCHEMADIR/$SERVER_SCHEMADIR
+rm -rf {$SCHEMADIR:?}/{$SERVER_SCHEMADIR:?}
