@@ -8,16 +8,6 @@
 namespace DB
 {
 
-
-TaskRuntimeDataPtr MergeMutateRuntimeQueue::pop()
-{
-    std::pop_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
-    auto result = std::move(buffer.back());
-    buffer.pop_back();
-    return result;
-}
-
-
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {

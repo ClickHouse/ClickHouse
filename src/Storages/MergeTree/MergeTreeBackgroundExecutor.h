@@ -44,77 +44,63 @@ struct TaskRuntimeData
     /// where multiple threads could remove tasks corresponding to the same storage
     /// This scenario in not possible in reality.
     Poco::Event is_done{/*autoreset=*/false};
+    /// This is equal to task->getPriority() not to do useless virtual calls in comparator
+    UInt64 priority{0};
 
     /// By default priority queue will have max element at top
     static bool comparePtrByPriority(const TaskRuntimeDataPtr & lhs, const TaskRuntimeDataPtr & rhs)
     {
-        return lhs->task->getPriority() > rhs->task->getPriority();
+        return lhs->priority > rhs->priority;
     }
 };
 
-class IRuntimeQueue
-{
-public:
-    virtual TaskRuntimeDataPtr pop() = 0;
-    virtual void push(TaskRuntimeDataPtr item) = 0;
-    virtual void remove(StorageID id) = 0;
-    virtual void setCapacity(size_t count) = 0;
-    virtual bool empty() = 0;
-    virtual ~IRuntimeQueue() = default;
-};
 
-class OrdinaryRuntimeQueue : public IRuntimeQueue
+class OrdinaryRuntimeQueue
 {
 public:
-    TaskRuntimeDataPtr pop() override
+    TaskRuntimeDataPtr pop()
     {
         auto result = std::move(queue.front());
         queue.pop_front();
         return result;
     }
 
-    void push(TaskRuntimeDataPtr item) override
-    {
-        queue.push_back(std::move(item));
-    }
+    void push(TaskRuntimeDataPtr item) { queue.push_back(std::move(item));}
 
-    void remove(StorageID id) override
+    void remove(StorageID id)
     {
         auto it = std::remove_if(queue.begin(), queue.end(),
             [&] (auto item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
     }
 
-    void setCapacity(size_t count) override
-    {
-        queue.set_capacity(count);
-    }
-
-    bool empty() override { return queue.empty(); }
+    void setCapacity(size_t count) { queue.set_capacity(count); }
+    bool empty() { return queue.empty(); }
 
 private:
     boost::circular_buffer<TaskRuntimeDataPtr> queue{0};
 };
 
-
-/// Consists of two circular buffers
-/// One for merges, one for mutations
-class MergeMutateRuntimeQueue : public IRuntimeQueue
+/// Uses a heap to pop a task with minimal priority
+class MergeMutateRuntimeQueue
 {
 public:
-    TaskRuntimeDataPtr pop() override;
-
-    void push(TaskRuntimeDataPtr item) override
+    TaskRuntimeDataPtr pop()
     {
-        // String to_print;
-        // for (auto & x : buffer)
-        //     to_print += toString(x->task->getPriority()) + " ";
-        // LOG_FATAL(&Poco::Logger::get("abacaba"), to_print);
+        std::pop_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
+        auto result = std::move(buffer.back());
+        buffer.pop_back();
+        return result;
+    }
+
+    void push(TaskRuntimeDataPtr item)
+    {
+        item->priority = item->task->getPriority();
         buffer.push_back(std::move(item));
         std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
-    void remove(StorageID id) override
+    void remove(StorageID id)
     {
         auto it = std::remove_if(buffer.begin(), buffer.end(),
             [&] (auto item) -> bool { return item->task->getStorageID() == id; });
@@ -123,12 +109,8 @@ public:
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
-    void setCapacity(size_t count) override
-    {
-       buffer.reserve(count);
-    }
-
-    bool empty() override { return buffer.empty(); }
+    void setCapacity(size_t count) { buffer.reserve(count); }
+    bool empty() { return buffer.empty(); }
 
 private:
     std::vector<TaskRuntimeDataPtr> buffer{};
