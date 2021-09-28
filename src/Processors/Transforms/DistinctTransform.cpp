@@ -12,9 +12,11 @@ DistinctTransform::DistinctTransform(
     const Block & header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
+    bool is_limit_positive_,
     const Names & columns_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
+    , is_limit_positive(is_limit_positive_)
     , set_size_limits(set_size_limits_)
 {
     size_t num_columns = columns_.empty() ? header_.columns() : columns_.size();
@@ -58,7 +60,7 @@ void DistinctTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     /// Stop reading if we already reach the limit.
-    if (no_more_rows || (limit_hint && data.getTotalRowCount() >= limit_hint))
+    if (no_more_rows || (limit_hint && !is_limit_positive && data.getTotalRowCount() >= limit_hint))
     {
         stopReading();
         return;

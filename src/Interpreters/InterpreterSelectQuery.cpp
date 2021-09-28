@@ -2462,8 +2462,12 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
+        bool is_limit_positive = false;
+        if (query.limitLength())
+            is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+            
         auto distinct_step
-            = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, limit_for_distinct, columns, pre_distinct);
+            = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, limit_for_distinct, columns, pre_distinct, is_limit_positive);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");

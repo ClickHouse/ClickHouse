@@ -14,6 +14,7 @@ public:
         const Block & header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
+        bool is_limit_positive_,
         const Names & columns_);
 
     String getName() const override { return "DistinctTransform"; }
@@ -26,6 +27,7 @@ private:
     SetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;
+    bool is_limit_positive;
 
     bool no_more_rows = false;
 

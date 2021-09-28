@@ -43,7 +43,8 @@ DistinctStep::DistinctStep(
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_)
+    bool pre_distinct_,
+    bool is_limit_positive_)
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
@@ -52,6 +53,7 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
+    , is_limit_positive(is_limit_positive_)
 {
     if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
         && (!pre_distinct /// Main distinct
@@ -76,7 +78,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+        return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, is_limit_positive, columns);
     });
 }
 
