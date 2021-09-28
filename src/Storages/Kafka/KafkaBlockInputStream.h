@@ -50,7 +50,7 @@ private:
     const Block virtual_header;
     const HandleKafkaErrorMode handle_error_mode;
 
-    Chunk generateImpl() override;
+    Chunk generateImpl();
 };
 
 }

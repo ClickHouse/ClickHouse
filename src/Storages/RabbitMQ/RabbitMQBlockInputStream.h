@@ -25,9 +25,7 @@ public:
     String getName() const override { return storage.getName(); }
     ConsumerBufferPtr getBuffer() { return buffer; }
 
-    void readPrefixImpl() override;
     Chunk generate() override;
-    void readSuffixImpl() override;
 
     bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();

@@ -170,15 +170,9 @@ Chunk RabbitMQSource::generateImpl()
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 
-    return Chunk(result_columns, total_rows);
+    return Chunk(std::move(result_columns), total_rows);
 }
 
-
-void RabbitMQSource::readSuffixImpl()
-{
-    if (ack_in_suffix)
-        sendAck();
-}
 
 bool RabbitMQSource::sendAck()
 {

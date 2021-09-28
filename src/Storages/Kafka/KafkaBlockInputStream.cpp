@@ -52,7 +52,7 @@ KafkaSource::~KafkaSource()
     storage.pushReadBuffer(buffer);
 }
 
-Chunk KafkaSource::generate()
+Chunk KafkaSource::generateImpl()
 {
     if (!buffer)
     {
@@ -232,7 +232,7 @@ Chunk KafkaSource::generate()
 
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
-        getHeader().getColumnsWithTypeAndName(),
+        getPort().getHeader().getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
@@ -250,7 +250,7 @@ Chunk KafkaSource::generate()
     return chunk;
 }
 
-void KafkaBlockInputStream::commit()
+void KafkaSource::commit()
 {
     if (!buffer)
         return;
