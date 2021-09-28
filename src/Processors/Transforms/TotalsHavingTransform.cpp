@@ -66,9 +66,6 @@ TotalsHavingTransform::TotalsHavingTransform(
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
 {
-    if (!filter_column_name.empty())
-        filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
-
     finalized_header = getInputPort().getHeader();
     finalizeBlock(finalized_header);
 
@@ -78,12 +75,17 @@ TotalsHavingTransform::TotalsHavingTransform(
         auto totals_header = finalized_header;
         size_t num_rows = totals_header.rows();
         expression->execute(totals_header, num_rows);
+        filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);
         outputs.emplace_back(totals_header, this);
     }
     else
+    {
+        if (!filter_column_name.empty())
+            filter_column_pos = finalized_header.getPositionByName(filter_column_name);
         outputs.emplace_back(finalized_header, this);
+    }
 
     /// Initialize current totals with initial state.
     current_totals.reserve(header.columns());
@@ -180,11 +182,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         }
 
         expression->execute(finalized_block, num_rows);
+        ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
         if (remove_filter)
             finalized_block.erase(filter_column_name);
         auto columns = finalized_block.getColumns();
 
-        ColumnPtr filter_column_ptr = columns[filter_column_pos];
         ConstantFilterDescription const_filter_description(*filter_column_ptr);
 
         if (const_filter_description.always_true)
