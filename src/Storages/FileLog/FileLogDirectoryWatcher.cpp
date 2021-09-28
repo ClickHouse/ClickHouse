@@ -43,7 +43,7 @@ void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::Director
     de.callback = "onItemAdded";
     de.path = ev.item.path();
     de.type = ev.event;
-    events.emplace_back(de);
+    events.push_back(de);
 }
 
 
@@ -54,7 +54,7 @@ void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::Direct
     de.callback = "onItemRemoved";
     de.path = ev.item.path();
     de.type = ev.event;
-    events.emplace_back(de);
+    events.push_back(de);
 }
 
 
@@ -65,7 +65,7 @@ void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::Direc
     de.callback = "onItemModified";
     de.path = ev.item.path();
     de.type = ev.event;
-    events.emplace_back(de);
+    events.push_back(de);
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
@@ -75,7 +75,7 @@ void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::Dire
     de.callback = "onItemMovedFrom";
     de.path = ev.item.path();
     de.type = ev.event;
-    events.emplace_back(de);
+    events.push_back(de);
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
@@ -85,7 +85,7 @@ void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::Direct
     de.callback = "onItemMovedTo";
     de.path = ev.item.path();
     de.type = ev.event;
-    events.emplace_back(de);
+    events.push_back(de);
 }
 
 void FileLogDirectoryWatcher::onError(const Poco::Exception & e)
