@@ -107,4 +107,4 @@ toc_title: "\u7D71\u5408"
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

@@ -13,4 +13,4 @@ toc_title: TinyLog
 
 クエリは単一のストリームで実行されます。 言い換えれば、このエンジンは比較的小さなテーブル（最大約1,000,000行）を対象としています。 小さなテーブルが多い場合は、このテーブルエンジンを使用するのが理にかなっています。 [ログ](log.md) エンジン(開く必要の少ないファイル)。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/tinylog/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/tinylog/) <!--hide-->

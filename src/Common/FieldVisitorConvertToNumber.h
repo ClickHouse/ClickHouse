@@ -26,16 +26,6 @@ public:
         throw Exception("Cannot convert NULL to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const NegativeInfinity &) const
-    {
-        throw Exception("Cannot convert -Inf to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
-    T operator() (const PositiveInfinity &) const
-    {
-        throw Exception("Cannot convert +Inf to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
     T operator() (const String &) const
     {
         throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -126,7 +116,7 @@ public:
     template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
     T operator() (const U & x) const
     {
-        if constexpr (IsDecimalNumber<T>)
+        if constexpr (is_decimal<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);

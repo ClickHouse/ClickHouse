@@ -13,7 +13,7 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
@@ -580,13 +580,14 @@ void MergeJoin::mergeInMemoryRightBlocks()
     Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(source));
+    QueryPipelineBuilder builder;
+    builder.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(
-        pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
+    builder.addTransform(std::make_shared<MergeSortingTransform>(
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
     while (Block block = sorted_input.read())
@@ -666,16 +667,24 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
     return saveRightBlock(std::move(block));
 }
 
+void MergeJoin::checkTypesOfKeys(const Block & block) const
+{
+    /// Do not check auxailary column for extra conditions, use original key names
+    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+}
+
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     Names lowcard_keys = lowcard_right_keys;
     if (block)
     {
+        /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
 
         /// Add auxiliary column, will be removed after joining
         addConditionJoinColumn(block, JoinTableSide::Left);
 
+        /// Types of keys can be checked only after `checkTypesOfKeys`
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
         materializeBlockInplace(block);

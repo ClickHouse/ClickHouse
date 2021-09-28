@@ -128,6 +128,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             ConstraintsDescription{},
             String{},
             context,
+            // No format_settings for S3Cluster
+            std::nullopt,
             compression_method,
             /*distributed_processing=*/true);
     }

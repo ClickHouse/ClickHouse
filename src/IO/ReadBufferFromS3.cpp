@@ -76,7 +76,7 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
-            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
+            LOG_DEBUG(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
                     bucket, key, getPosition(), attempt, e.message());
 
             if (attempt + 1 == max_single_read_retries)

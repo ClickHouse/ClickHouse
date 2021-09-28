@@ -280,7 +280,7 @@ mark_cache_size: 5368709120
 mmap_cache_size: 1000
 
 # Cache size for compiled expressions.
-compiled_expression_cache_size: 1073741824
+compiled_expression_cache_size: 134217728
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/

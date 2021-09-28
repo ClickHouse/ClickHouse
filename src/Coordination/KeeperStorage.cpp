@@ -151,19 +151,39 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     }
 
     auto parent_path = parentPath(path);
-    it = list_watches.find(parent_path);
-    if (it != list_watches.end())
-    {
-        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-        watch_list_response->path = parent_path;
-        watch_list_response->xid = Coordination::WATCH_XID;
-        watch_list_response->zxid = -1;
-        watch_list_response->type = Coordination::Event::CHILD;
-        watch_list_response->state = Coordination::State::CONNECTED;
-        for (auto watcher_session : it->second)
-            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
 
-        list_watches.erase(it);
+    Strings paths_to_check_for_list_watches;
+    if (event_type == Coordination::Event::CREATED)
+    {
+        paths_to_check_for_list_watches.push_back(parent_path); /// Trigger list watches for parent
+    }
+    else if (event_type == Coordination::Event::DELETED)
+    {
+        paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
+        paths_to_check_for_list_watches.push_back(parent_path); /// And for parent path
+    }
+    /// CHANGED event never trigger list wathes
+
+    for (const auto & path_to_check : paths_to_check_for_list_watches)
+    {
+        it = list_watches.find(path_to_check);
+        if (it != list_watches.end())
+        {
+            std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+            watch_list_response->path = path_to_check;
+            watch_list_response->xid = Coordination::WATCH_XID;
+            watch_list_response->zxid = -1;
+            if (path_to_check == parent_path)
+                watch_list_response->type = Coordination::Event::CHILD;
+            else
+                watch_list_response->type = Coordination::Event::DELETED;
+
+            watch_list_response->state = Coordination::State::CONNECTED;
+            for (auto watcher_session : it->second)
+                result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
+
+            list_watches.erase(it);
+        }
     }
     return result;
 }
@@ -1058,7 +1078,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         zxid = *new_last_zxid;
     }
 
-    session_expiry_queue.update(session_id, session_and_timeout[session_id]);
+    /// ZooKeeper update sessions expirity for each request, not only for heartbeats
+    session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {

@@ -26,11 +26,11 @@ public:
     template <typename T, typename U>
     bool operator() (const T & l, const U & r) const
     {
-        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>
-            || std::is_same_v<T, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>
-            || std::is_same_v<U, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
+        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
         {
-            return std::is_same_v<T, U>;
+            if constexpr (std::is_same_v<T, Null> && std::is_same_v<U, Null>)
+                return l == r;
+            return false;
         }
         else
         {
@@ -79,12 +79,18 @@ public:
     template <typename T, typename U>
     bool operator() (const T & l, const U & r) const
     {
-        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
-            return false;
-        else if constexpr (std::is_same_v<T, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
-            return !std::is_same_v<T, U>;
-        else if constexpr (std::is_same_v<U, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>)
-            return false;
+        if constexpr (std::is_same_v<T, Null> && std::is_same_v<U, Null>)
+        {
+            return l.isNegativeInfinity() && r.isPositiveInfinity();
+        }
+        else if constexpr (std::is_same_v<T, Null>)
+        {
+            return l.isNegativeInfinity();
+        }
+        else if constexpr (std::is_same_v<U, Null>)
+        {
+            return r.isPositiveInfinity();
+        }
         else
         {
             if constexpr (std::is_same_v<T, U>)

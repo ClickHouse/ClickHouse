@@ -121,7 +121,7 @@ public:
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return expired; }
+    bool isExpired() const override { return requests_queue.isClosed(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -199,17 +199,17 @@ private:
     Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
+    /// To avoid excessive getpeername(2) calls.
+    Poco::Net::SocketAddress socket_address;
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
     int64_t session_id = 0;
 
     std::atomic<XID> next_xid {1};
-    std::atomic<bool> expired {false};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
     std::atomic<bool> finalization_started {false};
-    std::mutex push_request_mutex;
 
     using clock = std::chrono::steady_clock;
 
@@ -223,7 +223,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;

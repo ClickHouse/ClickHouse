@@ -93,10 +93,11 @@ void DatabaseMaterializedMySQL<Base>::setException(const std::exception_ptr & ex
     exception = exception_;
 }
 
-template<typename Base>
-void DatabaseMaterializedMySQL<Base>::loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach)
+template <typename Base>
+void DatabaseMaterializedMySQL<Base>::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
-    Base::loadStoredObjects(context_, has_force_restore_data_flag, force_attach);
+    Base::startupTables(thread_pool, force_restore, force_attach);
+
     if (!force_attach)
         materialize_thread.assertMySQLAvailable();
 

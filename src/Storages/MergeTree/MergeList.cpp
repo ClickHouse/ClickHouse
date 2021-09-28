@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
 #include <common/getThreadId.h>
 #include <Common/CurrentThread.h>
@@ -8,34 +9,10 @@
 namespace DB
 {
 
-MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part)
-    : table_id{table_id_}
-    , partition_id{future_part.part_info.partition_id}
-    , result_part_name{future_part.name}
-    , result_part_path{future_part.path}
-    , result_part_info{future_part.part_info}
-    , num_parts{future_part.parts.size()}
-    , thread_id{getThreadId()}
-    , merge_type{future_part.merge_type}
-    , merge_algorithm{MergeAlgorithm::Undecided}
+
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr)
 {
-    for (const auto & source_part : future_part.parts)
-    {
-        source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->getFullPath());
-
-        total_size_bytes_compressed += source_part->getBytesOnDisk();
-        total_size_marks += source_part->getMarksCount();
-        total_rows_count += source_part->index_granularity.getTotalRows();
-    }
-
-    if (!future_part.parts.empty())
-    {
-        source_data_version = future_part.parts[0]->info.getDataVersion();
-        is_mutation = (result_part_info.getDataVersion() != source_data_version);
-    }
-
-    /// Each merge is executed into separate background processing pool thread
+    // Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
@@ -52,7 +29,44 @@ MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMerg
         }
 
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-        background_thread_memory_tracker->setParent(&memory_tracker);
+        background_thread_memory_tracker->setParent(memory_tracker_ptr);
+    }
+}
+
+
+MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
+{
+    // Unplug memory_tracker from current background processing pool thread
+
+    if (background_thread_memory_tracker)
+        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+}
+
+MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
+    : table_id{table_id_}
+    , partition_id{future_part->part_info.partition_id}
+    , result_part_name{future_part->name}
+    , result_part_path{future_part->path}
+    , result_part_info{future_part->part_info}
+    , num_parts{future_part->parts.size()}
+    , thread_id{getThreadId()}
+    , merge_type{future_part->merge_type}
+    , merge_algorithm{MergeAlgorithm::Undecided}
+{
+    for (const auto & source_part : future_part->parts)
+    {
+        source_part_names.emplace_back(source_part->name);
+        source_part_paths.emplace_back(source_part->getFullPath());
+
+        total_size_bytes_compressed += source_part->getBytesOnDisk();
+        total_size_marks += source_part->getMarksCount();
+        total_rows_count += source_part->index_granularity.getTotalRows();
+    }
+
+    if (!future_part->parts.empty())
+    {
+        source_data_version = future_part->parts[0]->info.getDataVersion();
+        is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 }
 
@@ -90,11 +104,7 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement()
-{
-    /// Unplug memory_tracker from current background processing pool thread
-    if (background_thread_memory_tracker)
-        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
-}
+MergeListElement::~MergeListElement() = default;
+
 
 }

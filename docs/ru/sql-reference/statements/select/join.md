@@ -36,6 +36,9 @@ FROM <left_table>
 -   `LEFT ANY JOIN`, `RIGHT ANY JOIN` и `INNER ANY JOIN`, Частично (для противоположных сторон `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартных видов `JOIN`.
 -   `ASOF JOIN` и `LEFT ASOF JOIN`, Для соединения последовательностей по нечеткому совпадению. Использование `ASOF JOIN` описано ниже.
 
+!!! note "Примечание"
+    Если настройка [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) установлена в значение `partial_merge`, то для `RIGHT JOIN` и `FULL JOIN` поддерживается только уровень строгости `ALL` (`SEMI`, `ANTI`, `ANY` и `ASOF` не поддерживаются).
+
 ## Настройки {#join-settings}
 
 Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).

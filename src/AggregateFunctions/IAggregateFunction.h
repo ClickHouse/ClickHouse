@@ -190,6 +190,7 @@ public:
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
+      * Instead of using an if-column, the condition is combined inside the null_map
       */
     virtual void addBatchSinglePlaceNotNull(
         size_t batch_size,

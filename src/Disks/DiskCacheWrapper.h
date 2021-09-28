@@ -36,11 +36,8 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t direct_io_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        size_t estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 

@@ -87,4 +87,11 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
+bool nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl(ReadBuffer & buf)
+{
+    /// For JSONEachRow we can safely skip whitespace characters
+    skipWhitespaceIfAny(buf);
+    return buf.eof() || *buf.position() == '[';
+}
+
 }

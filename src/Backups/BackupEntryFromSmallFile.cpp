@@ -10,7 +10,7 @@ namespace
 {
     String readFile(const String & file_path)
     {
-        auto buf = createReadBufferFromFileBase(file_path, 0, 0, 0, nullptr);
+        auto buf = createReadBufferFromFileBase(file_path, {}, 0);
         String s;
         readStringUntilEOF(s, *buf);
         return s;

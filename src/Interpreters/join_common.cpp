@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -30,12 +29,41 @@ namespace ErrorCodes
 namespace
 {
 
+void insertFromNullableOrDefault(MutableColumnPtr & dst, const ColumnNullable * nullable_col)
+{
+    const auto & nested = nullable_col->getNestedColumn();
+    const auto & nullmap = nullable_col->getNullMapColumn().getData();
+    if (auto * lc = typeid_cast<ColumnLowCardinality *>(dst.get()); lc && !nested.lowCardinality())
+    {
+        for (size_t i = 0; i < nullable_col->size(); ++i)
+        {
+            if (nullmap[i])
+                lc->insertDefault();
+            else
+                lc->insertRangeFromFullColumn(nested, i, 1);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < nullable_col->size(); ++i)
+        {
+            if (nullmap[i])
+                dst->insertDefault();
+            else
+                dst->insertFrom(nested, i);
+        }
+    }
+}
+
 ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_sample)
 {
     if (dst_sample->lowCardinality())
     {
         MutableColumnPtr lc = dst_sample->cloneEmpty();
-        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
+        if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(column.get()))
+            insertFromNullableOrDefault(lc, nullable_col);
+        else
+            typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
         return lc;
     }
 
@@ -190,9 +218,9 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
-            ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-            MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
+            const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*column.column);
+            MutableColumnPtr mutable_column = nullable_col->getNestedColumn().cloneEmpty();
+            insertFromNullableOrDefault(mutable_column, nullable_col);
             column.column = std::move(mutable_column);
         }
     }
@@ -371,7 +399,7 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
                       const Block & block_right, const Names & key_names_right, const String & condition_name_right)
 {
-    checkTypesOfKeys(block_left, key_names_left,block_right,key_names_right);
+    checkTypesOfKeys(block_left, key_names_left, block_right, key_names_right);
     checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
 }
 

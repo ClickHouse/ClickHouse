@@ -27,9 +27,22 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 {% include 'install/deb.sh' %}
 ```
 
-Также эти пакеты можно скачать и установить вручную отсюда: https://repo.clickhouse.tech/deb/stable/main/.
+Также эти пакеты можно скачать и установить вручную отсюда: https://repo.clickhouse.com/deb/stable/main/.
 
 Если вы хотите использовать наиболее свежую версию, замените `stable` на `testing` (рекомендуется для тестовых окружений).
+
+Также вы можете вручную скачать и установить пакеты из [репозитория](https://repo.clickhouse.com/deb/stable/main/).
+
+#### Пакеты {#packages}
+
+-   `clickhouse-common-static` — Устанавливает исполняемые файлы ClickHouse.
+-   `clickhouse-server` — Создает символические ссылки для `clickhouse-server` и устанавливает конфигурационные файлы.
+-   `clickhouse-client` — Создает символические ссылки для `clickhouse-client` и других клиентских инструментов и устанавливает конфигурационные файлы `clickhouse-client`.
+-   `clickhouse-common-static-dbg` — Устанавливает исполняемые файлы ClickHouse собранные с отладочной информацией.
+
+!!! attention "Внимание"
+    Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
+    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 
 ### Из RPM пакетов {#from-rpm-packages}
 
@@ -39,8 +52,8 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 ``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/stable/x86_64
 ```
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
@@ -51,21 +64,21 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.clickhouse.tech/rpm/stable/x86_64.
+Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.clickhouse.com/rpm/stable/x86_64.
 
 ### Из Tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 
-Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://repo.clickhouse.tech/tgz/.
+Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://repo.clickhouse.com/tgz/.
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
 
 ``` bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
@@ -182,4 +195,4 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.com/tutorial.html).

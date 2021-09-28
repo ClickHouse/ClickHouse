@@ -2185,3 +2185,122 @@ defaultRoles()
 -   Список ролей по умолчанию. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## getServerPort {#getserverport}
+
+Возвращает номер порта сервера. Если порт не используется сервером, генерируется исключение.
+
+**Синтаксис**
+
+``` sql
+getServerPort(port_name)
+```
+
+**Аргументы**
+
+-   `port_name` — имя порта сервера. [String](../../sql-reference/data-types/string.md#string). Возможные значения:
+
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
+
+**Возвращаемое значение**
+
+-   Номер порта сервера.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT getServerPort('tcp_port');
+```
+
+Результат:
+
+``` text
+┌─getServerPort('tcp_port')─┐
+│ 9000                      │
+└───────────────────────────┘
+```
+
+## queryID {#query-id}
+
+Возвращает идентификатор текущего запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `query_id`.
+
+В отличие от [initialQueryID](#initial-query-id), функция `queryID` может возвращать различные значения для разных шардов (см. пример).
+
+**Синтаксис**
+
+``` sql
+queryID()
+```
+
+**Возвращаемое значение**
+
+-   Идентификатор текущего запроса.
+
+Тип: [String](../../sql-reference/data-types/string.md)
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Результат:
+
+``` text
+┌─count()─┐
+│ 3       │
+└─────────┘
+```
+
+## initialQueryID {#initial-query-id}
+
+Возвращает идентификатор родительского запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `initial_query_id`.
+
+В отличие от [queryID](#query-id), функция `initialQueryID` возвращает одинаковые значения для разных шардов (см. пример).
+
+**Синтаксис**
+
+``` sql
+initialQueryID()
+```
+
+**Возвращаемое значение**
+
+-   Идентификатор родительского запроса.
+
+Тип: [String](../../sql-reference/data-types/string.md)
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Результат:
+
+``` text
+┌─count()─┐
+│ 1       │
+└─────────┘
+```
