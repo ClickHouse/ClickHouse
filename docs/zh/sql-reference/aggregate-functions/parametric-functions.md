@@ -224,33 +224,35 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 ## windowFunnel {#windowfunnel}
 
-搜索滑动时间窗中的事件链，并计算从链中发生的最大事件数。
+搜索滑动时间窗中的事件链，并计算其中最长事件链的大小。
 
 该函数采用如下算法：
 
--   该函数搜索触发链中的第一个条件并将事件计数器设置为1。 这是滑动窗口启动的时刻。
+-   在滑动窗口启动的时刻，该函数搜索触发链中的第一个条件并将事件计数器设置为1。
 
--   如果来自链的事件在窗口内顺序发生，则计数器将递增。 如果事件序列中断，则计数器不会增加。
+-   如果来自链的事件在窗口内顺序发生，则计数器将递增。如果事件序列中断，则计数器不再增加。
 
--   如果数据在不同的完成点具有多个事件链，则该函数将仅输出最长链的大小。
+-   如果数据在不同的终点具有多个事件链，则该函数将仅输出最长链的大小。
 
 **语法**
 
 ``` sql
-windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 ```
 
 **参数**
 
--   `window` — 滑动窗户的大小，单位是秒。
--   `mode` - 这是一个可选的参数。
-    -   `'strict'` - 当 `'strict'` 设置时，windowFunnel()仅对唯一值应用匹配条件。
--   `timestamp` — 包含时间的列。 数据类型支持： [日期](../../sql-reference/data-types/date.md), [日期时间](../../sql-reference/data-types/datetime.md#data_type-datetime) 和其他无符号整数类型（请注意，即使时间戳支持 `UInt64` 类型，它的值不能超过Int64最大值，即2^63-1）。
+-   `window` — 滑动窗户的大小，表示事件链中第一个事件和最后一个事件的最大间隔。单位取决于`timestamp `。用表达式来表示则是：`timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`。
+-   `mode` - 这是一个可选的参数，可以设置一个或多个参数。
+    -   `'strict_deduplication'` - 如果事件链中出现相同的条件，则会停止进一步搜索。
+    -   `'strict_order'` - 不允许其他事件的介入。例如：在`A->B->D->C`的情况下，它在`D`停止继续搜索`A->B->C`，最大事件数为2。
+    -   `'strict_increase'` - 事件链中的时间戳必须严格上升。
+-   `timestamp` — 包含时间戳的列。 数据类型支持： [日期](../../sql-reference/data-types/date.md), [日期时间](../../sql-reference/data-types/datetime.md#data_type-datetime) 和其他无符号整数类型（请注意，即使时间戳支持 `UInt64` 类型，它的值也不能超过Int64最大值，即2^63-1）。
 -   `cond` — 事件链的约束条件。 [UInt8](../../sql-reference/data-types/int-uint.md) 类型。
 
 **返回值**
 
-滑动时间窗口内连续触发条件链的最大数目。
+滑动时间窗口内连续触发条件链的最大数量。
 对选择中的所有链进行了分析。
 
 类型: `Integer`.
