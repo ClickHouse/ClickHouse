@@ -1,6 +1,6 @@
 FROM ubuntu:20.04
 
-ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
+ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
 ARG version=21.11.1.*
 ARG gosu_ver=1.10
 
