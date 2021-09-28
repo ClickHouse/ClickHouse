@@ -2,6 +2,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPipeline.h>
 
 #include <Common/setThreadName.h>
@@ -9,6 +10,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 struct PullingAsyncPipelineExecutor::Data
 {
@@ -38,11 +44,11 @@ struct PullingAsyncPipelineExecutor::Data
 
 PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    if (!pipeline.isCompleted())
-    {
-        lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
-        pipeline.setOutputFormat(lazy_format);
-    }
+    if (!pipeline.pulling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
+
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
+    pipeline.complete(lazy_format);
 }
 
 PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
@@ -59,8 +65,7 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 
 const Block & PullingAsyncPipelineExecutor::getHeader() const
 {
-    return lazy_format ? lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader()
-                       : pipeline.getHeader(); /// Empty.
+    return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
@@ -99,7 +104,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = pipeline.execute();
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
