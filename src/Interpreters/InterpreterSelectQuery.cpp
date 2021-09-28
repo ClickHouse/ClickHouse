@@ -100,6 +100,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int INVALID_OFFSET_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
 }
@@ -816,6 +817,26 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
+static bool isLimitOrOffsetPositive(const ASTPtr & node, ContextPtr context, const std::string & expr)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNativeNumber(type))
+        throw Exception(
+            "Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+
+    Field converted = convertFieldToType(field, DataTypeInt128());
+    if (converted.isNull())
+        throw Exception(
+            "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as Int128",
+            ErrorCodes::INVALID_LIMIT_EXPRESSION);
+    Int128 value = converted.safeGet<Int128>();
+    if (value >= 0)
+        return true;
+    else 
+        return false;
+}
+
 static UInt64 getLimitUIntValue(const ASTPtr & node, ContextPtr context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
@@ -824,13 +845,14 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, ContextPtr context, const s
         throw Exception(
             "Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
+    Field converted = convertFieldToType(field, DataTypeInt128());
     if (converted.isNull())
         throw Exception(
-            "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as UInt64",
+            "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as Int128",
             ErrorCodes::INVALID_LIMIT_EXPRESSION);
+    Int128 res = converted.safeGet<Int128>();
 
-    return converted.safeGet<UInt64>();
+    return res >= 0 ? UInt64(res) : UInt64(-res);
 }
 
 
@@ -2342,7 +2364,14 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, context);
-    UInt64 limit = getLimitForSorting(query, context);
+
+    UInt64 limit = 0;
+    if (query.limitLength())
+    {
+        bool is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+        if (is_limit_positive)
+            limit = getLimitForSorting(query, context);
+    }
 
     if (input_sorting_info)
     {
@@ -2462,7 +2491,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             limit_offset = 0;
         }
 
-        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset);
+        bool is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+        auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset, is_limit_positive);
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
@@ -2546,9 +2576,11 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             order_descr = getSortDescription(query, context);
         }
 
+        bool is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+
         auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentDataStream(),
-                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                limit_length, limit_offset, is_limit_positive, always_read_till_end, query.limit_with_ties, order_descr);
 
         if (query.limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");

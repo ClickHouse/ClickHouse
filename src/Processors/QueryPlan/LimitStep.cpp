@@ -25,12 +25,13 @@ static ITransformingStep::Traits getTraits()
 
 LimitStep::LimitStep(
     const DataStream & input_stream_,
-    size_t limit_, size_t offset_,
+    size_t limit_, size_t offset_, 
+    bool is_limit_positive_,
     bool always_read_till_end_,
     bool with_ties_,
     SortDescription description_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    , limit(limit_), offset(offset_)
+    , limit(limit_), offset(offset_), is_limit_positive(is_limit_positive_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
@@ -46,7 +47,7 @@ void LimitStep::updateInputStream(DataStream input_stream)
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
+        pipeline.getHeader(), limit, offset, is_limit_positive, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
 
     pipeline.addTransform(std::move(transform));
 }

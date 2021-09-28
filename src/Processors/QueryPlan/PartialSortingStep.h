@@ -14,7 +14,8 @@ public:
             const DataStream & input_stream,
             SortDescription sort_description_,
             UInt64 limit_,
-            SizeLimits size_limits_);
+            SizeLimits size_limits_,
+            bool is_limit_positive_ = false);
 
     String getName() const override { return "PartialSorting"; }
 
@@ -30,6 +31,7 @@ private:
     SortDescription sort_description;
     UInt64 limit;
     SizeLimits size_limits;
+    bool is_limit_positive;
 };
 
 }
