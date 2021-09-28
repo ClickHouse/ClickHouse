@@ -132,7 +132,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
     else
     {
         ASTFunction * func_tuple = nullptr;
-        if(func && func->name == "equals")
+        if (func && func->name == "equals")
             func_tuple = func->arguments->children[0]->as<ASTFunction>();
 
         if (func_tuple && func_tuple->name == "tuple")
