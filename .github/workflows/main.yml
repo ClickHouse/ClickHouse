@@ -54,25 +54,25 @@ jobs:
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
-  PVS-Check:
-    needs: DockerHubPush
-    runs-on: [self-hosted]
-    steps:
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/pvs_check
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: PVS Check
-        env:
-          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
-          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PVS_STUDIO_KEY: ${{ secrets.PVS_STUDIO_KEY }}
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
-        run: mkdir -p ${{runner.temp}}/pvs_check && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 pvs_check.py
+#  PVS-Check:
+#    needs: DockerHubPush
+#    runs-on: [self-hosted]
+#    steps:
+#      - name: Download changed images
+#        uses: actions/download-artifact@v2
+#        with:
+#          name: changed_images
+#          path: ${{ runner.temp }}/pvs_check
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#        with:
+#          submodules: 'recursive'
+#      - name: PVS Check
+#        env:
+#          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
+#          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          PVS_STUDIO_KEY: ${{ secrets.PVS_STUDIO_KEY }}
+#          TEMP_PATH: ${{runner.temp}}/pvs_check
+#          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
+#        run: mkdir -p ${{runner.temp}}/pvs_check && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 pvs_check.py
