@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <mqs>99999</mqs>
 
     <users_1>
@@ -14,4 +14,4 @@
             <profile>default</profile>
         </user_2>
     </users_2>
-</clickhouse>
+</yandex>
