@@ -1,4 +1,4 @@
-create table node (id UInt32 Key, name String) engine V;
+create table node (id UInt32, name String) engine = MergeTree() order by id
 insert into node values(0,'wang'),(1,'zhang'),(2,'liu'),(3, 'ding'),(4, 'sun'),(5,'wang'),(6,'zhang'),(7,'liu'),(8, 'ding'),(9, 'sun'),(10, 'sun');
 
 select * from node limit -5;
