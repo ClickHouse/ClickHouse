@@ -296,37 +296,30 @@ public:
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        ColumnsWithTypeAndName temporary_columns;
-        if (null_presence.has_nullable)
-            temporary_columns = createBlockWithNestedColumns(arguments);
-        else
-            temporary_columns = arguments;
-
-        ColumnPtr temporary_result;
-
-        /// Choose JSONParser.
-#if USE_SIMDJSON
-        if (allow_simdjson)
-            temporary_result = FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(
-                temporary_columns, result_type, input_rows_count);
-        else
-#endif
-        {
-#if USE_RAPIDJSON
-            temporary_result = FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(
-                temporary_columns, result_type, input_rows_count);
-#else
-            temporary_result
-                = FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(temporary_columns, result_type, input_rows_count);
-#endif
-        }
-
+        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, result_type, input_rows_count);
         if (null_presence.has_nullable)
             return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
         return temporary_result;
     }
 
 private:
+
+    ColumnPtr
+    chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+#if USE_SIMDJSON
+        if (allow_simdjson)
+            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
+#endif
+
+#if USE_RAPIDJSON
+        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
+#else
+        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
+#endif
+    }
+
     NullPresence null_presence;
     bool allow_simdjson;
 };
@@ -372,6 +365,8 @@ private:
 };
 
 
+/// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
+/// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl>
 class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
 {
@@ -389,9 +384,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    // Both NULL and JSON NULL should generate NULL value.
-    // If any argument is NULL, return NULL.
     bool useDefaultImplementationForNulls() const override { return false; }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
