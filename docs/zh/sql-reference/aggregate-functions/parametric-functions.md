@@ -252,7 +252,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 **返回值**
 
-滑动时间窗口内连续触发条件链的最大数量。
+滑动时间窗口内连续触发条件链的最大数目。
 对选择中的所有链进行了分析。
 
 类型: `Integer`.
