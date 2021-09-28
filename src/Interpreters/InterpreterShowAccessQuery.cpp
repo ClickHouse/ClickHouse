@@ -5,7 +5,7 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Columns/ColumnString.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessFlags.h>
 #include <Access/AccessControlManager.h>
@@ -22,12 +22,12 @@ using EntityType = IAccessEntity::Type;
 BlockIO InterpreterShowAccessQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
 
-BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
+QueryPipeline InterpreterShowAccessQuery::executeImpl() const
 {
     /// Build a create query.
     ASTs queries = getCreateAndGrantQueries();
@@ -43,7 +43,7 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
     }
 
     String desc = "ACCESS";
-    return std::make_shared<OneBlockInputStream>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}});
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
 }
 
 

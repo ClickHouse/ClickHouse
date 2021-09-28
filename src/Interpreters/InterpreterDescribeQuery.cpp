@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataStreams/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
@@ -15,7 +16,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -157,7 +157,7 @@ BlockIO InterpreterDescribeQuery::execute()
     BlockIO res;
     size_t num_rows = res_columns[0]->size();
     auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
-    res.pipeline.init(Pipe(std::move(source)));
+    res.pipeline = QueryPipeline(std::move(source));
 
     return res;
 }

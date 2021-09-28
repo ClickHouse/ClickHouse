@@ -36,6 +36,7 @@
 #include <rocksdb/convenience.h>
 
 #include <filesystem>
+#include <shared_mutex>
 
 
 namespace fs = std::filesystem;
@@ -213,9 +214,9 @@ public:
         std::vector<rocksdb::Slice> slices_keys(num_keys);
 
         const auto & sample_block = metadata_snapshot->getSampleBlock();
-        const auto & key_column = sample_block.getByName(storage.primary_key);
+        const auto & key_column = sample_block.getByName(storage.getPrimaryKey());
         auto columns = sample_block.cloneEmptyColumns();
-        size_t primary_key_pos = sample_block.getPositionByName(storage.primary_key);
+        size_t primary_key_pos = sample_block.getPositionByName(storage.getPrimaryKey());
 
         size_t rows_processed = 0;
         while (it < end && rows_processed < max_block_size)
@@ -230,8 +231,7 @@ public:
         }
 
         std::vector<String> values;
-        auto statuses = storage.rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
-
+        auto statuses = storage.multiGet(slices_keys, values);
         for (size_t i = 0; i < statuses.size(); ++i)
         {
             if (statuses[i].ok())
@@ -280,18 +280,21 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     {
         fs::create_directories(rocksdb_dir);
     }
-    initDb();
+    initDB();
 }
 
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
 {
+    std::unique_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
+
     fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
-    initDb();
+    initDB();
 }
 
-void StorageEmbeddedRocksDB::initDb()
+void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
@@ -460,7 +463,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
+    std::shared_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
+}
+
+std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
+{
+    std::shared_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return {};
+    return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
 }
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
