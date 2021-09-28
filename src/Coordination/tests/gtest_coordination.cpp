@@ -1469,14 +1469,12 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
 
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotDifferenVersions)
+TEST_P(CoordinationTest, TestStorageSnapshotDifferenCompressions)
 {
     auto params = GetParam();
-    if (!params.enable_compression)
-        return;
 
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, false);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
     DB::KeeperStorage storage(500, "");
     addNode(storage, "/hello", "world", 1);
@@ -1492,9 +1490,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferenVersions)
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 2);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
 
-    DB::KeeperSnapshotManager new_manager("./snapshots", 3, true);
+    DB::KeeperSnapshotManager new_manager("./snapshots", 3, !params.enable_compression);
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
