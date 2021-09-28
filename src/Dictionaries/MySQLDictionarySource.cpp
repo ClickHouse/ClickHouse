@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 
@@ -44,7 +45,22 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             config.getBool(config_prefix + ".mysql.fail_on_connection_loss", false) ? 1 : default_num_tries_on_connection_loss);
 
         auto settings_config_prefix = config_prefix + ".mysql";
-        auto configuration = getExternalDataSourceConfiguration(config, settings_config_prefix, global_context);
+        std::shared_ptr<mysqlxx::PoolWithFailover> pool;
+        ExternalDataSourceConfiguration configuration;
+        auto named_collection = created_from_ddl ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
+        if (named_collection)
+        {
+            configuration = *named_collection;
+            std::vector<std::pair<String, UInt16>> addresses{std::make_pair(configuration.host, configuration.port)};
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(configuration.database, addresses, configuration.username, configuration.password);
+        }
+        else
+        {
+            configuration.database = config.getString(settings_config_prefix + ".db", "");
+            configuration.table = config.getString(settings_config_prefix + ".table", "");
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+        }
+
         auto query = config.getString(settings_config_prefix + ".query", "");
         if (query.empty() && configuration.table.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
@@ -60,15 +76,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
         };
-
-        std::shared_ptr<mysqlxx::PoolWithFailover> pool;
-        if (created_from_ddl)
-        {
-            std::vector<std::pair<String, UInt16>> addresses{std::make_pair(configuration.host, configuration.port)};
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(configuration.database, addresses, configuration.username, configuration.password);
-        }
-        else
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
 
         return std::make_unique<MySQLDictionarySource>(dict_struct, dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
 #else
@@ -301,7 +308,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
 }
 
 }

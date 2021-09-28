@@ -165,10 +165,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
-
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
+Block getBlockWithAllStreamData(QueryPipeline pipeline);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 
