@@ -1,4 +1,4 @@
-#include <Storages/Kafka/KafkaBlockInputStream.h>
+#include <Storages/Kafka/KafkaSource.h>
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>

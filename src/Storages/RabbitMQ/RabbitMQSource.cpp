@@ -1,4 +1,4 @@
-#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+#include <Storages/RabbitMQ/RabbitMQSource.h>
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
