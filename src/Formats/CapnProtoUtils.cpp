@@ -153,16 +153,18 @@ static bool checkEnums(const capnp::Type & capnp_type, const DataTypePtr column_
     std::unordered_set<Type> capn_enum_values;
 
     auto enumerants = enum_schema.getEnumerants();
+    /// In CapnProto Enum fields are numbered sequentially starting from zero.
+    if (mode == FormatSettings::EnumComparingMode::BY_VALUES && enumerants.size() > max_value)
+    {
+        error_message += "Enum from CapnProto schema contains values that is out of range for Clickhouse Enum";
+        return false;
+    }
+
     for (auto enumerant : enumerants)
     {
         String name = enumerant.getProto().getName();
         capn_enum_names.insert(to_lower ? boost::algorithm::to_lower_copy(name) : name);
         auto value = enumerant.getOrdinal();
-        if (mode == FormatSettings::EnumComparingMode::BY_VALUES && value > max_value)
-        {
-            error_message += "Enum from CapnProto schema contains value that is out of range for Clickhouse Enum";
-            return false;
-        }
         capn_enum_values.insert(Type(value));
     }
 
