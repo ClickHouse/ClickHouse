@@ -17,6 +17,7 @@ function run_with_retry
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t;"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t (b UInt8) ENGINE = Memory;"
 
+# Run with retries, because some databases may be dropped concurrently and we will receive wrong error code
 run_with_retry "SELECT a FROM merge(REGEXP('.'), '^t$');" "UNKNOWN_IDENTIFIER"
 run_with_retry "SELECT a FROM merge(REGEXP('\0'), '^t$');" "UNKNOWN_IDENTIFIER"
 run_with_retry "SELECT a FROM merge(REGEXP('\0a'), '^t$');" "UNKNOWN_IDENTIFIER"
