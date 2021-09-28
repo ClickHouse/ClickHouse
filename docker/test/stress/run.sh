@@ -221,6 +221,7 @@ then
     rm -rf tmp_stress_output
 
     clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+
     stop
     
     # Start new server
