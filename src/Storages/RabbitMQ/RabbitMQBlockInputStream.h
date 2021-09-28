@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
@@ -8,11 +8,11 @@
 namespace DB
 {
 
-class RabbitMQBlockInputStream : public IBlockInputStream
+class RabbitMQSource : public SourceWithProgress
 {
 
 public:
-    RabbitMQBlockInputStream(
+    RabbitMQSource(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
             ContextPtr context_,
@@ -20,14 +20,13 @@ public:
             size_t max_block_size_,
             bool ack_in_suffix = true);
 
-    ~RabbitMQBlockInputStream() override;
+    ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    Block getHeader() const override;
     ConsumerBufferPtr getBuffer() { return buffer; }
 
     void readPrefixImpl() override;
-    Block readImpl() override;
+    Chunk generate() override;
     void readSuffixImpl() override;
 
     bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
@@ -43,12 +42,22 @@ private:
     const size_t max_block_size;
     bool ack_in_suffix;
 
-    bool finished = false;
+    bool is_finished = false;
     const Block non_virtual_header;
-    Block sample_block;
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
+
+    RabbitMQSource(
+        StorageRabbitMQ & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::pair<Block, Block> headers,
+        ContextPtr context_,
+        const Names & columns,
+        size_t max_block_size_,
+        bool ack_in_suffix);
+
+    Chunk generateImpl();
 };
 
 }

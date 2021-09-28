@@ -36,7 +36,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
 
@@ -611,14 +611,16 @@ bool StorageKafka::streamToViews()
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
-    BlockInputStreams streams;
+    std::vector<std::shared_ptr<KafkaSource>> sources;
+    Pipes pipes;
 
     auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
-    streams.reserve(stream_count);
+    sources.reserve(stream_count);
+    pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
-        streams.emplace_back(stream);
+        auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        sources.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
@@ -628,41 +630,27 @@ bool StorageKafka::streamToViews()
                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
-        stream->setLimits(limits);
+        source->setLimits(limits);
     }
 
-    // Join multiple streams if necessary
-    BlockInputStreamPtr in;
-    if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
-    else
-        in = streams[0];
+    auto pipe = Pipe::unitePipes(std::move(pipes));
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
     size_t rows = 0;
     {
-        PushingPipelineExecutor executor(block_io.pipeline);
-
-        in->readPrefix();
-        executor.start();
-
-        while (auto block = in->read())
-        {
-            rows += block.rows();
-            executor.push(std::move(block));
-        }
-
-        in->readSuffix();
-        executor.finish();
+        block_io.pipeline.complete(std::move(pipe));
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
     }
 
     bool some_stream_is_stalled = false;
-    for (auto & stream : streams)
+    for (auto & source : sources)
     {
-        some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
-        stream->as<KafkaBlockInputStream>()->commit();
+        some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
+        source->commit();
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();

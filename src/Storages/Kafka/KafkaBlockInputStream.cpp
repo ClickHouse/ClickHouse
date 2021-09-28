@@ -1,6 +1,5 @@
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
@@ -20,7 +19,7 @@ namespace ErrorCodes
 // when selecting from empty topic
 const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
-KafkaBlockInputStream::KafkaBlockInputStream(
+KafkaSource::KafkaSource(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_,
@@ -28,7 +27,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
-    : storage(storage_)
+    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
@@ -41,7 +41,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 {
 }
 
-KafkaBlockInputStream::~KafkaBlockInputStream()
+KafkaSource::~KafkaSource()
 {
     if (!buffer)
         return;
@@ -52,30 +52,25 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
     storage.pushReadBuffer(buffer);
 }
 
-Block KafkaBlockInputStream::getHeader() const
+Chunk KafkaSource::generate()
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
-}
-
-void KafkaBlockInputStream::readPrefixImpl()
-{
-    auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
-    buffer = storage.popReadBuffer(timeout);
-
     if (!buffer)
-        return;
+    {
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        buffer = storage.popReadBuffer(timeout);
 
-    buffer->subscribe();
+        if (!buffer)
+            return {};
 
-    broken = true;
-}
+        buffer->subscribe();
 
-Block KafkaBlockInputStream::readImpl()
-{
-    if (!buffer || finished)
-        return Block();
+        broken = true;
+    }
 
-    finished = true;
+    if (!buffer || is_finished)
+        return {};
+
+    is_finished = true;
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
@@ -220,7 +215,7 @@ Block KafkaBlockInputStream::readImpl()
     }
 
     if (buffer->polledDataUnusable() || total_rows == 0)
-        return Block();
+        return {};
 
     /// MATERIALIZED columns can be added here, but I think
     // they are not needed here:
@@ -235,17 +230,24 @@ Block KafkaBlockInputStream::readImpl()
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);
 
-    return ConvertingBlockInputStream(
-               std::make_shared<OneBlockInputStream>(result_block),
-               getHeader(),
-               ConvertingBlockInputStream::MatchColumnsMode::Name)
-        .read();
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        result_block.cloneEmpty().getColumnsWithTypeAndName(),
+        getHeader().getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    converting_actions->execute(result_block);
+
+    return Chunk(result_block.getColumns(), result_block.rows());
 }
 
-void KafkaBlockInputStream::readSuffixImpl()
+Chunk KafkaSource::generate()
 {
-    if (commit_in_suffix)
+    auto chunk = generateImpl();
+    if (!chunk && commit_in_suffix)
         commit();
+
+    return chunk;
 }
 
 void KafkaBlockInputStream::commit()

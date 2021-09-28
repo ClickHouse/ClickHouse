@@ -7,7 +7,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>

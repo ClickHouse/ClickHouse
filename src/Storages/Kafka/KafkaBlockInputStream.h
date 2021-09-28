@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
@@ -13,10 +13,10 @@ namespace Poco
 namespace DB
 {
 
-class KafkaBlockInputStream : public IBlockInputStream
+class KafkaSource : public SourceWithProgress
 {
 public:
-    KafkaBlockInputStream(
+    KafkaSource(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ContextPtr & context_,
@@ -24,14 +24,11 @@ public:
         Poco::Logger * log_,
         size_t max_block_size_,
         bool commit_in_suffix = true);
-    ~KafkaBlockInputStream() override;
+    ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
-    Block getHeader() const override;
 
-    void readPrefixImpl() override;
-    Block readImpl() override;
-    void readSuffixImpl() override;
+    Chunk generate() override;
 
     void commit();
     bool isStalled() const { return !buffer || buffer->isStalled(); }
@@ -46,12 +43,14 @@ private:
 
     ConsumerBufferPtr buffer;
     bool broken = true;
-    bool finished = false;
+    bool is_finished = false;
     bool commit_in_suffix;
 
     const Block non_virtual_header;
     const Block virtual_header;
     const HandleKafkaErrorMode handle_error_mode;
+
+    Chunk generateImpl() override;
 };
 
 }
