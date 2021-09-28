@@ -1,6 +1,6 @@
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     library-bridge.cpp
-    library-log.cpp
+    LibraryInterface.cpp
     LibraryBridge.cpp
     Handlers.cpp
     HandlerFactory.cpp

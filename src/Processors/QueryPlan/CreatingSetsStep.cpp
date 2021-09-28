@@ -1,8 +1,10 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -42,7 +44,7 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
@@ -54,11 +56,20 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     if (subquery_for_set.set)
         settings.out << "Set: ";
-    else if (subquery_for_set.join)
-        settings.out << "Join: ";
+    // else if (subquery_for_set.join)
+    //     settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
+
+void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (subquery_for_set.set)
+        map.add("Set", description);
+    // else if (subquery_for_set.join)
+    //     map.add("Join", description);
+}
+
 
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
@@ -74,7 +85,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
                             input_streams[i].header.dumpStructure());
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -85,11 +96,11 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, cons
 
     pipelines.erase(pipelines.begin());
 
-    QueryPipeline delayed_pipeline;
+    QueryPipelineBuilder delayed_pipeline;
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
+        delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
         processors = collector.detachProcessors();
     }
     else
@@ -124,8 +135,6 @@ void addCreatingSetsStep(
             continue;
 
         auto plan = std::move(set.source);
-        std::string type = (set.join != nullptr) ? "JOIN"
-                                                 : "subquery";
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
@@ -133,7 +142,7 @@ void addCreatingSetsStep(
                 std::move(set),
                 limits,
                 context);
-        creating_set->setStepDescription("Create set for " + type);
+        creating_set->setStepDescription("Create set for subquery");
         plan->addStep(std::move(creating_set));
 
         input_streams.emplace_back(plan->getCurrentDataStream());

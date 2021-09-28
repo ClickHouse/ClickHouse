@@ -5,7 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>
 #include <string.h>
@@ -423,7 +423,7 @@ public:
 
         auto needle_pos = needle;
 
-        for (const auto i : ext::range(0, n))
+        for (const auto i : collections::range(0, n))
         {
             cachel = _mm_srli_si128(cachel, 1);
             cacheu = _mm_srli_si128(cacheu, 1);
@@ -622,7 +622,7 @@ public:
 
         auto needle_pos = needle;
 
-        for (const auto i : ext::range(0, n))
+        for (const auto i : collections::range(0, n))
         {
             cache = _mm_srli_si128(cache, 1);
 

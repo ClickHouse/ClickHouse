@@ -1,16 +1,18 @@
 #pragma once
+
 #include <common/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>
-//#include <common/TimeZone.h>
+#include <common/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+
 
 namespace DB
 {
@@ -44,6 +46,7 @@ struct ZeroTransform
 {
     static inline UInt16 execute(Int64, const DateLUTImpl &) { return 0; }
     static inline UInt16 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static inline UInt16 execute(Int32, const DateLUTImpl &) { return 0; }
     static inline UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
@@ -59,7 +62,35 @@ struct ToDateImpl
     {
         return UInt16(time_zone.toDayNum(t));
     }
+    static inline UInt16 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToDate32Impl
+{
+    static constexpr auto name = "toDate32";
+
+    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return Int32(time_zone.toDayNum(t));
+    }
+    static inline Int32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return Int32(time_zone.toDayNum(t));
+    }
+    static inline Int32 execute(Int32 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+    static inline Int32 execute(UInt16 d, const DateLUTImpl &)
     {
         return d;
     }
@@ -79,6 +110,10 @@ struct ToStartOfDayImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDate(t);
+    }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDate(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -102,6 +137,10 @@ struct ToMondayImpl
         //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
         return time_zone.toFirstDayNumOfWeek(t);
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
@@ -121,6 +160,10 @@ struct ToStartOfMonthImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -142,6 +185,10 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
@@ -161,6 +208,10 @@ struct ToStartOfYearImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -184,7 +235,10 @@ struct ToTimeImpl
     {
         return time_zone.toTime(t) + 86400;
     }
-
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -204,6 +258,10 @@ struct ToStartOfMinuteImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfMinute(t);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -240,6 +298,10 @@ struct ToStartOfSecondImpl
     {
         throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -259,6 +321,10 @@ struct ToStartOfFiveMinuteImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfFiveMinute(t);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -280,6 +346,10 @@ struct ToStartOfTenMinutesImpl
     {
         return time_zone.toStartOfTenMinutes(t);
     }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -299,6 +369,10 @@ struct ToStartOfFifteenMinutesImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toStartOfFifteenMinutes(t);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -324,6 +398,11 @@ struct TimeSlotImpl
         return t / 1800 * 1800;
     }
 
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -346,6 +425,11 @@ struct ToStartOfHourImpl
         return time_zone.toStartOfHour(t);
     }
 
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -365,6 +449,10 @@ struct ToYearImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toYear(t);
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYear(ExtendedDayNum(d));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -386,6 +474,10 @@ struct ToQuarterImpl
     {
         return time_zone.toQuarter(t);
     }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toQuarter(ExtendedDayNum(d));
+    }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toQuarter(ExtendedDayNum(d));
@@ -405,6 +497,10 @@ struct ToMonthImpl
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMonth(t);
+    }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMonth(ExtendedDayNum(d));
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -426,6 +522,10 @@ struct ToDayOfMonthImpl
     {
         return time_zone.toDayOfMonth(t);
     }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfMonth(ExtendedDayNum(d));
+    }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfMonth(ExtendedDayNum(d));
@@ -445,6 +545,10 @@ struct ToDayOfWeekImpl
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfWeek(t);
+    }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfWeek(ExtendedDayNum(d));
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -466,6 +570,10 @@ struct ToDayOfYearImpl
     {
         return time_zone.toDayOfYear(t);
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfYear(ExtendedDayNum(d));
@@ -486,7 +594,10 @@ struct ToHourImpl
     {
         return time_zone.toHour(t);
     }
-
+    static inline UInt8 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -509,6 +620,11 @@ struct TimezoneOffsetImpl
         return time_zone.timezoneOffset(t);
     }
 
+    static inline time_t execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
     static inline time_t execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -528,6 +644,10 @@ struct ToMinuteImpl
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toMinute(t);
+    }
+    static inline UInt8 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
@@ -549,6 +669,10 @@ struct ToSecondImpl
     {
         return time_zone.toSecond(t);
     }
+    static inline UInt8 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
         return dateIsNotSupported(name);
@@ -568,6 +692,10 @@ struct ToISOYearImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOYear(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOYear(ExtendedDayNum(d));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -589,6 +717,10 @@ struct ToStartOfISOYearImpl
     {
         return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
@@ -608,6 +740,10 @@ struct ToISOWeekImpl
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toISOWeek(time_zone.toDayNum(t));
+    }
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(ExtendedDayNum(d));
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -629,6 +765,10 @@ struct ToRelativeYearNumImpl
     {
         return time_zone.toYear(static_cast<time_t>(t));
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYear(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toYear(ExtendedDayNum(d));
@@ -648,6 +788,10 @@ struct ToRelativeQuarterNumImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeQuarterNum(static_cast<time_t>(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -669,6 +813,10 @@ struct ToRelativeMonthNumImpl
     {
         return time_zone.toRelativeMonthNum(static_cast<time_t>(t));
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
@@ -689,6 +837,10 @@ struct ToRelativeWeekNumImpl
     {
         return time_zone.toRelativeWeekNum(static_cast<time_t>(t));
     }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
+    }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
@@ -708,6 +860,10 @@ struct ToRelativeDayNumImpl
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayNum(static_cast<time_t>(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl &)
+    {
+        return static_cast<ExtendedDayNum>(d);
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -730,6 +886,10 @@ struct ToRelativeHourNumImpl
     {
         return time_zone.toRelativeHourNum(static_cast<time_t>(t));
     }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toRelativeHourNum(ExtendedDayNum(d));
+    }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeHourNum(ExtendedDayNum(d));
@@ -749,6 +909,10 @@ struct ToRelativeMinuteNumImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeMinuteNum(static_cast<time_t>(t));
+    }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toRelativeMinuteNum(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -770,6 +934,10 @@ struct ToRelativeSecondNumImpl
     {
         return t;
     }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(ExtendedDayNum(d));
+    }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d));
@@ -789,6 +957,10 @@ struct ToYYYYMMImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMM(t);
+    }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMM(static_cast<ExtendedDayNum>(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -810,6 +982,10 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(t);
     }
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDD(static_cast<ExtendedDayNum>(d));
+    }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMMDD(static_cast<DayNum>(d));
@@ -829,6 +1005,10 @@ struct ToYYYYMMDDhhmmssImpl
     static inline UInt64 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMMDDhhmmss(t);
+    }
+    static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<ExtendedDayNum>(d)));
     }
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -857,15 +1037,10 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
-
-        size_t time_zone_argument_position = 1;
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            time_zone_argument_position = 2;
-
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
 
         const ColumnPtr source_col = arguments[0].column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
@@ -873,7 +1048,21 @@ struct DateTimeTransformImpl
             auto mutable_result_col = result_type->createColumn();
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
-            Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            WhichDataType result_data_type(result_type);
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
+            {
+                const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            }
+            else
+            {
+                size_t time_zone_argument_position = 1;
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    time_zone_argument_position = 2;
+
+                const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+            }
 
             return mutable_result_col;
         }

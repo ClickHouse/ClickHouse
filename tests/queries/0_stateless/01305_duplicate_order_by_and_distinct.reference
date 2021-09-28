@@ -1,8 +1,8 @@
 SELECT number
-FROM 
+FROM
 (
     SELECT number
-    FROM 
+    FROM
     (
         SELECT DISTINCT number
         FROM numbers(3)
@@ -13,10 +13,10 @@ ORDER BY number ASC
 1
 2
 SELECT DISTINCT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
-    FROM 
+    FROM
     (
         SELECT DISTINCT number
         FROM numbers(3)
@@ -29,10 +29,10 @@ ORDER BY number ASC
 1
 2
 SELECT number
-FROM 
+FROM
 (
     SELECT number
-    FROM 
+    FROM
     (
         SELECT DISTINCT number % 2 AS number
         FROM numbers(3)
@@ -42,10 +42,10 @@ ORDER BY number ASC
 0
 1
 SELECT DISTINCT number
-FROM 
+FROM
 (
     SELECT DISTINCT number
-    FROM 
+    FROM
     (
         SELECT DISTINCT number % 2 AS number
         FROM numbers(3)

@@ -28,11 +28,11 @@ The `CHECK TABLE` query supports the following table engines:
 
 Performed over the tables with another table engines causes an exception.
 
-Engines from the `*Log` family don’t provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
 ## Checking the MergeTree Family Tables {#checking-mergetree-tables}
 
-For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server. 
+For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
 
 ```sql
 SET check_query_single_value_result = 0;

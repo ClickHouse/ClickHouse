@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -9,7 +9,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -25,16 +25,19 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionInitializeAggregation : public IFunction
+class FunctionInitializeAggregation : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionInitializeAggregation>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionInitializeAggregation>(context_); }
+    explicit FunctionInitializeAggregation(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -44,6 +47,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
+    /// TODO Rewrite with FunctionBuilder.
     mutable AggregateFunctionPtr aggregate_function;
 };
 
@@ -77,7 +81,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
@@ -89,7 +93,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
 
 ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    IAggregateFunction & agg_func = *aggregate_function;
+    const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     const size_t num_arguments_columns = arguments.size() - 1;
@@ -138,9 +142,9 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
     });
 
     {
-        auto * that = &agg_func;
+        const auto * that = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto * func = typeid_cast<AggregateFunctionState *>(that))
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
         that->addBatch(input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }

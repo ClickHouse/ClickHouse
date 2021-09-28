@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Common/UInt128.h>
 #include <common/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
@@ -28,6 +28,8 @@ public:
         GRPC = 3,
         MYSQL = 4,
         POSTGRESQL = 5,
+        LOCAL = 6,
+        TCP_INTERSERVER = 7,
     };
 
     enum class HTTPMethod : uint8_t
@@ -61,6 +63,8 @@ public:
     String initial_user;
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
+    time_t initial_query_start_time{};
+    Decimal64 initial_query_start_time_microseconds{};
 
     // OpenTelemetry trace context we received from client, or which we are going
     // to send to server.
@@ -97,6 +101,8 @@ public:
     String quota_key;
 
     UInt64 distributed_depth = 0;
+
+    bool is_replicated_database_internal = false;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

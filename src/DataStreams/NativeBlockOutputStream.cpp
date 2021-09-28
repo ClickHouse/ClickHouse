@@ -51,7 +51,7 @@ static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuf
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0;
+    settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     auto serialization = type.getDefaultSerialization();
 

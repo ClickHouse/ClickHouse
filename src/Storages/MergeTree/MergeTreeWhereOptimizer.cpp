@@ -12,7 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 
 namespace DB
@@ -34,7 +34,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
-    : table_columns{ext::map<std::unordered_set>(
+    : table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
@@ -47,8 +47,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    for (const auto & [_, size] : column_sizes)
-        total_size_of_queried_columns += size;
+    for (const auto & name : queried_columns)
+    {
+        auto it = column_sizes.find(name);
+        if (it != column_sizes.end())
+            total_size_of_queried_columns += it->second;
+    }
 
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());
@@ -218,14 +222,20 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        /// 10% ratio is just a guess.
-        /// If sizes of compressed columns cannot be calculated, e.g. for compact parts,
-        /// use number of moved columns as a fallback.
-        bool moved_enough =
-            (total_size_of_queried_columns > 0 && total_size_of_moved_conditions > 0
-            && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns)
-                || (total_number_of_moved_columns > 0
-                    && (total_number_of_moved_columns + it->identifiers.size()) * 10 > queried_columns.size());
+        bool moved_enough = false;
+        if (total_size_of_queried_columns > 0)
+        {
+            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+            moved_enough = total_size_of_moved_conditions > 0
+                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+        }
+        else
+        {
+            /// Otherwise, use number of moved columns as a fallback.
+            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+            moved_enough = total_number_of_moved_columns > 0
+                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+        }
 
         if (moved_enough)
             break;
@@ -339,6 +349,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if ("indexHint" == function_ptr->name)
+            return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
@@ -359,7 +373,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto array_join_expression_list = select.arrayJoinExpressionList();
+    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

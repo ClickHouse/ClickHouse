@@ -10,16 +10,83 @@ toc_title: Strings
 
 ## empty {#empty}
 
-Returns 1 for an empty string or 0 for a non-empty string.
-The result type is UInt8.
+Checks whether the input string is empty.
+
+**Syntax**
+
+``` sql
+empty(x)
+```
+
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-The function also works for arrays.
+
+The function also works for [arrays](array-functions.md#function-empty) or [UUID](uuid-functions.md#empty).
+
+**Arguments**
+
+-   `x` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+-   Returns `1` for an empty string or `0` for a non-empty string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT empty('');
+```
+
+Result:
+
+```text
+┌─empty('')─┐
+│         1 │
+└───────────┘
+```
 
 ## notEmpty {#notempty}
 
-Returns 0 for an empty string or 1 for a non-empty string.
-The result type is UInt8.
-The function also works for arrays.
+Checks whether the input string is non-empty.
+
+**Syntax**
+
+``` sql
+notEmpty(x)
+```
+
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
+
+The function also works for [arrays](array-functions.md#function-notempty) or [UUID](uuid-functions.md#notempty).
+
+**Arguments**
+
+-   `x` — Input value. [String](../data-types/string.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty string or `0` for an empty string string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT notEmpty('text');
+```
+
+Result:
+
+```text
+┌─notEmpty('text')─┐
+│                1 │
+└──────────────────┘
+```
 
 ## length {#length}
 
@@ -29,18 +96,170 @@ The function also works for arrays.
 
 ## lengthUTF8 {#lengthutf8}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
 ## char_length, CHAR_LENGTH {#char-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
 ## character_length, CHARACTER_LENGTH {#character-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
+
+## leftPad {#leftpad}
+
+Pads the current string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function.
+
+**Syntax**
+
+``` sql
+leftPad('string', 'length'[, 'pad_string'])
+```
+
+**Arguments**
+
+-   `string` — Input string that needs to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+
+**Returned value**
+
+-   The resulting string of the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
+```
+
+Result:
+
+``` text
+┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
+│ ****abc                │     def           │
+└────────────────────────┴───────────────────┘
+```
+
+## leftPadUTF8 {#leftpadutf8}
+
+Pads the current string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function. While in the [leftPad](#leftpad) function the length is measured in bytes, here in the `leftPadUTF8` function it is measured in code points.
+
+**Syntax**
+
+``` sql
+leftPadUTF8('string','length'[, 'pad_string'])
+```
+
+**Arguments**
+
+-   `string` — Input string that needs to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+
+**Returned value**
+
+-   The resulting string of the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7);
+```
+
+Result:
+
+``` text
+┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
+│ ***абвг                     │    дежз                │
+└─────────────────────────────┴────────────────────────┘
+```
+
+## rightPad {#rightpad}
+
+Pads the current string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function.
+
+**Syntax**
+
+``` sql
+rightPad('string', 'length'[, 'pad_string'])
+```
+
+**Arguments**
+
+-   `string` — Input string that needs to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+
+**Returned value**
+
+-   The resulting string of the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT rightPad('abc', 7, '*'), rightPad('abc', 7);
+```
+
+Result:
+
+``` text
+┌─rightPad('abc', 7, '*')─┬─rightPad('abc', 7)─┐
+│ abc****                 │ abc                │
+└─────────────────────────┴────────────────────┘
+```
+
+## rightPadUTF8 {#rightpadutf8}
+
+Pads the current string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function. While in the [rightPad](#rightpad) function the length is measured in bytes, here in the `rightPadUTF8` function it is measured in code points.
+
+**Syntax**
+
+``` sql
+rightPadUTF8('string','length'[, 'pad_string'])
+```
+
+**Arguments**
+
+-   `string` — Input string that needs to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+
+**Returned value**
+
+-   The resulting string of the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
+```
+
+Result:
+
+``` text
+┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
+│ абвг***                      │ абвг                    │
+└──────────────────────────────┴─────────────────────────┘
+```
 
 ## lower, lcase {#lower}
 
@@ -53,14 +272,14 @@ Converts ASCII Latin symbols in a string to uppercase.
 ## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn’t detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
 ## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn’t detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
@@ -139,7 +358,7 @@ Reverses the string (as a sequence of bytes).
 
 ## reverseUTF8 {#reverseutf8}
 
-Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn’t throw an exception).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it does not throw an exception).
 
 ## format(pattern, s0, s1, …) {#format}
 
@@ -264,7 +483,7 @@ Returns a substring starting with the byte from the ‘offset’ index that is �
 
 ## substringUTF8(s, offset, length) {#substringutf8}
 
-The same as ‘substring’, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
+The same as ‘substring’, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 
 ## appendTrailingCharIfAbsent(s, c) {#appendtrailingcharifabsent}
 
@@ -305,7 +524,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 **Returned values**
 
 -   1, if the string starts with the specified prefix.
--   0, if the string doesn’t start with the specified prefix.
+-   0, if the string does not start with the specified prefix.
 
 **Example**
 
@@ -363,7 +582,7 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 
@@ -401,7 +620,7 @@ Result:
 
 ## trimRight {#trimright}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 
@@ -439,7 +658,7 @@ Result:
 
 ## trimBoth {#trimboth}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It does not remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax**
 
@@ -503,7 +722,7 @@ Replaces literals, sequences of literals and complex aliases with placeholders.
 normalizeQuery(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -533,13 +752,13 @@ Result:
 
 Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 normalizedQueryHash(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -571,13 +790,13 @@ Escapes characters to place string into XML text node or attribute.
 
 The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 encodeXMLComponent(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -640,7 +859,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Result:
 
 ``` text
-'foo' 
+'foo'
 < Σ >
 ```
 
@@ -682,7 +901,7 @@ extractTextFromHTML(x)
 
 **Arguments**
 
--   `x` — input text. [String](../../sql-reference/data-types/string.md). 
+-   `x` — input text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 

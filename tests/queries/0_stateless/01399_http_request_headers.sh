@@ -4,6 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'EmptyHeader;' -d 'SELECT 1'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-User: default' -d 'SELECT 1'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-User: header_test' -d 'SELECT 1' | grep -o 'Code: 516'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'X-ClickHouse-Key: ' -d 'SELECT 1'

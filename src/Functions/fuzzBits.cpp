@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
@@ -58,6 +58,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

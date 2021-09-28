@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 
 #include <common/logger_useful.h>
 
@@ -26,6 +26,8 @@ namespace
         String getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 1; }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {

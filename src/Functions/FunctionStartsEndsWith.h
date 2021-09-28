@@ -2,7 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/TargetSpecific.h>
 #include <DataTypes/DataTypeString.h>
@@ -40,6 +40,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     size_t getNumberOfArguments() const override

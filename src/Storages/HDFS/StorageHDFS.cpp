@@ -15,10 +15,8 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -26,33 +24,36 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ACCESS_DENIED;
 }
 
-StorageHDFS::StorageHDFS(const String & uri_,
+StorageHDFS::StorageHDFS(
+    const String & uri_,
     const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
-    , WithContext(context_)
-    , uri(uri_)
-    , format_name(format_name_)
-    , compression_method(compression_method_)
+    : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -65,7 +66,6 @@ public:
     struct SourcesInfo
     {
         std::vector<String> uris;
-
         std::atomic<size_t> next_uri_to_read = 0;
 
         bool need_path_column = false;
@@ -122,11 +122,10 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, getContext()->getGlobalContext()->getConfigRef()), compression);
+                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader = std::make_shared<InputStreamFromInputFormat>(input_format);
                 reader->readPrefix();
             }
 
@@ -156,10 +155,12 @@ public:
 
             reader->readSuffix();
             reader.reset();
+            read_buf.reset();
         }
     }
 
 private:
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
@@ -171,46 +172,52 @@ private:
     Block sample_block;
 };
 
-class HDFSBlockOutputStream : public IBlockOutputStream
+class HDFSSink : public SinkToStorage
 {
 public:
-    HDFSBlockOutputStream(const String & uri,
+    HDFSSink(const String & uri,
         const String & format,
-        const Block & sample_block_,
+        const Block & sample_block,
         ContextPtr context,
         const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+        : SinkToStorage(sample_block)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    Block getHeader() const override
+    String getName() const override { return "HDFSSink"; }
+
+    void consume(Chunk chunk) override
     {
-        return sample_block;
+        if (is_first_chunk)
+        {
+            writer->writePrefix();
+            is_first_chunk = false;
+        }
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void write(const Block & block) override
+    void onFinish() override
     {
-        writer->write(block);
-    }
-
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        writer->writeSuffix();
-        writer->flush();
-        write_buf->sync();
+        try
+        {
+            writer->writeSuffix();
+            writer->flush();
+            write_buf->sync();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            writer.reset();
+            throw;
+        }
     }
 
 private:
-    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool is_first_chunk = true;
 };
 
 /* Recursive directory listing with matched paths as a result.
@@ -249,7 +256,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
@@ -281,6 +288,9 @@ Pipe StorageHDFS::read(
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
     sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
 
+    if (sources_info->uris.empty())
+        LOG_WARNING(log, "No file in HDFS matches the path: {}", uri);
+
     for (const auto & column : column_names)
     {
         if (column == "_path")
@@ -301,14 +311,29 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<HDFSBlockOutputStream>(uri,
+    return std::make_shared<HDFSSink>(uri,
         format_name,
         metadata_snapshot->getSampleBlock(),
         getContext(),
         chooseCompressionMethod(uri, compression_method));
 }
+
+void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
+{
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    const String path = uri.substr(begin_of_path);
+    const String url = uri.substr(0, begin_of_path);
+
+    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
+
+    int ret = hdfsDelete(fs.get(), path.data(), 0);
+    if (ret)
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+}
+
 
 void registerStorageHDFS(StorageFactory & factory)
 {
@@ -335,7 +360,8 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.getContext(), compression_method);
+        return StorageHDFS::create(
+            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method);
     },
     {
         .source_access_type = AccessType::HDFS,

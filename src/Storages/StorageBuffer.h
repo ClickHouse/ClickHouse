@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -35,27 +35,31 @@ namespace DB
   * Thresholds can be exceeded. For example, if max_rows = 1 000 000, the buffer already had 500 000 rows,
   *  and a part of 800 000 rows is added, then there will be 1 300 000 rows in the buffer, and then such a block will be written to the subordinate table.
   *
+  * There are also separate thresholds for flush, those thresholds are checked only for non-direct flush.
+  * This maybe useful if you do not want to add extra latency for INSERT queries,
+  * so you can set max_rows=1e6 and flush_rows=500e3, then each 500e3 rows buffer will be flushed in background only.
+  *
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
+friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
-friend class BufferBlockOutputStream;
+friend class BufferSink;
 
 public:
-    /// Thresholds.
     struct Thresholds
     {
-        time_t time;    /// The number of seconds from the insertion of the first row into the block.
-        size_t rows;    /// The number of rows in the block.
-        size_t bytes;   /// The number of (uncompressed) bytes in the block.
+        time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.
+        size_t rows = 0;  /// The number of rows in the block.
+        size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
     };
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
@@ -80,11 +84,11 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void shutdown() override;
+    void flush() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -109,8 +113,8 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
-    std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
+    std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
+    std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
 
 
 private:
@@ -135,16 +139,18 @@ private:
 
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
+    const Thresholds flush_thresholds;
 
     StorageID destination_id;
     bool allow_materialized;
 
-    /// Lifetime
-    struct LifeTimeWrites
+    struct Writes
     {
         std::atomic<size_t> rows = 0;
         std::atomic<size_t> bytes = 0;
-    } writes;
+    };
+    Writes lifetime_writes;
+    Writes total_writes;
 
     Poco::Logger * log;
 
@@ -153,8 +159,8 @@ private:
     /// are exceeded. If reset_block_structure is set - clears inner block
     /// structure inside buffer (useful in OPTIMIZE and ALTER).
     void flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false, bool reset_block_structure = false);
-    bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
-    bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
+    bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
+    bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
@@ -173,10 +179,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,
+        const Thresholds & flush_thresholds_,
         const StorageID & destination_id,
         bool allow_materialized_);
 };

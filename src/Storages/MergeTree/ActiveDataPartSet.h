@@ -5,6 +5,10 @@
 #include <map>
 #include <vector>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {

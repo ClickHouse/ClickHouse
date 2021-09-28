@@ -24,17 +24,17 @@ public:
 
     void initFromDefaults(size_t from_pos = 0);
 
-    Field & operator[](size_t ind) { return row[ind]; }
-    const Field & operator[](size_t ind) const { return row[ind]; }
+    Field & operator[](size_t index) { return row[index]; }
+    const Field & operator[](size_t index) const { return row[index]; }
     size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
 
-    int getDirection(size_t ind) const { return description[ind].direction; }
-    FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
+    int getDirection(size_t index) const { return description[index].direction; }
+    FillColumnDescription & getFillDescription(size_t index) { return description[index].fill_description; }
 
 private:
-    std::vector<Field> row;
+    Row row;
     SortDescription description;
 };
 

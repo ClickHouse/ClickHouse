@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -28,6 +28,7 @@ struct FunctionPort : public IFunction
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

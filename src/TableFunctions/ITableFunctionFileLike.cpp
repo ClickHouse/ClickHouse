@@ -10,10 +10,14 @@
 
 #include <Storages/StorageFile.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+
+#include <Processors/ISource.h>
+
+#include <DataStreams/IBlockInputStream.h>
+
 
 namespace DB
 {
@@ -58,7 +62,9 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
 
     structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     if (structure.empty())
-        throw Exception("Table structure is empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table structure is empty for table function '{}'",
+            ast_function->formatForErrorMessage());
 
     if (args.size() == 4)
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
@@ -77,11 +83,12 @@ ColumnsDescription ITableFunctionFileLike::getActualTableStructure(ContextPtr co
     if (structure.empty())
     {
         assert(getName() == "file" && format == "Distributed");
-        Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context);
+        size_t total_bytes_to_read = 0;
+        Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         if (paths.empty())
             throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
-        auto read_stream = StorageDistributedDirectoryMonitor::createStreamFromFile(paths[0]);
-        return ColumnsDescription{read_stream->getHeader().getNamesAndTypesList()};
+        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
+        return ColumnsDescription{source->getOutputs().front().getHeader().getNamesAndTypesList()};
     }
     return parseColumnsListFromString(structure, context);
 }

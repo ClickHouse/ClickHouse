@@ -27,6 +27,7 @@ struct ModuloByConstantImpl
     using Op = ModuloImpl<A, B>;
     using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
@@ -43,7 +44,7 @@ struct ModuloByConstantImpl
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static void NO_INLINE vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -78,12 +79,11 @@ struct ModuloByConstantImpl
         if (b < 0)
             b = -b;
 
-        libdivide::divider<A> divider(b);
-
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
         if (b & (b - 1))
         {
+            libdivide::divider<A> divider(b);
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
         }
@@ -97,6 +97,11 @@ struct ModuloByConstantImpl
     }
 };
 
+template <typename A, typename B>
+struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
+{
+    using Op = ModuloLegacyImpl<A, B>;
+};
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -133,6 +138,14 @@ void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
+}
+
+struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
+using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
+
+void registerFunctionModuloLegacy(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionModuloLegacy>();
 }
 
 }

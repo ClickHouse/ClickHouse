@@ -4,9 +4,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 
-#include <Poco/File.h>
-#include <Poco/Path.h>
-
 #include <utility>
 
 

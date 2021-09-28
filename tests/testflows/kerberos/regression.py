@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+import os
 import sys
 from testflows.core import *
 
@@ -8,6 +10,7 @@ from helpers.argparser import argparser
 from kerberos.requirements.requirements import *
 
 xfails = {
+    "config/principal and realm specified/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/26197")],
 }
 
 
@@ -18,7 +21,7 @@ xfails = {
     RQ_SRS_016_Kerberos("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """ClickHouse Kerberos authentication test regression module.
     """
     nodes = {
@@ -26,13 +29,16 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         "kerberos": ("kerberos", ),
     }
 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
+    if stress is not None:
+        self.context.stress = stress
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "kerberos_env")) as cluster:
         self.context.cluster = cluster
 
         Feature(run=load("kerberos.tests.generic", "generic"), flags=TE)
         Feature(run=load("kerberos.tests.config", "config"), flags=TE)
         Feature(run=load("kerberos.tests.parallel", "parallel"), flags=TE)
-
 
 if main():
     regression()

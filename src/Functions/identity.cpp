@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -19,6 +19,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

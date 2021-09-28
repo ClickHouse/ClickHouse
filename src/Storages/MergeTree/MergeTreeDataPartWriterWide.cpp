@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
@@ -393,10 +394,11 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
-    String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
-    String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
-    DB::ReadBufferFromFile mrk_in(mrk_path);
-    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
+    String escaped_name = escapeForFileName(name);
+    String mrk_path = part_path + escaped_name + marks_file_extension;
+    String bin_path = part_path + escaped_name + DATA_FILE_EXTENSION;
+    auto mrk_in = disk->readFile(mrk_path);
+    DB::CompressedReadBufferFromFile bin_in(disk->readFile(bin_path));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
@@ -405,15 +407,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     size_t mark_num;
 
     const auto & serialization = serializations[name];
-    for (mark_num = 0; !mrk_in.eof(); ++mark_num)
+    for (mark_num = 0; !mrk_in->eof(); ++mark_num)
     {
         if (mark_num > index_granularity.getMarksCount())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of marks in memory {}, on disk (at least) {}", index_granularity.getMarksCount(), mark_num + 1);
 
-        DB::readBinary(offset_in_compressed_file, mrk_in);
-        DB::readBinary(offset_in_decompressed_block, mrk_in);
+        DB::readBinary(offset_in_compressed_file, *mrk_in);
+        DB::readBinary(offset_in_decompressed_block, *mrk_in);
         if (settings.can_use_adaptive_granularity)
-            DB::readBinary(index_granularity_rows, mrk_in);
+            DB::readBinary(index_granularity_rows, *mrk_in);
         else
             index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 
@@ -422,7 +424,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
             if (index_granularity_rows != 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "We ran out of binary data but still have non empty mark #{} with rows number {}", mark_num, index_granularity_rows);
 
-            if (!mrk_in.eof())
+            if (!mrk_in->eof())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark #{} must be last, but we still have some to read", mark_num);
 
             break;
@@ -484,7 +486,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         }
     }
 
-    if (!mrk_in.eof())
+    if (!mrk_in->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have something in marks stream, last mark #{} index granularity size {}, last rows {}", mark_num, index_granularity.getMarksCount(), index_granularity_rows);
     if (!bin_in.eof())
@@ -557,7 +559,10 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    finishDataSerialization(checksums, sync);
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(checksums, sync);
+
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);
 

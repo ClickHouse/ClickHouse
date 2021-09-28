@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
+#include <boost/noncopyable.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -14,6 +15,7 @@
 #include <roaring.hh>
 #include <roaring64map.hh>
 
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ enum BitmapKind
     Small = 0,
     Bitmap = 1
 };
+
 
 /**
   * For a small number of values - an array of fixed size "on the stack".
@@ -572,6 +575,37 @@ public:
                 else
                     break;
             }
+            return count;
+        }
+    }
+
+    UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
+    {
+        if (limit == 0 || offset >= size())
+            return 0;
+
+        if (isSmall())
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = small.begin();
+            for (;it != small.end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != small.end() && count < limit; ++it, ++count)
+                r1.add(it->getValue());
+            return count;
+        }
+        else
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = rb->begin();
+            for (;it != rb->end() && offset_count < offset; ++it)
+                ++offset_count;
+
+            for (;it != rb->end() && count < limit; ++it, ++count)
+                r1.add(*it);
             return count;
         }
     }

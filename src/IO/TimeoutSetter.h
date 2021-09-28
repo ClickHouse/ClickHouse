@@ -11,11 +11,11 @@ namespace DB
 struct TimeoutSetter
 {
     TimeoutSetter(Poco::Net::StreamSocket & socket_,
-        const Poco::Timespan & send_timeout_,
-        const Poco::Timespan & receive_timeout_,
+        Poco::Timespan send_timeout_,
+        Poco::Timespan receive_timeout_,
         bool limit_max_timeout = false);
 
-    TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_, bool limit_max_timeout = false);
+    TimeoutSetter(Poco::Net::StreamSocket & socket_, Poco::Timespan timeout_, bool limit_max_timeout = false);
 
     ~TimeoutSetter();
 

@@ -1,4 +1,3 @@
-#include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 
 #include <Interpreters/Context.h>
@@ -7,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConnectionTimeouts.h>
@@ -17,11 +15,14 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <common/logger_useful.h>
+#include <algorithm>
 
 
 namespace DB
@@ -29,7 +30,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NETWORK_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
+
 
 IStorageURLBase::IStorageURLBase(
     const Poco::URI & uri_,
@@ -39,16 +43,15 @@ IStorageURLBase::IStorageURLBase(
     const std::optional<FormatSettings> & format_settings_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method_)
-    : IStorage(table_id_)
-    , uri(uri_)
-    , compression_method(compression_method_)
-    , format_name(format_name_)
-    , format_settings(format_settings_)
+    const String & comment,
+    const String & compression_method_,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_)
+    : IStorage(table_id_), uri(uri_), compression_method(compression_method_), format_name(format_name_), format_settings(format_settings_), headers(headers_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -68,23 +71,27 @@ namespace
             const ColumnsDescription & columns,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
-            const CompressionMethod compression_method)
+            const CompressionMethod compression_method,
+            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {})
             : SourceWithProgress(sample_block), name(std::move(name_))
         {
-            ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
+            ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+
+            for (const auto & header : headers_)
+                headers.emplace_back(header);
 
             // Propagate OpenTelemetry trace context, if any, downstream.
             if (CurrentThread::isInitialized())
             {
                 const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-                if (thread_trace_context.trace_id)
+                if (thread_trace_context.trace_id != UUID())
                 {
-                    header.emplace_back("traceparent",
+                    headers.emplace_back("traceparent",
                         thread_trace_context.composeTraceparentHeader());
 
                     if (!thread_trace_context.tracestate.empty())
                     {
-                        header.emplace_back("tracestate",
+                        headers.emplace_back("tracestate",
                             thread_trace_context.tracestate);
                     }
                 }
@@ -99,13 +106,21 @@ namespace
                     context->getSettingsRef().max_http_get_redirects,
                     Poco::Net::HTTPBasicCredentials{},
                     DBMS_DEFAULT_BUFFER_SIZE,
-                    header,
+                    headers,
                     context->getRemoteHostFilter()),
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
+            QueryPipelineBuilder builder;
+            builder.init(Pipe(input_format));
+
+            builder.addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
+            });
+
+            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
         }
 
         String getName() const override
@@ -118,15 +133,11 @@ namespace
             if (!reader)
                 return {};
 
-            if (!initialized)
-                reader->readPrefix();
+            Chunk chunk;
+            if (reader->pull(chunk))
+                return chunk;
 
-            initialized = true;
-
-            if (auto block = reader->read())
-                return Chunk(block.getColumns(), block.rows());
-
-            reader->readSuffix();
+            pipeline->reset();
             reader.reset();
 
             return {};
@@ -135,19 +146,20 @@ namespace
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
-        BlockInputStreamPtr reader;
-        bool initialized = false;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
     };
 }
 
-StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
-        const String & format,
-        const std::optional<FormatSettings> & format_settings,
-        const Block & sample_block_,
-        ContextPtr context,
-        const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+StorageURLSink::StorageURLSink(
+    const Poco::URI & uri,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const Block & sample_block,
+    ContextPtr context,
+    const ConnectionTimeouts & timeouts,
+    const CompressionMethod compression_method)
+    : SinkToStorage(sample_block)
 {
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
@@ -157,17 +169,18 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
 }
 
 
-void StorageURLBlockOutputStream::write(const Block & block)
+void StorageURLSink::consume(Chunk chunk)
 {
-    writer->write(block);
+    if (is_first_chunk)
+    {
+        writer->writePrefix();
+        is_first_chunk = false;
+    }
+
+    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void StorageURLBlockOutputStream::writePrefix()
-{
-    writer->writePrefix();
-}
-
-void StorageURLBlockOutputStream::writeSuffix()
+void StorageURLSink::onFinish()
 {
     writer->writeSuffix();
     writer->flush();
@@ -231,98 +244,213 @@ Pipe IStorageURLBase::read(
         metadata_snapshot->getColumns(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        chooseCompressionMethod(request_uri.getPath(), compression_method)));
+        chooseCompressionMethod(request_uri.getPath(), compression_method),
+        headers));
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+
+Pipe StorageURLWithFailover::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned /*num_streams*/)
 {
-    return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
+    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+    WriteBufferFromOwnString error_message;
+    error_message << "Detailed description:";
+
+    for (const auto & uri_option : uri_options)
+    {
+        auto request_uri = uri_option;
+        for (const auto & [param, value] : params)
+            request_uri.addQueryParameter(param, value);
+        try
+        {
+            /// Check for uri accessibility is done in constructor of ReadWriteBufferFromHTTP while creating StorageURLSource.
+            auto url_source =  std::make_shared<StorageURLSource>(
+                request_uri,
+                getReadMethod(),
+                getReadPOSTDataCallback(
+                    column_names, metadata_snapshot, query_info,
+                    local_context, processed_stage, max_block_size),
+                format_name,
+                format_settings,
+                getName(),
+                getHeaderBlock(column_names, metadata_snapshot),
+                local_context,
+                metadata_snapshot->getColumns(),
+                max_block_size,
+                ConnectionTimeouts::getHTTPTimeouts(local_context),
+                chooseCompressionMethod(request_uri.getPath(), compression_method));
+
+            std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);
+
+            return Pipe(url_source);
+        }
+        catch (...)
+        {
+            error_message << " Host: " << uri_option.getHost() << ", post: " << uri_option.getPort() << ", path: " << uri_option.getPath();
+            error_message << ", error: " << getCurrentExceptionMessage(false) << ";";
+
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri options are unreachable. {}", error_message.str());
+}
+
+
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    return std::make_shared<StorageURLSink>(uri, format_name,
         format_settings, metadata_snapshot->getSampleBlock(), context,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(uri.toString(), compression_method));
 }
 
-StorageURL::StorageURL(const Poco::URI & uri_,
-           const StorageID & table_id_,
-           const String & format_name_,
-           const std::optional<FormatSettings> & format_settings_,
-           const ColumnsDescription & columns_,
-           const ConstraintsDescription & constraints_,
-           ContextPtr context_,
-           const String & compression_method_)
-    : IStorageURLBase(uri_, context_, table_id_, format_name_,
-                      format_settings_, columns_, constraints_, compression_method_)
+StorageURL::StorageURL(
+    const Poco::URI & uri_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
+    ContextPtr context_,
+    const String & compression_method_,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_)
+    : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_, columns_, constraints_, comment, compression_method_, headers_)
 {
     context_->getRemoteHostFilter().checkURL(uri);
 }
+
+
+StorageURLWithFailover::StorageURLWithFailover(
+    const std::vector<String> & uri_options_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    ContextPtr context_,
+    const String & compression_method_)
+    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
+{
+    for (const auto & uri_option : uri_options_)
+    {
+        Poco::URI poco_uri(uri_option);
+        context_->getRemoteHostFilter().checkURL(poco_uri);
+        uri_options.emplace_back(std::move(poco_uri));
+        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+    }
+}
+
+
+FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
+{
+    // Use format settings from global server context + settings from
+    // the SETTINGS clause of the create query. Settings from current
+    // session and user are ignored.
+    FormatSettings format_settings;
+    if (args.storage_def->settings)
+    {
+        FormatFactorySettings user_format_settings;
+
+        // Apply changed settings from global context, but ignore the
+        // unknown ones, because we only have the format settings here.
+        const auto & changes = args.getContext()->getSettingsRef().changes();
+        for (const auto & change : changes)
+        {
+            if (user_format_settings.has(change.name))
+            {
+                user_format_settings.set(change.name, change.value);
+            }
+        }
+
+        // Apply changes from SETTINGS clause, with validation.
+        user_format_settings.applyChanges(args.storage_def->settings->changes);
+
+        format_settings = getFormatSettings(args.getContext(),
+            user_format_settings);
+    }
+    else
+    {
+        format_settings = getFormatSettings(args.getContext());
+    }
+
+    return format_settings;
+}
+
+URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
+{
+    URLBasedDataSourceConfiguration configuration;
+
+    if (auto named_collection = getURLBasedDataSourceConfiguration(args, local_context))
+    {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
+        if (!storage_specific_args.empty())
+        {
+            String illegal_args;
+            for (const auto & arg : storage_specific_args)
+            {
+                if (!illegal_args.empty())
+                    illegal_args += ", ";
+                illegal_args += arg.first;
+            }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguments {} for table function URL", illegal_args);
+        }
+    }
+    else
+    {
+        if (args.size() != 2 && args.size() != 3)
+            throw Exception(
+                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
+
+        configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (args.size() == 3)
+            configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    }
+
+    return configuration;
+}
+
 
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
+        auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
+        auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+        Poco::URI uri(configuration.url);
 
-        if (engine_args.size() != 2 && engine_args.size() != 3)
-            throw Exception(
-                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
-
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        Poco::URI uri(url);
-
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-
-        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-
-        String compression_method;
-        if (engine_args.size() == 3)
+        ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+        for (const auto & [header, value] : configuration.headers)
         {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-        else
-        {
-            compression_method = "auto";
-        }
-
-        // Use format settings from global server context + settings from
-        // the SETTINGS clause of the create query. Settings from current
-        // session and user are ignored.
-        FormatSettings format_settings;
-        if (args.storage_def->settings)
-        {
-            FormatFactorySettings user_format_settings;
-
-            // Apply changed settings from global context, but ignore the
-            // unknown ones, because we only have the format settings here.
-            const auto & changes = args.getContext()->getSettingsRef().changes();
-            for (const auto & change : changes)
-            {
-                if (user_format_settings.has(change.name))
-                {
-                    user_format_settings.set(change.name, change.value);
-                }
-            }
-
-            // Apply changes from SETTINGS clause, with validation.
-            user_format_settings.applyChanges(args.storage_def->settings->changes);
-
-            format_settings = getFormatSettings(args.getContext(),
-                user_format_settings);
-        }
-        else
-        {
-            format_settings = getFormatSettings(args.getContext());
+            auto value_literal = value.safeGet<String>();
+            headers.emplace_back(std::make_pair(header, value_literal));
         }
 
         return StorageURL::create(
             uri,
             args.table_id,
-            format_name,
+            configuration.format,
             format_settings,
-            args.columns, args.constraints, args.getContext(),
-            compression_method);
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.getContext(),
+            configuration.compression_method,
+            headers);
     },
     {
         .supports_settings = true,

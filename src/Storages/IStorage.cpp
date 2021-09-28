@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 
 
@@ -51,7 +52,10 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
     if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+    }
 
     return result;
 }
@@ -105,8 +109,9 @@ void IStorage::read(
     auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
-        auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        auto header = (query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot)
+                          ->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
     else
     {
@@ -136,9 +141,8 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
     }
 }
 
@@ -197,7 +201,30 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-std::string PrewhereDAGInfo::dump() const
+bool IStorage::isStaticStorage() const
+{
+    auto storage_policy = getStoragePolicy();
+    if (storage_policy)
+    {
+        for (const auto & disk : storage_policy->getDisks())
+            if (!disk->isReadOnly())
+                return false;
+        return true;
+    }
+    return false;
+}
+
+BackupEntries IStorage::backup(const ASTs &, ContextPtr) const
+{
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+RestoreDataTasks IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
+{
+    throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
@@ -210,11 +237,6 @@ std::string PrewhereDAGInfo::dump() const
     if (prewhere_actions)
     {
         ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
-    }
-
-    if (remove_columns_actions)
-    {
-        ss << "remove_columns_actions " << remove_columns_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column

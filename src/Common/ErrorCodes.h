@@ -25,11 +25,17 @@ namespace ErrorCodes
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
     std::string_view getName(ErrorCode error_code);
+    /// Get error code value by name.
+    ///
+    /// It has O(N) complexity, but this is not major, since it is used only
+    /// for test hints, and it does not worth to keep another structure for
+    /// this.
+    ErrorCode getErrorCodeByName(std::string_view error_name);
 
     struct Error
     {
         /// Number of times Exception with this ErrorCode had been throw.
-        Value count;
+        Value count = 0;
         /// Time of the last error.
         UInt64 error_time_ms = 0;
         /// Message for the last error.

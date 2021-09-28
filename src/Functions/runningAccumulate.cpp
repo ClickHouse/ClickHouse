@@ -1,11 +1,11 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -58,6 +58,8 @@ public:
     {
         return false;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -120,8 +122,8 @@ public:
                     state_created = false;
                 }
 
-                agg_func.create(place.data());
-                state_created = true;
+                agg_func.create(place.data()); /// This function can throw.
+                state_created = true; //-V519
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());

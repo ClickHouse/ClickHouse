@@ -8,7 +8,6 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/UUIDGenerator.h>
-#include <Poco/File.h>
 #include <Poco/Process.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
@@ -166,10 +165,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
-
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
+Block getBlockWithAllStreamData(QueryPipeline pipeline);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

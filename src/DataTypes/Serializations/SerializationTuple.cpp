@@ -1,3 +1,5 @@
+#include <common/map.h>
+#include <common/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
@@ -6,10 +8,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <ext/map.h>
-#include <ext/enumerate.h>
-#include <ext/range.h>
 
 
 namespace DB
@@ -36,8 +34,11 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const auto & tuple = get<const Tuple &>(field);
-    for (const auto idx_elem : ext::enumerate(elems))
-        idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
+    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
+    {
+        const auto & serialization = elems[element_index];
+        serialization->serializeBinary(tuple[element_index], ostr);
+    }
 }
 
 void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
@@ -45,7 +46,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) con
     const size_t size = elems.size();
 
     Tuple tuple(size);
-    for (const auto i : ext::range(0, size))
+    for (const auto i : collections::range(0, size))
         elems[i]->deserializeBinary(tuple[i], istr);
 
     field = tuple;
@@ -53,8 +54,11 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) con
 
 void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    for (const auto idx_elem : ext::enumerate(elems))
-        idx_elem.second->serializeBinary(extractElementColumn(column, idx_elem.first), row_num, ostr);
+    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
+    {
+        const auto & serialization = elems[element_index];
+        serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr);
+    }
 }
 
 
@@ -70,7 +74,7 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
-        for (auto i : ext::range(1, num_elems))
+        for (auto i : collections::range(1, num_elems))
         {
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
@@ -84,7 +88,7 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
     }
     catch (...)
     {
-        for (const auto & i : ext::range(0, num_elems))
+        for (const auto & i : collections::range(0, num_elems))
         {
             auto & element_column = extractElementColumn(column, i);
             if (element_column.size() > old_size)
@@ -99,7 +103,7 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 {
     addElementSafe(elems.size(), column, [&]
     {
-        for (const auto & i : ext::range(0, ext::size(elems)))
+        for (const auto & i : collections::range(0, elems.size()))
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr);
     });
 }
@@ -107,7 +111,7 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('(', ostr);
-    for (const auto i : ext::range(0, ext::size(elems)))
+    for (const auto i : collections::range(0, elems.size()))
     {
         if (i != 0)
             writeChar(',', ostr);
@@ -123,7 +127,7 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
 
     addElementSafe(elems.size(), column, [&]
     {
-        for (const auto i : ext::range(0, size))
+        for (const auto i : collections::range(0, size))
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
@@ -152,7 +156,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
         && have_explicit_names)
     {
         writeChar('{', ostr);
-        for (const auto i : ext::range(0, ext::size(elems)))
+        for (const auto i : collections::range(0, elems.size()))
         {
             if (i != 0)
             {
@@ -167,7 +171,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
     else
     {
         writeChar('[', ostr);
-        for (const auto i : ext::range(0, ext::size(elems)))
+        for (const auto i : collections::range(0, elems.size()))
         {
             if (i != 0)
                 writeChar(',', ostr);
@@ -189,7 +193,7 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
         addElementSafe(elems.size(), column, [&]
         {
             // Require all elements but in arbitrary order.
-            for (auto i : ext::range(0, ext::size(elems)))
+            for (auto i : collections::range(0, elems.size()))
             {
                 if (i > 0)
                 {
@@ -220,7 +224,7 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
         addElementSafe(elems.size(), column, [&]
         {
-            for (const auto i : ext::range(0, size))
+            for (const auto i : collections::range(0, size))
             {
                 skipWhitespaceIfAny(istr);
                 if (i != 0)
@@ -240,7 +244,7 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeCString("<tuple>", ostr);
-    for (const auto i : ext::range(0, ext::size(elems)))
+    for (const auto i : collections::range(0, elems.size()))
     {
         writeCString("<elem>", ostr);
         elems[i]->serializeTextXML(extractElementColumn(column, i), row_num, ostr, settings);
@@ -251,7 +255,7 @@ void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num
 
 void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    for (const auto i : ext::range(0, ext::size(elems)))
+    for (const auto i : collections::range(0, elems.size()))
     {
         if (i != 0)
             writeChar(',', ostr);
@@ -264,7 +268,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     addElementSafe(elems.size(), column, [&]
     {
         const size_t size = elems.size();
-        for (const auto i : ext::range(0, size))
+        for (const auto i : collections::range(0, size))
         {
             if (i != 0)
             {
@@ -372,7 +376,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 {
     auto * tuple_state = checkAndGetTupleSerializeState(state);
 
-    for (const auto i : ext::range(0, ext::size(elems)))
+    for (const auto i : collections::range(0, elems.size()))
     {
         const auto & element_col = extractElementColumn(column, i);
         elems[i]->serializeBinaryBulkWithMultipleStreams(element_col, offset, limit, settings, tuple_state->states[i]);
@@ -392,7 +396,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
     settings.avg_value_size_hint = 0;
-    for (const auto i : ext::range(0, ext::size(elems)))
+    for (const auto i : collections::range(0, elems.size()))
         elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
 }
 

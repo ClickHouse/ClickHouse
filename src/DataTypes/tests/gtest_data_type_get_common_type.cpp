@@ -37,7 +37,7 @@ static auto typesFromString(const std::string & str)
 
 struct TypesTestCase
 {
-    const char * from_types;
+    const char * from_types = nullptr;
     const char * expected_type = nullptr;
 };
 

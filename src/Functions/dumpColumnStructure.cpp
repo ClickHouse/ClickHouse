@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Field.h>
@@ -25,6 +25,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

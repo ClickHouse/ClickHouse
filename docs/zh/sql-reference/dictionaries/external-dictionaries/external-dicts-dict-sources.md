@@ -55,7 +55,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 或
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -87,7 +87,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 或
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 设置字段:
@@ -627,4 +627,4 @@ SOURCE(REDIS(
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 适用于简单源和散列单键源, `hash_map` 用于具有两个键的散列源。 不支持具有复杂键的范围源和缓存源。 可以省略，默认值为 `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

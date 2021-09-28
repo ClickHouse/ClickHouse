@@ -5,7 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -55,6 +55,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -68,11 +69,11 @@ public:
             throw Exception("First argument for function " + getName() + " (unit) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDateOrDateTime(arguments[1]))
+        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDateOrDateTime(arguments[2]))
+        if (!isDate(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
             throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

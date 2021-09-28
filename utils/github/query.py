@@ -48,7 +48,7 @@ class Query:
         url
     '''
 
-    def __init__(self, token, owner, name, team, max_page_size=100, min_page_size=5):
+    def __init__(self, token, owner, name, team, max_page_size=100, min_page_size=10):
         self._PULL_REQUEST = Query._PULL_REQUEST.format(min_page_size=min_page_size)
 
         self._token = token
@@ -165,7 +165,7 @@ class Query:
         '''
         _QUERY = '''
             repository(owner: "{owner}" name: "{name}") {{
-                pullRequests(first: {min_page_size} labels: "{label_name}") {{
+                pullRequests(first: {min_page_size} labels: "{label_name}" states: OPEN) {{
                     nodes {{
                         {pull_request_data}
                     }}

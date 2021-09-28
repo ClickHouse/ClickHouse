@@ -4,7 +4,7 @@
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
-#include <nanodbc/nanodbc.h>
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 class ODBCBlockInputStream final : public IBlockInputStream
 {
 public:
-    ODBCBlockInputStream(nanodbc::connection & connection_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_);
+    ODBCBlockInputStream(nanodbc::ConnectionHolderPtr connection, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_);
 
     String getName() const override { return "ODBC"; }
 
@@ -36,7 +36,6 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
-    nanodbc::connection & connection;
     nanodbc::result result;
     String query;
     bool finished = false;

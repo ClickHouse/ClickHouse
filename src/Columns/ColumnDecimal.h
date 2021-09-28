@@ -7,6 +7,8 @@
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
 #include <common/sort.h>
+#include <Core/TypeId.h>
+#include <Core/TypeName.h>
 
 #include <cmath>
 
@@ -59,11 +61,9 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <typename T>
+template <is_decimal T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
-    static_assert(IsDecimalNumber<T>);
-
 private:
     using Self = ColumnDecimal;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -85,8 +85,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -151,6 +151,8 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    void expand(const IColumn::Filter & mask, bool inverted) override;
+
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
@@ -208,7 +210,12 @@ protected:
     }
 };
 
-template <typename T>
+template <class> class ColumnVector;
+template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
+template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
+template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
+
+template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {

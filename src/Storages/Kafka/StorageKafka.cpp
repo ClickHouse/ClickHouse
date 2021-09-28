@@ -1,7 +1,6 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -28,13 +27,16 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/formatReadable.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
 
@@ -288,14 +290,14 @@ Pipe StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
-    return std::make_shared<KafkaBlockOutputStream>(*this, metadata_snapshot, modified_context);
+    return std::make_shared<KafkaSink>(*this, metadata_snapshot, modified_context);
 }
 
 
@@ -585,6 +587,8 @@ void StorageKafka::threadFunc(size_t idx)
 
 bool StorageKafka::streamToViews()
 {
+    Stopwatch watch;
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -613,7 +617,7 @@ bool StorageKafka::streamToViews()
     streams.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -636,8 +640,23 @@ bool StorageKafka::streamToViews()
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
-    std::atomic<bool> stub = {false};
-    copyData(*in, *block_io.out, &stub);
+
+    size_t rows = 0;
+    {
+        PushingPipelineExecutor executor(block_io.pipeline);
+
+        in->readPrefix();
+        executor.start();
+
+        while (auto block = in->read())
+        {
+            rows += block.rows();
+            executor.push(std::move(block));
+        }
+
+        in->readSuffix();
+        executor.finish();
+    }
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)
@@ -645,6 +664,10 @@ bool StorageKafka::streamToViews()
         some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
         stream->as<KafkaBlockInputStream>()->commit();
     }
+
+    UInt64 milliseconds = watch.elapsedMilliseconds();
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
+        formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
     return some_stream_is_stalled;
 }
@@ -736,10 +759,11 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
+        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
 
-        if (num_consumers > 16)
+        if (num_consumers > physical_cpu_cores)
         {
-            throw Exception("Number of consumers can not be bigger than 16", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
         }
         else if (num_consumers < 1)
         {

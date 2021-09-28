@@ -7,7 +7,7 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -51,8 +51,11 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -62,6 +65,13 @@ class EnabledQuota;
 struct SelectQueryInfo;
 
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
+using DatabaseAndTableName = std::pair<String, String>;
+
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
+class IBackupEntry;
+using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
+using RestoreDataTasks = std::vector<std::function<void()>>;
 
 struct ColumnSize
 {
@@ -108,11 +118,17 @@ public:
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
+    /// Returns true if the storage is dictionary
+    virtual bool isDictionary() const { return false; }
+
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports insert queries with the PARTITION BY section.
+    virtual bool supportsPartitionBy() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
@@ -182,14 +198,21 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
+    /// Prepares entries to backup data of the storage.
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
+
+    /// Extract data from the backup and put it to the storage.
+    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
+
 protected:
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
-
 private:
+
     StorageID storage_id;
+
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata
@@ -221,16 +244,19 @@ public:
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
-      *  for example, the request can be partially processed on a remote server.)
+      *  for example, the request can be partially processed on a remote server, or an aggregate projection.)
       *
       * SelectQueryInfo is required since the stage can depends on the query
-      * (see Distributed() engine and optimize_skip_unused_shards).
+      * (see Distributed() engine and optimize_skip_unused_shards,
+      *  see also MergeTree engine and allow_experimental_projection_optimization).
       * And to store optimized cluster (after optimize_skip_unused_shards).
+      * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -254,7 +280,7 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual BlockInputStreams watch(
+    virtual Pipe watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
@@ -264,6 +290,10 @@ public:
     {
         throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -315,7 +345,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual BlockOutputStreamPtr write(
+    virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)
@@ -329,7 +359,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual QueryPipelinePtr distributedWrite(
+    virtual QueryPipelineBuilderPtr distributedWrite(
         const ASTInsertQuery & /*query*/,
         ContextPtr /*context*/)
     {
@@ -343,6 +373,8 @@ public:
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
+
+    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
@@ -438,12 +470,31 @@ public:
       */
     virtual void startup() {}
 
+    /**
+      * If the storage requires some complicated work on destroying,
+      * then you have two virtual methods:
+      * - flush()
+      * - shutdown()
+      *
+      * @see shutdown()
+      * @see flush()
+      */
+    void flushAndShutdown()
+    {
+        flush();
+        shutdown();
+    }
+
     /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
+
+    /// Called before shutdown() to flush data to underlying storage
+    /// (for Buffer)
+    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -488,9 +539,12 @@ public:
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
+    /// Returns true if all disks of storage are read-only.
+    virtual bool isStaticStorage() const;
+
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
-    /// - Simple count() opimization
+    /// - Simple count() optimization
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.

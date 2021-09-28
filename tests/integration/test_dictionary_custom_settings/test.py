@@ -3,7 +3,6 @@ import os
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
 DICTIONARY_FILES = [
     'configs/dictionaries/FileSourceConfig.xml',
     'configs/dictionaries/ExecutableSourceConfig.xml',
@@ -13,7 +12,7 @@ DICTIONARY_FILES = [
 ]
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('node', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
+instance = cluster.add_instance('node', dictionaries=DICTIONARY_FILES)
 
 
 def prepare():

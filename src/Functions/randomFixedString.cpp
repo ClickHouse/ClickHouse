@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
@@ -34,6 +34,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 1; }
 

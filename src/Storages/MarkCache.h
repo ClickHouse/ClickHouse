@@ -50,7 +50,7 @@ public:
 
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         return key;
     }

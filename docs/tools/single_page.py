@@ -109,7 +109,8 @@ def build_single_page_version(lang, args, nav, cfg):
     extra['single_page'] = True
     extra['is_amp'] = False
 
-    with open(os.path.join(args.docs_dir, lang, 'single.md'), 'w') as single_md:
+    single_md_path = os.path.join(args.docs_dir, lang, 'single.md')
+    with open(single_md_path, 'w') as single_md:
         concatenate(lang, args.docs_dir, single_md, nav)
 
         with util.temp_dir() as site_temp:
@@ -218,6 +219,12 @@ def build_single_page_version(lang, args, nav, cfg):
                         ]
 
                         logging.info(' '.join(create_pdf_command))
-                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                        try:
+                            subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                        except:
+                            pass  # TODO: fix pdf issues
 
         logging.info(f'Finished building single page version for {lang}')
+
+        if os.path.exists(single_md_path):
+            os.unlink(single_md_path)

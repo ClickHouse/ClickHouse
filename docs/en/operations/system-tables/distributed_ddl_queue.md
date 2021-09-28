@@ -61,5 +61,4 @@ exception_code:    ZOK
 2 rows in set. Elapsed: 0.025 sec.
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/distributed_ddl_queuedistributed_ddl_queue.md) <!--hide-->
- 
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/distributed_ddl_queuedistributed_ddl_queue.md) <!--hide-->

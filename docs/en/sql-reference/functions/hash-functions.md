@@ -43,7 +43,7 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 ## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
-If you don’t need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
+If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
 ## sipHash64 {#hash_functions-siphash64}
@@ -143,7 +143,9 @@ It works faster than intHash32. Average quality.
 
 ## SHA256 {#sha256}
 
-Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
+## SHA512 {#sha512}
+
+Calculates SHA-1, SHA-224, SHA-256 or SHA-512 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), FixedString(32), or FixedString(64).
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can’t select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
@@ -437,13 +439,13 @@ A [FixedString(16)](../../sql-reference/data-types/fixedstring.md) data type has
 **Example**
 
 ``` sql
-SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type;
+SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
-┌─MurmurHash3──────┬─type────────────┐
-│ 6�1�4"S5KT�~~q │ FixedString(16) │
-└──────────────────┴─────────────────┘
+┌─MurmurHash3──────────────────────┬─type───┐
+│ 368A1A311CB7342253354B548E7E7E71 │ String │
+└──────────────────────────────────┴────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32}

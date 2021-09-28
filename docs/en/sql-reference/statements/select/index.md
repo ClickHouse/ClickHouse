@@ -13,7 +13,7 @@ toc_title: Overview
 
 ``` sql
 [WITH expr_list|(subquery)]
-SELECT [DISTINCT] expr_list
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
@@ -36,6 +36,8 @@ All clauses are optional, except for the required list of expressions immediatel
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
 -   [WITH clause](../../../sql-reference/statements/select/with.md)
+-   [SELECT clause](#select-clause)
+-   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [FROM clause](../../../sql-reference/statements/select/from.md)
 -   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
 -   [JOIN clause](../../../sql-reference/statements/select/join.md)
@@ -44,9 +46,8 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING clause](../../../sql-reference/statements/select/having.md)
--   [SELECT clause](#select-clause)
--   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
+-   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
@@ -100,7 +101,7 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function doesn’t support the number of arguments you have passed to it, ClickHouse throws an exception.
+Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function does not support the number of arguments you have passed to it, ClickHouse throws an exception.
 
 For example:
 
@@ -110,12 +111,12 @@ SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
 
 ``` text
 Received exception from server (version 19.14.1):
-Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2.
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
 ```
 
 In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can’t apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
-Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn’t match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
+Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
 ### Asterisk {#asterisk}
 
@@ -127,7 +128,7 @@ You can put an asterisk in any part of a query instead of an expression. When th
 -   When there is strong filtration on a small number of columns using `PREWHERE`.
 -   In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
 
-In all other cases, we don’t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
+In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
 ### Extreme Values {#extreme-values}
 
@@ -169,7 +170,7 @@ You can use the following modifiers in `SELECT` queries.
 
 ### APPLY {#apply-modifier}
 
-Allows you to invoke some function for each row returned by an outer table expression of a query. 
+Allows you to invoke some function for each row returned by an outer table expression of a query.
 
 **Syntax:**
 
@@ -177,7 +178,7 @@ Allows you to invoke some function for each row returned by an outer table expre
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
-**Example:** 
+**Example:**
 
 ``` sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -271,9 +272,9 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ## SETTINGS in SELECT Query {#settings-in-select}
 
-You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
+You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
-Other ways to make settings see [here](../../../operations/settings/index.md). 
+Other ways to make settings see [here](../../../operations/settings/index.md).
 
 **Example**
 
@@ -281,4 +282,4 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)<!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/)<!--hide-->

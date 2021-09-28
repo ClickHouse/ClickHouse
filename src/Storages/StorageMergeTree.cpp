@@ -1,14 +1,16 @@
 #include "StorageMergeTree.h"
 
+#include <optional>
+
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
+#include <IO/copyData.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -19,15 +21,16 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <optional>
 
 namespace CurrentMetrics
 {
@@ -36,6 +39,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
 
 namespace ErrorCodes
 {
@@ -48,6 +52,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
+    extern const int ABORTED;
 }
 
 namespace ActionLocks
@@ -63,7 +68,7 @@ StorageMergeTree::StorageMergeTree(
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
     bool attach,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -81,9 +86,6 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
-    , background_executor(*this, getContext())
-    , background_moves_executor(*this, getContext())
-
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -109,11 +111,16 @@ void StorageMergeTree::startup()
     clearOldTemporaryDirectories(0);
 
     /// NOTE background task will also do the above cleanups periodically.
-    time_after_previous_cleanup.restart();
+    time_after_previous_cleanup_parts.restart();
+    time_after_previous_cleanup_temporary_directories.restart();
+
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
+        return;
 
     try
     {
-        background_executor.start();
+        background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -151,14 +158,14 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
-    background_executor.finish();
-    background_moves_executor.finish();
+    background_operations_assignee.finish();
+    background_moves_assignee.finish();
 
     try
     {
         /// We clear all old parts after stopping all background operations.
         /// It's important, because background operations can produce temporary
-        /// parts which will remove themselves in their descrutors. If so, we
+        /// parts which will remove themselves in their destructors. If so, we
         /// may have race condition between our remove call and background
         /// process.
         clearOldPartsFromFilesystem(true);
@@ -183,11 +190,11 @@ void StorageMergeTree::read(
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams))
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
         query_plan = std::move(*plan);
 }
 
@@ -223,12 +230,12 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
-BlockOutputStreamPtr
+SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeBlockOutputStream>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context->getSettingsRef().optimize_on_insert);
+    return std::make_shared<MergeTreeSink>(
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -240,6 +247,9 @@ void StorageMergeTree::checkTableCanBeDropped() const
 void StorageMergeTree::drop()
 {
     shutdown();
+    /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
+    if (isStaticStorage())
+        return;
     dropAllData();
 }
 
@@ -321,8 +331,8 @@ void StorageMergeTree::alter(
 
 
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
-StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
-    FutureMergedMutatedPart & future_part_,
+CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
+    FutureMergedMutatedPartPtr future_part_,
     size_t total_size,
     StorageMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot,
@@ -333,12 +343,12 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->volume);
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->volume);
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
         size_t max_volume_index = 0;
-        for (auto & part_ptr : future_part_.parts)
+        for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
             max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
@@ -348,9 +358,9 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             metadata_snapshot,
             total_size,
             max_volume_index,
-            future_part.name,
-            future_part.part_info,
-            future_part.parts,
+            future_part->name,
+            future_part->part_info,
+            future_part->parts,
             &tagger,
             &ttl_infos);
 
@@ -362,26 +372,26 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Not enough space for mutating part '" + future_part->parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
         else
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
 
-    future_part_.updatePath(storage, reserved_space);
+    future_part->updatePath(storage, reserved_space.get());
 
-    for (const auto & part : future_part.parts)
+    for (const auto & part : future_part->parts)
     {
         if (storage.currently_merging_mutating_parts.count(part))
             throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
-    storage.currently_merging_mutating_parts.insert(future_part.parts.begin(), future_part.parts.end());
+    storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 }
 
-StorageMergeTree::CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
+CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 {
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
 
-    for (const auto & part : future_part.parts)
+    for (const auto & part : future_part->parts)
     {
         if (!storage.currently_merging_mutating_parts.count(part))
             std::terminate();
@@ -409,17 +419,17 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
-    background_executor.triggerTask();
+    background_operations_assignee.trigger();
     return version;
 }
 
 
-void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message)
+void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message)
 {
     /// Update the information about failed parts in the system.mutations table.
 
-    Int64 sources_data_version = result_part.parts.at(0)->info.getDataVersion();
-    Int64 result_data_version = result_part.part_info.getDataVersion();
+    Int64 sources_data_version = result_part->parts.at(0)->info.getDataVersion();
+    Int64 result_data_version = result_part->part_info.getDataVersion();
     if (sources_data_version != result_data_version)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -431,7 +441,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart resul
             MergeTreeMutationEntry & entry = it->second;
             if (is_successful)
             {
-                if (!entry.latest_failed_part.empty() && result_part.part_info.contains(entry.latest_failed_part_info))
+                if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
                 {
                     entry.latest_failed_part.clear();
                     entry.latest_failed_part_info = MergeTreePartInfo();
@@ -441,8 +451,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart resul
             }
             else
             {
-                entry.latest_failed_part = result_part.parts.at(0)->name;
-                entry.latest_failed_part_info = result_part.parts.at(0)->info;
+                entry.latest_failed_part = result_part->parts.at(0)->name;
+                entry.latest_failed_part_info = result_part->parts.at(0)->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
             }
@@ -474,7 +484,15 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
     mutation_ids.insert(file_name);
 
     auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
-    checkMutationStatus(mutation_status, mutation_ids);
+    try
+    {
+        checkMutationStatus(mutation_status, mutation_ids);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
+    }
 
     LOG_INFO(log, "Mutation {} done", file_name);
 }
@@ -618,7 +636,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (!to_kill)
         return CancellationCode::NotFound;
 
-    getContext()->getMergeList().cancelPartMutations({}, to_kill->block_number);
+    getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
@@ -627,7 +645,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    background_executor.triggerTask();
+    background_operations_assignee.trigger();
 
     return CancellationCode::CancelSent;
 }
@@ -668,29 +686,36 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
-std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
-    const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason, TableLockHolder & /* table_lock_holder */, bool optimize_skip_merged_partitions, SelectPartsDecision * select_decision_out)
+std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
+    const StorageMetadataPtr & metadata_snapshot,
+    bool aggressive,
+    const String & partition_id,
+    bool final,
+    String * out_disable_reason,
+    TableLockHolder & /* table_lock_holder */,
+    std::unique_lock<std::mutex> & lock,
+    bool optimize_skip_merged_partitions,
+    SelectPartsDecision * select_decision_out)
 {
-    std::unique_lock lock(currently_processing_in_background_mutex);
     auto data_settings = getSettings();
 
-    FutureMergedMutatedPart future_part;
+    auto future_part = std::make_shared<FutureMergedMutatedPart>();
 
     if (storage_settings.get()->assign_part_uuids)
-        future_part.uuid = UUIDHelpers::generateV4();
+        future_part->uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
+    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
     {
-        /// This predicate is checked for the first part of each partition.
+        /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
             return !currently_merging_mutating_parts.count(right);
         return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
-            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
+            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
     };
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -723,9 +748,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                 future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
+            auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
+            auto timeout = std::chrono::milliseconds(timeout_ms);
 
             /// If final - we will wait for currently processing merges to finish and continue.
-            /// TODO Respect query settings for timeout
             if (final
                 && select_decision != SelectPartsDecision::SELECTED
                 && !currently_merging_mutating_parts.empty()
@@ -735,10 +761,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
                 LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
                     currently_merging_mutating_parts.size());
 
-                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
-                    lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                 {
-                    *out_disable_reason = "Timeout while waiting for already running merges before running OPTIMIZE with FINAL";
+                    *out_disable_reason = fmt::format("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL", timeout_ms);
                     break;
                 }
             }
@@ -767,11 +792,11 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     }
 
     /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part.merge_type))
+    if (isTTLMergeType(future_part->merge_type))
         getContext()->getMergeList().bookMergeWithTTL();
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
-    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
+    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts), *this, metadata_snapshot, false);
+    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands::create());
 }
 
 bool StorageMergeTree::merge(
@@ -788,7 +813,24 @@ bool StorageMergeTree::merge(
 
     SelectPartsDecision select_decision;
 
-    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder, optimize_skip_merged_partitions, &select_decision);
+    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry;
+
+    {
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        if (merger_mutator.merges_blocker.isCancelled())
+            throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
+        merge_mutate_entry = selectPartsToMerge(
+            metadata_snapshot,
+            aggressive,
+            partition_id,
+            final,
+            out_disable_reason,
+            table_lock_holder,
+            lock,
+            optimize_skip_merged_partitions,
+            &select_decision);
+    }
 
     /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
     if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
@@ -797,52 +839,16 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    return mergeSelectedParts(metadata_snapshot, deduplicate, deduplicate_by_columns, *merge_mutate_entry, table_lock_holder);
-}
 
-bool StorageMergeTree::mergeSelectedParts(
-    const StorageMetadataPtr & metadata_snapshot,
-    bool deduplicate,
-    const Names & deduplicate_by_columns,
-    MergeMutateSelectedEntry & merge_mutate_entry,
-    TableLockHolder & table_lock_holder)
-{
-    auto & future_part = merge_mutate_entry.future_part;
-    Stopwatch stopwatch;
-    MutableDataPartPtr new_part;
-    auto table_id = getStorageID();
+    /// Copying a vector of columns `deduplicate bu columns.
+    auto task = std::make_shared<MergePlainMergeTreeTask>(
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, [](bool){});
 
-    auto merge_list_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
-
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
-        writePartLog(
-            PartLogElement::MERGE_PARTS,
-            execution_status,
-            stopwatch.elapsed(),
-            future_part.name,
-            new_part,
-            future_part.parts,
-            merge_list_entry.get());
-    };
-
-    try
-    {
-        new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, metadata_snapshot, *(merge_list_entry), table_lock_holder, time(nullptr),
-            getContext(), merge_mutate_entry.tagger->reserved_space, deduplicate, deduplicate_by_columns);
-
-        merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
-        write_part_log({});
-    }
-    catch (...)
-    {
-        write_part_log(ExecutionStatus::fromCurrentException());
-        throw;
-    }
+    executeHere(task);
 
     return true;
 }
+
 
 bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
@@ -850,22 +856,31 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.count(part);
 }
 
-std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
+std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */)
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
 
-    FutureMergedMutatedPart future_part;
+    auto future_part = std::make_shared<FutureMergedMutatedPart>();
     if (storage_settings.get()->assign_part_uuids)
-        future_part.uuid = UUIDHelpers::generateV4();
+        future_part->uuid = UUIDHelpers::generateV4();
 
-    MutationCommands commands;
+    auto commands = MutationCommands::create();
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
     if (current_mutations_by_version.empty())
         return {};
+
+    size_t max_source_part_size = merger_mutator.getMaxSourcePartSizeForMutation();
+    if (max_source_part_size == 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Not enough idle threads to apply mutations at the moment. See settings 'number_of_free_entries_in_pool_to_execute_mutation' "
+            "and 'background_pool_size'");
+        return {};
+    }
 
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVector())
@@ -877,13 +892,14 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         if (mutations_begin_it == mutations_end_it)
             continue;
 
-        size_t max_source_part_size = merger_mutator.getMaxSourcePartSizeForMutation();
         if (max_source_part_size < part->getBytesOnDisk())
         {
-            LOG_DEBUG(log, "Current max source part size for mutation is {} but part size {}. Will not mutate part {}. "
-                "Max size depends not only on available space, but also on settings "
-                "'number_of_free_entries_in_pool_to_execute_mutation' and 'background_pool_size'",
-                max_source_part_size, part->getBytesOnDisk(), part->name);
+            LOG_DEBUG(
+                log,
+                "Current max source part size for mutation is {} but part size {}. Will not mutate part {} yet",
+                max_source_part_size,
+                part->getBytesOnDisk(),
+                part->name);
             continue;
         }
 
@@ -896,6 +912,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
+                    && command.type != MutationCommand::Type::DROP_PROJECTION
                     && command.type != MutationCommand::Type::RENAME_COLUMN)
                 {
                     commands_for_size_validation.push_back(command);
@@ -908,38 +925,51 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
             if (!commands_for_size_validation.empty())
             {
-                MutationsInterpreter interpreter(
-                    shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
-                commands_size += interpreter.evaluateCommandsSize();
+                try
+                {
+                    MutationsInterpreter interpreter(
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
+                    commands_size += interpreter.evaluateCommandsSize();
+                }
+                catch (...)
+                {
+                    MergeTreeMutationEntry & entry = it->second;
+                    entry.latest_fail_time = time(nullptr);
+                    entry.latest_fail_reason = getCurrentExceptionMessage(false);
+                    continue;
+                }
             }
 
             if (current_ast_elements + commands_size >= max_ast_elements)
                 break;
 
             current_ast_elements += commands_size;
-            commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
+            commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
         }
 
-        auto new_part_info = part->info;
-        new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+        if (!commands->empty())
+        {
+            auto new_part_info = part->info;
+            new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
-        future_part.parts.push_back(part);
-        future_part.part_info = new_part_info;
-        future_part.name = part->getNewName(new_part_info);
-        future_part.type = part->getType();
+            future_part->parts.push_back(part);
+            future_part->part_info = new_part_info;
+            future_part->name = part->getNewName(new_part_info);
+            future_part->type = part->getType();
 
-        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
-        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
+            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
+            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
+        }
     }
+
     return {};
 }
 
 bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)
 {
     auto & future_part = merge_mutate_entry.future_part;
-    auto table_id = getStorageID();
 
-    auto merge_list_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
@@ -949,17 +979,19 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
             PartLogElement::MUTATE_PART,
             execution_status,
             stopwatch.elapsed(),
-            future_part.name,
+            future_part->name,
             new_part,
-            future_part.parts,
+            future_part->parts,
             merge_list_entry.get());
     };
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_list_entry),
+        auto task = merger_mutator.mutatePartToTemporaryPart(
+            future_part, metadata_snapshot, merge_mutate_entry.commands, merge_list_entry.get(),
             time(nullptr), getContext(), merge_mutate_entry.tagger->reserved_space, table_lock_holder);
+
+        new_part = executeHere(task);
 
         renameTempPartAndReplace(new_part);
 
@@ -976,49 +1008,83 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
+bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
 {
     if (shutdown_called)
-        return {};
+        return false;
 
-    if (merger_mutator.merges_blocker.isCancelled())
-        return {};
+    assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock);
-    if (!merge_entry)
-        mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
-    if (merge_entry || mutate_entry)
+    bool has_mutations = false;
     {
-        return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
-        {
-            if (merge_entry)
-                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-            else if (mutate_entry)
-                return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        if (merger_mutator.merges_blocker.isCancelled())
+            return false;
 
-            __builtin_unreachable();
-        }, PoolType::MERGE_MUTATE};
-    }
-    else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
-    {
-        return JobAndPool{[this, share_lock] ()
+        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
+        if (!merge_entry)
         {
-            /// All use relative_data_path which changes during rename
-            /// so execute under share lock.
-            clearOldPartsFromFilesystem();
-            clearOldTemporaryDirectories();
-            clearOldWriteAheadLogs();
-            clearOldMutations();
-            clearEmptyParts();
-            return true;
-        }, PoolType::MERGE_MUTATE};
+            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+            has_mutations = !current_mutations_by_version.empty();
+        }
     }
-    return {};
+
+    if (merge_entry)
+    {
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        assignee.scheduleMergeMutateTask(task);
+        return true;
+    }
+    if (mutate_entry)
+    {
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, share_lock, common_assignee_trigger);
+        assignee.scheduleMergeMutateTask(task);
+        return true;
+    }
+    if (has_mutations)
+    {
+        /// Notify in case of errors if no mutation was successfully selected.
+        /// Otherwise, notification will occur after any of mutations complete.
+        std::lock_guard lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
+
+    bool scheduled = false;
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+            getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    {
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+                return true;
+            }, common_assignee_trigger, getStorageID()));
+        scheduled = true;
+    }
+    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
+            getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+    {
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                /// All use relative_data_path which changes during rename
+                /// so execute under share lock.
+                clearOldPartsFromFilesystem();
+                clearOldWriteAheadLogs();
+                clearOldMutations();
+                clearEmptyParts();
+                return true;
+            }, common_assignee_trigger, getStorageID()));
+        scheduled = true;
+    }
+
+    return scheduled;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
@@ -1156,22 +1222,21 @@ bool StorageMergeTree::optimize(
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
+    std::unique_lock lock(currently_processing_in_background_mutex);
+
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
+    while (!currently_merging_mutating_parts.empty())
     {
-        std::unique_lock lock(currently_processing_in_background_mutex);
-        while (!currently_merging_mutating_parts.empty())
-        {
-            LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
-                currently_merging_mutating_parts.size());
+        LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
+            currently_merging_mutating_parts.size());
 
-            if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
-                lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
-            {
-                throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
-            }
+        if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+            lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+        {
+            throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
         }
     }
 
@@ -1213,56 +1278,66 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
     }
 }
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr local_context, bool throw_if_noop)
+void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
+    if (auto part = outdatePart(part_name, /*force=*/ false))
+        dropPartsImpl({part}, /*detach=*/ false);
+
+    /// Else nothing to do, part was removed in some different way
+}
+
+void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr /*query_context*/)
+{
+    if (auto part = outdatePart(part_name, /*force=*/ true))
+        dropPartsImpl({part}, detach);
+}
+
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr local_context)
+{
+    DataPartsVector parts_to_remove;
+    /// New scope controls lifetime of merge_blocker.
     {
-        MergeTreeData::DataPartsVector parts_to_remove;
-        auto metadata_snapshot = getInMemoryMetadataPtr();
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = stopMergesAndWait();
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-        if (drop_part)
-        {
-            auto part = outdatePart(partition->as<ASTLiteral &>().value.safeGet<String>(), throw_if_noop);
-            /// Nothing to do, part was removed in some different way
-            if (!part)
-                return;
-
-            parts_to_remove.push_back(part);
-        }
-        else
-        {
-            /// Asks to complete merges and does not allow them to start.
-            /// This protects against "revival" of data for a removed partition after completion of merge.
-            auto merge_blocker = stopMergesAndWait();
-            String partition_id = getPartitionIDFromQuery(partition, local_context);
-            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-            /// TODO should we throw an exception if parts_to_remove is empty?
-            removePartsFromWorkingSet(parts_to_remove, true);
-        }
-
-        if (detach)
-        {
-            /// If DETACH clone parts to detached/ directory
-            /// NOTE: no race with background cleanup until we hold pointers to parts
-            for (const auto & part : parts_to_remove)
-            {
-                LOG_INFO(log, "Detaching {}", part->relative_path);
-                part->makeCloneInDetached("", metadata_snapshot);
-            }
-        }
-
-        if (deduplication_log)
-        {
-            for (const auto & part : parts_to_remove)
-                deduplication_log->dropPart(part->info);
-        }
-
-        if (detach)
-            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
-        else
-            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
+        /// TODO should we throw an exception if parts_to_remove is empty?
+        removePartsFromWorkingSet(parts_to_remove, true);
     }
 
+    dropPartsImpl(std::move(parts_to_remove), detach);
+}
+
+void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    if (detach)
+    {
+        /// If DETACH clone parts to detached/ directory
+        /// NOTE: no race with background cleanup until we hold pointers to parts
+        for (const auto & part : parts_to_remove)
+        {
+            LOG_INFO(log, "Detaching {}", part->relative_path);
+            part->makeCloneInDetached("", metadata_snapshot);
+        }
+    }
+
+    if (deduplication_log)
+    {
+        for (const auto & part : parts_to_remove)
+            deduplication_log->dropPart(part->info);
+    }
+
+    if (detach)
+        LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
+    else
+        LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
+
+    /// Need to destroy part objects before clearing them from filesystem.
+    parts_to_remove.clear();
     clearOldPartsFromFilesystem();
 }
 
@@ -1357,7 +1432,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+                removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -1460,9 +1535,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
-        background_executor.triggerTask();
+        background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
+        background_moves_assignee.trigger();
 }
 
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
@@ -1482,8 +1557,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         auto disk = part->volume->getDisk();
         String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = part_path + "checksums.txt";
-        String tmp_checksums_path = part_path + "checksums.txt.tmp";
+        String checksums_path = fs::path(part_path) / "checksums.txt";
+        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
         if (part->isStoredOnDisk() && !disk->exists(checksums_path))
         {
             try
@@ -1521,6 +1596,12 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
+RestoreDataTasks StorageMergeTree::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr local_context)
+{
+    return restoreDataPartsFromBackup(backup, data_path_in_backup, getPartitionIDsFromQuery(partitions, local_context), &increment);
+}
+
+
 MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
@@ -1534,7 +1615,12 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
-        background_moves_executor.start();
+        background_moves_assignee.start();
+}
+
+std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
+{
+    return std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
 }
 
 }

@@ -12,10 +12,12 @@
 namespace DB
 {
 
+using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
+
 class KeeperServer
 {
 private:
-    int server_id;
+    const int server_id;
 
     CoordinationSettingsPtr coordination_settings;
 
@@ -29,16 +31,15 @@ private:
 
     std::mutex append_entries_mutex;
 
-    ResponsesQueue & responses_queue;
-
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
-    std::atomic<size_t> active_session_id_requests = 0;
 
     Poco::Logger * log;
 
+    /// Callback func which is called by NuRaft on all internal events.
+    /// Used to determine the moment when raft is ready to server new requests
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
@@ -49,30 +50,39 @@ private:
 
     void shutdownRaftServer();
 
-
 public:
     KeeperServer(
         int server_id_,
         const CoordinationSettingsPtr & coordination_settings_,
         const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        bool standalone_keeper);
 
+    /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup();
 
-    void putRequest(const KeeperStorage::RequestForSession & request);
+    /// Put local read request and execute in state machine directly and response into
+    /// responses queue
+    void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
-    int64_t getSessionID(int64_t session_timeout_ms);
+    /// Put batch of requests into Raft and get result of put. Responses will be set separately into
+    /// responses_queue.
+    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
-    std::unordered_set<int64_t> getDeadSessions();
+    /// Return set of the non-active sessions
+    std::vector<int64_t> getDeadSessions();
 
     bool isLeader() const;
 
     bool isLeaderAlive() const;
 
+    /// Wait server initialization (see callbackFunc)
     void waitInit();
 
     void shutdown();
+
+    int getServerID() const { return server_id; }
 };
 
 }
