@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: replica, no-replicated-database, no-parallel, no-fasttest
+# Tag no-replicated-database: Old syntax is not allowed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

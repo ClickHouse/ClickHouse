@@ -109,11 +109,13 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
+    - `CREATE FUNCTION`
 - [DROP](#grant-drop)
     - `DROP DATABASE`
     - `DROP TABLE`
     - `DROP VIEW`
     - `DROP DICTIONARY`
+    - `DROP FUNCTION`
 - [TRUNCATE](#grant-truncate)
 - [OPTIMIZE](#grant-optimize)
 - [SHOW](#grant-show)
@@ -155,6 +157,8 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `SYSTEM RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`
             - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     - `SYSTEM MERGES`
     - `SYSTEM TTL MERGES`
     - `SYSTEM FETCHES`

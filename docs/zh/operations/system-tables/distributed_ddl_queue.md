@@ -1,0 +1,1 @@
+../../../en/operations/system-tables/distributed_ddl_queue.md

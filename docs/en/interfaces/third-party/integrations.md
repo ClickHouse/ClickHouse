@@ -108,4 +108,4 @@ toc_title: Integrations
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

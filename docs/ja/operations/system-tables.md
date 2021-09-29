@@ -1162,4 +1162,4 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ストレージポリシーに複数のボリュームが含まれている場合は、各ボリュームの情報がテーブルの個々の行に格納されます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/system_tables/) <!--hide-->

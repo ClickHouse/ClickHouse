@@ -1,6 +1,5 @@
 #include <Common/SettingsChanges.h>
 
-
 namespace DB
 {
 namespace

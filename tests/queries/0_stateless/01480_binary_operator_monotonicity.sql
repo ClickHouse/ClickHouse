@@ -43,3 +43,13 @@ DROP TABLE IF EXISTS binary_op_mono5;
 DROP TABLE IF EXISTS binary_op_mono6;
 DROP TABLE IF EXISTS binary_op_mono7;
 DROP TABLE IF EXISTS binary_op_mono8;
+
+drop table if exists x;
+create table x (i int, j int) engine MergeTree order by i / 10 settings index_granularity = 1;
+
+insert into x values (10, 1), (20, 2), (30, 3), (40, 4);
+
+set max_rows_to_read = 3;
+select * from x where i > 30; -- converted to i / 10 >= 3, thus needs to read 3 granules.
+
+drop table x;
