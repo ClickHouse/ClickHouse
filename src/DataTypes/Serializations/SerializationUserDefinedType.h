@@ -1,7 +1,11 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <Functions/UserDefinedFunction.h>
+#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -10,8 +14,8 @@ class SerializationUserDefinedType final : public SimpleTextSerialization {
 private:
     SerializationPtr nested;
     ASTPtr nested_ast;
-    FunctionOverloadResolverPtr input;
-    FunctionOverloadResolverPtr output;
+    ASTPtr input;
+    ASTPtr output;
     SerializationPtr string_serialization;
     ContextPtr context;
 
@@ -19,8 +23,8 @@ public:
     SerializationUserDefinedType(
         const SerializationPtr & nested_,
         const ASTPtr & nested_ast_,
-        const FunctionOverloadResolverPtr & input_,
-        const FunctionOverloadResolverPtr & output_,
+        const ASTPtr & input_,
+        const ASTPtr & output_,
         ContextPtr context_);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -68,6 +72,8 @@ private:
     ColumnPtr convertToStringColumn(const IColumn & source_column) const;
 
     ColumnPtr convertFromStringColumn(std::function<void(MutableColumnPtr &)> string_deserializator) const;
+
+    ColumnPtr executeFunction(ASTPtr function_core, const ColumnsWithTypeAndName & arguments) const;
 };
 
 }

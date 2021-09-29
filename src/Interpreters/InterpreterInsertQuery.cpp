@@ -237,7 +237,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
   
-    out = std::make_shared<ConvertUserDefinedTypeOutputStream>(out);
+    //out = std::make_shared<ConvertUserDefinedTypeOutputStream>(out);
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status);
     counting->setProcessListElement(context_ptr->getProcessListElement());

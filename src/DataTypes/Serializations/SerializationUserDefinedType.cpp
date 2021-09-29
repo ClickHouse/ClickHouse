@@ -3,15 +3,24 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 SerializationUserDefinedType::SerializationUserDefinedType(
     const SerializationPtr & nested_,
     const ASTPtr & nested_ast_,
-    const FunctionOverloadResolverPtr & input_,
-    const FunctionOverloadResolverPtr & output_,
+    const ASTPtr & input_,
+    const ASTPtr & output_,
     ContextPtr context_)
     : nested(nested_)
     , nested_ast(nested_ast_)
@@ -93,7 +102,7 @@ ColumnPtr SerializationUserDefinedType::convertToStringColumn(const IColumn & so
     auto data_type_ptr = DataTypeFactory::instance().get(column_name);
     ColumnsWithTypeAndName arguments;
     arguments.emplace_back(column_ptr, data_type_ptr, column_name);
-    return output->build(arguments)->execute(arguments, DataTypeFactory::instance().get("String"), 1);
+    return executeFunction(output, arguments);
 }
 
 ColumnPtr SerializationUserDefinedType::convertFromStringColumn(std::function<void(MutableColumnPtr &)> string_deserializator) const
@@ -105,7 +114,7 @@ ColumnPtr SerializationUserDefinedType::convertFromStringColumn(std::function<vo
     ColumnsWithTypeAndName arguments;
     arguments.emplace_back(column_ptr, string_type_ptr, column_ptr->getFamilyName());
     auto return_type = DataTypeFactory::instance().get(nested_ast);
-    return input->build(arguments)->execute(arguments, return_type, 1);
+    return executeFunction(input, arguments);
 }
 
 
@@ -153,6 +162,36 @@ void SerializationUserDefinedType::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+}
+
+ColumnPtr SerializationUserDefinedType::executeFunction(ASTPtr function_core, const ColumnsWithTypeAndName & arguments) const
+{
+    const auto * lambda_args_tuple = function_core->as<ASTFunction>()->arguments->children.at(0)->as<ASTFunction>();
+    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+
+    NamesAndTypesList lambda_arguments;
+    Block block;
+
+    for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
+    {
+        auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
+        if (!opt_arg_name)
+            throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
+
+        lambda_arguments.emplace_back(*opt_arg_name, arguments[j].type);
+        auto column_ptr = arguments[j].column;
+        if (!column_ptr)
+            column_ptr = arguments[j].type->createColumnConstWithDefaultValue(1);
+        block.insert({column_ptr, arguments[j].type, *opt_arg_name});
+    }
+
+    ASTPtr lambda_body = function_core->as<ASTFunction>()->children.at(0)->children.at(1);
+    auto syntax_result = TreeRewriter(context).analyze(lambda_body, lambda_arguments);
+    ExpressionAnalyzer analyzer(lambda_body, syntax_result, context);
+    ExpressionActionsPtr actions = analyzer.getActions(false);
+
+    actions->execute(block);
+    return block.getColumns().back();
 }
 
 }

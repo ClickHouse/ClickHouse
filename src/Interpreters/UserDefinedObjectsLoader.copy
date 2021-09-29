@@ -1,4 +1,4 @@
-#include "UserDefinedSQLObjectsLoader.h"
+#include "UserDefinedObjectsLoader.h"
 
 #include <filesystem>
 
@@ -12,18 +12,17 @@
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateDataTypeQuery.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
+#include <Interpreters/InterpreterCreateDataTypeQuery.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/ParserCreateDataTypeQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserCreateDataTypeQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -35,40 +34,40 @@ namespace ErrorCodes
     extern const int OBJECT_WAS_NOT_STORED_ON_DISK;
 }
 
-String userDefinedObjectTypeToString(UserDefinedSQLObjectType object_type)
+String userDefinedObjecTypeToString(UserDefinedObjectType object_type)
 {
     switch (object_type)
     {
-        case UserDefinedSQLObjectType::Function:
+        case UserDefinedObjectType::Function:
         {
             return "function";
         }
-        case UserDefinedSQLObjectType::DataType:
+        case UserDefinedObjectType::DataType:
         {
-            return "type";
+            return "data_type";
         }
     }
     return "";
 }
 
-UserDefinedSQLObjectsLoader & UserDefinedSQLObjectsLoader::instance()
+UserDefinedObjectsLoader & UserDefinedObjectsLoader::instance()
 {
-    static UserDefinedSQLObjectsLoader ret;
+    static UserDefinedObjectsLoader ret;
     return ret;
 }
 
-UserDefinedSQLObjectsLoader::UserDefinedSQLObjectsLoader()
-    : log(&Poco::Logger::get("UserDefinedSQLObjectsLoader"))
+UserDefinedObjectsLoader::UserDefinedObjectsLoader()
+    : log(&Poco::Logger::get("UserDefinedObjectsLoader"))
 {}
 
-String UserDefinedSQLObjectsLoader::makeFilePath(ContextPtr context, UserDefinedSQLObjectType object_type, const String & name)
+String UserDefinedObjectsLoader::makeFilePath(ContextPtr context, UserDefinedObjectType object_type, const String & name)
 {
     String dir_path = context->getPath() + "user_defined/";
-    String object_type_str = userDefinedObjectTypeToString(object_type);
+    String object_type_str = userDefinedObjecTypeToString(object_type);
     return dir_path + object_type_str + "_" + escapeForFileName(name) + ".sql";
 }
 
-void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & name, const String & path)
+void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedObjectType object_type, const std::string_view & name, const String & path)
 {
     auto name_ref = StringRef(name.data(), name.size());
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(name_ref), path);
@@ -94,7 +93,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
     {
         switch (object_type)
         {
-            case UserDefinedSQLObjectType::Function:
+            case UserDefinedObjectType::Function:
             {
                 ParserCreateFunctionQuery function_parser;
                 ASTPtr ast = parse(function_parser);
@@ -102,7 +101,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
                 interpreter.execute();
                 break;
             }
-            case UserDefinedSQLObjectType::DataType:
+            case UserDefinedObjectType::DataType:
             {
                 ParserCreateDataTypeQuery data_type_parser;
                 ASTPtr ast = parse(data_type_parser);
@@ -119,7 +118,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
     }
 }
 
-void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
+void UserDefinedObjectsLoader::loadObjects(ContextPtr context)
 {
     LOG_DEBUG(log, "loading user defined objects");
 
@@ -143,24 +142,23 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
             if (object_name.starts_with("function_"))
             {
                 object_name.remove_prefix(strlen("function_"));
-                loadUserDefinedObject(context, UserDefinedSQLObjectType::Function, object_name, dir_path + it.name());
+                loadUserDefinedObject(context, UserDefinedObjectType::Function, object_name, dir_path + it.name());
             }
-            else if (object_name.starts_with("type_"))
+            else if (object_name.starts_with("data_type_"))
             {
-                object_name.remove_prefix(strlen("type_"));
-                loadUserDefinedObject(context, UserDefinedSQLObjectType::DataType, object_name, dir_path + it.name());
+                object_name.remove_prefix(strlen("data_type_"));
+                loadUserDefinedObject(context, UserDefinedObjectType::DataType, object_name, dir_path + it.name());
             }
         }
     }
 }
 
-void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
+void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name, const IAST & ast)
 {
     String file_path = makeFilePath(context, object_type, object_name);
 
     if (std::filesystem::exists(file_path))
-        throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined {} {} already stored on disk",
-                        userDefinedObjectTypeToString(object_type), backQuote(file_path));
+        throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined object {} already stored on disk", backQuote(file_path));
 
     LOG_DEBUG(log, "Storing object {} to file {}", backQuote(object_name), file_path);
 
@@ -176,20 +174,21 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
         out.sync();
     out.close();
 
-    LOG_DEBUG(log, "Stored {} {}", userDefinedObjectTypeToString(object_type), backQuote(object_name));
+    LOG_DEBUG(log, "Stored object {}", backQuote(object_name));
 }
 
-void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
+void UserDefinedObjectsLoader::removeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name)
 {
     String file_path = makeFilePath(context, object_type, object_name);
 
     if (!std::filesystem::exists(file_path))
-        throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined {} {} was not stored on disk",
-                        userDefinedObjectTypeToString(object_type), backQuote(object_name));
+        throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path));
 
     LOG_DEBUG(log, "Removing user defined object {} in file {}", backQuote(object_name), file_path);
 
     std::filesystem::remove(file_path);
+
+    LOG_DEBUG(log, "Removed object {}", backQuote(object_name));
 }
 
 }

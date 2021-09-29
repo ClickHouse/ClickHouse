@@ -1,7 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateDataTypeQuery.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Common/quoteString.h>
@@ -16,13 +16,13 @@ BlockIO InterpreterCreateDataTypeQuery::execute()
 
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create_data_type_query = query_ptr->as<ASTCreateDataTypeQuery &>();
-    registerUserDefinedDataType(DataTypeFactory::instance(), create_data_type_query);
+    registerUserDefinedDataType(DataTypeFactory::instance(), create_data_type_query, current_context);
     auto data_type_name = create_data_type_query.type_name;
     if (!is_internal)
     {
         try
         {
-            UserDefinedObjectsLoader::instance().storeObject(current_context, UserDefinedObjectType::DataType, data_type_name, *query_ptr);
+            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::DataType, data_type_name, *query_ptr);
         }
         catch (Exception & e)
         {

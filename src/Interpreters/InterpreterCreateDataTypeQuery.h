@@ -21,9 +21,7 @@ public:
 
 private:
     ASTPtr query_ptr;
-
-    /// Is this an internal query - not from the user.
-    bool is_internal = false;
+    bool is_internal;
 };
 
 }

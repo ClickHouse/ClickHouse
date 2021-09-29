@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -16,6 +15,9 @@ private:
     DataTypePtr nested;
     ASTPtr nested_ast;
     String type_name;
+    ASTPtr input_function;
+    ASTPtr output_function;
+    ContextPtr context;
 
 public:
     UserDefinedDataType();
@@ -23,10 +25,16 @@ public:
     DataTypePtr getNested() const;
     ASTPtr getNestedAST() const;
     String getTypeName() const;
+    ASTPtr getInputFunction() const;
+    ASTPtr getOutputFunction() const;
+    ContextPtr getContext() const;
 
     void setNested(const DataTypePtr & nested_);
     void setNestedAST(const ASTPtr & nested_ast_);
     void setTypeName(const String & type_name_);
+    void setInputFunction(const ASTPtr & function_);
+    void setOutputFunction(const ASTPtr & function_);
+    void setContext(const ContextPtr & context_);
 
     TypeIndex getTypeId() const override { return nested->getTypeId(); }
     std::string doGetName() const override;

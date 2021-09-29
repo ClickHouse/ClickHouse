@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
@@ -14,6 +13,7 @@
 #include <Core/Defines.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 
 
 namespace DB
@@ -68,6 +68,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    std::lock_guard<std::mutex> guard(mutex);
     String family_name = getAliasToOrName(family_name_param);
 
     if (endsWith(family_name, "WithDictionary"))
@@ -161,18 +162,22 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 void DataTypeFactory::registerUserDefinedDataType(
     const String & name,
     UserDefinedTypeCreator creator,
-    const ASTCreateDataTypeQuery & createDataTypeQuery)
+    const ASTCreateDataTypeQuery & createDataTypeQuery,
+    const ContextPtr & context)
 {
     {
         std::lock_guard<std::mutex> guard(mutex);
         user_defined_data_types.insert(name);
     }
-    registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
+    registerDataType(name, [this, creator, createDataTypeQuery, context](const ASTPtr &)
     {
         auto res = creator();
         res->setNested(get(createDataTypeQuery.nested));
         res->setNestedAST(createDataTypeQuery.nested);
         res->setTypeName(createDataTypeQuery.type_name);
+        res->setInputFunction(UserDefinedSQLFunctionFactory::instance().get(createDataTypeQuery.input_function));
+        res->setOutputFunction(UserDefinedSQLFunctionFactory::instance().get(createDataTypeQuery.output_function));
+        res->setContext(context);
         return res;
     }, CaseSensitiveness::CaseSensitive);
 }
@@ -245,7 +250,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNumbers(*this);
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
-    registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);

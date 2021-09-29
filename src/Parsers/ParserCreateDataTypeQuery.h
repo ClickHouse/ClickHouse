@@ -12,4 +12,20 @@ protected:
     const char * getName() const override { return "CREATE TYPE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+class ParserFunctionDefinitionQuery : public IParserBase
+{
+public:
+    explicit ParserFunctionDefinitionQuery(const String & function_type_name_)
+        : function_type_name(function_type_name_)
+    {}
+
+protected:
+    const char * getName() const override { return "function definition query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    String function_type_name;
+};
+
 }
