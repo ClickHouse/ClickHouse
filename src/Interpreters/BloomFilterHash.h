@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -113,26 +112,6 @@ struct BloomFilterHash
 
             const auto & offsets = array_col->getOffsets();
             limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
-            pos = offsets[pos - 1];
-
-            if (limit == 0)
-            {
-                auto index_column = ColumnUInt64::create(1);
-                ColumnUInt64::Container & index_column_vec = index_column->getData();
-                index_column_vec[0] = 0;
-                return index_column;
-            }
-        }
-
-        if (which.isMap())
-        {
-            const auto * map_col = typeid_cast<const ColumnMap *>(column.get());
-            const auto & keys_data = map_col->getNestedData().getColumn(0);
-            if (checkAndGetColumn<ColumnNullable>(keys_data))
-                throw Exception("Unexpected key type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
-
-            const auto & offsets = map_col->getNestedColumn().getOffsets();
-            limit = offsets[pos + limit - 1] - offsets[pos - 1];  /// PaddedPODArray allows access on index -1.
             pos = offsets[pos - 1];
 
             if (limit == 0)

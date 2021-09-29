@@ -50,6 +50,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_projection("DROP PROJECTION");
     ParserKeyword s_clear_projection("CLEAR PROJECTION");
     ParserKeyword s_materialize_projection("MATERIALIZE PROJECTION");
+    ParserKeyword s_modify_comment("MODIFY COMMENT");
 
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
@@ -753,6 +754,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!select_p.parse(pos, command->select, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
+            }
+            else if (s_modify_comment.ignore(pos, expected))
+            {
+                if (!parser_string_literal.parse(pos, command->comment, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_COMMENT;
             }
             else
                 return false;

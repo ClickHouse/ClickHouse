@@ -45,6 +45,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -961,7 +962,9 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
     if (columns_from_zk != old_columns)
     {
-        throw Exception("Table columns structure in ZooKeeper is different from local table structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Table columns structure in ZooKeeper is different from local table structure. Local columns:\n"
+            "{}\nZookeeper columns:\n{}", old_columns.toString(), columns_from_zk.toString());
     }
 }
 

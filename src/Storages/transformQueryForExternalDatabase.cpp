@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -248,6 +250,7 @@ String transformQueryForExternalDatabase(
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
+    bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -275,6 +278,10 @@ String transformQueryForExternalDatabase(
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
+        else if (strict)
+        {
+            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
+        }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
@@ -291,6 +298,10 @@ String transformQueryForExternalDatabase(
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
+    }
+    else if (strict && original_where)
+    {
+        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
     ASTPtr select_ptr = select;
