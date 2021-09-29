@@ -619,6 +619,7 @@ bool StorageKafka::streamToViews()
     {
         auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         sources.emplace_back(source);
+        pipes.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
