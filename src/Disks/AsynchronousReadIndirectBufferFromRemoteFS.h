@@ -44,6 +44,7 @@ private:
     std::future<IAsynchronousReader::Result> prefetch_future;
 
     size_t absolute_position = 0;
+    std::mutex mutex;
 };
 
 }

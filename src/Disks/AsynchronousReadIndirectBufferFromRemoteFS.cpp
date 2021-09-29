@@ -47,6 +47,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (prefetch_future.valid())
         return;
 
+    std::lock_guard lock(mutex);
     prefetch_future = readNext();
 }
 
@@ -59,20 +60,29 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
-        size = prefetch_future.get();
+        {
+            std::lock_guard lock(mutex);
+            size = prefetch_future.get();
+            if (size)
+            {
+                swap(*impl);
+                impl->reset();
+                absolute_position += size;
+            }
+        }
         watch.stop();
         ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
     }
     else
     {
+        std::lock_guard lock(mutex);
         size = readNext().get();
-    }
-
-    if (size)
-    {
-        swap(*impl);
-        absolute_position += size;
-        impl->reset();
+        if (size)
+        {
+            swap(*impl);
+            impl->reset();
+            absolute_position += size;
+        }
     }
 
     prefetch_future = {};
@@ -119,7 +129,6 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     if (prefetch_future.valid())
     {
-        std::cerr << "Ignoring prefetched data" << "\n";
         prefetch_future.wait();
         prefetch_future = {};
     }

@@ -108,7 +108,7 @@ void ReadBufferFromRemoteFS::reset(bool reset_inner_buf)
 {
     if (reset_inner_buf)
         current_buf.reset();
-    set(working_buffer.begin(), working_buffer.size());
+    BufferBase::set(nullptr, 0, 0);
 }
 
 }
