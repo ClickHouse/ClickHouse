@@ -45,6 +45,7 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
+        COMMENT_TABLE
     };
 
     /// Which property user wants to remove from column
@@ -75,7 +76,7 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
 
-    /// For COMMENT column
+    /// For COMMENT column or table
     std::optional<String> comment;
 
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.

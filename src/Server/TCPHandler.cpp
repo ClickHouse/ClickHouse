@@ -19,7 +19,6 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -37,6 +36,10 @@
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
@@ -291,24 +294,37 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
+            if (state.io.pipeline.pushing())
             /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
-            ///        and don't check implicitly via existence of |state.io.in|.
-            if (state.io.out && !state.io.in)
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
             }
-            else if (state.need_receive_data_for_input) // It implies pipeline execution
+            else if (state.io.pipeline.pulling())
             {
-                /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                auto executor = state.io.pipeline.execute();
-                executor->execute(state.io.pipeline.getNumThreads());
-            }
-            else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else if (state.io.in)
-                /// TODO: check that this branch works well for insert query with embedded data.
-                processOrdinaryQuery();
+            }
+            else if (state.io.pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(state.io.pipeline);
+                /// Should not check for cancel in case of input.
+                if (!state.need_receive_data_for_input)
+                {
+                    auto callback = [this]()
+                    {
+                        if (isQueryCancelled())
+                            return true;
+
+                        sendProgress();
+                        sendLogs();
+
+                        return false;
+                    };
+
+                    executor.setCancelCallback(callback, interactive_delay / 1000);
+                }
+                executor.execute();
+            }
 
             state.io.onFinish();
 
@@ -543,110 +559,61 @@ void TCPHandler::skipData()
 
 void TCPHandler::processInsertQuery()
 {
-    /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-      *  client receive exception before sending data.
-      */
-    state.io.out->writePrefix();
+    size_t num_threads = state.io.pipeline.getNumThreads();
 
-    /// Send ColumnsDescription for insertion table
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    auto send_table_columns = [&]()
     {
-        const auto & table_id = query_context->getInsertionTable();
-        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        /// Send ColumnsDescription for insertion table
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
-            if (!table_id.empty())
+            const auto & table_id = query_context->getInsertionTable();
+            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
             {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+                }
             }
         }
-    }
+    };
 
-    /// Send block to the client - table structure.
-    sendData(state.io.out->getHeader());
-
-    try
+    if (num_threads > 1)
     {
-        readData();
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
+        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+        *  client receive exception before sending data.
+        */
+        executor.start();
+
+        send_table_columns();
+
+        /// Send block to the client - table structure.
+        sendData(executor.getHeader());
+
+        sendLogs();
+
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
     }
-    catch (...)
+    else
     {
-        /// To avoid flushing from the destructor, that may lead to uncaught exception.
-        state.io.out->writeSuffix();
-        throw;
+        PushingPipelineExecutor executor(state.io.pipeline);
+        executor.start();
+
+        send_table_columns();
+
+        sendData(executor.getHeader());
+
+        sendLogs();
+
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
     }
-    state.io.out->writeSuffix();
-}
-
-
-void TCPHandler::processOrdinaryQuery()
-{
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
-    /// Pull query execution result, if exists, and send it to network.
-    if (state.io.in)
-    {
-
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-            sendPartUUIDs();
-
-        /// This allows the client to prepare output format
-        if (Block header = state.io.in->getHeader())
-            sendData(header);
-
-        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
-        AsynchronousBlockInputStream async_in(state.io.in);
-
-        async_in.readPrefix();
-        while (true)
-        {
-            if (isQueryCancelled())
-            {
-                async_in.cancel(false);
-                break;
-            }
-
-            if (after_send_progress.elapsed() / 1000 >= interactive_delay)
-            {
-                /// Some time passed.
-                after_send_progress.restart();
-                sendProgress();
-            }
-
-            sendLogs();
-
-            if (async_in.poll(interactive_delay / 1000))
-            {
-                const auto block = async_in.read();
-                if (!block)
-                    break;
-
-                if (!state.io.null_format)
-                    sendData(block);
-            }
-        }
-        async_in.readSuffix();
-
-        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
-          * so that this information can be used in the suffix output of stream.
-          * If the request has been interrupted, then sendTotals and other methods should not be called,
-          * because we have not read all the data.
-          */
-        if (!isQueryCancelled())
-        {
-            sendTotals(state.io.in->getTotals());
-            sendExtremes(state.io.in->getExtremes());
-            sendProfileInfo(state.io.in->getProfileInfo());
-            sendProgress();
-        }
-
-        if (state.is_connection_closed)
-            return;
-
-        sendData({});
-    }
-
-    sendProgress();
 }
 
 
@@ -1346,10 +1313,11 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
-        temporary_table_out->write(block);
-        temporary_table_out->writeSuffix();
-
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        PushingPipelineExecutor executor(temporary_table_out);
+        executor.start();
+        executor.push(block);
+        executor.finish();
     }
     else if (state.need_receive_data_for_input)
     {
@@ -1359,7 +1327,7 @@ bool TCPHandler::receiveData(bool scalar)
     else
     {
         /// INSERT query.
-        state.io.out->write(block);
+        state.block_for_insert = block;
     }
     return true;
 }
@@ -1401,8 +1369,8 @@ void TCPHandler::initBlockInput()
             state.maybe_compressed_in = in;
 
         Block header;
-        if (state.io.out)
-            header = state.io.out->getHeader();
+        if (state.io.pipeline.pushing())
+            header = state.io.pipeline.getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
