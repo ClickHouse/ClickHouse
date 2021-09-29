@@ -21,7 +21,7 @@ public:
             size_t max_bytes_before_external_sort_,
             VolumePtr tmp_volume_,
             size_t min_free_disk_space_,
-            bool is_limit_positive_ = false);
+            bool is_limit_positive_ = true);
 
     String getName() const override { return "MergeSorting"; }
 

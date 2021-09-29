@@ -15,7 +15,7 @@ public:
             SortDescription sort_description_,
             UInt64 limit_,
             SizeLimits size_limits_,
-            bool is_limit_positive_ = false);
+            bool is_limit_positive_ = true);
 
     String getName() const override { return "PartialSorting"; }
 

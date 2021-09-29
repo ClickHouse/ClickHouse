@@ -865,7 +865,13 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     {
         length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
         if (query.limitOffset() && length)
+        {
             offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+            if (isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT") ^ isLimitOrOffsetPositive(query.limitOffset(), context, "OFFSET"))
+                throw Exception(
+                    "The values of LIMIT and OFFSET should be positive or negative at the same time",
+                    ErrorCodes::INVALID_OFFSET_EXPRESSION);
+        }
     }
     else if (query.limitOffset())
         offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");

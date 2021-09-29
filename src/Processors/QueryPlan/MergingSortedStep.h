@@ -16,7 +16,7 @@ public:
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
-        bool is_limit_positive_ = false);
+        bool is_limit_positive_ = true);
 
     String getName() const override { return "MergingSorted"; }
 

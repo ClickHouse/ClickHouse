@@ -16,7 +16,7 @@ public:
         size_t max_block_size_,
         UInt64 limit_,
         bool has_filtration_,
-        bool is_limit_positive_ = false);
+        bool is_limit_positive_ = true);
 
     String getName() const override { return "FinishSorting"; }
 
