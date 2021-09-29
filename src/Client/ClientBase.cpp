@@ -821,8 +821,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
     Block block;
