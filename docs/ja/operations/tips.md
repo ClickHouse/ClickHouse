@@ -248,4 +248,4 @@ script
 end script
 ```
 
-{## [元の記事](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/operations/tips/) ##}
