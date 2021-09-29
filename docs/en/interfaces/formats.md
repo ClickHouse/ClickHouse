@@ -540,7 +540,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-A special case when objects enclosed in array.
+A special case when objects enclosed in array with square brackets.
 
 Query:
 
