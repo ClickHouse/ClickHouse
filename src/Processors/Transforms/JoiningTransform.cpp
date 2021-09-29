@@ -124,7 +124,8 @@ void JoiningTransform::work()
                 return;
             }
 
-            non_joined_blocks = join->getNonJoinedBlocks(outputs.front().getHeader(), max_block_size);
+            non_joined_blocks = join->getNonJoinedBlocks(
+                inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
             if (!non_joined_blocks)
             {
                 process_non_joined = false;
