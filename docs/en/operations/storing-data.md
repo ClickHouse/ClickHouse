@@ -124,7 +124,10 @@ The following types of queries are not supported: [CREATE TABLE](../sql-referenc
 
 Web server storage is supported only for the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) and [Log](../engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
 
-Example of disk configuration:
+A ready test case. You need to add this configuration to config:
+<xml from below>
+and then execute this query 
+``` <paste it https://github.com/ClickHouse/ClickHouse/blob/master/src/Disks/DiskWebServer.h#L17>
 
 ``` xml
 <yandex>
