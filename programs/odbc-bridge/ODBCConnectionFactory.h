@@ -81,8 +81,10 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
     }
     catch (const nanodbc::database_error & e)
     {
-        /// SQLState, connection related errors start with 08S0.
-        if (e.state().starts_with("08S0"))
+        /// SQLState, connection related errors start with 08 (main: 08S01), cursor invalid state is 24000.
+        /// Invalid cursor state is a retriable error.
+        /// https://docs.microsoft.com/ru-ru/sql/odbc/reference/appendixes/appendix-a-odbc-error-codes?view=sql-server-ver15
+        if (e.state().starts_with("08") || e.state().starts_with("24"))
         {
             connection_holder->updateConnection();
             return query_func(connection_holder->get());
