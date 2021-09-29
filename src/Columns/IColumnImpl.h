@@ -143,7 +143,9 @@ bool IColumn::hasEqualValuesImpl() const
 template <typename Derived>
 double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
 {
-    assert(sample_ratio > 0 && sample_ratio <= 1.0);
+    if (sample_ratio <= 0.0 || sample_ratio > 1.0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
 
     size_t num_rows = size();
     size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);

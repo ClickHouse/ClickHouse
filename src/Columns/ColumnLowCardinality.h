@@ -183,12 +183,12 @@ public:
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return getRatioOfDefaultRowsImpl<ColumnLowCardinality>(sample_ratio);
+        return getIndexes().getRatioOfDefaultRows(sample_ratio);
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        return getIndicesOfNonDefaultRowsImpl<ColumnLowCardinality>(indices, from, limit);
+        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
