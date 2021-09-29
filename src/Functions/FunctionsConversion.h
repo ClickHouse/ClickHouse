@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <type_traits>
 
 #include <IO/WriteBufferFromVector.h>
@@ -844,7 +845,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 template <typename StringColumnType>
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to serialize to ColumnString or ColumnFixedString");
@@ -855,22 +856,25 @@ struct ConvertImplGenericToString
         const IDataType & type = *col_with_type_and_name.type;
         const IColumn & col_from = *col_with_type_and_name.column;
 
+        size_t size = col_from.size();
         auto col_to = result_type->createColumn();
 
         {
             ColumnStringHelpers::WriteHelper write_helper(
                     assert_cast<StringColumnType &>(*col_to),
-                    input_rows_count);
+                    size);
 
             auto & write_buffer = write_helper.getWriteBuffer();
 
             FormatSettings format_settings;
             auto serialization = type.getDefaultSerialization();
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 serialization->serializeText(col_from, i, write_buffer, format_settings);
                 write_helper.rowWritten();
             }
+
+            write_helper.finalize();
         }
 
         if (result_type->isNullable() && null_map)

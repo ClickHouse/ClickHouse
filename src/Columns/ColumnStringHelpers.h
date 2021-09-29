@@ -33,20 +33,22 @@ class WriteHelper
 
 public:
     WriteHelper(ColumnType & col_, size_t expected_rows)
-        : col(col_),
-          buffer(col.getChars())
+        : col(col_)
+        , buffer(col.getChars())
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
             col.reserve(expected_rows);
         else
         {
-            col.reserve(expected_rows);
+            col.getOffsets().reserve(expected_rows);
             /// Using coefficient 2 for initial size is arbitrary.
-            col.getChars().reserve(expected_rows * 2);
+            col.getChars().resize(expected_rows * 2);
         }
     }
 
-    ~WriteHelper()
+    ~WriteHelper() = default;
+
+    void finalize()
     {
         buffer.finalize();
     }
@@ -68,7 +70,7 @@ public:
             // Pad with zeroes on the right to maintain FixedString invariant.
             const auto excess_bytes = buffer.count() % col.getN();
             const auto fill_bytes = col.getN() - excess_bytes;
-            buffer.write('\0', fill_bytes);
+            writeChar(0, fill_bytes, buffer);
         }
         else
         {
