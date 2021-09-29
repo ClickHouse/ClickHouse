@@ -5,4 +5,4 @@ date: '2017-05-17'
 tags: ['мероприятия', 'meetup', 'Екатеринбург']
 ---
 
-[Посмотреть презентацию](https://presentations.clickhouse.tech/meetup6/)
+[Посмотреть презентацию](https://presentations.clickhouse.com/meetup6/)

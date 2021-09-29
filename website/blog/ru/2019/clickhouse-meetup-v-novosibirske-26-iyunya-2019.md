@@ -9,4 +9,4 @@ tags: ['мероприятия', 'meetup', 'Новосибирск']
 
 ![iframe](https://www.youtube.com/embed/videoseries?list=PL0Z2YDlm0b3ionSVt-NYC9Vu_83xxhb4J)
 
-Как обычно, [все слайды опубликованы на GitHub](https://presentations.clickhouse.tech/meetup25).
+Как обычно, [все слайды опубликованы на GitHub](https://presentations.clickhouse.com/meetup25).

@@ -15,14 +15,14 @@ Alexander Zaitsev, CTO of Altinity, has introduced ClickHouse to those who're ju
 
 Robert Hodges, CEO of Altinity, has probably traveled the longest distance to join the event since he's based in California and he has also [published his thoughts on this event in the Altinity blog](https://www.altinity.com/blog/2019/4/9/madrid-clickhouse-meetup-summary).
 
-Alexey Milovidov from Yandex has shown the recent advancements in ClickHouse features and briefly walked the audience through the current roadmap ([slides](https://presentations.clickhouse.tech/meetup21/new_features/)):
+Alexey Milovidov from Yandex has shown the recent advancements in ClickHouse features and briefly walked the audience through the current roadmap ([slides](https://presentations.clickhouse.com/meetup21/new_features/)):
 ![Alexey Milovidov from Yandex](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-madrid-on-april-2-2019/3.jpg)
 
 Iago Enriquez from Idealista was talking about their migration from “legacy” commercial DBMS to ClickHouse. It was the first time we've heard that someone talking about using two flagship opensource products by Yandex together in production. They are using [CatBoost](https://catboost.ai/) model inference right from ClickHouse SQL queries to fill in the incompleteness of their source data. Unfortunately, slides of Iago's talk were not allowed to be published.
 ![Iago Enriquez from Idealista](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-madrid-on-april-2-2019/4.jpg)
 
-David Pardo Villaverde from Corunet gave a talk about how they've used ClickHouse to prepare data for dense model generation for one of their clients. It took a pretty short time on a single server. Fun quote from conclusions: “If I wasn't already married, I'd marry it! \[ClickHouse\]” ([slides](https://presentations.clickhouse.tech/meetup21/predictive_models.pdf)):
+David Pardo Villaverde from Corunet gave a talk about how they've used ClickHouse to prepare data for dense model generation for one of their clients. It took a pretty short time on a single server. Fun quote from conclusions: “If I wasn't already married, I'd marry it! \[ClickHouse\]” ([slides](https://presentations.clickhouse.com/meetup21/predictive_models.pdf)):
 ![David Pardo Villaverde from Corunet](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-madrid-on-april-2-2019/5.jpg)
 
-Closing talk of the meetup was by Murat Kabilov fro Adjust Gmbh, he was demonstrating his opensource project [pg2ch](https://github.com/mkabilov/pg2ch) that allows to sync data from PostgreSQL to ClickHouse in real-time ([slides](https://presentations.clickhouse.tech/meetup21/postgres_to_clickhouse.pdf)).
+Closing talk of the meetup was by Murat Kabilov fro Adjust Gmbh, he was demonstrating his opensource project [pg2ch](https://github.com/mkabilov/pg2ch) that allows to sync data from PostgreSQL to ClickHouse in real-time ([slides](https://presentations.clickhouse.com/meetup21/postgres_to_clickhouse.pdf)).
 ![Murat Kabilov fro Adjust Gmbh](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-madrid-on-april-2-2019/6.jpg)

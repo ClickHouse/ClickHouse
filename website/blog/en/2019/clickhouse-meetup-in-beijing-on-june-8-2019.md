@@ -19,13 +19,13 @@ Alexey Milovidov from ClickHouse core developers team at Yandex got the content 
 Amos Bird, one of the most active ClickHouse contributors either in China and worldwide, shares his experience of using ClickHouse for graph processing ([slides](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup24/2.%20SQLGraph%20--%20When%20ClickHouse%20marries%20graph%20processing%20Amoisbird.pdf)):
 ![Amos Bird](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/4.jpg)
 
-Yan Gangqiang from Golden Data shares details of their approach to data storage for surveys system based on ClickHouse ([slides](https://presentations.clickhouse.tech/meetup24/3.%20金数据数据架构调整方案Public.pdf)):
+Yan Gangqiang from Golden Data shares details of their approach to data storage for surveys system based on ClickHouse ([slides](https://presentations.clickhouse.com/meetup24/3.%20金数据数据架构调整方案Public.pdf)):
 ![Yan Gangqiang](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/5.jpg)
 
-ClickHouse for beginners talk by Percent ([slides](https://presentations.clickhouse.tech/meetup24/4.%20ClickHouse万亿数据双中心的设计与实践%20.pdf)):
+ClickHouse for beginners talk by Percent ([slides](https://presentations.clickhouse.com/meetup24/4.%20ClickHouse万亿数据双中心的设计与实践%20.pdf)):
 ![Percent](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/6.jpg)
 
-ClickHouse core developer Nikolay Kochetov demonstrates upcoming query execution pipeline changes ([slides](https://presentations.clickhouse.tech/meetup24/5.%20Clickhouse%20query%20execution%20pipeline%20changes/)):
+ClickHouse core developer Nikolay Kochetov demonstrates upcoming query execution pipeline changes ([slides](https://presentations.clickhouse.com/meetup24/5.%20Clickhouse%20query%20execution%20pipeline%20changes/)):
 ![Nikolay Kochetov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/7.jpg)
 
 Pre-meetup meeting with active ClickHouse community members in China:

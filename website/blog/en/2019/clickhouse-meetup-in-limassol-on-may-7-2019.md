@@ -13,7 +13,7 @@ The first open-air ClickHouse Meetup took place in the heart of Limassol, the se
 
 ![Kirill Shvakov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/2.jpg)
 
-Kirill is well known for his top-notch [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go) running over native protocol, but his opening talk was about his experience optimizing ClickHouse queries and solving real-world tasks at Integros and Wisebits. [Slides](https://presentations.clickhouse.tech/meetup22/strategies.pdf). [Full query listings](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
+Kirill is well known for his top-notch [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go) running over native protocol, but his opening talk was about his experience optimizing ClickHouse queries and solving real-world tasks at Integros and Wisebits. [Slides](https://presentations.clickhouse.com/meetup22/strategies.pdf). [Full query listings](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
 
 The event has begun in the early evening...
 ![Evening in Limassol](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/3.jpg)
@@ -21,16 +21,16 @@ The event has begun in the early evening...
 ...but it took just around one hour for nature to turn the night mode on. It made the projected slides easier to read.
 ![Night in Limassol](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/4.jpg)
 
-Sergey Tomilov with his colleagues from the Exness Platform Team has shared details on the evolution of their systems for analyzing logs and metrics and how they ended up relying on ClickHouse for long-term storage ([slides](https://presentations.clickhouse.tech/meetup22/exness.pdf)):
+Sergey Tomilov with his colleagues from the Exness Platform Team has shared details on the evolution of their systems for analyzing logs and metrics and how they ended up relying on ClickHouse for long-term storage ([slides](https://presentations.clickhouse.com/meetup22/exness.pdf)):
 ![Sergey Tomilov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/5.jpg)
 
-Alexey Milovidov from the Yandex ClickHouse team has demonstrated features from recent ClickHouse releases and gave an update on what's coming soon ([slides](https://presentations.clickhouse.tech/meetup22/new_features/)):
+Alexey Milovidov from the Yandex ClickHouse team has demonstrated features from recent ClickHouse releases and gave an update on what's coming soon ([slides](https://presentations.clickhouse.com/meetup22/new_features/)):
 ![Alexey Milovidov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/6.jpg)
 
-Alexander Zaitsev, CTO of Altinity, have shown an overview of how to integrate ClickHouse into environments running on Kubernetes ([slides](https://presentations.clickhouse.tech/meetup22/kubernetes.pdf)):
+Alexander Zaitsev, CTO of Altinity, have shown an overview of how to integrate ClickHouse into environments running on Kubernetes ([slides](https://presentations.clickhouse.com/meetup22/kubernetes.pdf)):
 ![Alexander Zaitsev, CTO of Altinity](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/7.jpg)
 
-Vladimir Goncharov, a backend engineer from Aloha Browser, has closed the ClickHouse Limassol Meetup by demonstrating few projects that allow integrating other opensource tools for logs processing with ClickHouse ([slides](https://presentations.clickhouse.tech/meetup22/aloha.pdf)):
+Vladimir Goncharov, a backend engineer from Aloha Browser, has closed the ClickHouse Limassol Meetup by demonstrating few projects that allow integrating other opensource tools for logs processing with ClickHouse ([slides](https://presentations.clickhouse.com/meetup22/aloha.pdf)):
 ![Vladimir Goncharov](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/8.jpg)
 
 Unfortunately, midnight was closing in and only the most weather-proof ClickHouse fans have managed to stay the whole event as it started getting pretty chilly.

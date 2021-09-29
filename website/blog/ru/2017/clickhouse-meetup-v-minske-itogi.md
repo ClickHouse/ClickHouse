@@ -9,8 +9,8 @@ tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь']
 
 Мы делимся с вами презентациями докладчиков и будем рады ответить на вопросы в [чате ClickHouse в Телеграме](https://t.me/clickhouse_ru).
 
-[История создания ClickHouse, новости и планы по развитию](https://presentations.clickhouse.tech/meetup7/), Алексей Миловидов
+[История создания ClickHouse, новости и планы по развитию](https://presentations.clickhouse.com/meetup7/), Алексей Миловидов
 
-[Использование ClickHouse для мониторинга связности сети](https://presentations.clickhouse.tech/meetup7/netmon.pdf), Дмитрий Липин
+[Использование ClickHouse для мониторинга связности сети](https://presentations.clickhouse.com/meetup7/netmon.pdf), Дмитрий Липин
 
-[Разбираемся во внутреннем устройстве ClickHouse](https://presentations.clickhouse.tech/meetup7/internals.pdf), Виталий Людвиченко
+[Разбираемся во внутреннем устройстве ClickHouse](https://presentations.clickhouse.com/meetup7/internals.pdf), Виталий Людвиченко

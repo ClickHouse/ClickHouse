@@ -7,4 +7,4 @@ tags: ['мероприятия', 'конференции', 'Челябинск']
 
 ![iframe](https://www.youtube.com/embed/isYA4e5zg1M?t=2h8m15s)
 
-[Посмотреть презентацию](https://presentations.clickhouse.tech/uwdc/)
+[Посмотреть презентацию](https://presentations.clickhouse.com/uwdc/)

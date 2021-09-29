@@ -5,6 +5,6 @@ date: '2017-04-04'
 tags: ['мероприятия', 'meetup', 'Новосибирск']
 ---
 
-[Презентация Алексея Миловидова](https://presentations.clickhouse.tech/meetup4/)
+[Презентация Алексея Миловидова](https://presentations.clickhouse.com/meetup4/)
 
-[Презентация Марии Мансуровой](https://presentations.clickhouse.tech/meetup4/clickhouse_for_analysts.pdf)
+[Презентация Марии Мансуровой](https://presentations.clickhouse.com/meetup4/clickhouse_for_analysts.pdf)

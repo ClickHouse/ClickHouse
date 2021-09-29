@@ -11,7 +11,7 @@ tags: ['мероприятия', 'meetup', 'Лимассол', 'Кипр', 'Ев
 
 ![Кирилл Шваков](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/1.jpg)
 
-Кирилл широко известен благодаря его замечательногму [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go), работающему по нативному протоколу, а его открывающий доклад был о его опыте оптимизации ClickHouse запросов и решению реальных прикладных задач в Integros и Wisebits. [Слайды](https://presentations.clickhouse.tech/meetup22/strategies.pdf). [Полные тексты запросов](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
+Кирилл широко известен благодаря его замечательногму [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go), работающему по нативному протоколу, а его открывающий доклад был о его опыте оптимизации ClickHouse запросов и решению реальных прикладных задач в Integros и Wisebits. [Слайды](https://presentations.clickhouse.com/meetup22/strategies.pdf). [Полные тексты запросов](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
 
 Мероприятие началось ранним вечером…
 ![Вечер в Лимассоле](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/2.jpg)
@@ -19,16 +19,16 @@ tags: ['мероприятия', 'meetup', 'Лимассол', 'Кипр', 'Ев
 …но природе потребовалось всего около часа, чтобы включить «ночной режим». Зато проецируемые слайды стало заметно легче читать.
 ![Ночь в Лимассоле](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/3.jpg)
 
-Сергей Томилов с его коллегами из Exness Platform Team поделились деталями об эволюции их систем для анализа логов и метрик, а также как они в итоге стали использовать ClickHouse для долгосрочного хранения и анализа данных([слайды](https://presentations.clickhouse.tech/meetup22/exness.pdf)):
+Сергей Томилов с его коллегами из Exness Platform Team поделились деталями об эволюции их систем для анализа логов и метрик, а также как они в итоге стали использовать ClickHouse для долгосрочного хранения и анализа данных([слайды](https://presentations.clickhouse.com/meetup22/exness.pdf)):
 ![Сергей Томилов](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/4.jpg)
 
-Алексей Миловидов из команды ClickHouse в Яндексе продемонстрировал функциональность из недавних релизов ClickHouse, а также рассказал о том, что стоит ждать в ближайшем будущем([слайды](https://presentations.clickhouse.tech/meetup22/new_features/)):
+Алексей Миловидов из команды ClickHouse в Яндексе продемонстрировал функциональность из недавних релизов ClickHouse, а также рассказал о том, что стоит ждать в ближайшем будущем([слайды](https://presentations.clickhouse.com/meetup22/new_features/)):
 ![Алексей Миловидов](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/5.jpg)
 
-Александр Зайцев, технический директор Altinity, показал обзор того, как можно интегрировать ClickHouse в окружения, работающие на Kubernetes([слайды](https://presentations.clickhouse.tech/meetup22/kubernetes.pdf)):
+Александр Зайцев, технический директор Altinity, показал обзор того, как можно интегрировать ClickHouse в окружения, работающие на Kubernetes([слайды](https://presentations.clickhouse.com/meetup22/kubernetes.pdf)):
 ![Александр Зайцев](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/6.jpg)
 
-Владимир Гончаров, бекенд разработчик из Aloha Browser, закрывал ClickHouse Limassol Meetup демонстрацией нескольких проектов для интеграции других opensource продуктов для анализа логов с ClickHouse ([слайды](https://presentations.clickhouse.tech/meetup22/aloha.pdf)):
+Владимир Гончаров, бекенд разработчик из Aloha Browser, закрывал ClickHouse Limassol Meetup демонстрацией нескольких проектов для интеграции других opensource продуктов для анализа логов с ClickHouse ([слайды](https://presentations.clickhouse.com/meetup22/aloha.pdf)):
 ![Владимир Гончаров](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/7.jpg)
 
 К сожалению, приближалась полнось и только самые «морозостойкие» любители ClickHouse продержались всё мероприятие, так стало заметно холодать.

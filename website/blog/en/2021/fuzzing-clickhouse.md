@@ -55,7 +55,7 @@ To see for yourself how the fuzzer works, you only need the normal ClickHouse cl
 
 ## Other Fuzzers
 
-The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.tech/cpp_siberia_2021/)) by Alexey Milovidov that explores all the fuzzers we have. Another interesting recent development is application of pivoted query synthesis technique, implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.  The authors are going to give [a talk about this](https://heisenbug-piter.ru/2021/spb/talks/nr1cwknssdodjkqgzsbvh/) soon, so stay tuned.
+The AST-based fuzzer we discussed is only one of the many kinds of fuzzers we have in ClickHouse. There is a [talk](https://www.youtube.com/watch?v=GbmK84ZwSeI&t=4481s) (in Russian, [slides are here](https://presentations.clickhouse.com/cpp_siberia_2021/)) by Alexey Milovidov that explores all the fuzzers we have. Another interesting recent development is application of pivoted query synthesis technique, implemented in [SQLancer](https://github.com/sqlancer/sqlancer), to ClickHouse.  The authors are going to give [a talk about this](https://heisenbug-piter.ru/2021/spb/talks/nr1cwknssdodjkqgzsbvh/) soon, so stay tuned.
 
 _2021-03-11 [Alexander Kuzmenkov](https://github.com/akuzm)_
 
