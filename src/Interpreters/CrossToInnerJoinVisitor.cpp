@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Parsers/queryToString.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 #include <IO/WriteHelpers.h>
@@ -161,48 +162,37 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
     std::vector<JoinedElement> joined_tables;
     joined_tables.reserve(num_tables);
-    size_t num_array_join = 0;
-    size_t num_using = 0;
+    bool has_using = false;
 
     for (const auto & child : tables->children)
     {
-        auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+        const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
-        joined_tables.emplace_back(JoinedElement(*table_element));
-        JoinedElement & t = joined_tables.back();
+        JoinedElement & t = joined_tables.emplace_back(*table_element);
+        t.rewriteCommaToCross();
 
         if (t.arrayJoin())
-        {
-            ++num_array_join;
-            continue;
-        }
+            return {};
 
         if (t.hasUsing())
         {
-            ++num_using;
-            continue;
+            if (has_using)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
+            has_using = true;
         }
 
-        if (const auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin(); join && isCrossOrComma(join->kind))
         {
-            if (join->kind == ASTTableJoin::Kind::Cross ||
-                join->kind == ASTTableJoin::Kind::Comma)
-            {
-                if (!join->children.empty())
-                    throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
-            }
+            if (!join->children.empty())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
+                    join->children.size(), queryToString(join->children[0]));
         }
     }
 
-    if (!num_array_join && num_tables - num_using > 1)
-        return joined_tables;
-
-    if (num_using > 1)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,  "Multuple USING statements are not supported");
-
-    return {};
+    return joined_tables;
 }
 
 }
@@ -235,10 +225,6 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         for (size_t i = 0; i < joined_tables.size(); ++i)
             joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database);
     }
-
-    /// COMMA to CROSS
-    for (auto & table : joined_tables)
-        table.rewriteCommaToCross();
 
     /// CROSS to INNER
     if (data.cross_to_inner_join_rewrite && select.where())
