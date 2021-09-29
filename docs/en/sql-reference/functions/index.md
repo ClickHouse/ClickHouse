@@ -87,7 +87,7 @@ A function configuration contains the following settings:
 The command must read arguments from STDIN and must output the result to STDOUT. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
 **Example**
-The following example creates `test_function` using XML configuration.
+Creating `test_function` using XML configuration:
 ```
 <functions>
     <function>
