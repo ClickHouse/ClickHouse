@@ -86,6 +86,27 @@ function filter_exists_and_template
     done
 }
 
+function stop_server
+{
+    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    killall clickhouse-server ||:
+    for _ in {1..10}
+    do
+        if ! pgrep -f clickhouse-server
+        then
+            break
+        fi
+        sleep 1
+    done
+    killall -9 clickhouse-server ||:
+
+    # Debug.
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
+}
+
 function fuzz
 {
     /generate-test-j2.py --path ch/tests/queries/0_stateless
@@ -102,9 +123,28 @@ function fuzz
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
-    export CLICKHOUSE_WATCHDOG_ENABLE=0 # interferes with gdb
-    clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
-    server_pid=$!
+    # interferes with gdb
+    export CLICKHOUSE_WATCHDOG_ENABLE=0
+    # NOTE: that $! cannot be used to obtain the server pid, since it will be
+    # the pid of the bash, due to piping the output of clickhouse-server to
+    # tail
+    PID_FILE=clickhouse-server.pid
+    clickhouse-server --pidfile=$PID_FILE --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+
+    server_pid=-1
+    for _ in {1..60}; do
+        if [ -s $PID_FILE ]; then
+            server_pid=$(cat $PID_FILE)
+            break
+        fi
+        sleep 1
+    done
+
+    if [ $server_pid = -1 ]; then
+        echo "Server did not started" >&2
+        exit 1
+    fi
+
     kill -0 $server_pid
 
     echo "
@@ -180,25 +220,10 @@ continue
         server_died=1
     fi
 
-    # Stop the server.
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
-    killall clickhouse-server ||:
-    for _ in {1..10}
-    do
-        if ! pgrep -f clickhouse-server
-        then
-            break
-        fi
-        sleep 1
-    done
-    killall -9 clickhouse-server ||:
-
-    # Debug.
-    date
-    sleep 10
-    jobs
-    pstree -aspgT
-
+    # wait in background to call wait in foreground and ensure that the
+    # process is alive, since w/o job control this is the only way to obtain
+    # the exit code
+    stop_server &
     server_exit_code=0
     wait $server_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
