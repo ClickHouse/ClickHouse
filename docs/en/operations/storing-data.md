@@ -118,16 +118,13 @@ Example of disk configuration:
 
 ## Storing Data on Web Server {#storing-data-on-webserver}
 
-There is a tool `clickhouse-static-files-uploader`, which prepared data directory for a given table (`SELECT data_paths FROM system.tables WHERE name=='table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation you can load this table into any clickhouse server via `DiskWeb`.
+There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
 
 The following types of queries are not supported: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) and [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
 
 Web server storage is supported only for the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) and [Log](../engines/table-engines/log-family/log.md) engine families. To access the data stored on a `web` disk, use the [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms) setting when executing the query. For example, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
 
 A ready test case. You need to add this configuration to config:
-<xml from below>
-and then execute this query 
-``` <paste it https://github.com/ClickHouse/ClickHouse/blob/master/src/Disks/DiskWebServer.h#L17>
 
 ``` xml
 <yandex>
@@ -136,7 +133,6 @@ and then execute this query
             <web>
                 <type>web</type>
                 <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
-
             </web>
         </disks>
         <policies>
@@ -152,6 +148,8 @@ and then execute this query
 </yandex>
 ```
 
+And then execute this query (https://github.com/ClickHouse/ClickHouse/blob/master/src/Disks/DiskWebServer.h#L17).
+
 Required parameters:
 
 -   `type` — `web`. Otherwise the disk is not created.
@@ -162,5 +160,14 @@ Optional parameters:
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
 -   `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
 -   `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
+
+If query fails with an exception `DB:Exception Unreachable URL`, then may help to adjust settings: [http_connection_timeout](../operations/settings/settings.md#http_connection_timeout), [http_receive_timeout](../operations/settings/settings.md#http_receive_timeout), [keep_alive_timeout](../operations/server-configuration-parameters/settings.md#keep-alive-timeout).
+
+To get files for upload run:
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` can be found in query `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+
+When loading files by `endpoint` they must be loaded into `<endpoint>/store/` path, but config must contain only `endpoint`.
+
+If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
 Use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
