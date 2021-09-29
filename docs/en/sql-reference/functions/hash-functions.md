@@ -139,16 +139,159 @@ It works faster than intHash32. Average quality.
 
 ## SHA1 {#sha1}
 
+Calculates SHA-1 hash from a string and returns the resulting set of bytes as [FixedString(20)](../data-types/fixedstring.md).
+
+**Syntax**
+
+``` sql
+SHA1('s')
+```
+
+**Arguments**
+
+-   `s` — Input string for SHA-1 hash calculation. [String](..data-types/string.md).
+
+**Returned value**
+
+-   SHA-1 hash as a hex-unencoded FixedString(10).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA1('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA1('abc'))─────────────────────────┐
+│ A9993E364706816ABA3E25717850C26C9CD0D89D │
+└──────────────────────────────────────────┘
+```
+
 ## SHA224 {#sha224}
+
+Calculates SHA-224 hash from a string and returns the resulting set of bytes as [FixedString(28)](../data-types/fixedstring.md).
+
+**Syntax**
+
+``` sql
+SHA224('s')
+```
+
+**Arguments**
+
+-   `s` — Input string for SHA-224 hash calculation. [String](..data-types/string.md).
+
+**Returned value**
+
+-   SHA-224 hash as a hex-unencoded FixedString(28).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA224('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA224('abc'))───────────────────────────────────────┐
+│ 23097D223405D8228642A477BDA255B32AADBCE4BDA0B3F7E36C9DA7 │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## SHA256 {#sha256}
 
+Calculates SHA-256 hash from a string and returns the resulting set of bytes as [FixedString(32)](../data-types/fixedstring.md).
+
+**Syntax**
+
+``` sql
+SHA256('s')
+```
+
+**Arguments**
+
+-   `s` — Input string for SHA-256 hash calculation. [String](..data-types/string.md).
+
+**Returned value**
+
+-   SHA-256 hash as a hex-unencoded FixedString(32).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA256('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA256('abc'))───────────────────────────────────────────────┐
+│ BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ## SHA512 {#sha512}
 
-Calculates SHA-1, SHA-224, SHA-256 or SHA-512 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), FixedString(32), or FixedString(64).
+Calculates SHA-512 hash from a string and returns the resulting set of bytes as [FixedString(64)](../data-types/fixedstring.md).
+
+**Syntax**
+
+``` sql
+SHA512('s')
+```
+
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can’t select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
+
+**Arguments**
+
+-   `s` — Input string for SHA-512 hash calculation. [String](..data-types/string.md).
+
+**Returned value**
+
+-   SHA-512 hash as a hex-unencoded FixedString(64).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA512('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## URLHash(url\[, N\]) {#urlhashurl-n}
 
