@@ -28,15 +28,16 @@ The following versions of ClickHouse server are currently being supported with s
 | 21.3   | ✅ |
 | 21.4   | :x: |
 | 21.5   | :x: |
-| 21.6   | ✅ |
+| 21.6   | :x: |
 | 21.7   | ✅ |
 | 21.8   | ✅ |
+| 21.9   | ✅ |
 
 ## Reporting a Vulnerability
 
 We're extremely grateful for security researchers and users that report vulnerabilities to the ClickHouse Open Source Community. All reports are thoroughly investigated by developers.
 
-To report a potential vulnerability in ClickHouse please send the details about it to [clickhouse-feedback@yandex-team.com](mailto:clickhouse-feedback@yandex-team.com).
+To report a potential vulnerability in ClickHouse please send the details about it to [security@clickhouse.com](mailto:security@clickhouse.com).
 
 ### When Should I Report a Vulnerability?
 

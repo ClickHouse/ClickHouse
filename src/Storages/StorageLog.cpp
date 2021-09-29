@@ -306,7 +306,7 @@ private:
 
 void LogSink::consume(Chunk chunk)
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
@@ -332,7 +332,7 @@ void LogSink::onFinish()
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getPort().getHeader())
+    for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -462,6 +462,8 @@ void LogSink::writeMarks(MarksForColumns && marks)
         storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
     }
 }
+
+StorageLog::~StorageLog() = default;
 
 StorageLog::StorageLog(
     DiskPtr disk_,

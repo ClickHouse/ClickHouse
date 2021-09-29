@@ -94,6 +94,7 @@ enum class LogsLevel
     information,
     debug,
     trace,
+    test,
 };
 
 DECLARE_SETTING_ENUM(LogsLevel)

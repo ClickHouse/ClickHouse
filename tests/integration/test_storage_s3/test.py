@@ -87,7 +87,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
-        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
+        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"])
         cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"],
                              user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
@@ -735,3 +735,18 @@ def test_truncate_table(started_cluster):
     assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
     assert instance.query("SELECT * FROM {}".format(name)) == ""
 
+
+def test_predefined_connection_configuration(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "test_table"
+
+    instance.query("drop table if exists {}".format(name))
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')".format(name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+
+    result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
+    assert result == instance.query("SELECT number FROM numbers(10)")

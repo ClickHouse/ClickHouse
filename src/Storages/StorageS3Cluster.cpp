@@ -15,7 +15,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>

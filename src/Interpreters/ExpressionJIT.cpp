@@ -353,7 +353,8 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
 
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children)
+    ActionsDAG::NodeRawConstPtrs & children,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// Extract CompileDAG from root actions dag node.
 
@@ -376,29 +377,29 @@ static CompileDAG getCompilableDAG(
         const auto * node = frame.node;
 
         bool is_compilable_constant = isCompilableConstant(*node);
-        bool is_compilable_function = isCompilableFunction(*node, {});
+        bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
 
         if (!is_compilable_function || is_compilable_constant)
         {
-           CompileDAG::Node compile_node;
-           compile_node.function = node->function_base;
-           compile_node.result_type = node->result_type;
+            CompileDAG::Node compile_node;
+            compile_node.function = node->function_base;
+            compile_node.result_type = node->result_type;
 
-           if (is_compilable_constant)
-           {
-               compile_node.type = CompileDAG::CompileType::CONSTANT;
-               compile_node.column = node->column;
-           }
-           else
-           {
+            if (is_compilable_constant)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+            }
+            else
+            {
                 compile_node.type = CompileDAG::CompileType::INPUT;
                 children.emplace_back(node);
-           }
+            }
 
-           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
-           dag.addNode(std::move(compile_node));
-           stack.pop();
-           continue;
+            visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+            dag.addNode(std::move(compile_node));
+            stack.pop();
+            continue;
         }
 
         while (frame.next_child_to_visit < node->children.size())
@@ -568,7 +569,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     for (auto & node : nodes_to_compile)
     {
         NodeRawConstPtrs new_children;
-        auto dag = getCompilableDAG(node, new_children);
+        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes);
 
         if (dag.getInputNodesCount() == 0)
             continue;

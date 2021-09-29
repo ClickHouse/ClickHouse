@@ -375,6 +375,14 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
 
+    bool transformConstantWithValidFunctions(
+        const String & expr_name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type,
+        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
+
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,
         size_t & out_key_column_num,
