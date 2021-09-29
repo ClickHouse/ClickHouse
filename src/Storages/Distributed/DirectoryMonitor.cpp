@@ -273,7 +273,7 @@ namespace
         while (Block block = block_in.read())
         {
             auto converting_dag = ActionsDAG::makeConvertingActions(
-                block_in.getHeader().getColumnsWithTypeAndName(),
+                block.cloneEmpty().getColumnsWithTypeAndName(),
                 remote.getHeader().getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
