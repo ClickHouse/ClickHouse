@@ -99,9 +99,9 @@ Docker内でClickHouseを実行するには、次の [DockerHub](https://hub.doc
 非LinuxオペレーティングシステムとAArch64 CPUアーキテクチャのために、ClickHouseのビルドは `master` ブランチの最新のコミットからクロスコンパイルされたバイナリを提供しています。(数時間の遅延があります)
 
 
--   [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [macOS](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
 ダウンロード後、`clickhouse client` を使ってサーバーに接続したり、`clickhouse local` を使ってローカルデータを処理したりすることができます。`clickhouse server` を実行するには、GitHubから[server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)と[users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml)の設定ファイルを追加でダウンロードする必要があります。
 

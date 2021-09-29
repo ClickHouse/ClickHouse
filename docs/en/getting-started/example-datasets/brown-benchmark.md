@@ -9,7 +9,7 @@ toc_title: Brown University Benchmark
 
 Download the data:
 ```
-wget https://datasets.clickhouse.tech/mgbench{1..3}.csv.xz
+wget https://datasets.clickhouse.com/mgbench{1..3}.csv.xz
 ```
 
 Unpack the data:

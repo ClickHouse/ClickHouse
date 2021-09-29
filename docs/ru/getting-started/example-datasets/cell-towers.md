@@ -11,7 +11,7 @@ OpenCelliD Project имеет лицензию Creative Commons Attribution-Shar
 
 ## Как получить набор данных {#get-the-dataset}
 
-1. Загрузите снэпшот набора данных за февраль 2021 [отсюда](https://datasets.clickhouse.tech/cell_towers.csv.xz) (729 MB).
+1. Загрузите снэпшот набора данных за февраль 2021 [отсюда](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
 
 2. Если нужно, проверьте полноту и целостность при помощи команды:
 
