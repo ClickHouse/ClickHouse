@@ -160,7 +160,7 @@ Required parameters:
 Optional parameters:
 
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
--   `remote_disk_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
--   `remote_disk_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
+-   `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
+-   `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
 
 Use [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries) setting to limit the maximum number of retries during a single HTTP read.
