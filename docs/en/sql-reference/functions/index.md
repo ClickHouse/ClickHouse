@@ -84,7 +84,7 @@ A function configuration contains the following settings:
 -   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
-The command must read arguments from STDIN and must output the result to STDOUT. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
+The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
 **Example**
 Creating `test_function` using XML configuration:
