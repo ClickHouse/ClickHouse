@@ -8,4 +8,4 @@ toc_title: "\u30AF\u30E9\u30A6\u30C9"
 # ClickHouse Cloud Service {#clickhouse-cloud-service}
 
 !!! info "Info"
-    Detailed public description for ClickHouse cloud services is not ready yet, please [contact us](/company/#contact) to learn more.
+    Detailed public description for ClickHouse cloud services is not ready yet, please [contact us](https://clickhouse.com/company/#contact) to learn more.

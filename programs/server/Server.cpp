@@ -859,6 +859,9 @@ if (ThreadFuzzer::instance().isEffective())
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
+            if (config->has("max_concurrent_queries"))
+                global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -918,7 +921,7 @@ if (ThreadFuzzer::instance().isEffective())
             global_context,
             settings.async_insert_threads,
             settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");

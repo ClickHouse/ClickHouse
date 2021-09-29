@@ -1,1 +1,0 @@
-../../en/development/cmake-in-clickhouse.md

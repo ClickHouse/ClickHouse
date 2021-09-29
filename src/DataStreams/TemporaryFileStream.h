@@ -4,7 +4,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -35,12 +35,13 @@ struct TemporaryFileStream
     {}
 
     /// Flush data from input stream into file for future reading
-    static void write(const std::string & path, const Block & header, QueryPipeline pipeline, const std::string & codec)
+    static void write(const std::string & path, const Block & header, QueryPipelineBuilder builder, const std::string & codec)
     {
         WriteBufferFromFile file_buf(path);
         CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
         NativeBlockOutputStream output(compressed_buf, 0, header);
 
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingPipelineExecutor executor(pipeline);
 
         output.writePrefix();

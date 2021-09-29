@@ -18,6 +18,7 @@
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -626,6 +627,59 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
+std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
+{
+    if (functions.size() < 2)
+        return nullptr;
+
+    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
+    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
+    func_base->arguments->children = common_arguments;
+    func_base->parameters = std::make_shared<ASTExpressionList>();
+
+    for (const auto * ast : functions)
+    {
+        assert(ast && *ast);
+        const auto * func = (*ast)->as<ASTFunction>();
+        assert(func && func->parameters->as<ASTExpressionList>());
+        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+        if (parameters.size() != 1)
+            return nullptr; /// query is illegal, give up
+        func_base->parameters->children.push_back(parameters[0]);
+    }
+    return func_base;
+}
+
+/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
+/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
+///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
+void optimizeFuseQuantileFunctions(ASTPtr & query)
+{
+    GatherFunctionQuantileVisitor::Data data{};
+    GatherFunctionQuantileVisitor(data).visit(query);
+    for (auto & candidate : data.fuse_quantile)
+    {
+        String func_name = candidate.first;
+        auto & args_to_functions = candidate.second;
+
+        /// Try to fuse multiply `quantile*` Function to plural
+        for (auto it : args_to_functions.arg_map_function)
+        {
+            std::vector<ASTPtr *> & functions = it.second;
+            auto func_base = getQuantileFuseCandidate(func_name, functions);
+            if (!func_base)
+                continue;
+            for (size_t i = 0; i < functions.size(); ++i)
+            {
+                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
+                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
+                    ast_new->setAlias(alias);
+                *functions[i] = ast_new;
+            }
+        }
+    }
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -723,6 +777,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
+
+    if (settings.optimize_syntax_fuse_functions)
+        optimizeFuseQuantileFunctions(query);
 }
 
 }

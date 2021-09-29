@@ -106,9 +106,11 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
+    String res = name;
+
     auto qualified_name = QualifiedTableName::tryParseFromString(name);
     if (!qualified_name)
-        return name;
+        return res;
 
     if (qualified_name->database.empty())
     {
@@ -116,9 +118,10 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         /// or it's an XML dictionary.
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)
-            return name;
-        else
-            qualified_name->database = current_database_name;
+            return res;
+
+        qualified_name->database = current_database_name;
+        res = current_database_name + '.' + name;
     }
 
     auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
@@ -126,13 +129,13 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         const_pointer_cast<Context>(getContext()));
 
     if (!db)
-        return name;
+        return res;
     assert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
-        return name;
+        return res;
     if (table->getName() != "Dictionary")
-        return name;
+        return res;
 
     return toString(table->getStorageID().uuid);
 }
