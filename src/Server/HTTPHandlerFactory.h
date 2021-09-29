@@ -108,8 +108,7 @@ public:
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos
-                && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+            return request.getURI().find('?') != std::string::npos
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
         });
