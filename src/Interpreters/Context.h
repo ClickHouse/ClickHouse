@@ -549,19 +549,20 @@ public:
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
-
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
