@@ -20,6 +20,14 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         const auto & config = server.config();
         unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
+        if (request.isSecure())
+        {
+            size_t hsts_max_age = config.getUInt64("hsts_max_age", 0);
+
+            if (hsts_max_age > 0)
+                response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
+        }
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
