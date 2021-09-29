@@ -1,8 +1,7 @@
 #include "PostgreSQLReplicationHandler.h"
 
 #include <DataStreams/PostgreSQLSource.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -263,16 +262,11 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(input)));
-    assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out->getHeader(), "postgresql replica load from snapshot");
+    assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.pipeline.getHeader(), "postgresql replica load from snapshot");
+    block_io.pipeline.complete(Pipe(std::move(input)));
 
-    PullingPipelineExecutor executor(pipeline);
-    Block block;
-    block_io.out->writePrefix();
-    while (executor.pull(block))
-        block_io.out->write(block);
-    block_io.out->writeSuffix();
+    CompletedPipelineExecutor executor(block_io.pipeline);
+    executor.execute();
 
     nested_storage = materialized_storage->prepare();
     auto nested_table_id = nested_storage->getStorageID();

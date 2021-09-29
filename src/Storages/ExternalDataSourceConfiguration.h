@@ -25,8 +25,6 @@ struct ExternalDataSourceConfiguration
     void set(const ExternalDataSourceConfiguration & conf);
 };
 
-using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceConfiguration>;
-
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
@@ -67,7 +65,7 @@ struct ExternalDataSourceConfig
  */
 std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
 
-ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
+std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 
