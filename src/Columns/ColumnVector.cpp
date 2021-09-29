@@ -443,22 +443,7 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 template <typename T>
 ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
-    size_t size = data.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    auto res = this->create(limit);
-    typename Self::Container & res_data = res->getData();
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[perm[i]];
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 template <typename T>
