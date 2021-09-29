@@ -103,7 +103,7 @@ public:
         });
     }
 
-    /// Handle Post request or (Get or Head) requests with param
+    /// Handle Post request or (Get or Head) requests with params
     void allowPostGetOrHeadRequest()
     {
         addFilter([](const auto & request)
