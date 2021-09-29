@@ -76,8 +76,8 @@ jobs:
 #          TEMP_PATH: ${{runner.temp}}/pvs_check
 #          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
 #        run: mkdir -p ${{runner.temp}}/pvs_check && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 pvs_check.py
-  Finish-Check:
-    needs: [Style-Check, DockerHubPush, CheckLabels]
+  FinishCheck:
+    needs: [StyleCheck, DockerHubPush, CheckLabels]
     runs-on: [self-hosted]
     steps:
       - name: Check out repository code
