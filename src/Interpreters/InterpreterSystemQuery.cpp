@@ -40,6 +40,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
 
@@ -445,6 +446,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
+        case Type::STOP_THREAD_FUZZER:
+            ThreadFuzzer::stop();
+            break;
+        case Type::START_THREAD_FUZZER:
+            ThreadFuzzer::start();
+            break;
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -877,6 +884,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_LISTEN_QUERIES: break;
         case Type::START_LISTEN_QUERIES: break;
+        case Type::STOP_THREAD_FUZZER: break;
+        case Type::START_THREAD_FUZZER: break;
         case Type::UNKNOWN: break;
         case Type::END: break;
     }

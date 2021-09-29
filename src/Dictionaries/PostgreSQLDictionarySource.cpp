@@ -11,6 +11,8 @@
 #include <DataStreams/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
+#include <Processors/QueryPipeline.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
 
@@ -124,7 +126,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
 }
 
 
@@ -177,22 +179,24 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool /* created_from_ddl */) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    config, settings_config_prefix,
-                    global_context->getSettingsRef().postgresql_connection_pool_size,
-                    global_context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        PostgreSQLDictionarySource::Configuration configuration
+        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context);
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+                    configuration.replicas_configurations,
+                    context->getSettingsRef().postgresql_connection_pool_size,
+                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+
+        PostgreSQLDictionarySource::Configuration dictionary_configuration
         {
-            .db = config.getString(fmt::format("{}.db", settings_config_prefix), ""),
-            .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
-            .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
+            .db = configuration.database,
+            .schema = configuration.schema,
+            .table = configuration.table,
             .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
             .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
             .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
@@ -200,13 +204,13 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
         };
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, configuration, pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration, pool, sample_block);
 #else
         (void)dict_struct;
         (void)config;
         (void)config_prefix;
         (void)sample_block;
-        (void)global_context;
+        (void)context;
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `postgresql` is disabled because ClickHouse was built without postgresql support.");
 #endif

@@ -287,9 +287,7 @@ class IFunctionOverloadResolver
 public:
     virtual ~IFunctionOverloadResolver() = default;
 
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
-
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+    virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
@@ -331,7 +329,10 @@ public:
 
 protected:
 
-    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
+    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
+    {
+        throw Exception("buildImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
@@ -375,6 +376,8 @@ protected:
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };

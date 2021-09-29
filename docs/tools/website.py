@@ -215,8 +215,9 @@ def minify_file(path, css_digest, js_digest):
         content = minify_html(content)
         content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
         content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
-    elif path.endswith('.css'):
-        content = cssmin.cssmin(content)
+# TODO: restore cssmin
+#     elif path.endswith('.css'):
+#         content = cssmin.cssmin(content)
 # TODO: restore jsmin    
 #     elif path.endswith('.js'):
 #         content = jsmin.jsmin(content)
@@ -241,7 +242,7 @@ def minify_website(args):
 
     js_in = get_js_in(args)
     js_out = f'{args.output_dir}/js/base.js'
-    if args.minify:
+    if args.minify and False:  # TODO: return closure
         js_in = [js[1:-1] for js in js_in]
         closure_args = [
             '--js', *js_in, '--js_output_file', js_out,

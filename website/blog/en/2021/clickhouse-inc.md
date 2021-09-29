@@ -6,7 +6,7 @@ author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['company', 'incorporation', 'yandex', 'community']
 ---
 
-Today I’m happy to announce **ClickHouse Inc.**, the new home of ClickHouse. The development team has moved from Yandex and joined ClickHouse Inc. to continue building the fastest (and the greatest) analytical database management system. The company has received nearly $50M in Series A funding led by Index Ventures and Benchmark with participation by Yandex N.V. and others. I created ClickHouse, Inc. with two co-founders, [Yury Izrailevsky](https://www.linkedin.com/in/yuryizrailevsky/) and [Aaron Katz](https://www.linkedin.com/in/aaron-k-5762094/). I will continue to lead the development of ClickHouse as Chief Technology Officer (CTO), Yury will run product and engineering, and Aaron will be CEO.
+Today I’m happy to announce **ClickHouse Inc.**, the new home of ClickHouse. The development team has moved from Yandex and joined ClickHouse Inc. to continue building the fastest (and the greatest) analytical database management system. The company has received nearly $50M in Series A funding led by Index Ventures and Benchmark with participation by Yandex N.V. and others. I created ClickHouse, Inc. with two co-founders, [Yury Izrailevsky](https://www.linkedin.com/in/yuryizrailevsky/) and [Aaron Katz](https://www.linkedin.com/in/aaron-katz-5762094/). I will continue to lead the development of ClickHouse as Chief Technology Officer (CTO), Yury will run product and engineering, and Aaron will be CEO.
 
 ## History of ClickHouse
 
@@ -39,7 +39,7 @@ Lastly, ClickHouse was purpose-built from the beginning to:
 
 Yandex N.V. is the largest internet company in Europe and employs over 14,000 people. They develop search, advertisement, and e-commerce services, ride tech and food tech solutions, self-driving cars... and also ClickHouse with a team of 15 engineers. It is hard to believe that we have managed to build a world-class leading analytical DBMS with such a small team while leveraging the global community. While this was barely enough to keep up with the development of the open-source product, everyone understands that the potential of ClickHouse technology highly outgrows such a small team.
 
-We decided to unite the resources: take the team of core ClickHouse developers, bring in a world-class business team led by [Aaron Katz](https://www.linkedin.com/in/aaron-k-5762094/) and a cloud engineering team led by [Yury Izrailevsky](https://www.linkedin.com/in/yuryizrailevsky/), keep the power of open source, add the investment from the leading VC funds, and make an international company 100% focused on ClickHouse. I’m thrilled to announce ClickHouse, Inc.
+We decided to unite the resources: take the team of core ClickHouse developers, bring in a world-class business team led by [Aaron Katz](https://www.linkedin.com/in/aaron-katz-5762094/) and a cloud engineering team led by [Yury Izrailevsky](https://www.linkedin.com/in/yuryizrailevsky/), keep the power of open source, add the investment from the leading VC funds, and make an international company 100% focused on ClickHouse. I’m thrilled to announce ClickHouse, Inc.
 
 ## What’s Next?
 

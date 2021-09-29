@@ -15,6 +15,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
@@ -160,14 +161,17 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto exception_handling = std::make_shared<EmptySink>(sink->getOutputPort().getHeader());
 
     /// Write data
     data->pipe->resize(1);
 
-    connect(*data->pipe->getOutputPort(0), sink->getPort());
+    connect(*data->pipe->getOutputPort(0), sink->getInputPort());
+    connect(sink->getOutputPort(), exception_handling->getPort());
 
     auto processors = Pipe::detachProcessors(std::move(*data->pipe));
     processors.push_back(std::move(sink));
+    processors.push_back(std::move(exception_handling));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);
     executor->execute(/*num_threads = */ 1);
