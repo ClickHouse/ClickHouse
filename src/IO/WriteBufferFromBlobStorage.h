@@ -17,6 +17,7 @@ class WriteBufferFromBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 public:
     explicit WriteBufferFromBlobStorage() {}
 
+    void nextImpl() override;
 };
 
 }
