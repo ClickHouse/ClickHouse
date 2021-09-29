@@ -118,7 +118,7 @@ Example of disk configuration:
 
 ## Storing Data on Web Server {#storing-data-on-webserver}
 
-You can store data on a web server as static files (for example, table's data directory) using a disk with type `web` and run queries on this data. It can be useful for serving public datasets.
+There is a tool `clickhouse-static-files-uploader`, which prepared data directory for a given table (`SELECT data_paths FROM system.tables WHERE name=='table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation you can load this table into any clickhouse server via `DiskWeb`.
 
 The following types of queries are not supported: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) and [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
 
