@@ -118,27 +118,27 @@ re-attach table
 CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = TinyLog\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
-engine : ReplicatedMergeTree('/clickhouse/2020_alter_table_modify_comment_default', '1') ORDER BY k
+engine : ReplicatedMergeTree('/clickhouse/02020_alter_table_modify_comment_default', '1') ORDER BY k
 initial comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
 change a comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
 remove a comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
 add a comment back
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
 detach table
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 
 re-attach table
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/2020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/02020_alter_table_modify_comment_default\', \'1\')\nORDER BY k\nSETTINGS index_granularity = 8192\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
