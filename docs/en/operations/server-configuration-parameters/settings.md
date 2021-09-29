@@ -82,7 +82,7 @@ Load from config:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key>12345567812345678</key>
+        <key>1234567812345678</key>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```

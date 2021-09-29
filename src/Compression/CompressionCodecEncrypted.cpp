@@ -315,8 +315,12 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
     if (new_params->keys_storage[method].empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encryption needs keys to work");
 
-    /// Try to find which key will be used for encryption. If there is no current_key,
-    /// first key will be used for encryption (its index equals to zero).
+    /// In case of multiple keys, current_key_id is mandatory
+    if (new_params->keys_storage[method].size() > 1 && !config.has(config_prefix + ".current_key_id"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are multiple keys in config. current_key_id is required");
+
+    /// Try to find which key will be used for encryption. If there is no current_key and only one key without id
+    /// or with zero id, first key will be used for encryption (its index equals to zero).
     new_params->current_key_id[method] = config.getUInt64(config_prefix + ".current_key_id", 0);
 
     /// Check that we have current key. Otherwise config is incorrect.
