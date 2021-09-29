@@ -263,7 +263,7 @@ SHA512('s')
 
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can’t select it.
-Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
+Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
 
 **Arguments**
 
