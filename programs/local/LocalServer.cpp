@@ -413,14 +413,18 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
+    InterruptListener interrupt_listener;
     ThreadStatus thread_status;
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    /// We will terminate process on error
-    static KillingErrorHandler error_handler;
-    Poco::ErrorHandler::set(&error_handler);
+    if (!is_interactive)
+    {
+        /// We will terminate process on error
+        static KillingErrorHandler error_handler;
+        Poco::ErrorHandler::set(&error_handler);
+    }
 
     /// Don't initialize DateLUT
     registerFunctions();

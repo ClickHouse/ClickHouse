@@ -137,6 +137,9 @@ void LocalConnection::sendQuery(
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
+    if (!block)
+        return;
+
     if (state->pushing_async_executor)
     {
         state->pushing_async_executor->push(std::move(block));

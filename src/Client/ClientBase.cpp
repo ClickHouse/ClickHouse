@@ -19,7 +19,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/configReadClient.h>
-#include <Common/InterruptListener.h>
 #include <Common/NetException.h>
 #include <Storages/ColumnsDescription.h>
 
