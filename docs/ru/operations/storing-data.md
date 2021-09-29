@@ -115,13 +115,13 @@ toc_title: "Хранение данных на внешних дисках"
 
 ## Хранение данных на веб-сервере {#storing-data-on-webserver}
 
-Вы можете хранить данные на веб-сервере в виде статических файлов (например, каталога данных таблицы), используя диск с типом `web`, и выполнять запросы к этим данным. Это может быть полезно для обслуживания общедоступных наборов данных.
+Существует утилита `clickhouse-static-files-uploader`, которая готовит каталог данных для данной таблицы (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). Для каждой таблицы, необходимой вам, вы получаете каталог файлов. Эти файлы могут быть загружены, например, на веб-сервер в виде статических файлов. После этой подготовки вы можете загрузить эту таблицу на любой сервер ClickHouse через `DiskWeb`.
 
 Не поддерживаются следующие типы запросов: [CREATE TABLE](../sql-reference/statements/create/table.md), [ALTER TABLE](../sql-reference/statements/alter/index.md), [RENAME TABLE](../sql-reference/statements/rename.md#misc_operations-rename_table), [DETACH TABLE](../sql-reference/statements/detach.md) и [TRUNCATE TABLE](../sql-reference/statements/truncate.md).
 
 Хранение данных на веб-сервере поддерживается только для табличных движков семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) и [Log](../engines/table-engines/log-family/log.md). Чтобы получить доступ к данным, хранящимся на диске `web`, при выполнении запроса используйте настройку [storage_policy](../engines/table-engines/mergetree-family/mergetree.md#terms). Например, `ATTACH TABLE table_web UUID '{}' (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'`.
 
-Пример конфигурации:
+Готовый тестовый пример. Добавьте эту конфигурацию в config:
 
 ``` xml
 <yandex>
@@ -129,7 +129,7 @@ toc_title: "Хранение данных на внешних дисках"
         <disks>
             <web>
                 <type>web</type>
-                <endpoint>http://nginx:80/hits/</endpoint>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
             </web>
         </disks>
         <policies>
@@ -145,15 +145,26 @@ toc_title: "Хранение данных на внешних дисках"
 </yandex>
 ```
 
+А затем выполните этот запрос (https://github.com/ClickHouse/ClickHouse/blob/master/src/Disks/DiskWebServer.h#L17).
+
 Обязательные параметры:
 
 -   `type` — `web`. Иначе диск создан не будет.
--   `endpoint` — URL точки приема запроса в формате `path`. URL точки должен содержать путь к корневой директории на сервере, где хранятся данные, полученные с помощью утилиты `clickhouse-static-files-uploader`.
+-   `endpoint` — URL точки приема запроса в формате `path`. URL точки должен содержать путь к корневой директории на сервере для хранения данных, куда эти данные были загружены.
 
 Необязательные параметры:
 
 -   `min_bytes_for_seek` — минимальное количество байтов, которое используются для операций поиска вместо последовательного чтения. Значение по умолчанию: `1` Mb.
--   `remote_disk_read_backoff_threashold` — максимальное время ожидания при попытке чтения данных с удаленного диска. Значение по умолчанию: `10000` секунд.
--   `remote_disk_read_backoff_max_tries` — максимальное количество попыток чтения данных с задержкой. Значение по умолчанию: `5`.
+-   `remote_fs_read_backoff_threashold` — максимальное время ожидания при попытке чтения данных с удаленного диска. Значение по умолчанию: `10000` секунд.
+-   `remote_fs_read_backoff_max_tries` — максимальное количество попыток чтения данных с задержкой. Значение по умолчанию: `5`.
+
+Если после выполнения запроса генерируется исключение `DB:Exception Unreachable URL`, то могут помочь настройки: [http_connection_timeout](../operations/settings/settings.md#http_connection_timeout), [http_receive_timeout](../operations/settings/settings.md#http_receive_timeout), [keep_alive_timeout](../operations/server-configuration-parameters/settings.md#keep-alive-timeout).
+
+Чтобы получить файлы для загрузки, выполните:
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` может быть получен в результате запроса `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+
+Файлы должны быть загружены по пути `<endpoint>/store/`, но конфигурация должна содержать только `endpoint`.
+
+Если URL-адрес недоступен при загрузке на диск, когда сервер запускает таблицы, то все ошибки будут пойманы. Если в этом случае были ошибки, то таблицы можно перезагрузить (сделать видимыми) с помощью `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. Если метаданные были успешно загружены при запуске сервера, то таблицы будут доступны сразу.
 
 Чтобы ограничить количество попыток чтения данных во время одного HTTP-запроса, используйте настройку [http_max_single_read_retries](../operations/settings/settings.md#http-max-single-read-retries).
