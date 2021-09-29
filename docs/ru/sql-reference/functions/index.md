@@ -63,7 +63,7 @@ str -> str != Referer
 Функции можно создавать из лямбда выражений с помощью [CREATE FUNCTION](../statements/create/function.md). Для удаления таких функций используется выражение [DROP FUNCTION](../statements/drop.md#drop-function).
 
 ## Исполняемые пользовательские функции {#executable-user-defined-functions}
-ClickHouse может вызывать внешнюю программу или скрипт для обработки данных. Такие функции описываются в [конфигурационном файле](../../operations/configuration-files.md). А путь к нему должен быть указан в настройке `user_defined_executable_functions_config` в основной конфигурации. В пути можно использовать символ подстановки `*`, тогда будут загружены все файлы, соответствующие шаблону. Пример:
+ClickHouse может вызывать внешнюю программу или скрипт для обработки данных. Такие функции описываются в [конфигурационном файле](../../operations/configuration-files.md). Путь к нему должен быть указан в настройке `user_defined_executable_functions_config` в основной конфигурации. В пути можно использовать символ подстановки `*`, тогда будут загружены все файлы, соответствующие шаблону. Пример:
 ``` xml
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
