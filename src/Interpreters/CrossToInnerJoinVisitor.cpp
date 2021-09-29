@@ -145,19 +145,20 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     return makeASTFunction(NameAnd::name, std::move(arguments));
 }
 
-bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tables, size_t & num_comma)
+std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 {
     if (!select.tables())
-        return false;
+        return {};
 
     const auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
     if (!tables)
-        return false;
+        return {};
 
     size_t num_tables = tables->children.size();
     if (num_tables < 2)
-        return false;
+        return {};
 
+    std::vector<JoinedElement> joined_tables;
     joined_tables.reserve(num_tables);
     size_t num_array_join = 0;
     size_t num_using = 0;
@@ -191,13 +192,13 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
                 if (!join->children.empty())
                     throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
             }
-
-            if (join->kind == ASTTableJoin::Kind::Comma)
-                ++num_comma;
         }
     }
 
-    return !num_array_join && num_tables - num_using > 1;
+    if (!num_array_join && num_tables - num_using > 1)
+        return joined_tables;
+
+    return {};
 }
 
 }
@@ -216,26 +217,24 @@ void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 
 void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
-    size_t num_comma = 0;
-    std::vector<JoinedElement> joined_tables;
-    if (!getTables(select, joined_tables, num_comma))
+    std::vector<JoinedElement> joined_tables = getTables(select);
+    if (joined_tables.empty())
         return;
 
     /// Check if joined_tables are consistent with known tables_with_columns
     {
         if (joined_tables.size() != data.tables_with_columns.size())
-            throw Exception("Logical error: inconsistent number of tables", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Logical error: inconsistent number of tables: {} != {}",
+                            joined_tables.size(), data.tables_with_columns.size());
 
         for (size_t i = 0; i < joined_tables.size(); ++i)
             joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database);
     }
 
     /// COMMA to CROSS
-    if (num_comma)
-    {
-        for (auto & table : joined_tables)
-            table.rewriteCommaToCross();
-    }
+    for (auto & table : joined_tables)
+        table.rewriteCommaToCross();
 
     /// CROSS to INNER
     if (data.cross_to_inner_join_rewrite && select.where())
