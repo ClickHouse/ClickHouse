@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-static std::string extractTimeZoneNameFromColumn(const IColumn & column)
+std::string extractTimeZoneNameFromColumn(const IColumn & column)
 {
     const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
 
