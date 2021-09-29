@@ -18,11 +18,12 @@ namespace ErrorCodes
 }
 
 
-RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
-                                                 const ConnectionTimeouts & timeouts,
-                                                 const String & query_,
-                                                 const Settings & settings_,
-                                                 const ClientInfo & client_info_)
+RemoteInserter::RemoteInserter(
+    Connection & connection_,
+    const ConnectionTimeouts & timeouts,
+    const String & query_,
+    const Settings & settings_,
+    const ClientInfo & client_info_)
     : connection(connection_), query(query_)
 {
     ClientInfo modified_client_info = client_info_;
@@ -70,11 +71,8 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
 }
 
 
-void RemoteBlockOutputStream::write(const Block & block)
+void RemoteInserter::write(Block block)
 {
-    if (header)
-        assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
-
     try
     {
         connection.sendData(block, /* name */"", /* scalar */false);
@@ -94,14 +92,14 @@ void RemoteBlockOutputStream::write(const Block & block)
 }
 
 
-void RemoteBlockOutputStream::writePrepared(ReadBuffer & input, size_t size)
+void RemoteInserter::writePrepared(ReadBuffer & buf, size_t size)
 {
     /// We cannot use 'header'. Input must contain block with proper structure.
-    connection.sendPreparedData(input, size);
+    connection.sendPreparedData(buf, size);
 }
 
 
-void RemoteBlockOutputStream::writeSuffix()
+void RemoteInserter::onFinish()
 {
     /// Empty block means end of data.
     connection.sendData(Block(), /* name */"", /* scalar */false);
@@ -127,7 +125,7 @@ void RemoteBlockOutputStream::writeSuffix()
     finished = true;
 }
 
-RemoteBlockOutputStream::~RemoteBlockOutputStream()
+RemoteInserter::~RemoteInserter()
 {
     /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection,
     ///  to not leave the connection in unsynchronized state.
