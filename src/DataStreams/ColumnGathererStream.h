@@ -1,8 +1,9 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/IMergingTransform.h>
 
 
 namespace Poco { class Logger; }
@@ -53,77 +54,91 @@ using MergedRowSources = PODArray<RowSourcePart>;
   * Stream mask maps row number to index of source stream.
   * Streams should contain exactly one column.
   */
-class ColumnGathererStream : public IBlockInputStream
+class ColumnGathererStream final : public IMergingAlgorithm
 {
 public:
-    ColumnGathererStream(
-        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
-        size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
+    ColumnGathererStream(size_t num_inputs, ReadBuffer & row_sources_buf_, size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
-    String getName() const override { return "ColumnGatherer"; }
-
-    Block readImpl() override;
-
-    void readSuffixImpl() override;
-
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
+    Status merge() override;
 
     /// for use in implementations of IColumn::gather()
     template <typename Column>
     void gather(Column & column_res);
 
+    UInt64 getMergedRows() const { return merged_rows; }
+    UInt64 getMergedBytes() const { return merged_bytes; }
+
 private:
     /// Cache required fields
     struct Source
     {
-        const IColumn * column = nullptr;
+        ColumnPtr column;
         size_t pos = 0;
         size_t size = 0;
-        Block block;
 
-        void update(const String & name)
+        void update(ColumnPtr column_)
         {
-            column = block.getByName(name).column.get();
-            size = block.rows();
+            column = std::move(column_);
+            size = column->size();
             pos = 0;
         }
     };
 
-    void fetchNewBlock(Source & source, size_t source_num);
-
-    String column_name;
-    ColumnWithTypeAndName column;
+    MutableColumnPtr result_column;
 
     std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
 
-    size_t block_preferred_size;
+    const size_t block_preferred_size;
 
     Source * source_to_fully_copy = nullptr;
-    Block output_block;
+
+    ssize_t next_required_source = -1;
+    size_t cur_block_preferred_size;
+
+    UInt64 merged_rows = 0;
+    UInt64 merged_bytes = 0;
+};
+
+class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStream>
+{
+public:
+    ColumnGathererTransform(
+        const Block & header,
+        size_t num_inputs,
+        ReadBuffer & row_sources_buf_,
+        size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
+
+    String getName() const override { return "ColumnGathererTransform"; }
+
+    void work() override;
+
+protected:
+    void onFinish() override;
+    UInt64 elapsed_ns = 0;
 
     Poco::Logger * log;
 };
 
+
 template <typename Column>
 void ColumnGathererStream::gather(Column & column_res)
 {
-    if (source_to_fully_copy) /// Was set on a previous iteration
-    {
-        output_block.getByPosition(0).column = source_to_fully_copy->block.getByName(column_name).column;
-        source_to_fully_copy->pos = source_to_fully_copy->size;
-        source_to_fully_copy = nullptr;
-        return;
-    }
-
     row_sources_buf.nextIfAtEnd();
     RowSourcePart * row_source_pos = reinterpret_cast<RowSourcePart *>(row_sources_buf.position());
     RowSourcePart * row_sources_end = reinterpret_cast<RowSourcePart *>(row_sources_buf.buffer().end());
 
-    size_t cur_block_preferred_size = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size);
-    column_res.reserve(cur_block_preferred_size);
+    if (next_required_source == -1)
+    {
+        /// Start new column.
+        cur_block_preferred_size = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size);
+        column_res.reserve(cur_block_preferred_size);
+    }
 
-    size_t cur_size = 0;
+    size_t cur_size = column_res->size();
+    next_required_source = -1;
 
     while (row_source_pos < row_sources_end && cur_size < cur_block_preferred_size)
     {
@@ -131,12 +146,14 @@ void ColumnGathererStream::gather(Column & column_res)
         size_t source_num = row_source.getSourceNum();
         Source & source = sources[source_num];
         bool source_skip = row_source.getSkipFlag();
-        ++row_source_pos;
 
         if (source.pos >= source.size) /// Fetch new block from source_num part
         {
-            fetchNewBlock(source, source_num);
+            next_required_source = source_num;
+            return;
         }
+
+        ++row_source_pos;
 
         /// Consecutive optimization. TODO: precompute lengths
         size_t len = 1;
@@ -156,14 +173,7 @@ void ColumnGathererStream::gather(Column & column_res)
             {
                 /// If current block already contains data, return it.
                 /// Whole column from current source will be returned on next read() iteration.
-                if (cur_size > 0)
-                {
-                    source_to_fully_copy = &source;
-                    return;
-                }
-
-                output_block.getByPosition(0).column = source.block.getByName(column_name).column;
-                source.pos += len;
+                source_to_fully_copy = &source;
                 return;
             }
             else if (len == 1)
