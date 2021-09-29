@@ -19,6 +19,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -488,9 +489,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        io.out->writePrefix();
-        io.out->write(block);
-        io.out->writeSuffix();
+        PushingPipelineExecutor executor(io.pipeline);
+
+        executor.start();
+        executor.push(block);
+        executor.finish();
     }
     catch (...)
     {

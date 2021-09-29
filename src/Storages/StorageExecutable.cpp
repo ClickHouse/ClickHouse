@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
+#include <DataStreams/materializeBlock.h>
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>
@@ -12,6 +13,10 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Pipe.h>
+#include <Processors/ISimpleTransform.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -75,6 +80,29 @@ StorageExecutable::StorageExecutable(
     setInMemoryMetadata(storage_metadata);
 }
 
+class SendingChunkHeaderTransform final : public ISimpleTransform
+{
+public:
+    SendingChunkHeaderTransform(const Block & header, WriteBuffer & buffer_)
+        : ISimpleTransform(header, header, false)
+        , buffer(buffer_)
+    {
+    }
+
+    String getName() const override { return "SendingChunkHeaderTransform"; }
+
+protected:
+
+    void transform(Chunk & chunk) override
+    {
+        writeText(chunk.getNumRows(), buffer);
+        writeChar('\n', buffer);
+    }
+
+private:
+    WriteBuffer & buffer;
+};
+
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & metadata_snapshot,
@@ -92,14 +120,13 @@ Pipe StorageExecutable::read(
             script_name,
             user_scripts_path);
 
-    std::vector<BlockInputStreamPtr> inputs;
+    std::vector<QueryPipelineBuilder> inputs;
     inputs.reserve(input_queries.size());
 
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        auto input = interpreter.execute().getInputStream();
-        inputs.emplace_back(std::move(input));
+        inputs.emplace_back(interpreter.buildQueryPipeline());
     }
 
     ShellCommand::Config config(script_path);
@@ -134,10 +161,7 @@ Pipe StorageExecutable::read(
 
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        BlockInputStreamPtr input_stream = inputs[i];
         WriteBufferFromFile * write_buffer = nullptr;
-
-        bool send_chunk_header = settings.send_chunk_header;
 
         if (i == 0)
         {
@@ -153,27 +177,23 @@ Pipe StorageExecutable::read(
             write_buffer = &it->second;
         }
 
-        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, is_executable_pool, send_chunk_header, this]()
+        inputs[i].resize(1);
+        if (settings.send_chunk_header)
         {
-            auto output_stream = context->getOutputStream(format, *write_buffer, input_stream->getHeader().cloneEmpty());
-            input_stream->readPrefix();
-            output_stream->writePrefix();
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(inputs[i].getHeader(), *write_buffer);
+            inputs[i].addTransform(std::move(transform));
+        }
 
-            while (auto block = input_stream->read())
-            {
-                if (send_chunk_header)
-                {
-                    writeText(block.rows(), *write_buffer);
-                    writeChar('\n', *write_buffer);
-                }
+        auto pipeline = std::make_shared<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(inputs[i])));
 
-                output_stream->write(block);
-            }
+        auto out = FormatFactory::instance().getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()), context);
+        out->setAutoFlush();
+        pipeline->complete(std::move(out));
 
-            input_stream->readSuffix();
-            output_stream->writeSuffix();
-
-            output_stream->flush();
+        ShellCommandSource::SendDataTask task = [pipeline, write_buffer, is_executable_pool]()
+        {
+            CompletedPipelineExecutor executor(*pipeline);
+            executor.execute();
 
             if (!is_executable_pool)
                 write_buffer->close();

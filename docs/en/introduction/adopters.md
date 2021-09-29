@@ -56,6 +56,7 @@ toc_title: Adopters
 | <a href="https://geniee.co.jp" class="favicon">Geniee</a> | Ad network | Main product | — | — | [Blog post in Japanese, July 2017](https://tech.geniee.co.jp/entry/2017/07/20/160100) |
 | <a href="https://www.genotek.ru/" class="favicon">Genotek</a> | Bioinformatics | Main product | — | — | [Video, August 2020](https://youtu.be/v3KyZbz9lEE) |
 | <a href="https://glaber.io/" class="favicon">Glaber</a> | Monitoring | Main product | — | — | [Website](https://glaber.io/) |
+| <a href="https://graphcdn.io/" class="favicon">GraphCDN</a> | CDN | Traffic Analytics | — | — | [Blog Post in English, August 2021](https://altinity.com/blog/delivering-insight-on-graphql-apis-with-clickhouse-at-graphcdn/) |
 | <a href="https://www.huya.com/" class="favicon">HUYA</a> | Video Streaming | Analytics | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/7.%20ClickHouse万亿数据分析实践%20李本旺(sundy-li)%20虎牙.pdf) |
 | <a href="https://www.the-ica.com/" class="favicon">ICA</a> | FinTech | Risk Management | — | — | [Blog Post in English, Sep 2020](https://altinity.com/blog/clickhouse-vs-redshift-performance-for-fintech-risk-management?utm_campaign=ClickHouse%20vs%20RedShift&utm_content=143520807&utm_medium=social&utm_source=twitter&hss_channel=tw-3894792263) |
 | <a href="https://www.idealista.com" class="favicon">Idealista</a> | Real Estate | Analytics | — | — | [Blog Post in English, April 2019](https://clickhouse.com/blog/en/clickhouse-meetup-in-madrid-on-april-2-2019) |
