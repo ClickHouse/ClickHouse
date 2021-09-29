@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -14,7 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -32,7 +33,7 @@ namespace ErrorCodes
 class FunctionCastOrDefault final : public IFunction
 {
 public:
-    static constexpr auto name = "castOrDefault";
+    static constexpr auto name = "accurateCastOrDefault";
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -42,7 +43,6 @@ public:
     explicit FunctionCastOrDefault(ContextPtr context_)
         : keep_nullable(context_->getSettingsRef().cast_keep_nullable)
     {
-        std::cerr << "FunctionCastOrDefault::constructor" << std::endl;
     }
 
     String getName() const override { return name; }
@@ -52,7 +52,9 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -116,7 +118,9 @@ public:
                 if (!is_current_index_null)
                     continue;
 
-                result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                if (i - start_insert_index > 0)
+                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+
                 result->insertFrom(*default_column_casted, i);
                 start_insert_index = i + 1;
             }
@@ -129,7 +133,9 @@ public:
                 if (!is_current_index_null)
                     continue;
 
-                result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                if (i - start_insert_index > 0)
+                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+
                 result->insertDefault();
                 start_insert_index = i + 1;
             }
@@ -167,11 +173,27 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
+    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
+        FunctionArgumentDescriptors optional_args;
+
+        if constexpr (IsDataTypeDecimal<Type>)
+            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+
+        if (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
+            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+
         size_t additional_argument_index = 1;
 
         size_t scale = 0;
@@ -179,9 +201,6 @@ private:
 
         if constexpr (IsDataTypeDecimal<Type>)
         {
-            if (additional_argument_index < arguments.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for decimal type requires additionae scale argument {}", getName());
-
             const auto & scale_argument = arguments[additional_argument_index];
 
             WhichDataType scale_argument_type(scale_argument.type);
@@ -200,10 +219,10 @@ private:
         if constexpr (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
         {
             if (additional_argument_index < arguments.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for DateTime or DateTime64 requires additional timezone argument {}", getName());
-
-            time_zone = extractTimeZoneNameFromFunctionArguments(arguments, additional_argument_index, 0);
-            ++additional_argument_index;
+            {
+                time_zone = extractTimeZoneNameFromColumn(*arguments[additional_argument_index].column);
+                ++additional_argument_index;
+            }
         }
 
         std::shared_ptr<Type> cast_type;
@@ -283,6 +302,7 @@ struct NameToInt256OrDefault { static constexpr auto name = "toInt256OrDefault";
 struct NameToFloat32OrDefault { static constexpr auto name = "toFloat32OrDefault"; };
 struct NameToFloat64OrDefault { static constexpr auto name = "toFloat64OrDefault"; };
 struct NameToDateOrDefault { static constexpr auto name = "toDateOrDefault"; };
+struct NameToDate32OrDefault { static constexpr auto name = "toDate32OrDefault"; };
 struct NameToDateTimeOrDefault { static constexpr auto name = "toDateTimeOrDefault"; };
 struct NameToDateTime64OrDefault { static constexpr auto name = "toDateTime64OrDefault"; };
 struct NameToDecimal32OrDefault { static constexpr auto name = "toDecimal32OrDefault"; };
@@ -308,6 +328,7 @@ using FunctionToFloat32OrDefault = FunctionCastOrDefaultTyped<DataTypeFloat32, N
 using FunctionToFloat64OrDefault = FunctionCastOrDefaultTyped<DataTypeFloat64, NameToFloat64OrDefault>;
 
 using FunctionToDateOrDefault = FunctionCastOrDefaultTyped<DataTypeDate, NameToDateOrDefault>;
+using FunctionToDate32OrDefault = FunctionCastOrDefaultTyped<DataTypeDate32, NameToDate32OrDefault>;
 using FunctionToDateTimeOrDefault = FunctionCastOrDefaultTyped<DataTypeDateTime, NameToDateTimeOrDefault>;
 using FunctionToDateTime64OrDefault = FunctionCastOrDefaultTyped<DataTypeDateTime64, NameToDateTime64OrDefault>;
 
@@ -339,6 +360,7 @@ void registerFunctionCastOrDefault(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat64OrDefault>();
 
     factory.registerFunction<FunctionToDateOrDefault>();
+    factory.registerFunction<FunctionToDate32OrDefault>();
     factory.registerFunction<FunctionToDateTimeOrDefault>();
     factory.registerFunction<FunctionToDateTime64OrDefault>();
 
