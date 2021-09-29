@@ -1,6 +1,5 @@
 #include <Processors/LimitTransform.h>
 
-
 namespace DB
 {
 

@@ -2350,7 +2350,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 }
 
 
-void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
+void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr, bool is_limit_positive)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -2361,7 +2361,8 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
         output_order_descr,
         settings.max_block_size,
         limit,
-        query.hasFiltration());
+        query.hasFiltration(),
+        is_limit_positive);
 
     query_plan.addStep(std::move(finish_sorting_step));
 }
@@ -2372,9 +2373,10 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     SortDescription output_order_descr = getSortDescription(query, context);
 
     UInt64 limit = 0;
+    bool is_limit_positive = true;
     if (query.limitLength())
     {
-        bool is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+        is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
         if (is_limit_positive)
             limit = getLimitForSorting(query, context);
     }
@@ -2387,7 +2389,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
          */
-        executeOrderOptimized(query_plan, input_sorting_info, limit, output_order_descr);
+        executeOrderOptimized(query_plan, input_sorting_info, limit, output_order_descr, is_limit_positive);
         return;
     }
 
@@ -2397,7 +2399,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         query_plan.getCurrentDataStream(),
         output_order_descr,
         limit,
-        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
+        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+        is_limit_positive);
 
     partial_sorting->setStepDescription("Sort each block for ORDER BY");
     query_plan.addStep(std::move(partial_sorting));
@@ -2412,13 +2415,14 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         settings.remerge_sort_lowered_memory_bytes_ratio,
         settings.max_bytes_before_external_sort,
         context->getTemporaryVolume(),
-        settings.min_free_disk_space_for_temporary_data);
+        settings.min_free_disk_space_for_temporary_data,
+        is_limit_positive);
 
     merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");
     query_plan.addStep(std::move(merge_sorting_step));
 
     /// If there are several streams, we merge them into one
-    executeMergeSorted(query_plan, output_order_descr, limit, "for ORDER BY");
+    executeMergeSorted(query_plan, output_order_descr, limit, "for ORDER BY", is_limit_positive);
 }
 
 
@@ -2427,16 +2431,19 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
+    bool is_limit_positive = true;
+    if (query.limitLength())
+        is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
 
-    executeMergeSorted(query_plan, order_descr, limit, description);
+    executeMergeSorted(query_plan, order_descr, limit, description, is_limit_positive);
 }
 
-void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description)
+void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description, bool is_limit_positive)
 {
     const Settings & settings = context->getSettingsRef();
 
     auto merging_sorted
-        = std::make_unique<MergingSortedStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
+        = std::make_unique<MergingSortedStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit, is_limit_positive);
 
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));

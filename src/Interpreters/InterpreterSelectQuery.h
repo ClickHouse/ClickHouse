@@ -137,7 +137,7 @@ private:
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
-    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
+    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr, bool is_limit_positive = true);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
     void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
@@ -149,7 +149,7 @@ private:
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void
-    executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
+    executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description, bool is_limit_positive = true);
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
