@@ -1,5 +1,9 @@
 #include "LocalConnection.h"
 #include <Interpreters/executeQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 
 
@@ -84,24 +88,31 @@ void LocalConnection::sendQuery(
     {
         state->io = executeQuery(state->query, query_context, false, state->stage);
 
-        if (state->io.out && !state->io.in)
+        if (state->io.pipeline.pushing())
         {
-            /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-             *  client receive exception before sending data.
-             */
-            state->block = state->io.out->getHeader();
-            state->io.out->writePrefix();
+            size_t num_threads = state->io.pipeline.getNumThreads();
+            if (num_threads > 1)
+            {
+                state->pushing_async_executor = std::make_unique<PushingAsyncPipelineExecutor>(state->io.pipeline);
+                state->pushing_async_executor->start();
+                state->block = state->pushing_async_executor->getHeader();
+            }
+            else
+            {
+                state->pushing_executor = std::make_unique<PushingPipelineExecutor>(state->io.pipeline);
+                state->pushing_executor->start();
+                state->block = state->pushing_executor->getHeader();
+            }
         }
-        else if (state->io.pipeline.initialized())
+        else if (state->io.pipeline.pulling())
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
         }
-        else if (state->io.in)
+        else if (state->io.pipeline.completed())
         {
-            state->block = state->io.in->getHeader();
-            state->async_in = std::make_unique<AsynchronousBlockInputStream>(state->io.in);
-            state->async_in->readPrefix();
+            CompletedPipelineExecutor executor(state->io.pipeline);
+            executor.execute();
         }
 
         if (state->block)
@@ -126,50 +137,26 @@ void LocalConnection::sendQuery(
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    if (block)
+    if (state->pushing_async_executor)
     {
-        try
-        {
-            state->io.out->write(block);
-        }
-        catch (...)
-        {
-            state->io.out->writeSuffix();
-            throw;
-        }
+        state->pushing_async_executor->push(std::move(block));
     }
-    else
+    else if (state->pushing_executor)
     {
-        state->io.out->writeSuffix();
+        state->pushing_executor->push(std::move(block));
     }
 }
 
 void LocalConnection::sendCancel()
 {
-    if (state->async_in)
-    {
-        state->async_in->cancel(false);
-    }
-    else if (state->executor)
-    {
+    if (state->executor)
         state->executor->cancel();
-    }
 }
 
 bool LocalConnection::pullBlock(Block & block)
 {
-    if (state->async_in)
-    {
-        if (state->async_in->poll(query_context->getSettingsRef().interactive_delay / 1000))
-            block = state->async_in->read();
-
-        if (block)
-            return true;
-    }
-    else if (state->executor)
-    {
+    if (state->executor)
         return state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
-    }
 
     return false;
 }
@@ -181,14 +168,17 @@ void LocalConnection::finishQuery()
     if (!state)
         return;
 
-    if (state->async_in)
-    {
-        state->async_in->readSuffix();
-        state->async_in.reset();
-    }
-    else if (state->executor)
+    if (state->executor)
     {
         state->executor.reset();
+    }
+    else if (state->pushing_async_executor)
+    {
+        state->pushing_async_executor->finish();
+    }
+    else if (state->pushing_executor)
+    {
+        state->pushing_executor->finish();
     }
 
     state->io.onFinish();
@@ -245,9 +235,7 @@ bool LocalConnection::poll(size_t)
         state->sent_totals = true;
         Block totals;
 
-        if (state->io.in)
-            totals = state->io.in->getTotals();
-        else if (state->executor)
+        if (state->executor)
             totals = state->executor->getTotalsBlock();
 
         if (totals)
@@ -263,9 +251,7 @@ bool LocalConnection::poll(size_t)
         state->sent_extremes = true;
         Block extremes;
 
-        if (state->io.in)
-            extremes = state->io.in->getExtremes();
-        else if (state->executor)
+        if (state->executor)
             extremes = state->executor->getExtremesBlock();
 
         if (extremes)

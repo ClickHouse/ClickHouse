@@ -3,14 +3,15 @@
 #include "Connection.h"
 #include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 
 
 namespace DB
 {
+class PullingAsyncPipelineExecutor;
+class PushingAsyncPipelineExecutor;
+class PushingPipelineExecutor;
 
 /// State of query processing.
 struct LocalQueryState
@@ -24,8 +25,9 @@ struct LocalQueryState
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
-    std::unique_ptr<AsynchronousBlockInputStream> async_in;
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
+    std::unique_ptr<PushingPipelineExecutor> pushing_executor;
+    std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
 
     std::optional<Exception> exception;
 
@@ -127,8 +129,8 @@ private:
     bool send_progress;
     String description = "clickhouse-local";
 
-    std::optional<ThreadStatus> thread_status;
     std::optional<LocalQueryState> state;
+    std::optional<ThreadStatus> thread_status;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

@@ -1078,8 +1078,6 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            out->setBeforeFinalizeCallback(before_finalize_callback);
-
             if (set_result_details)
                 set_result_details(
                     context->getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
