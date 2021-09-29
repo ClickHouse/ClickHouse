@@ -101,17 +101,7 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    const auto & config = server.config();
-    auto keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-    size_t hsts_max_age = config.getUInt64("hsts_max_age", 0);
-
-    if (hsts_max_age > 0)
-    {
-        std::stringstream ss;
-        ss << "max-age=" << hsts_max_age;
-        response.add("Strict-Transport-Security", ss.str());
-    }
-
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try
