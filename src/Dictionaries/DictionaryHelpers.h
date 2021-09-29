@@ -16,7 +16,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -567,8 +567,7 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    QueryPipeline pipeline(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
