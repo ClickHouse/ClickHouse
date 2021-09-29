@@ -123,7 +123,7 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     addCommonDefaultHandlersFactory(*factory, server);
 
     auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
-    main_handler->allowPostAndGetRequest();
+    main_handler->allowPostGetOrHeadRequest();
     factory->addHandler(main_handler);
 
     return factory;
@@ -180,7 +180,7 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
     addCommonDefaultHandlersFactory(factory, server);
 
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
-    query_handler->allowPostAndGetRequest();
+    query_handler->allowPostGetOrHeadRequest();
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.

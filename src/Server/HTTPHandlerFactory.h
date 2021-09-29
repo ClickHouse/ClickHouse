@@ -103,12 +103,13 @@ public:
         });
     }
 
-    /// Handle POST or GET
-    void allowPostAndGetRequest()
+    /// Handle POST or GET or Head
+    void allowPostGetOrHeadRequest()
     {
         addFilter([](const auto & request)
         {
             return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
         });
     }
