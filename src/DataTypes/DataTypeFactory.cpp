@@ -68,7 +68,6 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
-    std::lock_guard<std::mutex> guard(mutex);
     String family_name = getAliasToOrName(family_name_param);
 
     if (endsWith(family_name, "WithDictionary"))
