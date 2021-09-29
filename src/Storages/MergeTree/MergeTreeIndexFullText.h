@@ -146,9 +146,16 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool getKey(const ASTPtr & node, size_t & key_column_num);
+    bool traverseASTEquals(
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out);
+
+    bool getKey(const std::string & key_column_name, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(

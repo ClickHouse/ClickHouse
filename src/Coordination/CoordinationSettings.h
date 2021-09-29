@@ -16,6 +16,7 @@ struct Settings;
   * and should not be changed by the user without a reason.
   */
 
+
 #define LIST_OF_COORDINATION_SETTINGS(M) \
     M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_SESSION_TIMEOUT_MS, "Default client session timeout", 0) \
     M(Milliseconds, operation_timeout_ms, Coordination::DEFAULT_OPERATION_TIMEOUT_MS, "Default client operation timeout", 0) \
@@ -36,7 +37,8 @@ struct Settings;
     M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
     M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
-    M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0)
+    M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
+    M(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
