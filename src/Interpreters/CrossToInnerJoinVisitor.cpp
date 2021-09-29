@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -197,6 +198,9 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
     if (!num_array_join && num_tables - num_using > 1)
         return joined_tables;
+
+    if (num_using > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,  "Multuple USING statements are not supported");
 
     return {};
 }
