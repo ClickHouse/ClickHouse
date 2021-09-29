@@ -273,6 +273,8 @@ public:
         void clear() { precommitted_parts.clear(); }
     };
 
+    using TransactionUniquePtr = std::unique_ptr<Transaction>;
+
     using PathWithDisk = std::pair<String, DiskPtr>;
 
     struct PartsTemporaryRename : private boost::noncopyable
@@ -859,6 +861,7 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
+    friend class MergeTask;
 
     bool require_part_metadata;
 
@@ -1144,5 +1147,13 @@ struct CurrentlySubmergingEmergingTagger
 
     ~CurrentlySubmergingEmergingTagger();
 };
+
+
+/// TODO: move it somewhere
+[[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+{
+    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
+        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
+}
 
 }

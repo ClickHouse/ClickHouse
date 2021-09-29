@@ -224,11 +224,11 @@ KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管�
 
 # 编写代码 {#bian-xie-dai-ma}
 
-ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en/development/architecture/
+ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/development/architecture/
 
-代码风格指引：https://clickhouse.tech/docs/en/development/style/
+代码风格指引：https://clickhouse.com/docs/en/development/style/
 
-编写测试用例：https://clickhouse.tech/docs/en/development/tests/
+编写测试用例：https://clickhouse.com/docs/en/development/tests/
 
 任务列表：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 

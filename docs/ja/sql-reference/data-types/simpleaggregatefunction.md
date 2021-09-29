@@ -37,4 +37,4 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/simpleaggregatefunction/) <!--hide-->

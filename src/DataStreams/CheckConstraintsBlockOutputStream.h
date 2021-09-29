@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Interpreters/StorageID.h>
 
@@ -12,28 +12,21 @@ namespace DB
   * Otherwise just pass block to output unchanged.
   */
 
-class CheckConstraintsBlockOutputStream : public IBlockOutputStream
+class CheckConstraintsTransform final : public ExceptionKeepingTransform
 {
 public:
-    CheckConstraintsBlockOutputStream(
+    CheckConstraintsTransform(
             const StorageID & table_,
-            const BlockOutputStreamPtr & output_,
-            const Block & header_,
+            const Block & header,
             const ConstraintsDescription & constraints_,
             ContextPtr context_);
 
-    Block getHeader() const override { return header; }
-    void write(const Block & block) override;
+    String getName() const override { return "CheckConstraintsTransform"; }
 
-    void flush() override;
-
-    void writePrefix() override;
-    void writeSuffix() override;
+    void transform(Chunk & chunk) override;
 
 private:
     StorageID table_id;
-    BlockOutputStreamPtr output;
-    Block header;
     const ConstraintsDescription constraints;
     const ConstraintsExpressions expressions;
     size_t rows_written = 0;

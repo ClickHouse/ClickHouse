@@ -772,7 +772,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    zookeeper->createAncestors(fs::path(shard_path) / ""); /* appends "/" at the end of shard_path */
+    assert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
+    zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
+    zookeeper->createIfNotExists(shard_path, "");
 
     /// Leader replica creates is_executed_path node on successful query execution.
     /// We will remove create_shard_flag from zk operations list, if current replica is just waiting for leader to execute the query.
