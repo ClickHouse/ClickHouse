@@ -73,11 +73,12 @@ static inline bool likePatternIsStrstr(const String & pattern, String & res)
   * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
   *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
   */
-template <bool like, bool revert = false, bool case_insensitive = false>
+template <typename Name, bool like, bool revert = false, bool case_insensitive = false>
 struct MatchImpl
 {
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
+    static constexpr auto name = Name::name;
 
     using ResultType = UInt8;
 
@@ -93,7 +94,8 @@ struct MatchImpl
         PaddedPODArray<UInt8> & res)
     {
         if (start_pos != nullptr)
-            throw Exception("Functions 'like' and 'match' don't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' doesn't support start_pos argument", name);
 
         if (offsets.empty())
             return;
@@ -406,14 +408,14 @@ struct MatchImpl
     template <typename... Args>
     static void vectorVector(Args &&...)
     {
-        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
     static void constantVector(Args &&...)
     {
-        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
     }
 };
 
