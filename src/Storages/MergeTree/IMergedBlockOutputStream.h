@@ -2,14 +2,13 @@
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 namespace DB
 {
 
-class IMergedBlockOutputStream : public IBlockOutputStream
+class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
@@ -35,7 +34,6 @@ protected:
         NamesAndTypesList & columns,
         MergeTreeData::DataPart::Checksums & checksums);
 
-protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 

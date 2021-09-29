@@ -238,9 +238,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->merged_stream->readPrefix();
 
-    /// TODO: const
-    const_cast<MergedBlockOutputStream&>(*global_ctx->to).writePrefix();
-
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
@@ -421,8 +418,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->to->getIndexGranularity());
 
     ctx->column_elems_written = 0;
-
-    ctx->column_to->writePrefix();
 }
 
 

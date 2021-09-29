@@ -18,97 +18,151 @@ namespace ErrorCodes
 }
 
 ColumnGathererStream::ColumnGathererStream(
-        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
-        size_t block_preferred_size_)
-    : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
-    , block_preferred_size(block_preferred_size_), log(&Poco::Logger::get("ColumnGathererStream"))
+    size_t num_inputs, ReadBuffer & row_sources_buf_, size_t block_preferred_size_)
+    : sources(num_inputs), row_sources_buf(row_sources_buf_)
+    , block_preferred_size(block_preferred_size_)
 {
-    if (source_streams.empty())
+    if (num_inputs == 0)
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
+}
 
-    children.assign(source_streams.begin(), source_streams.end());
-
-    for (size_t i = 0; i < children.size(); ++i)
+void ColumnGathererStream::initialize(Inputs inputs)
+{
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
-        const Block & header = children[i]->getHeader();
-
-        /// Sometimes MergeTreeReader injects additional column with partitioning key
-        if (header.columns() > 2)
-            throw Exception(
-                "Block should have 1 or 2 columns, but contains " + toString(header.columns()),
-                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-
-        if (i == 0)
+        if (inputs[i].chunk)
         {
-            column.name = column_name;
-            column.type = header.getByName(column_name).type;
-            column.column = column.type->createColumn();
+            sources[i].update(inputs[i].chunk.detachColumns().at(0));
+            if (!result_column)
+                result_column = sources[i].column->cloneEmpty();
         }
-        else if (header.getByName(column_name).column->getName() != column.column->getName())
-            throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
     }
 }
 
-
-Block ColumnGathererStream::readImpl()
+IMergingAlgorithm::Status ColumnGathererStream::merge()
 {
+    /// Nothing to read after initialize.
+    if (!result_column)
+        return Status(Chunk(), true);
+
+    if (source_to_fully_copy) /// Was set on a previous iteration
+    {
+        Chunk res;
+        res.addColumn(source_to_fully_copy->column);
+        merged_rows += source_to_fully_copy->size;
+        source_to_fully_copy->pos = source_to_fully_copy->size;
+        source_to_fully_copy = nullptr;
+        return Status(std::move(res));
+    }
+
     /// Special case: single source and there are no skipped rows
-    if (children.size() == 1 && row_sources_buf.eof() && !source_to_fully_copy)
-        return children[0]->read();
+    /// Note: looks like this should never happen because row_sources_buf cannot just skip row info.
+    if (sources.size() == 1 && row_sources_buf.eof())
+    {
+        if (sources.front().pos < sources.front().size)
+        {
+            next_required_source = 0;
+            Chunk res;
+            merged_rows += sources.front().column->size();
+            merged_bytes += sources.front().column->allocatedBytes();
+            res.addColumn(std::move(sources.front().column));
+            sources.front().pos = sources.front().size = 0;
+            return Status(std::move(res));
+        }
 
-    if (!source_to_fully_copy && row_sources_buf.eof())
-        return Block();
+        if (next_required_source == -1)
+            return Status(Chunk(), true);
 
-    MutableColumnPtr output_column = column.column->cloneEmpty();
-    output_block = Block{column.cloneEmpty()};
-    /// Surprisingly this call may directly change output_block, bypassing
+        next_required_source = 0;
+        return Status(next_required_source);
+    }
+
+    if (next_required_source != -1 && sources[next_required_source].size == 0)
+        throw Exception("Cannot fetch required block. Source " + toString(next_required_source), ErrorCodes::RECEIVED_EMPTY_DATA);
+
+    /// Surprisingly this call may directly change some internal state of ColumnGathererStream.
     /// output_column. See ColumnGathererStream::gather.
-    output_column->gather(*this);
-    if (!output_column->empty())
-        output_block.getByPosition(0).column = std::move(output_column);
+    result_column->gather(*this);
 
-    return output_block;
+    if (next_required_source != -1)
+        return Status(next_required_source);
+
+    if (source_to_fully_copy && result_column->empty())
+    {
+        Chunk res;
+        merged_rows += source_to_fully_copy->column->size();
+        merged_bytes += source_to_fully_copy->column->allocatedBytes();
+        res.addColumn(source_to_fully_copy->column);
+        source_to_fully_copy->pos = source_to_fully_copy->size;
+        source_to_fully_copy = nullptr;
+        return Status(std::move(res));
+    }
+
+    auto col = result_column->cloneEmpty();
+    result_column.swap(col);
+
+    Chunk res;
+    merged_rows += col->size();
+    merged_bytes += col->allocatedBytes();
+    res.addColumn(std::move(col));
+    return Status(std::move(res), row_sources_buf.eof());
 }
 
 
-void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
+void ColumnGathererStream::consume(Input & input, size_t source_num)
 {
-    try
-    {
-        source.block = children[source_num]->read();
-        source.update(column_name);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("Cannot fetch required block. Stream " + children[source_num]->getName() + ", part " + toString(source_num));
-        throw;
-    }
+    auto & source = sources[source_num];
+    if (input.chunk)
+        source.update(input.chunk.getColumns().at(0));
 
     if (0 == source.size)
     {
-        throw Exception("Fetched block is empty. Stream " + children[source_num]->getName() + ", part " + toString(source_num),
+        throw Exception("Fetched block is empty. Source " + toString(source_num),
                         ErrorCodes::RECEIVED_EMPTY_DATA);
     }
 }
 
-
-void ColumnGathererStream::readSuffixImpl()
+ColumnGathererTransform::ColumnGathererTransform(
+    const Block & header,
+    size_t num_inputs,
+    ReadBuffer & row_sources_buf_,
+    size_t block_preferred_size_)
+    : IMergingTransform<ColumnGathererStream>(
+        num_inputs, header, header, /*have_all_inputs_=*/ true, /*has_limit_below_one_block_=*/ false,
+        num_inputs, row_sources_buf_, block_preferred_size_)
+    , log(&Poco::Logger::get("ColumnGathererStream"))
 {
-    const BlockStreamProfileInfo & profile_info = getProfileInfo();
+    if (header.columns() != 1)
+        throw Exception(
+            "Header should have 1 column, but contains " + toString(header.columns()),
+            ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+}
 
+void ColumnGathererTransform::work()
+{
+    Stopwatch stopwatch;
+    IMergingTransform<ColumnGathererStream>::work();
+    elapsed_ns += stopwatch.elapsedNanoseconds();
+}
+
+void ColumnGathererTransform::onFinish()
+{
+    auto merged_rows = algorithm.getMergedRows();
+    auto merged_bytes = algorithm.getMergedRows();
     /// Don't print info for small parts (< 10M rows)
-    if (profile_info.rows < 10000000)
+    if (merged_rows < 10000000)
         return;
 
-    double seconds = profile_info.total_stopwatch.elapsedSeconds();
+    double seconds = static_cast<double>(elapsed_ns) / 1000000000ULL;
+    const auto & column_name = getOutputPort().getHeader().getByPosition(0).name;
 
     if (!seconds)
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
-            column_name, static_cast<double>(profile_info.bytes) / profile_info.rows);
+            column_name, static_cast<double>(merged_bytes) / merged_rows);
     else
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
-            column_name, static_cast<double>(profile_info.bytes) / profile_info.rows, seconds,
-            profile_info.rows / seconds, ReadableSize(profile_info.bytes / seconds));
+            column_name, static_cast<double>(merged_bytes) / merged_rows, seconds,
+            merged_rows / seconds, ReadableSize(merged_bytes / seconds));
 }
 
 }
