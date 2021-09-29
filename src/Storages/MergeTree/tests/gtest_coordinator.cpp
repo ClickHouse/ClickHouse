@@ -10,47 +10,6 @@
 
 using namespace DB;
 
-// TEST(Coordinator, Segments)
-// {
-//     auto test = [] (std::vector<std::pair<Int64, Int64>> array, Int64 left, Int64 right) -> size_t
-//     {
-//         using B = ParallelReplicasReadingCoordinator::Boundary;
-
-//         ParallelReplicasReadingCoordinator::Boundaries bound;
-
-//         for (auto & [a, b] : array)
-//         {
-//             bound.push_back(B{a, B::Type::LEFT});
-//             bound.push_back(B{b, B::Type::RIGHT});
-//         }
-
-//         bound.push_back(B{std::numeric_limits<Int64>::min(), B::Type::LEFT});
-//         bound.push_back(B{std::numeric_limits<Int64>::max(), B::Type::RIGHT});
-
-//         std::sort(bound.begin(), bound.end());
-
-//         return bound.numberOfIntersectionsWith(left, right);
-//     };
-
-//     ASSERT_EQ(test({{0, 1}}, 0, 1), 1);
-//     ASSERT_EQ(test({{0, 4}, {2, 5}, {6, 11}}, 1, 4), 1);
-//     ASSERT_EQ(test({{0, 2}, {3, 3}, {4, 4}, {5, 5}}, 3, 5), 3);
-//     ASSERT_EQ(test({{0, 2}, {3, 3}, {4, 4}, {5, 5}}, 1, 5), 4);
-//     ASSERT_EQ(test({{0, 2}, {3, 3}, {4, 4}, {5, 5}}, 0, 5), 4);
-//     ASSERT_EQ(test({{0, 2}, {3, 3}, {4, 4}, {5, 6}, {7, 7}}, 1, 6), 4);
-//     ASSERT_EQ(test({{0, 2}, {3, 3}, {4, 4}, {5, 6}, {7, 7}}, 1, 7), 5);
-//     ASSERT_EQ(test({{2, 2}, {3, 3}, {4, 4}, {5, 5}}, 1, 7), 4);
-//     ASSERT_EQ(test({{2, 2}, {3, 3}, {4, 4}, {5, 5}, {6, 6}}, 1, 7), 5);
-//     ASSERT_EQ(test({{2, 2}, {3, 3}, {4, 4}, {5, 5}}, 2, 5), 4);
-//     ASSERT_EQ(test({{2, 2}, {3, 3}, {4, 4}, {5, 7}}, 1, 6), 4);
-
-//     ASSERT_EQ(test({{1, 2}}, 1, 2), 1);
-//     ASSERT_EQ(test({{0, 4}, {2, 5}, {6, 11}}, 1, 4), 1);
-//     ASSERT_EQ(test({{0, 2}, {2, 4}, {5, 6}}, 0, 6), 3);
-//     ASSERT_EQ(test({{1, 2}, {2, 3}, {4, 5}, {5, 6}}, 0, 7), 4);
-// }
-
-
 TEST(Coordinator, Simple)
 {
     PartitionReadRequest request;

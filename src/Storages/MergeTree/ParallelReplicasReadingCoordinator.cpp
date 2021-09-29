@@ -93,8 +93,6 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     if (number_of_part_intersection > 2)
         return {.denied = true, .mark_ranges = {}};
 
-    // std::cout << "number_of_part_intersection " << number_of_part_intersection << std::endl;
-
     if (number_of_part_intersection == 1)
     {
         if (!partition_reading.part_ranges.checkPartIsSuitable(part_to_read))

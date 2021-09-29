@@ -127,23 +127,6 @@ struct MarkRangesIntersectionsIndex
         return result;
     }
 
-    // MarkRanges findNonIntersectingMarkRanges(MarkRanges ranges)
-    // {
-    //     /// Find the first one that starts with a larger coordinate
-    //     auto right_iter = std::lower_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::FindByBeginGreater());
-
-    //     /// Find the last that ends with a lower coordinate
-    //     auto left_iter = std::lower_bound(by_end.rbegin(), by_end.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
-
-    //     MarkRanges result;
-    //     for (auto it = left_iter; it != by_end.rend(); ++it)
-    //         result.push_back(*it);
-    //     for (auto it = right_iter; it != by_begin.end(); ++it)
-    //         result.push_back(*it);
-    //     return result;
-    // }
-
-
     struct FindByBeginGreater : std::binary_function<bool, MarkRange, size_t>
     {
         bool operator()(const MarkRange & rhs, size_t value) const

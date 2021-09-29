@@ -574,7 +574,6 @@ void Connection::sendReadTaskResponse(const String & response)
 
 void Connection::sendMergeTreeReadTaskResponce(const PartitionReadResponce & response)
 {
-    std::cout << "sendMergeTreeReadTaskResponce" << std::endl;
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);
     out->next();

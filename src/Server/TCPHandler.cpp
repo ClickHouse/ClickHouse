@@ -292,8 +292,6 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(task_callback_mutex);
 
-                // std::cout << "MergeTreeReadTaskCallback" << std::endl;
-
                 sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
