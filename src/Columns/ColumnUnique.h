@@ -68,7 +68,7 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    bool isDefaultAt(size_t n) const override { return getNestedColumn()->isDefaultAt(n); }
+    bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
@@ -123,14 +123,14 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
+    double getRatioOfDefaultRows(double) const override
     {
-        return getNestedColumn()->getRatioOfDefaultRows(sample_ratio);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemeted for ColumnUnique");
     }
 
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
-        return getNestedColumn()->getIndicesOfNonDefaultRows(indices, from, limit);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemeted for ColumnUnique");
     }
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }

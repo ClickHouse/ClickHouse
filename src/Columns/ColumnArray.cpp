@@ -985,6 +985,16 @@ ColumnPtr ColumnArray::compress() const
         });
 }
 
+double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
+}
+
+void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
+}
+
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

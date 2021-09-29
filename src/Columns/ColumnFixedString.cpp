@@ -53,33 +53,8 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    const UInt8 * pos = chars.data() + index * n;
-    const UInt8 * end = pos + n;
-
-#ifdef __SSE2__
-    static constexpr size_t SIMD_BYTES = 16;
-    const UInt8 * end_sse = pos + n / SIMD_BYTES * SIMD_BYTES;
-    const __m128i zero16 = _mm_setzero_si128();
-
-    while (pos < end_sse)
-    {
-        if (0xFFFF != _mm_movemask_epi8(_mm_cmpeq_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)), zero16)))
-            return false;
-
-        pos += SIMD_BYTES;
-    }
-#endif
-
-    while (pos < end)
-    {
-        if (*pos != 0)
-            return false;
-
-        ++pos;
-    }
-
-    return true;
+    assert(index < size());
+    return memoryIsZero(chars.data() + index * n, n);
 }
 
 void ColumnFixedString::insert(const Field & x)

@@ -142,15 +142,9 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
-    }
+    double getRatioOfDefaultRows(double sample_ratio) const override;
 
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
-    }
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
