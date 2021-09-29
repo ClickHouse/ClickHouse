@@ -19,7 +19,8 @@ public:
     explicit ReadIndirectBufferFromWebServer(
         const String & url_, ContextPtr context_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t backoff_threshold_ = 10000, size_t max_tries_ = 4, bool use_external_buffer_ = false);
+        size_t backoff_threshold_ = 10000, size_t max_tries_ = 4,
+        bool use_external_buffer_ = false);
 
     bool nextImpl() override;
 
