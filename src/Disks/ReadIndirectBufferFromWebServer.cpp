@@ -60,8 +60,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
                            http_keep_alive_timeout),
         0,
         Poco::Net::HTTPBasicCredentials{},
-        buf_size,
-        headers);
+        buf_size, headers, context->getRemoteHostFilter(), use_external_buffer);
 }
 
 
@@ -74,7 +73,9 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     {
         if (use_external_buffer)
         {
-            impl->set(working_buffer.begin(), working_buffer.size());
+            impl.reset();
+            // impl->set(working_buffer.begin(), working_buffer.size());
+            // impl->BufferBase::set(nullptr, 0, 0);
         }
         else
         {

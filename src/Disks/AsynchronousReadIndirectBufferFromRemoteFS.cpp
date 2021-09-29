@@ -65,7 +65,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             size = prefetch_future.get();
             if (size)
             {
-                swap(*impl);
+                set(impl->buffer().begin(), impl->buffer().size());
+                working_buffer.resize(size);
                 impl->reset();
                 absolute_position += size;
             }
@@ -79,7 +80,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         size = readNext().get();
         if (size)
         {
-            swap(*impl);
+            set(impl->buffer().begin(), impl->buffer().size());
+            working_buffer.resize(size);
             impl->reset();
             absolute_position += size;
         }
