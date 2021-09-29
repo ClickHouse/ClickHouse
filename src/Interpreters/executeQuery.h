@@ -2,14 +2,14 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <DataStreams/BlockIO.h>
-#include <Processors/QueryPipeline.h>
+#include <Interpreters/Context_fwd.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
 class ReadBuffer;
 class WriteBuffer;
-
 
 /// Parse and execute a query.
 void executeQuery(
