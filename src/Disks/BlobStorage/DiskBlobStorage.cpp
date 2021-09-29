@@ -45,7 +45,7 @@ DiskBlobStorage::DiskBlobStorage(
     IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size) {}
 
 
-DiskBlobStorage::DiskBlobStorage() : IDiskRemote("a", "b", "c", "d", 1) {}
+DiskBlobStorage::DiskBlobStorage() : IDiskRemote("a", "b", "/home/jkuklis/blob_storage", "d", 1) {}
 
 
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
@@ -56,14 +56,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     size_t,
     MMappedFileCache *) const
 {
-    std::string arg1 = "TODO";
-    std::string arg2 = "TODO";
-    std::string arg3 = "TODO";
+    std::string arg1 = "/home/jkuklis/blob_storage/file";
+    std::string arg2 = "/home/jkuklis/blob_storage/file";
+    std::string arg3 = "/home/jkuklis/blob_storage/file";
 
-    IDiskRemote::Metadata metadata(arg1, arg2, arg3, false);
+    IDiskRemote::Metadata metadata(arg1, arg2, arg3, true);
 
     auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(metadata);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), 8);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), 32);
 }
 
 
@@ -73,13 +73,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     WriteMode)
 {
     auto buffer = std::make_unique<WriteBufferFromBlobStorage>();
-    std::string path = "TODO";
+    std::string path = "/home/jkuklis/blob_storage/file";
 
-    std::string arg1 = "TODO";
-    std::string arg2 = "TODO";
-    std::string arg3 = "TODO";
+    std::string arg1 = "/home/jkuklis/blob_storage/file";
+    std::string arg2 = "/home/jkuklis/blob_storage/file";
+    std::string arg3 = "/home/jkuklis/blob_storage/file";
 
-    IDiskRemote::Metadata metadata(arg1, arg2, arg3, false);
+    IDiskRemote::Metadata metadata(arg1, arg2, arg3, true);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromBlobStorage>>(std::move(buffer), std::move(metadata), path);
 }
@@ -111,7 +111,7 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr)
 
 RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
 {
-    return std::make_shared<BlobStoragePathKeeper>(16);
+    return std::make_shared<BlobStoragePathKeeper>(1024);
 }
 
 
