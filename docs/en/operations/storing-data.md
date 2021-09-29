@@ -9,7 +9,7 @@ Data, processed in ClickHouse, is usually stored in the local file system — on
 
 To work with data stored on `Amazon S3` disks use [S3](../engines/table-engines/integrations/s3.md) table engine, and to work with data in the Hadoop Distributed File System — [HDFS](../engines/table-engines/integrations/hdfs.md) table engine.
 
-To store data on a web server as static files use a disk with type [web](#storing-data-on-webserver).
+To load data from a web server with static files use a disk with type [web](#storing-data-on-webserver).
 
 ## Zero-copy Replication {#zero-copy}
 
