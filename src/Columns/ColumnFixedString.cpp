@@ -372,30 +372,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
-    size_t col_size = size();
-
-    if (limit == 0)
-        limit = col_size;
-    else
-        limit = std::min(col_size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    if (limit == 0)
-        return ColumnFixedString::create(n);
-
-    auto res = ColumnFixedString::create(n);
-
-    Chars & res_chars = res->chars;
-
-    res_chars.resize(n * limit);
-
-    size_t offset = 0;
-    for (size_t i = 0; i < limit; ++i, offset += n)
-        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 
@@ -408,6 +385,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 
