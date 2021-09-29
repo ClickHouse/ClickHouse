@@ -132,7 +132,8 @@ Example of disk configuration:
         <disks>
             <web>
                 <type>web</type>
-                <endpoint>http://nginx:80/hits/</endpoint>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+
             </web>
         </disks>
         <policies>
