@@ -47,6 +47,16 @@ class DiskBlobStorage final : public IDiskRemote
 {
 public:
 
+    DiskBlobStorage(
+        const String & name_,
+        const String & remote_fs_root_path_,
+        const String & metadata_path_,
+        const String & log_name_,
+        size_t thread_pool_size) :
+        IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size) {}
+
+    DiskBlobStorage() : IDiskRemote("a", "b", "c", "d", 1) {}
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String &,
         size_t,
