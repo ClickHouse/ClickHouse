@@ -4076,66 +4076,6 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    if (local_context->getSettingsRef().parallel_reading_from_replicas && local_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        LOG_TEST(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Parallel reading is enabled");
-
-        /// First get a set of replicas
-        auto zookeeper = getZooKeeper();
-
-        Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-        Strings active_replicas;
-        for (const auto & replica : replicas)
-        {
-            if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-                active_replicas.emplace_back(std::move(replica));
-        }
-
-        /// Prepare a set addresses to connect to replicas
-        std::vector<ReplicatedMergeTreeAddress> addresses;
-        for (const auto & replica : active_replicas)
-        {
-            addresses.emplace_back(zookeeper->get(zookeeper_path + "/replicas/" + replica + "/host"));
-        }
-
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
-        auto credentials = getContext()->getInterserverCredentials();
-        String interserver_scheme = getContext()->getInterserverScheme();
-
-        /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-        Block header =
-            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-
-        const Scalars & scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
-
-        Pipes pipes;
-        const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-        auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-
-        for (auto & address : addresses)
-        {
-            auto connection = std::make_shared<Connection>(
-                address.host, address.queries_port, address.database, credentials->getUser(),
-                credentials->getPassword(), "", "", "ParallelReadingInitiator", Protocol::Compression::Disable, Protocol::Secure::Disable);
-
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connection), queryToString(query_info.query), header, local_context,
-                /*throttler=*/nullptr, scalars, Tables(), processed_stage, nullptr, coordinator);
-
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
-        }
-
-        metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-
-
-        query_plan.addStep(std::make_unique<ReadFromStorageStep>(
-            Pipe::unitePipes(std::move(pipes)),
-            fmt::format("ReplicatedMergeTreeParallelReadingFromReplicas")));
-
-        return;
-    }
-
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
@@ -4151,9 +4091,13 @@ void StorageReplicatedMergeTree::read(
         return;
     }
 
+    /// If true, then we will ask initiator if we can read chosen ranges
+    bool enable_parallel_reading = local_context->getSettingsRef().parallel_reading_from_replicas
+        && local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+
     if (auto plan = reader.read(
         column_names, metadata_snapshot, query_info, local_context,
-        max_block_size, num_streams, processed_stage, nullptr, /**enable_parallel_reading=*/true))
+        max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
     {
         query_plan = std::move(*plan);
     }

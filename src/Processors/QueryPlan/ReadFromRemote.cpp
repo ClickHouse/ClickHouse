@@ -163,6 +163,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 
         if (try_results.empty() || local_delay < max_remote_delay)
         {
+            /// FIXME: Don't know what to do with it, because it could read data without asking an initiator
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
             return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
@@ -177,10 +178,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 
             String query_string = formattedAST(query);
 
+            auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
+
             scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
+                pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
 
             return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
         }
@@ -205,10 +208,12 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
 
     String query_string = formattedAST(shard.query);
 
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
+
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
+        shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
     remote_query_executor->setLogger(log);
 
     remote_query_executor->setPoolMode(PoolMode::GET_MANY);
