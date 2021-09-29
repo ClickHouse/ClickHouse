@@ -19,30 +19,6 @@ namespace DB
 
 void blob_do_sth();
 
-class BlobStoragePathKeeper : public RemoteFSPathKeeper
-{
-public:
-    BlobStoragePathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
-
-    void addPath(const String &) override
-    {
-
-    }
-};
-
-class ReadIndirectBufferFromBlobStorage final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>
-{
-public:
-    ReadIndirectBufferFromBlobStorage(IDiskRemote::Metadata metadata_) :
-        ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>(metadata_)
-    {}
-
-    std::unique_ptr<ReadBufferFromBlobStorage> createReadBuffer(const String &) override
-    {
-        return std::make_unique<ReadBufferFromBlobStorage>();
-    }
-};
-
 class DiskBlobStorage final : public IDiskRemote
 {
 public:
@@ -52,10 +28,9 @@ public:
         const String & remote_fs_root_path_,
         const String & metadata_path_,
         const String & log_name_,
-        size_t thread_pool_size) :
-        IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size) {}
+        size_t thread_pool_size);
 
-    DiskBlobStorage() : IDiskRemote("a", "b", "c", "d", 1) {}
+    DiskBlobStorage();
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String &,
@@ -63,59 +38,22 @@ public:
         size_t,
         size_t,
         size_t,
-        MMappedFileCache *) const override
-    {
-        std::string arg1 = "TODO";
-        std::string arg2 = "TODO";
-        std::string arg3 = "TODO";
-
-        IDiskRemote::Metadata metadata(arg1, arg2, arg3, false);
-
-        auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(metadata);
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), 8);
-    }
+        MMappedFileCache *) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String &,
         size_t,
-        WriteMode) override
-    {
-        auto buffer = std::make_unique<WriteBufferFromBlobStorage>();
-        std::string path = "TODO";
+        WriteMode) override;
 
-        std::string arg1 = "TODO";
-        std::string arg2 = "TODO";
-        std::string arg3 = "TODO";
+    DiskType::Type getType() const override;
 
-        IDiskRemote::Metadata metadata(arg1, arg2, arg3, false);
+    bool supportZeroCopyReplication() const override;
 
-        return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromBlobStorage>>(std::move(buffer), std::move(metadata), path);
-    }
+    bool checkUniqueId(const String &) const override;
 
-    DiskType::Type getType() const override
-    {
-        return DiskType::Type::BlobStorage;
-    }
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr) override;
 
-    bool supportZeroCopyReplication() const override
-    {
-        return false;
-    }
-
-    bool checkUniqueId(const String &) const override
-    {
-        return false;
-    }
-
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr) override
-    {
-
-    }
-
-    RemoteFSPathKeeperPtr createFSPathKeeper() const override
-    {
-        return std::make_shared<BlobStoragePathKeeper>(16);
-    }
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
 private:
 
