@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 from github import Github
+from pr_info import PRInfo
 import json
 import os
 
