@@ -15,13 +15,14 @@ namespace ErrorCodes
 
 
 ReadBufferFromRemoteFS::ReadBufferFromRemoteFS(const RemoteMetadata & metadata_)
-    : metadata(std::move(metadata_))
+    : metadata(metadata_)
 {
 }
 
 
 SeekableReadBufferPtr ReadBufferFromRemoteFS::initialize()
 {
+    /// One clickhouse file can be split into multiple files in remote fs.
     auto current_buf_offset = absolute_position;
     for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
     {
@@ -53,6 +54,8 @@ bool ReadBufferFromRemoteFS::nextImpl()
         if (read())
             return true;
     }
+    else
+        return false;
 
     /// If there is no available buffers - nothing to read.
     if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
