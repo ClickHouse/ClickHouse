@@ -89,9 +89,14 @@ def push_metrics_to_cloudwatch(listed_runners, namespace):
         'Value': total_runners,
         'Unit': 'Count',
     })
+    if total_active_runners == 0:
+        busy_ratio = 100
+    else:
+        busy_ratio = busy_runners / total_active_runners * 100
+
     metrics_data.append({
         'MetricName': 'BusyRunnersRatio',
-        'Value': busy_runners / total_active_runners * 100,
+        'Value': busy_ratio,
         'Unit': 'Percent',
     })
 
