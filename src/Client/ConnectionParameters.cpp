@@ -13,8 +13,9 @@
 #include <common/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
-#include <readpassphrase.h> // Y_IGNORE
+#include <readpassphrase/readpassphrase.h> // Y_IGNORE
 #endif
+
 
 namespace DB
 {
