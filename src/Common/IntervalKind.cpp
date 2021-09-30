@@ -48,91 +48,6 @@ IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
     return IntervalKind::Second;
 }
 
-
-const char * IntervalKind::toKeyword() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Second: return "SECOND";
-        case IntervalKind::Minute: return "MINUTE";
-        case IntervalKind::Hour: return "HOUR";
-        case IntervalKind::Day: return "DAY";
-        case IntervalKind::Week: return "WEEK";
-        case IntervalKind::Month: return "MONTH";
-        case IntervalKind::Quarter: return "QUARTER";
-        case IntervalKind::Year: return "YEAR";
-    }
-    __builtin_unreachable();
-}
-
-
-const char * IntervalKind::toLowercasedKeyword() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Second: return "second";
-        case IntervalKind::Minute: return "minute";
-        case IntervalKind::Hour: return "hour";
-        case IntervalKind::Day: return "day";
-        case IntervalKind::Week: return "week";
-        case IntervalKind::Month: return "month";
-        case IntervalKind::Quarter: return "quarter";
-        case IntervalKind::Year: return "year";
-    }
-    __builtin_unreachable();
-}
-
-
-const char * IntervalKind::toDateDiffUnit() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Second:
-            return "second";
-        case IntervalKind::Minute:
-            return "minute";
-        case IntervalKind::Hour:
-            return "hour";
-        case IntervalKind::Day:
-            return "day";
-        case IntervalKind::Week:
-            return "week";
-        case IntervalKind::Month:
-            return "month";
-        case IntervalKind::Quarter:
-            return "quarter";
-        case IntervalKind::Year:
-            return "year";
-    }
-    __builtin_unreachable();
-}
-
-
-const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Second:
-            return "toIntervalSecond";
-        case IntervalKind::Minute:
-            return "toIntervalMinute";
-        case IntervalKind::Hour:
-            return "toIntervalHour";
-        case IntervalKind::Day:
-            return "toIntervalDay";
-        case IntervalKind::Week:
-            return "toIntervalWeek";
-        case IntervalKind::Month:
-            return "toIntervalMonth";
-        case IntervalKind::Quarter:
-            return "toIntervalQuarter";
-        case IntervalKind::Year:
-            return "toIntervalYear";
-    }
-    __builtin_unreachable();
-}
-
-
 const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 {
     switch (kind)
@@ -160,49 +75,13 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
     __builtin_unreachable();
 }
 
-
-bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
+std::optional<IntervalKind::Kind> IntervalKind::tryParse(std::string_view kind)
 {
-    if ("second" == kind)
-    {
-        result = IntervalKind::Second;
-        return true;
-    }
-    if ("minute" == kind)
-    {
-        result = IntervalKind::Minute;
-        return true;
-    }
-    if ("hour" == kind)
-    {
-        result = IntervalKind::Hour;
-        return true;
-    }
-    if ("day" == kind)
-    {
-        result = IntervalKind::Day;
-        return true;
-    }
-    if ("week" == kind)
-    {
-        result = IntervalKind::Week;
-        return true;
-    }
-    if ("month" == kind)
-    {
-        result = IntervalKind::Month;
-        return true;
-    }
-    if ("quarter" == kind)
-    {
-        result = IntervalKind::Quarter;
-        return true;
-    }
-    if ("year" == kind)
-    {
-        result = IntervalKind::Year;
-        return true;
-    }
-    return false;
+    if (kind.empty()) return std::nullopt;
+
+    std::string str {kind};
+    str[0] = toupper(str[0]);
+
+    return magic_enum::enum_cast<IntervalKind::Kind>(str);
 }
 }

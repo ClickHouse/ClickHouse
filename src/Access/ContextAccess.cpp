@@ -561,7 +561,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
 
     auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
-        UNUSED(this);
+        (void)this;
         if constexpr (throw_if_denied)
             throw Exception(getUserName() + ": " + msg, error_code);
     };

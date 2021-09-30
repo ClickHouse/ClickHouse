@@ -170,8 +170,9 @@ private:
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
                     case IProcessor::Status::ExpandPipeline:
-                        throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
-                                             " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "One of the parsers returned status {} during parallel parsing",
+                            status);
                 }
             }
         }

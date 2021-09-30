@@ -30,13 +30,13 @@ public:
     Exception(const std::string & msg, int code, bool remote_ = false);
     Exception(const std::string & msg, const Exception & nested, int code);
 
-    Exception(int code, const std::string & message)
-        : Exception(message, code)
+    Exception(int code, std::string_view message)
+        : Exception(std::string{message}, code)
     {}
 
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
-    Exception(int code, const std::string & fmt, Args&&... args)
+    Exception(int code, std::string_view fmt, Args && ...args)
         : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
     {}
 

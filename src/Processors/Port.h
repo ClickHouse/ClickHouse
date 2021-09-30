@@ -89,7 +89,7 @@ protected:
             DataPtr() : data(new Data())
             {
                 if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                    throw Exception("Not alignment memory for Port.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Memory for Port must be aligned");
             }
             /// Pointer can store flags in case of exception in swap.
             ~DataPtr() { delete getPtr(getUInt(data) & PTR_MASK); }
@@ -129,11 +129,11 @@ protected:
             Data * data = nullptr;
         };
 
-        /// Not finished, not needed, has not data.
+        /// Not finished, not needed, does not have data.
         State() : data(new Data())
         {
             if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                throw Exception("Not alignment memory for Port.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Memory for Port must be aligned");
         }
 
         ~State()
@@ -289,13 +289,11 @@ public:
         {
             auto & chunk = data->chunk;
 
-            String msg = "Invalid number of columns in chunk pulled from OutputPort. Expected "
-                         + std::to_string(header.columns()) + ", found " + std::to_string(chunk.getNumColumns()) + '\n';
-
-            msg += "Header: " + header.dumpStructure() + '\n';
-            msg += "Chunk: " + chunk.dumpStructure() + '\n';
-
-            throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid number of columns in chunk pulled from OutputPort. Expected {}, found {}\n"
+                "Header: {}\nChunk: {}\n",
+                header.columns(), chunk.getNumColumns(),
+                header.dumpStructure(), chunk.dumpStructure());
         }
 
         return std::move(*data);
@@ -402,16 +400,11 @@ public:
     void ALWAYS_INLINE pushData(Data data_)
     {
         if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
-        {
-            String msg = "Invalid number of columns in chunk pushed to OutputPort. Expected "
-                         + std::to_string(header.columns())
-                         + ", found " + std::to_string(data_.chunk.getNumColumns()) + '\n';
-
-            msg += "Header: " + header.dumpStructure() + '\n';
-            msg += "Chunk: " + data_.chunk.dumpStructure() + '\n';
-
-            throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid number of columns in chunk pushed to OutputPort. Expected {}, found {}\n"
+                "Header: {}\nChunk: {}\n",
+                header.columns(), data_.chunk.getNumColumns(),
+                header.dumpStructure(), data_.chunk.dumpStructure());
 
         updateVersion();
 

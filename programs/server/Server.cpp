@@ -1002,7 +1002,7 @@ if (ThreadFuzzer::instance().isEffective())
             });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
-            createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
+            createServer(listen_host, secure_port_name, listen_try, [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -1015,7 +1015,6 @@ if (ThreadFuzzer::instance().isEffective())
                         new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
 #else
-                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -1255,7 +1254,7 @@ if (ThreadFuzzer::instance().isEffective())
 
             /// HTTPS
             port_name = "https_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            createServer(listen_host, port_name, listen_try, [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -1269,7 +1268,6 @@ if (ThreadFuzzer::instance().isEffective())
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
 #else
-                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -1311,7 +1309,7 @@ if (ThreadFuzzer::instance().isEffective())
 
             /// TCP with SSL
             port_name = "tcp_port_secure";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            createServer(listen_host, port_name, listen_try, [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -1325,7 +1323,6 @@ if (ThreadFuzzer::instance().isEffective())
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): {}", address.toString());
 #else
-                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -1352,7 +1349,7 @@ if (ThreadFuzzer::instance().isEffective())
             });
 
             port_name = "interserver_https_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            createServer(listen_host, port_name, listen_try, [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -1370,7 +1367,6 @@ if (ThreadFuzzer::instance().isEffective())
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
-                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif

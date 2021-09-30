@@ -44,6 +44,7 @@
 #include <common/getThreadId.h>
 #include <common/coverage.h>
 #include <common/sleep.h>
+#include <common/BuildType.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -841,10 +842,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #endif
 
 #if defined(__linux__)
-    std::string executable_path = getExecutablePath();
-
-    if (!executable_path.empty())
-        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
+        if (String executable_path = getExecutablePath(); !executable_path.empty())
+            stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
 #endif
 }
 

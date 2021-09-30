@@ -1913,9 +1913,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     TaskTable & task_table = task_shard.task_table;
     const size_t number_of_splits = task_table.number_of_splits;
-    const String & primary_key_comma_separated = task_table.primary_key_comma_separated;
-
-    UNUSED(primary_key_comma_separated);
+    [[maybe_unused]] const String & primary_key_comma_separated = task_table.primary_key_comma_separated;
 
     std::string query;
 

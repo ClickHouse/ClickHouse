@@ -116,9 +116,3 @@
 #    define NO_SANITIZE_THREAD
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
-
-/// A template function for suppressing warnings about unused variables or function results.
-template <typename... Args>
-constexpr void UNUSED(Args &&... args [[maybe_unused]])
-{
-}

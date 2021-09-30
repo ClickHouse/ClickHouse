@@ -25,8 +25,9 @@ struct RangesInDataPart
     size_t getMarksCount() const
     {
         size_t total = 0;
-        for (const auto & range : ranges)
-            total += range.end - range.begin;
+
+        for (const auto [begin, end] : ranges)
+            total += end - begin;
 
         return total;
     }

@@ -134,7 +134,8 @@ public:
         NeedData,
 
         /// Processor cannot proceed because output port is full or not isNeeded().
-        /// You need to transfer data from output port to the input port of another processor and then call 'prepare' again.
+        /// You need to transfer data from output port to the input port of another processor and then call 'prepare'
+        /// again.
         PortFull,
 
         /// All work is done (all data is processed or all output are closed), nothing more to do.
@@ -143,19 +144,17 @@ public:
         /// No one needs data on output ports.
         /// Unneeded,
 
-        /// You may call 'work' method and processor will do some work synchronously.
+        /// You may call 'work' and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return descriptor.
-        /// You need to poll this descriptor and call work() afterwards.
+        /// You may call 'schedule' and processor will return a descriptor.
+        /// You need to poll this descriptor and call 'work' afterwards.
         Async,
 
         /// Processor wants to add other processors to pipeline.
-        /// New processors must be obtained by expandPipeline() call.
+        /// New processors must be obtained by calling 'expandPipeline'.
         ExpandPipeline,
     };
-
-    static std::string statusToName(Status status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -167,7 +166,8 @@ public:
       * The method is not thread-safe and must be called from a single thread in one moment of time,
       *  even for different connected processors.
       *
-      * Instead of all long work (CPU calculations or waiting) it should just prepare all required data and return Ready or Async.
+      * Instead of all long work (CPU calculations or waiting) it should just prepare all required data and return
+      *  Ready or Async.
       *
       * Thread safety and parallel execution:
       * - no methods (prepare, work, schedule) of single object can be executed in parallel;
@@ -177,13 +177,19 @@ public:
       */
     virtual Status prepare()
     {
-        throw Exception("Method 'prepare' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method 'prepare' is not implemented for {} processor", getName());
     }
 
     using PortNumbers = std::vector<UInt64>;
 
     /// Optimization for prepare in case we know ports were updated.
-    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
+    virtual Status prepare(
+        [[maybe_unused]] const PortNumbers & updated_input_ports,
+        [[maybe_unused]] const PortNumbers & updated_output_ports)
+    {
+        return prepare();
+    }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -192,14 +198,15 @@ public:
       */
     virtual void work()
     {
-        throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method 'work' is not implemented for {} processor", getName());
     }
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
-      * This method should instantly return epollable file descriptor which will be readable when asynchronous job is done.
-      * When descriptor is readable, method `work` is called to continue data processing.
+      * This method should instantly return a epollable file descriptor which will be readable when asynchronous job
+      * is done. When descriptor is readable, method `work` is called to continue data processing.
       *
       * NOTE: it would be more logical to let `work()` return ASYNC status instead of prepare. This will get
       * prepare() -> work() -> schedule() -> work() -> schedule() -> .. -> work() -> prepare()
@@ -211,7 +218,8 @@ public:
       */
     virtual int schedule()
     {
-        throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method 'schedule' is not implemented for {} processor", getName());
     }
 
     /** You must call this method if 'prepare' returned ExpandPipeline.
@@ -225,12 +233,14 @@ public:
       */
     virtual Processors expandPipeline()
     {
-        throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled; }
+
     void cancel()
     {
         is_cancelled = true;
@@ -249,6 +259,7 @@ public:
     UInt64 getInputPortNumber(const InputPort * input_port) const
     {
         UInt64 number = 0;
+
         for (const auto & port : inputs)
         {
             if (&port == input_port)
@@ -257,12 +268,13 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find input port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
     }
 
     UInt64 getOutputPortNumber(const OutputPort * output_port) const
     {
         UInt64 number = 0;
+
         for (const auto & port : outputs)
         {
             if (&port == output_port)
@@ -271,7 +283,7 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find output port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
     }
 
     const auto & getInputs() const { return inputs; }
@@ -280,7 +292,7 @@ public:
     /// Debug output.
     void dump() const;
 
-    /// Used to print pipeline.
+    /// Used for printing the pipeline.
     void setDescription(const std::string & description_) { processor_description = description_; }
     const std::string & getDescription() const { return processor_description; }
 

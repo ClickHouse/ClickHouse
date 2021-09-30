@@ -490,10 +490,11 @@ namespace
 
         [[noreturn]] void failedToSetFunctions() const
         {
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<NumberType>),
-                ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
+            throw Exception(ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                "The field {} has an incompatible type {} for serialization of the data type {}",
+                quoteString(field_descriptor.full_name()),
+                field_descriptor.type_name(),
+                quoteString(TypeName<NumberType>));
         }
 
         NumberType getDefaultNumber()

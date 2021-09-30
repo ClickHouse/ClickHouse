@@ -7,6 +7,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
+#include <common/BuildType.h>
 
 #include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
@@ -186,10 +187,11 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_tag("signal", strsignal(sig));
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
-        #if defined(__ELF__) && !defined(__FreeBSD__)
+        if constexpr (IS_ELF && !IS_FREEBSD_BUILD)
+        {
             const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
-            sentry_set_tag("build_id", build_id_hex.c_str());
-        #endif
+            sentry_set_tag("build_id", build_id_hex.data());
+        }
 
         setExtras();
 

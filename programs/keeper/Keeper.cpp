@@ -379,7 +379,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
-        createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
+        createServer(listen_host, secure_port_name, listen_try, [&]([[maybe_unused]] UInt16 port)
         {
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
@@ -392,7 +392,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
                     new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
             LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
 #else
-            UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                 ErrorCodes::SUPPORT_IS_DISABLED};
 #endif

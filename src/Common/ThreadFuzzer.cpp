@@ -179,9 +179,9 @@ bool ThreadFuzzer::isStarted()
 
 static void injection(
     double yield_probability,
-    double migrate_probability,
+    [[maybe_unused]] double migrate_probability,
     double sleep_probability,
-    double sleep_time_us [[maybe_unused]])
+    [[maybe_unused]] double sleep_time_us)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     if (!ThreadFuzzer::isStarted())
@@ -207,8 +207,6 @@ static void injection(
 
         (void)sched_setaffinity(0, sizeof(set), &set);
     }
-#else
-    UNUSED(migrate_probability);
 #endif
 
     if (sleep_probability > 0

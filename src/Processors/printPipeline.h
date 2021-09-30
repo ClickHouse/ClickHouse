@@ -32,7 +32,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 
         if (statuses_iter != statuses.end())
         {
-            out << " (" << IProcessor::statusToName(*statuses_iter) << ")";
+            out << " (" << *statuses_iter << ")";
             ++statuses_iter;
         }
 
