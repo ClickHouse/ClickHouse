@@ -387,7 +387,7 @@ void LimitTransform::splitChunk(PortsData & data)
         {
             if (offset >= num_rows)
                 length = num_rows;
-            else if (offset < num_rows && offset + limit > num_rows)
+            else if (offset + limit > num_rows)
                 length = num_rows - offset;
             else if (offset + limit <= num_rows)
                 length = limit;
