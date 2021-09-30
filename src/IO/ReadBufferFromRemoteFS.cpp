@@ -72,16 +72,9 @@ bool ReadBufferFromRemoteFS::nextImpl()
 
 bool ReadBufferFromRemoteFS::read()
 {
-    if (check)
-    {
-        assert(!internal_buffer.empty());
-        assert(working_buffer.begin() != nullptr);
-    }
     /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*current_buf);
     /// Position and working_buffer will be updated in next() call
-    if (check)
-        assert(current_buf->buffer().begin() != nullptr);
     auto result = current_buf->next();
     /// Assign result to current buffer.
     swap(*current_buf);
@@ -93,8 +86,9 @@ bool ReadBufferFromRemoteFS::read()
 }
 
 
-size_t ReadBufferFromRemoteFS::fetch(size_t offset)
+size_t ReadBufferFromRemoteFS::readInto(char * data, size_t size, size_t offset)
 {
+    set(data, size);
     absolute_position = offset;
     auto result = nextImpl();
     if (result)
@@ -114,11 +108,9 @@ off_t ReadBufferFromRemoteFS::seek(off_t offset, int whence)
 }
 
 
-void ReadBufferFromRemoteFS::reset(bool reset_inner_buf)
+void ReadBufferFromRemoteFS::reset()
 {
-    if (reset_inner_buf)
-        current_buf.reset();
-    // BufferBase::set(nullptr, 0, 0);
+    current_buf.reset();
 }
 
 }

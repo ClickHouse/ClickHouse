@@ -26,7 +26,7 @@ static const auto WAIT_MS = 10;
 ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
     const String & url_, ContextPtr context_, size_t buf_size_,
     size_t backoff_threshold_, size_t max_tries_, bool use_external_buffer_)
-    : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
+    : SeekableReadBuffer(nullptr, 0)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -71,18 +71,18 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
 
     if (impl)
     {
-        if (use_external_buffer)
-        {
-            impl.reset();
-            // impl->set(working_buffer.begin(), working_buffer.size());
-            // impl->BufferBase::set(nullptr, 0, 0);
-        }
-        else
+        if (!use_external_buffer)
         {
             impl->position() = position();
+            assert(!impl->hasPendingData());
         }
+    }
 
-        assert(!impl->hasPendingData());
+    if (use_external_buffer)
+    {
+        impl->set(internal_buffer.begin(), internal_buffer.size());
+        assert(working_buffer.begin() != nullptr);
+        assert(!internal_buffer.empty());
     }
 
     WriteBufferFromOwnString error_msg;
@@ -95,6 +95,12 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
                 if (!impl)
                 {
                     impl = initialize();
+                    if (use_external_buffer)
+                    {
+                        impl->set(internal_buffer.begin(), internal_buffer.size());
+                        assert(working_buffer.begin() != nullptr);
+                        assert(!internal_buffer.empty());
+                    }
                     next_result = impl->hasPendingData();
                     if (next_result)
                         break;
