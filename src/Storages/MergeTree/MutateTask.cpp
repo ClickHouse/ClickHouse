@@ -631,8 +631,9 @@ public:
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
             auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
-                ctx->metadata_snapshot,
+                projection.metadata,
                 ctx->mutate_entry,
+                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
@@ -1261,7 +1262,7 @@ bool MutateTask::prepare()
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
         ctx->mutating_stream = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
-        ctx->mutating_stream->setProgressCallback(MergeProgressCallback(*ctx->mutate_entry, ctx->watch_prev_elapsed, *ctx->stage_progress));
+        ctx->mutating_stream->setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
     }
 
     ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
