@@ -15,7 +15,7 @@ public:
             UInt64 limit_hint_,
             const Names & columns_,
             bool pre_distinct_, /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
-            bool is_limit_positive_ = true); 
+            bool is_limit_positive_ = true);
 
     String getName() const override { return "Distinct"; }
 

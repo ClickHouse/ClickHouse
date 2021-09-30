@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
 
 LimitStep::LimitStep(
     const DataStream & input_stream_,
-    size_t limit_, size_t offset_, 
+    size_t limit_, size_t offset_,
     bool is_limit_positive_,
     bool always_read_till_end_,
     bool with_ties_,

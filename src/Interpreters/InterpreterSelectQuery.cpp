@@ -833,7 +833,7 @@ static bool isLimitOrOffsetPositive(const ASTPtr & node, ContextPtr context, con
     Int128 value = converted.safeGet<Int128>();
     if (value >= 0)
         return true;
-    else 
+    else
         return false;
 }
 
@@ -2483,7 +2483,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         bool is_limit_positive = false;
         if (query.limitLength())
             is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
-            
+
         auto distinct_step
             = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, limit_for_distinct, columns, pre_distinct, is_limit_positive);
 
