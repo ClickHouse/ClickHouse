@@ -5,6 +5,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// A boundary of a segment (left or right)
 struct PartToRead
@@ -91,6 +95,26 @@ public:
         return false;
     }
 
+    String describe() const
+    {
+        String result;
+        for (const auto & it : by_begin)
+            result += fmt::format("{} {} {} \n", it.name, it.range.begin, it.range.end);
+        return result;
+    }
+
+
+    void checkConsistencyOrThrow() const
+    {
+        Int64 prev_end = std::numeric_limits<Int64>::min();
+        for (const auto & it : by_begin)
+        {
+            if (it.range.begin < prev_end)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
+            prev_end = it.range.end;
+        }
+    }
+
 private:
     std::multiset<PartToRead, PartToRead::CompareByBegin> by_begin;
     std::multiset<PartToRead, PartToRead::CompareByEnd> by_end;
@@ -103,7 +127,7 @@ struct MarkRangesIntersectionsIndex
     void addRange(MarkRange range)
     {
         by_begin.insert(range);
-        by_end.insert(range);
+        // by_end.insert(range);
     }
 
     void addRanges(MarkRanges ranges)
@@ -118,13 +142,55 @@ struct MarkRangesIntersectionsIndex
         auto right_iter = std::lower_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::FindByBeginGreater());
 
         /// Find the last that ends with a lower coordinate
-        auto left_iter = std::lower_bound(by_end.rbegin(), by_end.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
+        auto left_iter = std::lower_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
 
         size_t result = by_begin.size();
-        result -= std::distance(left_iter, by_end.rend());
+        result -= std::distance(left_iter, by_begin.rend());
         result -= std::distance(right_iter, by_begin.end());
 
         return result;
+    }
+
+    std::vector<MarkRange> getIntersectingRanges(MarkRange range)
+    {
+        std::vector<MarkRange> result;
+
+        /// Find the first one that starts with a larger coordinate
+        auto right_iter = std::lower_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::FindByBeginGreater());
+
+        /// Find the last that ends with a lower coordinate
+        auto left_iter = std::lower_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
+
+        for (auto it = left_iter.base(); it != right_iter; ++it)
+            result.push_back(*it);
+
+        return result;
+    }
+
+    std::vector<MarkRange> getNewRanges(MarkRange range)
+    {
+        auto ranges = getIntersectingRanges(range);
+        std::sort(ranges.begin(), ranges.end(), CompareByBegin());
+
+        assert(!ranges.empty());
+
+        std::vector<MarkRange> gaps;
+
+        if (range.begin < ranges.front().begin)
+            gaps.push_back(MarkRange{range.begin, ranges.front().begin});
+
+        auto prev_end = ranges.front().end;
+        for (auto it = std::next(ranges.begin()); it != ranges.end(); ++it)
+        {
+            gaps.push_back(MarkRange{prev_end, it->begin});
+            prev_end = it->end;
+        }
+
+
+        if (range.end > ranges.back().end)
+            gaps.push_back(MarkRange{ranges.back().end, range.end});
+
+        return gaps;
     }
 
     struct FindByBeginGreater : std::binary_function<bool, MarkRange, size_t>
@@ -147,7 +213,9 @@ struct MarkRangesIntersectionsIndex
     {
         bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
         {
-            return lhs.begin < rhs.begin;
+            if (lhs.begin < rhs.begin)
+                return true;
+            return lhs.end < rhs.end;
         }
     };
 
@@ -156,14 +224,47 @@ struct MarkRangesIntersectionsIndex
     {
         bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
         {
-            return lhs.end < rhs.end;
+            if (lhs.end < rhs.end)
+                return true;
+            return lhs.begin < rhs.begin;
         }
     };
 
+
+    String describe() const
+    {
+        String result = "Mark ranges: ";
+        for (const auto & it : by_begin)
+            result += fmt::format("{}, {} \n", it.begin, it.end);
+        return result;
+    }
+
+
+    void checkConsistencyOrThrow() const
+    {
+        UInt64 prev_end = 0;
+        for (const auto & it : by_begin)
+        {
+            if (it.begin < prev_end)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
+            prev_end = it.end;
+        }
+
+        std::multiset<MarkRange, CompareByEnd> by_end;
+        for (const auto & it : by_begin)
+            by_end.insert(it);
+
+        auto it = by_end.begin();
+        for (const auto & begin_it: by_begin)
+        {
+            if (*it  != begin_it)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
+            ++it;
+        }
+    }
+
 private:
     std::multiset<MarkRange, CompareByBegin> by_begin;
-    std::multiset<MarkRange, CompareByEnd> by_end;
-
 };
 
 

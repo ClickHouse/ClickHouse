@@ -438,9 +438,6 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest r
     if (!parallel_reading_coordinator)
         throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    WriteBufferFromOwnString wb;
-    request.describe(wb);
-    LOG_TEST(&Poco::Logger::get("RemoteQueryExecutor"), "Process request {}", wb.str());
     auto response = parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponce(response);
 }

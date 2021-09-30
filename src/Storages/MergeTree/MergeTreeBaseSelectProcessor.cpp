@@ -80,7 +80,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
     {
         bool res = getNewTaskImpl();
 
-        LOG_TEST(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), "getNewTaskImpl res:{}, has_value{}", toString(res), toString(read_task_callback.has_value()));
+        // LOG_TEST(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), "getNewTaskImpl res:{}, has_value{}", toString(res), toString(read_task_callback.has_value()));
 
         if (!read_task_callback.has_value() || !res)
             return res;

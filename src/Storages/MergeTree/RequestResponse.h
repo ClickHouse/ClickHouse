@@ -33,6 +33,8 @@ struct PartitionReadRequest
 
     void serialize(WriteBuffer & out) const;
     void describe(WriteBuffer & out) const;
+    void serializeToJSON(WriteBuffer & out) const;
+    void deserializeFromJSON(String line);
     void deserialize(ReadBuffer & in);
 };
 

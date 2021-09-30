@@ -13,6 +13,7 @@
 
 #include <common/logger_useful.h>
 #include <common/types.h>
+#include <common/scope_guard.h>
 #include "IO/WriteBufferFromString.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
@@ -41,23 +42,53 @@ public:
 
     PartitionReadResponce handleRequest(PartitionReadRequest request);
 
+private:
+
+    void checkConsistencyOrThrow();
+
 };
 
+
+void ParallelReplicasReadingCoordinator::Impl::checkConsistencyOrThrow()
+{
+    for (const auto & partition : partitions)
+    {
+        partition.second.part_ranges.checkConsistencyOrThrow();
+        for (const auto & ranges : partition.second.mark_ranges_in_part)
+            ranges.second.checkConsistencyOrThrow();
+    }
+}
 
 
 PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
     std::lock_guard lock(mutex);
 
-    WriteBufferFromOwnString wb;
-    request.describe(wb);
-    LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Got request {}", wb.str());
+    checkConsistencyOrThrow();
+
+    // WriteBufferFromOwnString wb;
+    // request.serializeToJSON(wb);
+    // LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Got request {}", wb.str());
 
     auto partition_it = partitions.find(request.partition_id);
+
+    // SCOPE_EXIT({
+    //     String result;
+    //     for (const auto & partition : partitions)
+    //     {
+    //         result += partition.first;
+    //         result += partition.second.part_ranges.describe();
+    //         for (const auto & ranges : partition.second.mark_ranges_in_part)
+    //             result += fmt::format("{} {} \n", ranges.first, ranges.second.describe());
+    //     }
+
+    //     LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Current state {}", result);
+    // });
 
     /// We are the first who wants to process parts in partition
     if (partition_it == partitions.end())
     {
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "First to process partition");
         auto part_and_projection = request.part_name + "#" + request.projection_name;
 
         PartitionReading partition_reading;
@@ -90,7 +121,7 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     /// We are intersecting with another parts, probably replicas have different sets of parts
     /// Or maybe there is a bug in merges assigning...
     /// Nothing to update in our state
-    if (number_of_part_intersection > 2)
+    if (number_of_part_intersection >= 2)
         return {.denied = true, .mark_ranges = {}};
 
     if (number_of_part_intersection == 1)
@@ -107,8 +138,36 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         MarkRanges result;
         for (auto & range : request.mark_ranges)
         {
-            if (marks_it->second.numberOfIntersectionsWith(range) == 0)
+            auto number_of_mark_intersection = marks_it->second.numberOfIntersectionsWith(range);
+            if (number_of_mark_intersection == 0)
                 result.push_back(range);
+            else
+            {
+                String anime;
+
+                anime += fmt::format("Intersection for range: {} {} \n", range.begin, range.end);
+                anime += fmt::format("Number of itersections has to be: {} \n", number_of_mark_intersection);
+                for (const auto & item: marks_it->second.getIntersectingRanges(range))
+                {
+                    anime += fmt::format("{} {} \n", item.begin, item.end);
+                }
+                anime += "######################\n";
+
+                auto new_ranges = marks_it->second.getNewRanges(range);
+
+                for (const auto & new_range : new_ranges)
+                    result.push_back(new_range);
+
+
+                for (const auto & item: new_ranges)
+                {
+                    anime += fmt::format("{} {} \n", item.begin, item.end);
+                }
+                anime += "######################\n";
+
+                LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), anime);
+            }
+
         }
 
         if (result.empty())
