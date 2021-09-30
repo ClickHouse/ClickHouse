@@ -37,7 +37,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr ctx) const;
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -78,10 +78,10 @@ private:
     mutable RWLock rwlock = RWLockImpl::create();
     mutable std::mutex mutate_mutex;
 
-    void insertBlock(const Block & block, ContextPtr ctx) override;
+    void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
-    RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr ctx) const;
+    RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
 
 protected:
     StorageJoin(
