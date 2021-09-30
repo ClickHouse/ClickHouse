@@ -192,6 +192,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
+#ifndef FUZZING_MODE
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -212,18 +213,13 @@ try
         throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    std::optional<StatusFile> status;
-
-#ifdef FUZZING_MODE
-    static bool first_time = true;
-    if (first_time)
-    {
-#endif
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
+
+    std::optional<StatusFile> status;
 
     /// Skip temp path installation
 
@@ -321,19 +317,62 @@ try
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
-#ifdef FUZZING_MODE
+
+    processQueries();
+
+    global_context->shutdown();
+    global_context.reset();
+
+    status.reset();
+    cleanup();
+
+    return Application::EXIT_OK;
+}
+catch (const Exception & e)
+{
+    try
+    {
+        cleanup();
     }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+
+    /// If exception code isn't zero, we should return non-zero return code anyway.
+    return e.code() ? e.code() : -1;
+}
 #endif
 
-    /// processing queries
+std::string LocalServer::getInitialCreateTableQuery()
+{
+    if (!config().has("table-structure"))
+        return {};
 
+    auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
+    auto table_structure = config().getString("table-structure");
+    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
+    String table_file;
+    if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
+        table_file = "stdin";
+    else /// Use regular file
+        table_file = quoteString(config().getString("table-file"));
+
+    return
+    "CREATE TABLE " + table_name +
+        " (" + table_structure + ") " +
+    "ENGINE = "
+        "File(" + data_format + ", " + table_file + ")"
+    "; ";
+}
+
+void LocalServer::processQueries()
+{
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query;
 
-#ifdef FUZZING_MODE
-    if (first_time)
-    {
-#endif
     if (config().has("query"))
         queries_str += config().getRawString("query");
     else
@@ -343,45 +382,14 @@ try
         readStringUntilEOF(queries_from_file, in);
         queries_str += queries_from_file;
     }
-#ifdef FUZZING_MODE
-    }
-#endif
 
     const auto & settings = global_context->getSettingsRef();
 
-#ifdef FUZZING_MODE
-    static std::vector<String> queries;
-    if (first_time)
-    {
-#else
     std::vector<String> queries;
-#endif
-    std::pair<const char *, bool> parse_res;
-#ifdef FUZZING_MODE
-    try
-    {
-#endif
-    parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
-#ifdef FUZZING_MODE
-    }
-    catch (const Exception &)
-    {
-        // will be caught at the end of the main
-        throw;
-    }
-    catch (...)
-    {
-        std::cerr << "Undefined error while parsing" << std::endl;
-        exit(1);
-    }
-#endif
+    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
 
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
-#ifdef FUZZING_MODE
-    }
-    first_time = false;
-#endif
 
     /// Authenticate and create a context to execute queries.
     Session session{global_context, ClientInfo::Interface::LOCAL};
@@ -399,16 +407,17 @@ try
 
     /// Set progress show
     need_render_progress = config().getBool("progress", false);
+
     std::function<void()> finalize_progress;
     if (need_render_progress)
     {
         /// Set progress callback, which can be run from multiple threads.
         context->setProgressCallback([&](const Progress & value)
-        {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
+                                     {
+                                         /// Write progress only if progress was updated
+                                         if (progress_indication.updateProgress(value))
+                                             progress_indication.writeProgress();
+                                     });
 
         /// Set finalizing callback for progress, which is called right before finalizing query output.
         finalize_progress = [&]()
@@ -431,6 +440,7 @@ try
 
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+
         if (echo_queries)
         {
             writeString(query, write_buf);
@@ -456,55 +466,6 @@ try
 
     if (exception)
         std::rethrow_exception(exception);
-
-#ifndef FUZZING_MODE
-    global_context->shutdown();
-    global_context.reset();
-
-    status.reset();
-    cleanup();
-#endif
-
-    return Application::EXIT_OK;
-}
-catch (const Exception & e)
-{
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-    /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
-}
-
-
-std::string LocalServer::getInitialCreateTableQuery()
-{
-    if (!config().has("table-structure"))
-        return {};
-
-    auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
-    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
-    String table_file;
-    if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
-        table_file = "stdin";
-    else /// Use regular file
-        table_file = quoteString(config().getString("table-file"));
-
-    return
-    "CREATE TABLE " + table_name +
-        " (" + table_structure + ") " +
-    "ENGINE = "
-        "File(" + data_format + ", " + table_file + ")"
-    "; ";
 }
 
 static const char * minimal_default_user_xml =
@@ -718,6 +679,273 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 #ifdef FUZZING_MODE
+/// This main will not lead to a crash after reuse
+int DB::LocalServer::main(const std::vector<std::string> & /*args*/)
+try
+{
+    Poco::Logger * log = &logger();
+    ThreadStatus thread_status;
+    UseSSL use_ssl;
+
+    if (!config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
+    {
+        if (config().hasOption("verbose"))
+            std::cerr << "There are no queries to process." << '\n';
+
+        return Application::EXIT_OK;
+    }
+
+    if (config().has("query") && config().has("queries-file"))
+    {
+        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    std::optional<StatusFile> status;
+
+    static bool first_time = true;
+    if (first_time)
+    {
+        shared_context = Context::createShared();
+        global_context = Context::createGlobal(shared_context.get());
+        global_context->makeGlobalContext();
+        global_context->setApplicationType(Context::ApplicationType::LOCAL);
+        tryInitPath();
+
+        /// Skip temp path installation
+
+        /// We will terminate process on error
+        static KillingErrorHandler error_handler;
+        Poco::ErrorHandler::set(&error_handler);
+
+        /// Don't initialize DateLUT
+
+        registerFunctions();
+        registerAggregateFunctions();
+        registerTableFunctions();
+        registerStorages();
+        registerDictionaries();
+        registerDisks();
+        registerFormats();
+
+        /// Maybe useless
+        if (config().has("macros"))
+            global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+
+        /// Skip networking
+
+        /// Sets external authenticators config (LDAP, Kerberos).
+        global_context->setExternalAuthenticatorsConfig(config());
+
+        global_context->initializeBackgroundExecutors();
+
+        setupUsers();
+
+        /// Limit on total number of concurrently executing queries.
+        /// There is no need for concurrent queries, override max_concurrent_queries.
+        global_context->getProcessList().setMaxSize(0);
+
+        /// Size of cache for uncompressed blocks. Zero means disabled.
+        size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
+        if (uncompressed_cache_size)
+            global_context->setUncompressedCache(uncompressed_cache_size);
+
+        /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+        /// Specify default value for mark_cache_size explicitly!
+        size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+        if (mark_cache_size)
+            global_context->setMarkCache(mark_cache_size);
+
+        /// A cache for mmapped files.
+        size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
+        if (mmap_cache_size)
+            global_context->setMMappedFileCache(mmap_cache_size);
+
+        /// Load global settings from default_profile and system_profile.
+        global_context->setDefaultProfiles(config());
+
+        /// We load temporary database first, because projections need it.
+        DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
+
+        /** Init dummy default DB
+      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
+      * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
+      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
+      */
+        std::string default_database = config().getString("default_database", "_local");
+        DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+        global_context->setCurrentDatabase(default_database);
+        applyCmdOptions(global_context);
+
+        if (config().has("path"))
+        {
+            String path = global_context->getPath();
+
+            /// Lock path directory before read
+            status.emplace(path + "status", StatusFile::write_full_info);
+
+            fs::create_directories(fs::path(path) / "user_defined/");
+            LOG_DEBUG(log, "Loading user defined objects from {}", path);
+            Poco::File(path + "user_defined/").createDirectories();
+            UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+            LOG_DEBUG(log, "Loaded user defined objects.");
+
+            LOG_DEBUG(log, "Loading metadata from {}", path);
+            fs::create_directories(fs::path(path) / "data/");
+            fs::create_directories(fs::path(path) / "metadata/");
+            loadMetadataSystem(global_context);
+            attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+            attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
+            attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+            loadMetadata(global_context);
+            startupSystemTables();
+            DatabaseCatalog::instance().loadDatabases();
+            LOG_DEBUG(log, "Loaded metadata.");
+        }
+        else if (!config().has("no-system-tables"))
+        {
+            attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+            attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
+            attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        }
+    }
+
+    /// processing queries
+
+    String initial_create_query = getInitialCreateTableQuery();
+    String queries_str = initial_create_query;
+
+    if (first_time)
+    {
+        if (config().has("query"))
+            queries_str += config().getRawString("query");
+        else
+        {
+            String queries_from_file;
+            ReadBufferFromFile in(config().getString("queries-file"));
+            readStringUntilEOF(queries_from_file, in);
+            queries_str += queries_from_file;
+        }
+    }
+
+    const auto & settings = global_context->getSettingsRef();
+
+    static std::vector<String> queries;
+    if (first_time)
+    {
+        std::pair<const char *, bool> parse_res;
+        try
+        {
+            parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+        }
+        catch (const Exception &)
+        {
+            // will be caught at the end of the main
+            throw;
+        }
+        catch (...)
+        {
+            std::cerr << "Undefined error while parsing" << std::endl;
+            exit(1);
+        }
+
+        if (!parse_res.second)
+            throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+    }
+    first_time = false;
+
+    /// Authenticate and create a context to execute queries.
+    Session session{global_context, ClientInfo::Interface::LOCAL};
+    session.authenticate("default", "", {});
+
+    /// Use the same context for all queries.
+    auto context = session.makeQueryContext();
+    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    context->setCurrentQueryId("");
+
+    applyCmdSettings(context);
+
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(context);
+
+    /// Set progress show
+    need_render_progress = config().getBool("progress", false);
+    std::function<void()> finalize_progress;
+    if (need_render_progress)
+    {
+        /// Set progress callback, which can be run from multiple threads.
+        context->setProgressCallback([&](const Progress & value)
+                                     {
+                                         /// Write progress only if progress was updated
+                                         if (progress_indication.updateProgress(value))
+                                             progress_indication.writeProgress();
+                                     });
+
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+        {
+            progress_indication.clearProgressOutput();
+        };
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(context);
+    }
+
+    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+
+    std::exception_ptr exception;
+
+    for (const auto & query : queries)
+    {
+        written_first_block = false;
+        progress_indication.resetProgress();
+
+        ReadBufferFromString read_buf(query);
+        WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+        if (echo_queries)
+        {
+            writeString(query, write_buf);
+            writeChar('\n', write_buf);
+            write_buf.next();
+        }
+
+        try
+        {
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
+        }
+        catch (...)
+        {
+            if (!config().hasOption("ignore-error"))
+                throw;
+
+            if (!exception)
+                exception = std::current_exception();
+
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+        }
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
+
+    return Application::EXIT_OK;
+}
+catch (const Exception & e)
+{
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+
+    /// If exception code isn't zero, we should return non-zero return code anyway.
+    return e.code() ? e.code() : -1;
+}
+
 #include <Functions/getFuzzerData.cpp>
 
 std::optional<DB::LocalServer> fuzz_app;
