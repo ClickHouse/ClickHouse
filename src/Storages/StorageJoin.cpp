@@ -67,11 +67,11 @@ StorageJoin::StorageJoin(
     restore();
 }
 
-RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr ctx) const
+RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
-    const String query_id = ctx ? ctx->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
-        = ctx ? ctx->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return tryLockTimed(lock, type, query_id, acquire_timeout);
 }
 
@@ -81,11 +81,10 @@ SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataP
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
 }
 
-void StorageJoin::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr ctx, TableExclusiveLockHolder&)
+void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, TableExclusiveLockHolder &)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, ctx);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
     disk->removeRecursive(path);
     disk->createDirectories(path);
@@ -160,7 +159,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr ctx) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -180,7 +179,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
 
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, ctx);
+    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 
@@ -188,15 +187,15 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 }
 
 
-void StorageJoin::insertBlock(const Block & block, ContextPtr ctx)
+void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, ctx);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
     join->addJoinedBlock(block, true);
 }
 
-size_t StorageJoin::getSize(ContextPtr ctx) const
+size_t StorageJoin::getSize(ContextPtr context) const
 {
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, ctx);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->getTotalRowCount();
 }
 
@@ -217,9 +216,9 @@ DataTypePtr StorageJoin::joinGetCheckAndGetReturnType(const DataTypes & data_typ
     return join->joinGetCheckAndGetReturnType(data_types, column_name, or_null);
 }
 
-ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr ctx) const
+ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const
 {
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, ctx);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGet(block, block_with_columns_to_add);
 }
 
