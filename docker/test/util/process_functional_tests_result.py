@@ -49,19 +49,24 @@ def process_test_log(log_path):
                 total += 1
                 if TIMEOUT_SIGN in line:
                     failed += 1
-                    test_results.append((test_name, "Timeout", test_time))
+                    test_results.append((test_name, "Timeout", test_time, []))
                 elif FAIL_SIGN in line:
                     failed += 1
-                    test_results.append((test_name, "FAIL", test_time))
+                    test_results.append((test_name, "FAIL", test_time, []))
                 elif UNKNOWN_SIGN in line:
                     unknown += 1
-                    test_results.append((test_name, "FAIL", test_time))
+                    test_results.append((test_name, "FAIL", test_time, []))
                 elif SKIPPED_SIGN in line:
                     skipped += 1
-                    test_results.append((test_name, "SKIPPED", test_time))
+                    test_results.append((test_name, "SKIPPED", test_time, []))
                 else:
                     success += int(OK_SIGN in line)
-                    test_results.append((test_name, "OK", test_time))
+                    test_results.append((test_name, "OK", test_time, []))
+            elif len(test_results) > 0 and test_results[-1][1] == "FAIL":
+                test_results[-1][3].append(line)
+
+    test_results = [(test[0], test[1], test[2], ''.join(test[3])) for test in test_results]
+
     return total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results
 
 def process_result(result_path):
@@ -89,14 +94,14 @@ def process_result(result_path):
         if hung:
             description = "Some queries hung, "
             state = "failure"
-            test_results.append(("Some queries hung", "FAIL", "0"))
+            test_results.append(("Some queries hung", "FAIL", "0", ""))
         elif task_timeout:
             description = "Timeout, "
             state = "failure"
-            test_results.append(("Timeout", "FAIL", "0"))
+            test_results.append(("Timeout", "FAIL", "0", ""))
         elif retries:
             description = "Some tests restarted, "
-            test_results.append(("Some tests restarted", "SKIPPED", "0"))
+            test_results.append(("Some tests restarted", "SKIPPED", "0", ""))
         else:
             description = ""
 
