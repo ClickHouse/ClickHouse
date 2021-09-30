@@ -413,11 +413,11 @@ void LocalServer::processQueries()
     {
         /// Set progress callback, which can be run from multiple threads.
         context->setProgressCallback([&](const Progress & value)
-                                     {
-                                         /// Write progress only if progress was updated
-                                         if (progress_indication.updateProgress(value))
-                                             progress_indication.writeProgress();
-                                     });
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
 
         /// Set finalizing callback for progress, which is called right before finalizing query output.
         finalize_progress = [&]()
