@@ -109,6 +109,15 @@ struct ColumnVector<T>::greater
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
+template <typename T>
+struct ColumnVector<T>::equals
+{
+    const Self & parent;
+    int nan_direction_hint;
+    equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+};
+
 
 namespace
 {
@@ -204,80 +213,16 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    if (equal_range.empty())
-        return;
+    IColumn::ComparePredicate cmp_less;
+    if (reverse)
+        cmp_less = greater(*this, nan_direction_hint);
+    else
+        cmp_less = less(*this, nan_direction_hint);
 
-    if (limit >= data.size() || limit >= equal_range.back().second)
-        limit = 0;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_range = std::move(new_ranges);});
-
-    for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
-    {
-        const auto & [first, last] = equal_range[i];
-        if (reverse)
-            pdqsort(res.begin() + first, res.begin() + last, greater(*this, nan_direction_hint));
-        else
-            pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
-        size_t new_first = first;
-        for (size_t j = first + 1; j < last; ++j)
-        {
-            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
-            {
-                if (j - new_first > 1)
-                {
-                    new_ranges.emplace_back(new_first, j);
-                }
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-        {
-            new_ranges.emplace_back(new_first, last);
-        }
-    }
-    if (limit)
-    {
-        const auto & [first, last] = equal_range.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then, we are working inside the interval.
-
-        if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
-        else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
-
-        size_t new_first = first;
-        for (size_t j = first + 1; j < limit; ++j)
-        {
-            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
-            {
-                if (j - new_first > 1)
-                {
-                    new_ranges.emplace_back(new_first, j);
-                }
-                new_first = j;
-            }
-        }
-
-        size_t new_last = limit;
-        for (size_t j = limit; j < last; ++j)
-        {
-            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
-            {
-                std::swap(res[j], res[new_last]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-        {
-            new_ranges.emplace_back(new_first, new_last);
-        }
-    }
+    this->updatePermutationImpl(limit, res, equal_range,
+        cmp_less, equals(*this, nan_direction_hint),
+        [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); },
+        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
 }
 
 template <typename T>

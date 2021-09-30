@@ -8,6 +8,8 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <common/sort.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -137,6 +139,21 @@ bool IColumn::hasEqualValuesImpl() const
             return false;
     }
     return true;
+}
+
+template <typename Comparator>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Comparator cmp) const
+{
+    return updatePermutationImpl(
+        limit, res, equal_ranges,
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; },
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) == 0; },
+        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
+        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
 }
 
 }
