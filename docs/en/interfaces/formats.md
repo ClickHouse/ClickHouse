@@ -386,7 +386,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row, similar to `TabSeparatedWithNames`.
+Also prints the header row, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
