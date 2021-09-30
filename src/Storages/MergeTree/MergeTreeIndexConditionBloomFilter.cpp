@@ -408,7 +408,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
                     auto element_key = literal->value;
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
                     out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
-                    return true;
                 }
                 else
                 {
@@ -511,8 +510,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     RPNElement & out,
     const ASTPtr & parent)
 {
-    std::cerr << "MergeTreeIndexConditionBloomFilter::traverseASTEquals " << function_name << " ast " << key_ast->formatForErrorMessage() << std::endl;
-
     if (header.has(key_ast->getColumnName()))
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
