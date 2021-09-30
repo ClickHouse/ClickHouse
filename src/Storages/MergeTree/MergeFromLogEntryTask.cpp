@@ -203,6 +203,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             entry.deduplicate_by_columns,
             storage.merging_params);
 
+
+    /// Adjust priority
+    for (auto & item : future_merged_part->parts)
+        priority += item->getBytesOnDisk();
+
     return {true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(
