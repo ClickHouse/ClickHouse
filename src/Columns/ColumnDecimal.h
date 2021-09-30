@@ -15,6 +15,7 @@
 
 namespace DB
 {
+
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>

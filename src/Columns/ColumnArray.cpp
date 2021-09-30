@@ -386,11 +386,8 @@ bool ColumnArray::hasEqualValues() const
     return hasEqualValuesImpl<ColumnArray>();
 }
 
-namespace
-{
-
 template <bool positive>
-struct Cmp
+struct ColumnArray::Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -406,12 +403,13 @@ struct Cmp
             res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
         else
             res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-        return positive ? res : -res;
+
+        if constexpr (positive)
+            return res;
+        else
+            return -res;
     }
 };
-
-}
-
 
 void ColumnArray::reserve(size_t n)
 {
@@ -852,82 +850,6 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
         partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
-}
-
-template <typename Comparator>
-void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const
-{
-    if (equal_range.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_range.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_range.size();
-
-    if (limit)
-        --number_of_ranges;
-
-    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
-
-    EqualRanges new_ranges;
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto & [first, last] = equal_range[i];
-
-        std::sort(res.begin() + first, res.begin() + last, less);
-        auto new_first = first;
-
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (cmp(res[new_first], res[j]) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_range.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (cmp(res[new_first], res[j]) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (cmp(res[new_first], res[j]) == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-        {
-            new_ranges.emplace_back(new_first, new_last);
-        }
-    }
-    equal_range = std::move(new_ranges);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const

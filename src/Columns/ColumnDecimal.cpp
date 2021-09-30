@@ -150,82 +150,17 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 template <is_decimal T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (equal_ranges.empty())
-        return;
+    IColumn::ComparePredicate less;
+    auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
 
-    if (limit >= data.size() || limit >= equal_ranges.back().second)
-        limit = 0;
+    if (reverse)
+        less = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
+    else
+        less = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
 
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] > data[b]; });
-        else
-            std::sort(res.begin() + first, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] < data[b]; });
-
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (data[res[new_first]] != data[res[j]])
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] > data[b]; });
-        else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] < data[b]; });
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (data[res[new_first]] != data[res[j]])
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (data[res[new_first]] == data[res[j]])
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
-    }
+    this->updatePermutationImpl(limit, res, equal_ranges, less, equals,
+        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
+        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
 }
 
 template <is_decimal T>
