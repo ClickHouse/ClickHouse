@@ -14,7 +14,17 @@
 namespace DB
 {
 
-/// Reads data from S3/HDFS/Web using stored paths in metadata.
+/**
+* Reads data from S3/HDFS/Web using stored paths in metadata.
+*
+* Buffers chain for diskS3:
+* AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
+* -> ReadBufferFromS3 -> ReadBufferFromIStream.
+*
+* Buffers chain for diskWeb:
+* AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
+*/
 class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
@@ -31,6 +41,8 @@ public:
 
     void prefetch() override;
 
+    bool check = false;
+
 private:
     bool nextImpl() override;
 
@@ -45,6 +57,7 @@ private:
 
     size_t absolute_position = 0;
     std::mutex mutex;
+    Memory<> prefetch_buffer;
 };
 
 }
