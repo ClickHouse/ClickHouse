@@ -407,9 +407,9 @@ void LimitTransform::splitChunk(PortsData & data)
                     break;
                 }
             }
-
-            length = start - current_row_num + length - 1;
-            start = current_row_num + 1;
+            UInt64 current_row_num_after = current_row_num;
+            length = start + length - (current_row_num_after == start ? current_row_num_after : current_row_num_after + 1);
+            start = (current_row_num_after == start ? current_row_num_after : current_row_num_after + 1);
         }
     }
 

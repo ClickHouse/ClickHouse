@@ -1883,6 +1883,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
+    bool is_limit_positive = true;
+    if (query.limitLength())
+        is_limit_positive = isLimitOrOffsetPositive(query.limitLength(), context, "LIMIT");
+
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY, WITH TIES but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
@@ -1901,7 +1905,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {
-        max_block_size = std::max(UInt64(1), limit_length + limit_offset);
+        if (is_limit_positive)
+            max_block_size = std::max(UInt64(1), limit_length + limit_offset);
         max_threads_execute_query = max_streams = 1;
     }
 
@@ -2616,8 +2621,9 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+        bool is_offset_positive = isLimitOrOffsetPositive(query.limitOffset(), context, "OFFSET");
 
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset, is_offset_positive);
         query_plan.addStep(std::move(offsets_step));
     }
 }

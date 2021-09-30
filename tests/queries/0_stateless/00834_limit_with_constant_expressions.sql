@@ -1,7 +1,7 @@
 SELECT number FROM numbers(10) LIMIT 0 + 1;
 SELECT number FROM numbers(10) LIMIT 1 - 1;
 SELECT number FROM numbers(10) LIMIT 2 - 1;
-SELECT number FROM numbers(10) LIMIT 0 - 1; -- { serverError 440 }
+SELECT number FROM numbers(10) LIMIT 0 - 1;
 SELECT number FROM numbers(10) LIMIT 1.0;
 SELECT number FROM numbers(10) LIMIT 1.5; -- { serverError 440 }
 SELECT number FROM numbers(10) LIMIT '1'; -- { serverError 440 }

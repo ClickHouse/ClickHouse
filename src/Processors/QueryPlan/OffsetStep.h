@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const DataStream & input_stream_, size_t offset_);
+    OffsetStep(const DataStream & input_stream_, size_t offset_, bool is_offset_positive_ = true);
 
     String getName() const override { return "Offset"; }
 
@@ -20,6 +20,7 @@ public:
 
 private:
     size_t offset;
+    bool is_offset_positive;
 };
 
 }

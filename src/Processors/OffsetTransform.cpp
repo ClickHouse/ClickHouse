@@ -10,9 +10,9 @@ namespace ErrorCodes
 }
 
 OffsetTransform::OffsetTransform(
-    const Block & header_, UInt64 offset_, size_t num_streams)
+    const Block & header_, UInt64 offset_, bool is_offset_positive_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , offset(offset_)
+    , offset(offset_), is_offset_positive(is_offset_positive_)
 {
     ports_data.resize(num_streams);
 
@@ -175,12 +175,23 @@ void OffsetTransform::splitChunk(PortsData & data) const
 
     assert(offset < rows_read);
 
-    if (offset + num_rows > rows_read)
-        start = offset + num_rows - rows_read;
+    UInt64 length = 0;
+    if (is_offset_positive)
+    {
+        if (offset + num_rows > rows_read)
+            start = offset + num_rows - rows_read;
+        else
+            return;
+        length = num_rows - start;
+    }
     else
-        return;
-
-    UInt64 length = num_rows - start;
+    {
+        if (offset <= num_rows)
+            start = 0;
+        else
+            return;
+        length = num_rows - offset;
+    }
 
     auto columns = data.current_chunk.detachColumns();
 
