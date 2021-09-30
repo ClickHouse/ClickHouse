@@ -32,11 +32,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
-
 namespace DB
 {
 
@@ -85,7 +80,9 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this,
+        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
+        getContext()->getSettingsRef().background_pool_size)
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -1036,8 +1033,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(
-            *this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
@@ -1059,7 +1055,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
@@ -1070,7 +1066,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
             getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 /// All use relative_data_path which changes during rename
