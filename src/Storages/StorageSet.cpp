@@ -106,10 +106,11 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr ctx)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinSink>(ctx, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinSink>(
+        context, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
 }
 
 
