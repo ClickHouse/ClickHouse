@@ -29,7 +29,9 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, Int32 priority_, std::shared_ptr<ReadBufferFromRemoteFS> impl_);
+        AsynchronousReaderPtr reader_, Int32 priority_,
+        std::shared_ptr<ReadBufferFromRemoteFS> impl_,
+        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
@@ -41,22 +43,23 @@ public:
 
     void prefetch() override;
 
-    bool check = false;
-
 private:
     bool nextImpl() override;
 
     void finalize();
 
-    std::future<IAsynchronousReader::Result> readNext();
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 
     AsynchronousReaderPtr reader;
+
     Int32 priority;
+
     std::shared_ptr<ReadBufferFromRemoteFS> impl;
+
     std::future<IAsynchronousReader::Result> prefetch_future;
 
     size_t absolute_position = 0;
-    std::mutex mutex;
+
     Memory<> prefetch_buffer;
 };
 

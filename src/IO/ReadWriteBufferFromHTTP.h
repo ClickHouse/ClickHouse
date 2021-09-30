@@ -151,6 +151,9 @@ namespace detail
             }
         }
 
+    private:
+        bool use_external_buffer;
+
     public:
         using NextCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
@@ -163,7 +166,8 @@ namespace detail
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
             HTTPHeaderEntries http_header_entries_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {})
+            const RemoteHostFilter & remote_host_filter_ = {},
+            bool use_external_buffer_ = false)
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -172,6 +176,7 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
+            , use_external_buffer {use_external_buffer_}
         {
             Poco::Net::HTTPResponse response;
 
@@ -205,10 +210,22 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
-            if (!working_buffer.empty())
-                impl->position() = position();
+
+            if (use_external_buffer)
+            {
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
+            }
+            else
+            {
+                if (!working_buffer.empty())
+                    impl->position() = position();
+            }
+
             if (!impl->next())
                 return false;
+
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
             return true;
@@ -274,9 +291,11 @@ public:
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const HTTPHeaderEntries & http_header_entries_ = {},
-        const RemoteHostFilter & remote_host_filter_ = {})
+        const RemoteHostFilter & remote_host_filter_ = {},
+        bool use_external_buffer_ = false)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
+                 uri_, method_, out_stream_callback_, credentials_, buffer_size_,
+                 http_header_entries_, remote_host_filter_, use_external_buffer_)
     {
     }
 };

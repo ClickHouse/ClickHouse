@@ -55,7 +55,6 @@ bool ReadBufferFromS3::nextImpl()
             impl->position() = position();
             assert(!impl->hasPendingData());
         }
-
     }
     else
     {
@@ -63,13 +62,12 @@ bool ReadBufferFromS3::nextImpl()
         impl = initialize();
         next_result = impl->hasPendingData();
     }
+
     if (use_external_buffer)
     {
-        // assert(!impl->buffer().begin() || impl->buffer().begin() != working_buffer.begin());
         impl->set(internal_buffer.begin(), internal_buffer.size());
         assert(working_buffer.begin() != nullptr);
         assert(!internal_buffer.empty());
-        // impl->BufferBase::set(nullptr, 0, 0);
     }
 
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
@@ -105,11 +103,9 @@ bool ReadBufferFromS3::nextImpl()
             impl = initialize();
             if (use_external_buffer)
             {
-                // assert(!impl->buffer().begin() || impl->buffer().begin() != working_buffer.begin());
                 impl->set(internal_buffer.begin(), internal_buffer.size());
                 assert(working_buffer.begin() != nullptr);
                 assert(!internal_buffer.empty());
-                // impl->BufferBase::set(nullptr, 0, 0);
             }
             next_result = impl->hasPendingData();
         }

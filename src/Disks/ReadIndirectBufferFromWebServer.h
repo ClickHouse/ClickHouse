@@ -13,7 +13,7 @@ namespace DB
  *
  * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadIndirectBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
-class ReadIndirectBufferFromWebServer : public BufferWithOwnMemory<SeekableReadBuffer>
+class ReadIndirectBufferFromWebServer : public SeekableReadBuffer
 {
 public:
     explicit ReadIndirectBufferFromWebServer(
