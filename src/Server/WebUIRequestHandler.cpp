@@ -20,16 +20,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_, std::string resource
 
 void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto & config = server.config();
-    auto keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-
-    if (request.isSecure())
-    {
-        size_t hsts_max_age = server.config().getUInt64("hsts_max_age", 0);
-
-        if (hsts_max_age > 0)
-            response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
-    }
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
 
     response.setContentType("text/html; charset=UTF-8");
 
