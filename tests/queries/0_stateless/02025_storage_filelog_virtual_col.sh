@@ -22,7 +22,7 @@ do
 done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
-${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('logs', 'CSV');"
+${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/logs/', 'CSV');"
 
 ${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
 
