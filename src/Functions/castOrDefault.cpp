@@ -187,10 +187,12 @@ private:
         FunctionArgumentDescriptors optional_args;
 
         if constexpr (IsDataTypeDecimal<Type>)
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
 
         if (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
-            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, isColumnConst, "const String"});
+
+        optional_args.push_back({"default_value", nullptr, nullptr, nullptr});
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
@@ -251,6 +253,16 @@ private:
 
         if (additional_argument_index < arguments.size())
         {
+            const auto & default_value_type = arguments[additional_argument_index].type;
+
+            if (!areTypesEqual(default_value_type, cast_type))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Default value type should be same as cast type. Expected {}. Actual {}",
+                    cast_type->getName(),
+                    default_value_type->getName());
+            }
+
             arguments_with_cast_type.emplace_back(arguments[additional_argument_index]);
             ++additional_argument_index;
         }
