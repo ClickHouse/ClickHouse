@@ -18,7 +18,7 @@ do
 done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
-${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('a.txt', 'CSV');"
+${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/a.txt', 'CSV');"
 
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
