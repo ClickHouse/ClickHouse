@@ -17,14 +17,16 @@ FileLogSource::FileLogSource(
     StorageFileLog & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_,
+    const Names & columns,
     size_t max_block_size_,
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockWithVirtuals(storage_.getVirtuals()))
+    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
+    , column_names(columns)
     , max_block_size(max_block_size_)
     , poll_time_out(poll_time_out_)
     , stream_number(stream_number_)
@@ -34,19 +36,20 @@ FileLogSource::FileLogSource(
           metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
-    /// The last FileLogSource responsible for open files
-    if (stream_number == max_streams_number - 1)
-    {
-        storage.openFilesAndSetPos();
-    }
 }
 
 FileLogSource::~FileLogSource()
 {
-    /// The last FileLogSource responsible for close files
-    if (stream_number == max_streams_number - 1)
+    auto & file_infos = storage.getFileInfos();
+
+    size_t files_per_stream = file_infos.file_names.size() / max_streams_number;
+    size_t start = stream_number * files_per_stream;
+    size_t end = stream_number == max_streams_number - 1 ? file_infos.file_names.size() : (stream_number + 1) * files_per_stream;
+
+    /// Each stream responsible for close it's files and store meta
+    for (size_t i = start; i < end; ++i)
     {
-        storage.closeFilesAndStoreMeta();
+        storage.closeFileAndStoreMeta(file_infos.file_names[i]);
     }
 }
 
@@ -99,14 +102,21 @@ Chunk FileLogSource::generate()
     if (total_rows == 0)
         return {};
 
-    auto result_columns = executor.getResultColumns();
+    auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
+    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
-    for (auto & column : virtual_columns)
-    {
-        result_columns.emplace_back(std::move(column));
-    }
+    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+        result_block.insert(column);
 
-    return Chunk(std::move(result_columns), total_rows);
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        result_block.cloneEmpty().getColumnsWithTypeAndName(),
+        getPort().getHeader().getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    converting_actions->execute(result_block);
+
+    return Chunk(result_block.getColumns(), result_block.rows());
 }
 
 }

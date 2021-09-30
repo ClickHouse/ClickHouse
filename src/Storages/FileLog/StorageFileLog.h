@@ -18,6 +18,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageFileLog>;
@@ -59,6 +64,7 @@ public:
     struct FileContext
     {
         FileStatus status = FileStatus::OPEN;
+        UInt64 inode;
         std::ifstream reader;
     };
 
@@ -69,13 +75,11 @@ public:
         UInt64 last_open_end = 0;
     };
 
-    using FileNameToInode = std::unordered_map<String, UInt64>;
     using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
     using FileNameToContext = std::unordered_map<String, FileContext>;
 
     struct FileInfos
     {
-        FileNameToInode inode_by_name;
         InodeToFileMeta meta_by_inode;
         FileNameToContext context_by_name;
         /// file names without path
@@ -84,8 +88,8 @@ public:
 
     auto & getFileInfos() { return file_infos; }
 
-    auto getFullMetaPath(const String & file_name) const { return root_meta_path + "/" + file_name; }
-    auto getFullDataPath(const String & file_name) const { return root_data_path + "/" + file_name; }
+    String getFullMetaPath(const String & file_name) const { return std::filesystem::path(root_meta_path) / file_name; }
+    String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -94,23 +98,40 @@ public:
     static UInt64 getInode(const String & file_name);
 
     void openFilesAndSetPos();
+    /// Used in shutdown()
     void closeFilesAndStoreMeta();
+    /// Used in FileSource
+    void closeFileAndStoreMeta(const String & file_name);
+
+    static void assertStreamGood(const std::ifstream & reader);
+
+    template <typename K, typename V>
+    static V & findInMap(std::unordered_map<K, V> & map, const K & key)
+    {
+        if (auto it = map.find(key); it != map.end())
+            return it->second;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+    }
 
 protected:
     StorageFileLog(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        const String & relative_path_,
+        const String & path_,
+        const String & relative_data_path_,
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
+        const String & comment,
         bool attach);
 
 private:
     std::unique_ptr<FileLogSettings> filelog_settings;
 
-    /// user_files_path/ + path_argument/
     const String path;
+    /// For meta file
+    const String relative_data_path;
     bool path_is_directory = true;
 
     /// If path argument of the table is a regular file, it equals to user_files_path
@@ -157,8 +178,10 @@ private:
 
     bool updateFileInfos();
 
-    /// Serialize all file meta
-    void serialize(bool with_end_pos = false) const;
+    /// Used in shutdown()
+    void serialize() const;
+    /// Used in FileSource closeFileAndStoreMeta(file_name);
+    void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
 };
