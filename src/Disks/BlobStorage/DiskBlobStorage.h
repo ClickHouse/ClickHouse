@@ -13,6 +13,9 @@
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/storage/blobs.hpp>
+
 
 namespace DB
 {
@@ -31,6 +34,15 @@ public:
         size_t thread_pool_size);
 
     DiskBlobStorage();
+
+    DiskBlobStorage(
+        const String & name_,
+        const String & metadata_path_,
+        const String & endpoint_url,
+        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential_,
+        Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+        size_t thread_pool_size_ = 1
+    );
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String &,
