@@ -59,7 +59,6 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
     Strings parts = zookeeper->getChildren(replica_path + "/parts");
     for (const auto & part_name : parts)
     {
-        LOG_TEST(log, "Adding part {} to current and virtual parts", part_name);
         current_parts.add(part_name, nullptr);
         virtual_parts.add(part_name, nullptr);
     }
@@ -176,8 +175,6 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
 
-    LOG_TEST(log, "Insert entry {} to queue with type {} with virtual parts [{}]", entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
-
     for (const String & virtual_part_name : entry_virtual_parts)
     {
         virtual_parts.add(virtual_part_name, nullptr);
@@ -244,9 +241,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 {
 
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
-    LOG_TEST(log, "Removing {} entry {} from queue with type {} with virtual parts [{}]",
-             is_successful ? "successful" : "unsuccessful",
-             entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
     /// Update insert times.
     if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
     {
@@ -274,7 +268,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         if (!entry->actual_new_part_name.empty())
         {
-            LOG_TEST(log, "Entry {} has actual new part name {}, removing it from mutations", entry->znode_name, entry->actual_new_part_name);
             /// We don't add bigger fetched part to current_parts because we
             /// have an invariant `virtual_parts` = `current_parts` + `queue`.
             ///
@@ -284,8 +277,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             /// NOTE actual_new_part_name is very confusing and error-prone. This approach must be fixed.
             removeCoveredPartsFromMutations(entry->actual_new_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
         }
-
-        LOG_TEST(log, "Adding parts [{}] to current parts", fmt::join(entry_virtual_parts, ", "));
 
         for (const String & virtual_part_name : entry_virtual_parts)
         {
@@ -305,12 +296,10 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             /// parts all covered parts.
             if (entry->isDropPart(format_version))
             {
-                LOG_TEST(log, "Removing drop part from current and virtual parts {}", *drop_range_part_name);
                 current_parts.removePartAndCoveredParts(*drop_range_part_name);
             }
             else
             {
-                LOG_TEST(log, "Removing drop range from current and virtual parts {}", *drop_range_part_name);
                 current_parts.remove(*drop_range_part_name);
             }
 
@@ -337,8 +326,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             drop_ranges.removeDropRange(entry);
         }
 
-        LOG_TEST(log, "Removing unsuccessful entry {} virtual parts [{}]", entry->znode_name, fmt::join(entry_virtual_parts, ", "));
-
         for (const String & virtual_part_name : entry_virtual_parts)
         {
             /// Because execution of the entry is unsuccessful,
@@ -353,8 +340,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-
-    LOG_TEST(log, "Removing part {} from mutations (remove_part: {}, remove_covered_parts: {})", part_name, remove_part, remove_covered_parts);
 
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
@@ -394,14 +379,11 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
 {
 
-    LOG_TEST(log, "Adding part {} to mutations", part_name);
-
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
     /// Do not add special virtual parts to parts_to_do
     if (part_info.isFakeDropRangePart())
     {
-        LOG_TEST(log, "Part {} is fake drop range part, will not add it to mutations", part_name);
         return;
     }
 
