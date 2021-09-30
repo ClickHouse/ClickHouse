@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
@@ -17,5 +17,5 @@
             <value>86400</value>
         </header>
     </http_options_response>
-<yandex>
+<clickhouse>
     
