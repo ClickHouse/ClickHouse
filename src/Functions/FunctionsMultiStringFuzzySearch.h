@@ -28,13 +28,13 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, size_t LimitArgs>
+template <typename Impl, size_t LimitArgs>
 class FunctionsMultiStringFuzzySearch : public IFunction
 {
     static_assert(LimitArgs > 0);
 
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr context)
     {
         if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)

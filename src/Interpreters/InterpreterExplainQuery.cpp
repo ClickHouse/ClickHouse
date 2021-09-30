@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -73,7 +73,7 @@ namespace
 BlockIO InterpreterExplainQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
@@ -240,7 +240,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 }
 
-BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
+QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
 
@@ -304,33 +304,41 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
-        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
-
-        auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
-        QueryPlan plan;
-
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-        interpreter.buildQueryPlan(plan);
-        auto pipeline = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(getContext()),
-            BuildQueryPipelineSettings::fromContext(getContext()));
-
-        if (settings.graph)
+        if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
         {
-            /// Pipe holds QueryPlan, should not go out-of-scope
-            auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
-            const auto & processors = pipe.getProcessors();
+            auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
+            QueryPlan plan;
 
-            if (settings.compact)
-                printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+            interpreter.buildQueryPlan(plan);
+            auto pipeline = plan.buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(getContext()),
+                BuildQueryPipelineSettings::fromContext(getContext()));
+
+            if (settings.graph)
+            {
+                /// Pipe holds QueryPlan, should not go out-of-scope
+                auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
+                const auto & processors = pipe.getProcessors();
+
+                if (settings.compact)
+                    printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
+                else
+                    printPipeline(processors, buf);
+            }
             else
-                printPipeline(processors, buf);
+            {
+                plan.explainPipeline(buf, settings.query_pipeline_options);
+            }
+        }
+        else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
+        {
+            InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
+            auto io = insert.execute();
+            printPipeline(io.pipeline.getProcessors(), buf);
         }
         else
-        {
-            plan.explainPipeline(buf, settings.query_pipeline_options);
-        }
+            throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryEstimates)
     {
@@ -359,7 +367,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
 }
 
 }

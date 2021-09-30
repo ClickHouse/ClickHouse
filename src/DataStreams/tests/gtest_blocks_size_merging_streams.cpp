@@ -87,9 +87,8 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     pipe.addTransform(std::move(transform));
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
-    pipeline.setMaxThreads(1);
+    QueryPipeline pipeline(std::move(pipe));
+    pipeline.setNumThreads(1);
     auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     size_t total_rows = 0;
@@ -132,9 +131,8 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 
     pipe.addTransform(std::move(transform));
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
-    pipeline.setMaxThreads(1);
+    QueryPipeline pipeline(std::move(pipe));
+    pipeline.setNumThreads(1);
     auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     auto block1 = stream->read();

@@ -10,6 +10,8 @@ toc_title: SYSTEM
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -78,6 +80,17 @@ SYSTEM RELOAD MODELS
 
 ```sql
 SYSTEM RELOAD MODEL <model_name>
+```
+
+## RELOAD FUNCTIONS {#query_language-system-reload-functions}
+
+Перезагружает все зарегистрированные [исполняемые пользовательские функции](../functions/index.md#executable-user-defined-functions) или одну из них из файла конфигурации.
+
+**Синтаксис**
+
+```sql
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
