@@ -17,6 +17,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 class IReservation;
+using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
 

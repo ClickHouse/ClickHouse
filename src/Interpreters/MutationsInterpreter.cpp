@@ -11,12 +11,13 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -216,14 +217,20 @@ bool isStorageTouchedByMutations(
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
-    BlockInputStreamPtr in = interpreter.execute().getInputStream();
+    auto io = interpreter.execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
-    Block block = in->read();
+    Block block;
+    while (!block.rows())
+        executor.pull(block);
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
         throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
             ErrorCodes::LOGICAL_ERROR);
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
@@ -852,7 +859,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -936,19 +943,20 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
 
-    auto pipeline = addStreamsForLaterStages(stages, plan);
+    auto builder = addStreamsForLaterStages(stages, plan);
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder->getHeader()))
     {
-        pipeline->addSimpleTransform([&](const Block & header)
+        builder->addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());

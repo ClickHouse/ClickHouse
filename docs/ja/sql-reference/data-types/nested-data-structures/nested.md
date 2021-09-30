@@ -103,4 +103,4 @@ DESCRIBEクエリの場合、入れ子になったデータ構造の列は、同
 
 入れ子になったデータ構造内の要素のALTERクエリには制限があります。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/nested_data_structures/nested/) <!--hide-->
