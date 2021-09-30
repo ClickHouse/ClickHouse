@@ -63,6 +63,42 @@ def list_runners(access_token):
         result.append(desc)
     return result
 
+def push_metrics_to_cloudwatch(listed_runners, namespace):
+    import boto3
+    client = boto3.client('cloudwatch')
+    metrics_data = []
+    busy_runners = sum(1 for runner in listed_runners if runner.busy)
+    metrics_data.append({
+        'MetricName': 'BusyRunners',
+        'Value': busy_runners,
+        'Unit': 'Count',
+    })
+    total_active_runners = sum(1 for runner in listed_runners if not runner.offline)
+    metrics_data.append({
+        'MetricName': 'ActiveRunners',
+        'Value': total_active_runners,
+        'Unit': 'Count',
+    })
+    total_runners = len(listed_runners)
+    metrics_data.append({
+        'MetricName': 'TotalRunners',
+        'Value': total_runners,
+        'Unit': 'Count',
+    })
+    if total_active_runners == 0:
+        busy_ratio = 100
+    else:
+        busy_ratio = busy_runners / total_active_runners * 100
+
+    metrics_data.append({
+        'MetricName': 'BusyRunnersRatio',
+        'Value': busy_ratio,
+        'Unit': 'Percent',
+    })
+
+    client.put_metric_data(Namespace='RunnersMetrics', MetricData=metrics_data)
+
+
 def how_many_instances_to_kill(event_data):
     data_array = event_data['CapacityToTerminate']
     to_kill_by_zone = {}
@@ -152,6 +188,10 @@ def main(github_secret_key, github_app_id, event):
             instances_to_kill.append(runner.name)
         else:
             print(f"Cannot delete {runner.name} from github")
+
+    # push metrics
+    runners = list_runners(access_token)
+    push_metrics_to_cloudwatch(runners, 'RunnersMetrics')
 
     response = {
         "InstanceIDs": instances_to_kill
