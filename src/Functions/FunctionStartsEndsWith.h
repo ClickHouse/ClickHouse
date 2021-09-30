@@ -2,7 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/TargetSpecific.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,6 +42,11 @@ public:
         return name;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
+    }
+
     size_t getNumberOfArguments() const override
     {
         return 2;
@@ -63,7 +68,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * haystack_column = arguments[0].column.get();
         const IColumn * needle_column = arguments[1].column.get();
@@ -142,7 +147,7 @@ template <typename Name>
 class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
 {
 public:
-    explicit FunctionStartsEndsWith(const Context & context) : selector(context)
+    explicit FunctionStartsEndsWith(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
@@ -159,12 +164,12 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionStartsEndsWith<Name>>(context);
     }

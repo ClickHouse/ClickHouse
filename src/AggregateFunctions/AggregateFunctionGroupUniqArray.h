@@ -23,6 +23,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -47,26 +48,28 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
-    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
-          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, {}),
+          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, parameters_),
           max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
         this->data(place).value.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (!limit_num_elems)
             this->data(place).value.merge(this->data(rhs).value);
@@ -84,7 +87,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         size_t size = set.size();
@@ -93,12 +96,12 @@ public:
             writeIntBinary(elem, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).value.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -149,8 +152,8 @@ class AggregateFunctionGroupUniqArrayGeneric
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
 public:
-    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, {})
+    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, parameters_)
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 
@@ -166,7 +169,7 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
@@ -177,7 +180,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         size_t size;
@@ -188,7 +191,7 @@ public:
             set.insert(readStringBinaryInto(*arena, buf));
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         if (limit_num_elems && set.size() >= max_elems)
@@ -200,7 +203,7 @@ public:
         set.emplace(key_holder, it, inserted);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
@@ -218,7 +221,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

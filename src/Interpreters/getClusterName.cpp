@@ -46,7 +46,7 @@ std::string getClusterName(const IAST & node)
 }
 
 
-String getClusterNameAndMakeLiteral(ASTPtr & node)
+std::string getClusterNameAndMakeLiteral(ASTPtr & node)
 {
     String cluster_name = getClusterName(*node);
     node = std::make_shared<ASTLiteral>(cluster_name);

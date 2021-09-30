@@ -15,20 +15,25 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
+#include <Processors/Pipe.h>
+#include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
+#include <common/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
 #include <unistd.h>
@@ -99,16 +104,16 @@ class IModel
 {
 public:
     /// Call train iteratively for each block to train a model.
-    virtual void train(const IColumn & column);
+    virtual void train(const IColumn & column) = 0;
 
     /// Call finalize one time after training before generating.
-    virtual void finalize();
+    virtual void finalize() = 0;
 
     /// Call generate: pass source data column to obtain a column with anonymized data as a result.
-    virtual ColumnPtr generate(const IColumn & column);
+    virtual ColumnPtr generate(const IColumn & column) = 0;
 
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
-    virtual void updateSeed();
+    virtual void updateSeed() = 0;
 
     virtual ~IModel() = default;
 };
@@ -253,9 +258,9 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = ext::bit_cast<UInt>(x);
+    UInt x_uint = bit_cast<UInt>(x);
     x_uint = feistelNetwork(x_uint, mantissa_num_bits, seed);
-    return ext::bit_cast<Float>(x_uint);
+    return bit_cast<Float>(x_uint);
 }
 
 
@@ -364,16 +369,20 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
-static void transformUUID(const UInt128 & src, UInt128 & dst, UInt64 seed)
+static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
+    const UInt128 & src = src_uuid.toUnderType();
+    UInt128 & dst = dst_uuid.toUnderType();
+
     SipHash hash;
     hash.update(seed);
-    hash.update(reinterpret_cast<const char *>(&src), sizeof(UInt128));
+    hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(&dst));
-    dst.high = (dst.high & 0x1fffffffffffffffull) | (src.high & 0xe000000000000000ull);
-    dst.low = (dst.low & 0xffffffffffff0fffull) | (src.low & 0x000000000000f000ull);
+
+    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
+    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
 }
 
 class FixedStringModel : public IModel
@@ -425,10 +434,10 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnUInt128 & src_column = assert_cast<const ColumnUInt128 &>(column);
+        const ColumnUUID & src_column = assert_cast<const ColumnUUID &>(column);
         const auto & src_data = src_column.getData();
 
-        auto res_column = ColumnUInt128::create();
+        auto res_column = ColumnUUID::create();
         auto & res_data = res_column->getData();
 
         res_data.resize(src_data.size());
@@ -1050,6 +1059,8 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
+    registerFormats();
+
     po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
@@ -1126,8 +1137,8 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    Context context = Context::createGlobal(shared_context.get());
-    context.makeGlobalContext();
+    auto context = Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1149,17 +1160,19 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
+        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
 
-        input->readPrefix();
-        while (Block block = input->read())
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+
+        Block block;
+        while (executor.pull(block))
         {
             obfuscator.train(block.getColumns());
             source_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << source_rows << " rows\n";
         }
-        input->readSuffix();
     }
 
     obfuscator.finalize();
@@ -1176,15 +1189,25 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
+        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
 
         if (processed_rows + source_rows > limit)
-            input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);
+        {
+            pipe.addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
+            });
+        }
 
-        input->readPrefix();
+        QueryPipeline pipeline(std::move(pipe));
+
+        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
+
+        PullingPipelineExecutor executor(pipeline);
+
         output->writePrefix();
-        while (Block block = input->read())
+        Block block;
+        while (executor.pull(block))
         {
             Columns columns = obfuscator.generate(block.getColumns());
             output->write(header.cloneWithColumns(columns));
@@ -1193,7 +1216,6 @@ try
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
         output->writeSuffix();
-        input->readSuffix();
 
         obfuscator.updateSeed();
     }

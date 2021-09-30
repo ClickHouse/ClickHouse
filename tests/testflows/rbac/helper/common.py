@@ -1,55 +1,15 @@
 import uuid
 
+import testflows.settings as settings
+
 from contextlib import contextmanager
-from multiprocessing.dummy import Pool
 
 from testflows.core.name import basename, parentname
 from testflows._core.testtype import TestSubType
 from testflows.core import *
 
+from helpers.common import Pool, join, run_scenario, instrument_clickhouse_server_log
 from rbac.helper.tables import table_types
-
-def join(tasks):
-    """Join all parallel tests.
-    """
-    exc = None
-    while tasks:
-        try:
-            tasks[0].get()
-            tasks.pop(0)
-
-        except KeyboardInterrupt as e:
-            current().context.cluster.terminating = True
-            continue
-
-        except Exception as e:
-            tasks.pop(0)
-            if exc is None:
-                exc = e
-            current().context.cluster.terminating = True
-
-    if exc is not None:
-        raise exc
-
-def start(pool, tasks, scenario, kwargs=None):
-    """Start parallel test.
-    """
-    if kwargs is None:
-        kwargs = {}
-
-    task = pool.apply_async(scenario, [], kwargs)
-    tasks.append(task)
-
-    return task
-
-def run_scenario(pool, tasks, scenario, kwargs=None):
-    if kwargs is None:
-        kwargs = {}
-
-    if current().context.parallel:
-        start(pool, tasks, scenario, kwargs)
-    else:
-        scenario(**kwargs)
 
 def permutations(table_count=1):
     return [*range((1 << table_count)-1)]
@@ -104,6 +64,23 @@ def role(node, role):
         for role in roles:
             with Finally("I drop the role"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
+
+@TestStep(Given)
+def row_policy(self, name, table, node=None):
+    """Create a row policy with a given name on a given table.
+    """
+    if node is None:
+        node = self.context.node
+
+    try:
+        with Given(f"I create row policy {name}"):
+            node.query(f"CREATE ROW POLICY {name} ON {table}")
+        yield
+
+    finally:
+        with Finally(f"I delete row policy {name}"):
+            node.query(f"DROP ROW POLICY IF EXISTS {name} ON {table}")
+
 tables = {
     "table0" : 1 << 0,
     "table1" : 1 << 1,
@@ -120,11 +97,16 @@ def grant_select_on_table(node, grants, target_name, *table_names):
     try:
         tables_granted = []
         for table_number in range(len(table_names)):
+
             if(grants & tables[f"table{table_number}"]):
+
                 with When(f"I grant select privilege on {table_names[table_number]}"):
                     node.query(f"GRANT SELECT ON {table_names[table_number]} TO {target_name}")
+
                     tables_granted.append(f'{table_names[table_number]}')
+
         yield (', ').join(tables_granted)
+
     finally:
         for table_number in range(len(table_names)):
             with Finally(f"I revoke the select privilege on {table_names[table_number]}"):

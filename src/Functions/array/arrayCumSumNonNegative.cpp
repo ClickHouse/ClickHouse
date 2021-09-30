@@ -19,7 +19,6 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -40,7 +39,7 @@ struct ArrayCumSumNonNegativeImpl
         if (which.isDecimal())
         {
             UInt32 scale = getDecimalScale(*expression_return);
-            DataTypePtr nested = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::maxPrecision<Decimal128>(), scale);
+            DataTypePtr nested = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, scale);
             return std::make_shared<DataTypeArray>(nested);
         }
 
@@ -48,11 +47,31 @@ struct ArrayCumSumNonNegativeImpl
     }
 
 
+    template <typename Src, typename Dst>
+    static void NO_SANITIZE_UNDEFINED implVector(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
+    {
+        size_t pos = 0;
+        for (const auto * end = offsets + size; offsets < end; ++offsets)
+        {
+            auto offset = *offsets;
+            Dst accumulated{};
+            for (; pos < offset; ++pos)
+            {
+                accumulated += src_values[pos];
+                if (accumulated < Dst{})
+                    accumulated = {};
+                res_values[pos] = accumulated;
+            }
+        }
+    }
+
+
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
-        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+        using ColVecResult = ColumnVectorOrDecimal<Result>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -63,33 +82,14 @@ struct ArrayCumSumNonNegativeImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (IsDecimalNumber<Element>)
+        if constexpr (is_decimal<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();
 
         typename ColVecResult::Container & res_values = res_nested->getData();
         res_values.resize(data.size());
-
-        size_t pos = 0;
-        Result accum_sum = 0;
-        for (auto offset : offsets)
-        {
-            // skip empty arrays
-            if (pos < offset)
-            {
-                accum_sum = data[pos] > 0 ? data[pos] : Element(0); // NOLINT
-                res_values[pos] = accum_sum;
-                for (++pos; pos < offset; ++pos)
-                {
-                    accum_sum = accum_sum + data[pos];
-                    if (accum_sum < 0)
-                        accum_sum = 0;
-
-                    res_values[pos] = accum_sum;
-                }
-            }
-        }
+        implVector(offsets.size(), offsets.data(), res_values.data(), data.data());
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
 
@@ -99,6 +99,7 @@ struct ArrayCumSumNonNegativeImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 , UInt64>(mapped, array, res) ||
             executeType< UInt16, UInt64>(mapped, array, res) ||
             executeType< UInt32, UInt64>(mapped, array, res) ||

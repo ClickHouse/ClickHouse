@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0435\u0020\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b\u0020\u0441\u0435\u0440\u0432\u0435\u0440\u0430"
+toc_folder_title: "Конфигурационные параметры сервера"
 toc_priority: 54
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Конфигурационные параметры сервера {#server-settings}
@@ -14,4 +14,3 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 
 Перед изучением настроек ознакомьтесь с разделом [Конфигурационные файлы](../configuration-files.md#configuration_files), обратите внимание на использование подстановок (атрибуты `incl` и `optional`).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/) <!--hide-->

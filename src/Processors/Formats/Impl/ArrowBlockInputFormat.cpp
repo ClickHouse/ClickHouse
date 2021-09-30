@@ -1,4 +1,5 @@
 #include "ArrowBlockInputFormat.h"
+
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
@@ -21,26 +22,30 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
-    : IInputFormat(header_, in_), stream{stream_}
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
 {
-    prepareReader();
 }
 
 Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
-    const Block & header = getPort().getHeader();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
 
     if (stream)
     {
+        if (!stream_reader)
+            prepareReader();
+
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
             return res;
     }
     else
     {
+        if (!file_reader)
+            prepareReader();
+
         if (record_batch_current >= record_batch_total)
             return res;
 
@@ -48,17 +53,17 @@ Chunk ArrowBlockInputFormat::generate()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, *table_result, header, "Arrow");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
 
     return res;
 }
@@ -71,27 +76,33 @@ void ArrowBlockInputFormat::resetParser()
         stream_reader.reset();
     else
         file_reader.reset();
-    prepareReader();
+    record_batch_current = 0;
 }
 
 void ArrowBlockInputFormat::prepareReader()
 {
+    std::shared_ptr<arrow::Schema> schema;
+
     if (stream)
     {
-        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(asArrowFile(in));
+        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(*in));
         if (!stream_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", stream_reader_status.status().ToString());
         stream_reader = *stream_reader_status;
+        schema = stream_reader->schema();
     }
     else
     {
-        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(in));
+        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(*in));
         if (!file_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", file_reader_status.status().ToString());
         file_reader = *file_reader_status;
+        schema = file_reader->schema();
     }
+
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Arrow", format_settings.arrow.import_nested);
 
     if (stream)
         record_batch_total = -1;
@@ -101,26 +112,26 @@ void ArrowBlockInputFormat::prepareReader()
     record_batch_current = 0;
 }
 
-void registerInputFormatProcessorArrow(FormatFactory &factory)
+void registerInputFormatProcessorArrow(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor(
         "Arrow",
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & /* format_settings */)
+           const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
-
+    factory.markFormatAsColumnOriented("Arrow");
     factory.registerInputFormatProcessor(
         "ArrowStream",
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & /* format_settings */)
+           const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
         });
 }
 

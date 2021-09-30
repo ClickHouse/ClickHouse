@@ -1,3 +1,5 @@
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
+
 -- This file contains tests for the event_time_microseconds field for various tables.
 -- Note: Only event_time_microseconds for asynchronous_metric_log table is tested via
 -- an integration test as those metrics take 60s by default to be updated.
@@ -33,6 +35,7 @@ SELECT '01473_query_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -42,6 +45,7 @@ SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_thread_log
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -51,6 +55,7 @@ SELECT '01473_text_log_table_event_start_time_microseconds_test';
 WITH (
           SELECT event_time_microseconds, event_time
           FROM system.query_thread_log
+          WHERE current_database = currentDatabase()
           ORDER BY event_time DESC
           LIMIT 1
       ) AS time

@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Common/Exception.h>
 #include <common/demangle.h>
 
@@ -60,7 +60,7 @@ std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
 
 
 template <typename To, typename From>
-std::enable_if_t<ext::is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
+std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
 {
     try
     {

@@ -1,13 +1,12 @@
 Allow to run simple ClickHouse stress test in Docker from debian packages.
-Actually it runs single copy of clickhouse-performance-test and multiple copies
-of clickhouse-test (functional tests). This allows to find problems like
-segmentation fault which cause shutdown of server.
+Actually it runs multiple copies of clickhouse-test (functional tests).
+This allows to find problems like segmentation fault which cause shutdown of server.
 
 Usage:
 ```
 $ ls $HOME/someclickhouse
 clickhouse-client_18.14.9_all.deb clickhouse-common-static_18.14.9_amd64.deb clickhouse-server_18.14.9_all.deb clickhouse-test_18.14.9_all.deb
-$ docker run --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output yandex/clickhouse-stress-test
+$ docker run --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output clickhouse/stress-test
 Selecting previously unselected package clickhouse-common-static.
 (Reading database ... 14442 files and directories currently installed.)
 ...

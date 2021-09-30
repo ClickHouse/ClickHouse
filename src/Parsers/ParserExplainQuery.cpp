@@ -1,8 +1,12 @@
 #include <Parsers/ParserExplainQuery.h>
+
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserQuery.h>
 
 namespace DB
 {
@@ -16,6 +20,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_syntax("SYNTAX");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
+    ParserKeyword s_estimates("ESTIMATE");
 
     if (s_explain.ignore(pos, expected))
     {
@@ -28,7 +33,9 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryPlan;
+            kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
+        else if (s_estimates.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
     }
     else
         return false;
@@ -46,12 +53,24 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             pos = begin;
     }
 
+    ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
+    ParserInsertQuery insert_p(end);
     ASTPtr query;
-    if (!select_p.parse(pos, query, expected))
+    if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
+    {
+        ParserQuery p(end);
+        if (p.parse(pos, query, expected))
+            explain_query->setExplainedQuery(std::move(query));
+        else
+            return false;
+    }
+    else if (select_p.parse(pos, query, expected) ||
+        create_p.parse(pos, query, expected) ||
+        insert_p.parse(pos, query, expected))
+        explain_query->setExplainedQuery(std::move(query));
+    else
         return false;
-
-    explain_query->setExplainedQuery(std::move(query));
 
     node = std::move(explain_query);
     return true;

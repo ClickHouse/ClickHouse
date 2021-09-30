@@ -1,15 +1,17 @@
 #pragma once
 
-#include "HTTPHandlerFactory.h"
+#include <Server/HTTP/HTTPServerRequest.h>
+#include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <common/StringRef.h>
+#include <common/find_symbols.h>
 
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/StringTokenizer.h>
-#include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <common/find_symbols.h>
-
+#include <unordered_map>
 
 namespace DB
 {
@@ -17,11 +19,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-
-typedef std::shared_ptr<const re2::RE2> CompiledRegexPtr;
+using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
 static inline bool checkRegexExpression(const StringRef & match_str, const CompiledRegexPtr & compiled_regex)
 {
@@ -45,10 +45,10 @@ static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, con
     std::vector<String> methods;
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
 
-    for (auto iterator = tokenizer.begin(); iterator != tokenizer.end(); ++iterator)
-        methods.emplace_back(Poco::toUpper(Poco::trim(*iterator)));
+    for (const auto & iterator : tokenizer)
+        methods.emplace_back(Poco::toUpper(Poco::trim(iterator)));
 
-    return [methods](const Poco::Net::HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
+    return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
 }
 
 static inline auto getExpression(const std::string & expression)
@@ -66,7 +66,7 @@ static inline auto getExpression(const std::string & expression)
 
 static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path)
 {
-    return [expression = getExpression(config.getString(config_path))](const Poco::Net::HTTPServerRequest & request)
+    return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
         const auto & end = find_first_symbols<'?'>(uri.data(), uri.data() + uri.size());
@@ -88,7 +88,7 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
         headers_expression.emplace(std::make_pair(header_name, expression));
     }
 
-    return [headers_expression](const Poco::Net::HTTPServerRequest & request)
+    return [headers_expression](const HTTPServerRequest & request)
     {
         for (const auto & [header_name, header_expression] : headers_expression)
         {
@@ -99,30 +99,6 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
 
         return true;
     };
-}
-
-template <typename TEndpoint>
-static inline Poco::Net::HTTPRequestHandlerFactory * addFiltersFromConfig(
-    HandlingRuleHTTPHandlerFactory <TEndpoint> * factory, Poco::Util::AbstractConfiguration & config, const std::string & prefix)
-{
-    Poco::Util::AbstractConfiguration::Keys filters_type;
-    config.keys(prefix, filters_type);
-
-    for (const auto & filter_type : filters_type)
-    {
-        if (filter_type == "handler")
-            continue;
-        else if (filter_type == "url")
-            factory->addFilter(urlFilter(config, prefix + ".url"));
-        else if (filter_type == "headers")
-            factory->addFilter(headersFilter(config, prefix + ".headers"));
-        else if (filter_type == "methods")
-            factory->addFilter(methodsFilter(config, prefix + ".methods"));
-        else
-            throw Exception("Unknown element in config: " + prefix + "." + filter_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-    }
-
-    return factory;
 }
 
 }

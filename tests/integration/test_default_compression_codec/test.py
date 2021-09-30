@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/default_compression.xml', 'configs/wide_parts_only.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/default_compression.xml', 'configs/wide_parts_only.xml'], with_zookeeper=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/default_compression.xml', 'configs/wide_parts_only.xml'], image='yandex/clickhouse-server', tag='20.3.16', stay_alive=True, with_installed_binary=True)
+node4 = cluster.add_instance('node4')
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -228,10 +229,28 @@ def test_default_codec_version_update(start_cluster):
         "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
     assert node3.query(
         "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"
-    assert get_compression_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['Multiple']
-    assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['LZ4HC']
-    assert get_compression_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['Multiple']
-    assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['LZ4']
 
-    assert node1.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
-    assert node2.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
+def test_default_codec_for_compact_parts(start_cluster):
+    node4.query("""
+    CREATE TABLE compact_parts_table (
+        key UInt64,
+        data String
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """)
+
+    node4.query("INSERT INTO compact_parts_table VALUES (1, 'Hello world')")
+    assert node4.query("SELECT COUNT() FROM compact_parts_table") == "1\n"
+
+    node4.query("ALTER TABLE compact_parts_table DETACH PART 'all_1_1_0'")
+
+    node4.exec_in_container(["bash", "-c", "rm /var/lib/clickhouse/data/default/compact_parts_table/detached/all_1_1_0/default_compression_codec.txt"])
+
+    node4.query("ALTER TABLE compact_parts_table ATTACH PART 'all_1_1_0'")
+
+    assert node4.query("SELECT COUNT() FROM compact_parts_table") == "1\n"
+
+    node4.query("DETACH TABLE compact_parts_table")
+    node4.query("ATTACH TABLE compact_parts_table")
+
+    assert node4.query("SELECT COUNT() FROM compact_parts_table") == "1\n"

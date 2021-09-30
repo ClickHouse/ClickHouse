@@ -20,14 +20,14 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-
-
-#include <Parsers/queryToString.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -180,6 +180,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = COMMENT_TABLE;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.get<String>();
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -211,6 +220,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
 
         command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
 
         return command;
     }
@@ -225,6 +235,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         command.constraint_name = ast_constraint_decl.name;
 
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::ADD_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl;
+        command.type = AlterCommand::ADD_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+
+        if (command_ast->projection)
+            command.after_projection_name = command_ast->projection->as<ASTIdentifier &>().name();
+
+        command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -247,6 +276,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
+            command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_PROJECTION;
+        command.projection_name = command_ast->projection->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
+        if (command_ast->clear_projection)
             command.clear = true;
 
         if (command_ast->partition)
@@ -277,6 +321,29 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::RESET_SETTING;
+        for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
+        {
+            const auto & identifier = identifier_ast->as<ASTIdentifier &>();
+            auto insertion = command.settings_resets.emplace(identifier.name());
+            if (!insertion.second)
+                throw Exception("Duplicate setting name " + backQuote(identifier.name()),
+                                ErrorCodes::BAD_ARGUMENTS);
+        }
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
         AlterCommand command;
@@ -300,7 +367,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -314,14 +381,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
 
         column.ttl = ttl;
 
         metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
-        metadata.columns.flattenNested();
+        if (context->getSettingsRef().flatten_nested)
+            metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
     {
@@ -354,7 +422,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -400,6 +468,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
     }
+    else if (type == COMMENT_TABLE)
+    {
+        metadata.comment = *comment;
+    }
     else if (type == ADD_INDEX)
     {
         if (std::any_of(
@@ -418,6 +490,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         }
 
         auto insert_it = metadata.secondary_indices.end();
+
+        /// insert the index in the beginning of the indices list
+        if (first)
+            insert_it = metadata.secondary_indices.begin();
 
         if (!after_index_name.empty())
         {
@@ -499,6 +575,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         }
         metadata.constraints.constraints.erase(erase_it);
     }
+    else if (type == ADD_PROJECTION)
+    {
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, context);
+        metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
+    }
+    else if (type == DROP_PROJECTION)
+    {
+        if (!partition && !clear)
+            metadata.projections.remove(projection_name, if_exists);
+    }
     else if (type == MODIFY_TTL)
     {
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
@@ -523,6 +609,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
+        }
+    }
+    else if (type == RESET_SETTING)
+    {
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        for (const auto & setting_name : settings_resets)
+        {
+            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+
+            if (it != settings_from_storage.end())
+                settings_from_storage.erase(it);
+
+            /// Intentionally ignore if there is no such setting name
         }
     }
     else if (type == RENAME_COLUMN)
@@ -600,6 +700,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
     while (true)
     {
+        if (from->equals(*to))
+            return true;
+
         auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
@@ -618,9 +721,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
+        if (nullable_to)
         {
-            from = nullable_from->getNestedType().get();
+            from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -633,7 +736,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool AlterCommand::isSettingsAlter() const
 {
-    return type == MODIFY_SETTING;
+    return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
 bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
@@ -645,7 +748,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -661,7 +764,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
 bool AlterCommand::isCommentAlter() const
 {
-    if (type == COMMENT_COLUMN)
+    if (type == COMMENT_COLUMN || type == COMMENT_TABLE)
     {
         return true;
     }
@@ -702,7 +805,7 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -737,6 +840,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         result.predicate = nullptr;
     }
+    else if (type == DROP_PROJECTION)
+    {
+        result.type = MutationCommand::Type::DROP_PROJECTION;
+        result.column_name = projection_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
+    }
     else if (type == RENAME_COLUMN)
     {
         result.type = MutationCommand::Type::RENAME_COLUMN;
@@ -750,50 +864,13 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 }
 
 
-String alterTypeToString(const AlterCommand::Type type)
-{
-    switch (type)
-    {
-    case AlterCommand::Type::ADD_COLUMN:
-        return "ADD COLUMN";
-    case AlterCommand::Type::ADD_CONSTRAINT:
-        return "ADD CONSTRAINT";
-    case AlterCommand::Type::ADD_INDEX:
-        return "ADD INDEX";
-    case AlterCommand::Type::COMMENT_COLUMN:
-        return "COMMENT COLUMN";
-    case AlterCommand::Type::DROP_COLUMN:
-        return "DROP COLUMN";
-    case AlterCommand::Type::DROP_CONSTRAINT:
-        return "DROP CONSTRAINT";
-    case AlterCommand::Type::DROP_INDEX:
-        return "DROP INDEX";
-    case AlterCommand::Type::MODIFY_COLUMN:
-        return "MODIFY COLUMN";
-    case AlterCommand::Type::MODIFY_ORDER_BY:
-        return "MODIFY ORDER BY";
-    case AlterCommand::Type::MODIFY_SAMPLE_BY:
-        return "MODIFY SAMPLE BY";
-    case AlterCommand::Type::MODIFY_TTL:
-        return "MODIFY TTL";
-    case AlterCommand::Type::MODIFY_SETTING:
-        return "MODIFY SETTING";
-    case AlterCommand::Type::MODIFY_QUERY:
-        return "MODIFY QUERY";
-    case AlterCommand::Type::RENAME_COLUMN:
-        return "RENAME COLUMN";
-    case AlterCommand::Type::REMOVE_TTL:
-        return "REMOVE TTL";
-    }
-    __builtin_unreachable();
-}
-
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_copy = metadata;
+
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(metadata_copy, context);
@@ -820,10 +897,37 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
-        index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+    {
+        try
+        {
+            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("Cannot apply mutation because it breaks skip index " + index.name);
+            throw;
+        }
+    }
+
+    /// Changes in columns may lead to changes in projections
+    ProjectionsDescription new_projections;
+    for (const auto & projection : metadata_copy.projections)
+    {
+        try
+        {
+            new_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, context));
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("Cannot apply mutation because it breaks projection " + projection.name);
+            throw;
+        }
+    }
+    metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
@@ -831,7 +935,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
@@ -878,7 +982,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     prepared = true;
 }
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
+
+void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
@@ -905,7 +1010,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -925,7 +1030,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1033,7 +1138,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING)
+        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
@@ -1117,7 +1222,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     data_type_ptr = command.data_type;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -1133,7 +1238,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     continue;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
@@ -1148,6 +1253,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+}
+
+bool AlterCommands::hasSettingsAlterCommand() const
+{
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const
@@ -1170,7 +1280,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)

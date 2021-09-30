@@ -298,4 +298,4 @@ ClickHouseは、制限に達したときにさまざまなアクションを続�
 
 > “Too many partitions for single INSERT block (more than” +toString(max_parts)+ “). The limit is controlled by ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

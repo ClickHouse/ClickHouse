@@ -1,6 +1,7 @@
 import os
 import subprocess as sp
 import tempfile
+import logging
 from threading import Timer
 
 
@@ -61,7 +62,10 @@ class QueryTimeoutExceedException(Exception):
 
 
 class QueryRuntimeException(Exception):
-    pass
+    def __init__(self, message, returncode, stderr):
+        super(QueryRuntimeException, self).__init__(message)
+        self.returncode = returncode
+        self.stderr = stderr
 
 
 class CommandRequest:
@@ -98,15 +102,16 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:
             raise QueryRuntimeException(
-                'Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
+                'Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr), self.process.returncode, stderr)
 
         return stdout
 
@@ -115,14 +120,14 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode == 0):
-            raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout))
+            raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout), self.process.returncode, stderr)
 
         return stderr
 
@@ -131,8 +136,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')

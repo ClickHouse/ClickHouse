@@ -1,7 +1,8 @@
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/formatSettingName.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB

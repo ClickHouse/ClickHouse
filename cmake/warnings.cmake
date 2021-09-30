@@ -11,11 +11,6 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
-if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
-endif ()
-
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 # Intended for exploration of new compiler warnings that may be found useful.
 # Applies to clang only
@@ -23,8 +18,8 @@ option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
-if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE))
-    add_warning(frame-larger-than=32768)
+if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
+    add_warning(frame-larger-than=65536)
 endif ()
 
 if (COMPILER_CLANG)
@@ -176,6 +171,7 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wtrampolines)
     # Obvious
     add_cxx_compile_options(-Wunused)
+    add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
     # XXX: libstdc++ has some of these for 3way compare
@@ -195,5 +191,30 @@ elseif (COMPILER_GCC)
         #     34 |   return __builtin___memcpy_chk (__dest, __src, __len, __bos0 (__dest));
         # For some reason (bug in gcc?) macro 'GCC diagnostic ignored "-Wstringop-overflow"' doesn't help.
         add_cxx_compile_options(-Wno-stringop-overflow)
+    endif()
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
+        # reinterpretAs.cpp:182:31: error: ‘void* memcpy(void*, const void*, size_t)’ copying an object of non-trivial type
+        # ‘using ToFieldType = using FieldType = using UUID = struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’
+        # {aka ‘struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’} from an array of ‘const char8_t’
+        add_cxx_compile_options(-Wno-error=class-memaccess)
+
+        # Maybe false positive...
+        # In file included from /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/memory:673,
+        # In function ‘void std::__1::__libcpp_operator_delete(_Args ...) [with _Args = {void*, long unsigned int}]’,
+        # inlined from ‘void std::__1::__do_deallocate_handle_size(void*, size_t, _Args ...) [with _Args = {}]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:271:34,
+        # inlined from ‘void std::__1::__libcpp_deallocate(void*, size_t, size_t)’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:285:41,
+        # inlined from ‘constexpr void std::__1::allocator<_Tp>::deallocate(_Tp*, size_t) [with _Tp = char]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/memory:849:39,
+        # inlined from ‘static constexpr void std::__1::allocator_traits<_Alloc>::deallocate(std::__1::allocator_traits<_Alloc>::allocator_type&, std::__1::allocator_traits<_Alloc>::pointer, std::__1::allocator_traits<_Alloc>::size_type) [with _Alloc = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/__memory/allocator_traits.h:476:24,
+        # inlined from ‘std::__1::basic_string<_CharT, _Traits, _Allocator>::~basic_string() [with _CharT = char; _Traits = std::__1::char_traits<char>; _Allocator = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/string:2219:35,
+        # inlined from ‘std::__1::basic_string<_CharT, _Traits, _Allocator>::~basic_string() [with _CharT = char; _Traits = std::__1::char_traits<char>; _Allocator = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/string:2213:1,
+        # inlined from ‘DB::JSONBuilder::JSONMap::Pair::~Pair()’ at /home/jakalletti/ClickHouse/ClickHouse/src/Common/JSONBuilder.h:90:12,
+        # inlined from ‘void DB::JSONBuilder::JSONMap::add(std::__1::string, DB::JSONBuilder::ItemPtr)’ at /home/jakalletti/ClickHouse/ClickHouse/src/Common/JSONBuilder.h:97:68,
+        # inlined from ‘virtual void DB::ExpressionStep::describeActions(DB::JSONBuilder::JSONMap&) const’ at /home/jakalletti/ClickHouse/ClickHouse/src/Processors/QueryPlan/ExpressionStep.cpp:102:12:
+        # /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:247:20: error: ‘void operator delete(void*, size_t)’ called on a pointer to an unallocated object ‘7598543875853023301’ [-Werror=free-nonheap-object]
+        add_cxx_compile_options(-Wno-error=free-nonheap-object)
+
+        # AggregateFunctionAvg.h:203:100: error: ‘this’ pointer is null [-Werror=nonnull]
+        add_cxx_compile_options(-Wno-error=nonnull)
     endif()
 endif ()

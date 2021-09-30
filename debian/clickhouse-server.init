@@ -3,10 +3,17 @@
 # Provides:          clickhouse-server
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Required-Start:    $network
-# Required-Stop:     $network
+# Should-Start:      $time $network
+# Should-Stop:       $network
 # Short-Description: Yandex clickhouse-server daemon
 ### END INIT INFO
+#
+# NOTES:
+# - Should-* -- script can start if the listed facilities are missing, unlike Required-*
+#
+# For the documentation [1]:
+#
+#   [1]: https://wiki.debian.org/LSBInitScripts
 
 CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
@@ -43,49 +50,6 @@ command -v flock >/dev/null && FLOCK=flock
 # Override defaults from optional config file
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
-# On x86_64, check for required instruction set.
-if uname -mpi | grep -q 'x86_64'; then
-    if ! grep -q 'sse4_2' /proc/cpuinfo; then
-        # On KVM, cpuinfo could falsely not report SSE 4.2 support, so skip the check.
-        if ! grep -q 'Common KVM processor' /proc/cpuinfo; then
-
-            # Some other VMs also report wrong flags in cpuinfo.
-            # Tricky way to test for instruction set:
-            #  create temporary binary and run it;
-            #  if it get caught illegal instruction signal,
-            #  then required instruction set is not supported really.
-            #
-            # Generated this way:
-            # gcc -xc -Os -static -nostdlib - <<< 'void _start() { __asm__("pcmpgtq %%xmm0, %%xmm1; mov $0x3c, %%rax; xor %%rdi, %%rdi; syscall":::"memory"); }' && strip -R .note.gnu.build-id -R .comment -R .eh_frame -s ./a.out && gzip -c -9 ./a.out | base64 -w0; echo
-
-            if ! (echo -n 'H4sICAwAW1cCA2Eub3V0AKt39XFjYmRkgAEmBjsGEI+H0QHMd4CKGyCUAMUsGJiBJDNQNUiYlQEZOKDQclB9cnD9CmCSBYqJBRxQOvBpSQobGfqIAWn8FuYnPI4fsAGyPQz/87MeZtArziguKSpJTGLQK0mtKGGgGHADMSgoYH6AhTMPNHyE0NQzYuEzYzEXFr6CBPQDANAsXKTwAQAA' | base64 -d | gzip -d > /tmp/clickhouse_test_sse42 && chmod a+x /tmp/clickhouse_test_sse42 && /tmp/clickhouse_test_sse42); then
-                echo 'Warning! SSE 4.2 instruction set is not supported'
-                #exit 3
-            fi
-        fi
-    fi
-fi
-
-
-is_running()
-{
-    pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
-}
-
-
-wait_for_done()
-{
-    timeout=$1
-    attempts=0
-    while is_running; do
-        attempts=$(($attempts + 1))
-        if [ -n "$timeout" ] && [ $attempts -gt $timeout ]; then
-            return 1
-        fi
-        sleep 1
-    done
-}
-
 
 die()
 {
@@ -105,49 +69,7 @@ check_config()
 
 initdb()
 {
-    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ]; then
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
-        if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
-            die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
-        fi
-        echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-    else
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR
-    fi
-
-    if ! getent passwd ${CLICKHOUSE_USER} >/dev/null; then
-        echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
-        return
-    fi
-    if ! getent group ${CLICKHOUSE_GROUP} >/dev/null; then
-        echo "Can't chown to non-existing group ${CLICKHOUSE_GROUP}"
-        return
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -r ${CLICKHOUSE_CONFIG}"); then
-        echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
-        if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") = "/" ]; then
-            echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
-        else
-            if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then
-                echo "Creating directory ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-                mkdir -p "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-            fi
-
-            echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-            chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-        fi
-    fi
-
-    if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"); then
-        echo "Changing owner of [${CLICKHOUSE_LOGDIR}/*] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-        chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}/*
-        echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
-        chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}"
 }
 
 
@@ -171,24 +93,14 @@ restart()
 
 forcestop()
 {
-    local EXIT_STATUS
-    EXIT_STATUS=0
-
-    echo -n "Stop forcefully $PROGRAM service: "
-
-    kill -KILL $(cat "$CLICKHOUSE_PIDFILE")
-
-    wait_for_done
-
-    echo "DONE"
-    return $EXIT_STATUS
+    ${CLICKHOUSE_GENERIC_PROGRAM} stop --force --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
 service_or_func()
 {
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        service $PROGRAM $1
+        systemctl $1 $PROGRAM
     else
         $1
     fi
@@ -261,16 +173,16 @@ main()
         service_or_func restart
         ;;
     condstart)
-        is_running || service_or_func start
+        service_or_func start
         ;;
     condstop)
-        is_running && service_or_func stop
+        service_or_func stop
         ;;
     condrestart)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     condreload)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     initdb)
         initdb
@@ -293,17 +205,7 @@ main()
 
 status()
 {
-    if is_running; then
-        echo "$PROGRAM service is running"
-        exit 0
-    else
-        if is_cron_disabled; then
-            echo "$PROGRAM service is stopped";
-        else
-            echo "$PROGRAM: process unexpectedly terminated"
-        fi
-        exit 3
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} status --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
@@ -311,6 +213,7 @@ status()
 case "$1" in
 status)
     status
+    exit 0
     ;;
 esac
 

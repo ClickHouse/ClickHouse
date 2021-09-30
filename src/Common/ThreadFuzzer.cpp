@@ -10,6 +10,7 @@
 #include <common/sleep.h>
 
 #include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -28,6 +29,10 @@
 #    define FOR_EACH_WRAPPED_FUNCTION(M) \
         M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
+#endif
+
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -123,6 +128,9 @@ void ThreadFuzzer::initConfiguration()
 
 bool ThreadFuzzer::isEffective() const
 {
+    if (!isStarted())
+        return false;
+
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
         if (NAME##_before_yield_probability.load(std::memory_order_relaxed)) \
@@ -154,6 +162,20 @@ bool ThreadFuzzer::isEffective() const
             || (sleep_probability > 0 && sleep_time_us > 0));
 }
 
+void ThreadFuzzer::stop()
+{
+    started.store(false, std::memory_order_relaxed);
+}
+
+void ThreadFuzzer::start()
+{
+    started.store(true, std::memory_order_relaxed);
+}
+
+bool ThreadFuzzer::isStarted()
+{
+    return started.load(std::memory_order_relaxed);
+}
 
 static void injection(
     double yield_probability,
@@ -161,6 +183,10 @@ static void injection(
     double sleep_probability,
     double sleep_time_us [[maybe_unused]])
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+    if (!ThreadFuzzer::isStarted())
+        return;
+
     if (yield_probability > 0
         && std::bernoulli_distribution(yield_probability)(thread_local_rng))
     {
@@ -196,6 +222,7 @@ static void injection(
 
 void ThreadFuzzer::signalHandler(int)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
 
     auto & fuzzer = ThreadFuzzer::instance();

@@ -6,18 +6,31 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <common/StringRef.h>
 #include <Common/assert_cast.h>
-
+#include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Aggregate functions that store one of passed values.
@@ -31,12 +44,14 @@ struct SingleValueDataFixed
 {
 private:
     using Self = SingleValueDataFixed;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return has_value;
@@ -50,14 +65,14 @@ public:
             assert_cast<ColVecType &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
         writeBinary(has(), buf);
         if (has())
             writeBinary(value, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena *)
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
@@ -175,13 +190,272 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = true;
+
+    static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+
+        return value_ptr;
+    }
+
+    static llvm::Value * getValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+
+        return b.CreateLoad(type, value_ptr);
+    }
+
+    static void compileChange(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        b.CreateStore(b.getInt1(true), has_value_ptr);
+
+        auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
+        b.CreateStore(value_to_check, value_ptr);
+    }
+
+    static void compileChangeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        auto * value_src = getValueFromAggregateDataPtr(builder, aggregate_data_src_ptr);
+
+        compileChange(builder, aggregate_data_dst_ptr, value_src);
+    }
+
+    static void compileChangeFirstTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(has_value_value, if_should_not_change, if_should_change);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_change);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeFirstTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeEveryTime(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeEveryTimeMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        b.CreateCondBr(has_value_src, if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    template <bool is_less>
+    static void compileChangeComparison(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+
+        auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * should_change_after_comparison = nullptr;
+
+        if constexpr (is_less)
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
+        }
+        else
+        {
+            if (value_to_check->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+        }
+
+        b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChange(builder, aggregate_data_ptr, value_to_check);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    template <bool is_less>
+    static void compileChangeComparisonMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
+
+        auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
+
+        auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+
+        auto * head = b.GetInsertBlock();
+
+        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+        auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+        auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+        auto is_signed = std::numeric_limits<T>::is_signed;
+
+        llvm::Value * should_change_after_comparison = nullptr;
+
+        if constexpr (is_less)
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_src, value_dst) : b.CreateICmpULT(value_src, value_dst);
+            else
+                should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
+        }
+        else
+        {
+            if (value_src->getType()->isIntegerTy())
+                should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(value_src, value_dst);
+            else
+                should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
+        }
+
+        b.CreateCondBr(b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)), if_should_change, if_should_not_change);
+
+        b.SetInsertPoint(if_should_change);
+        compileChangeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(if_should_not_change);
+        b.CreateBr(join_block);
+
+        b.SetInsertPoint(join_block);
+    }
+
+    static void compileChangeIfLess(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfLessMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = true;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    static void compileChangeIfGreater(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparison<is_less>(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfGreaterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        static constexpr bool is_less = false;
+        compileChangeComparisonMerge<is_less>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+    static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+    {
+        return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
+    }
+
+#endif
+
 };
 
 
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString
+struct SingleValueDataString //-V730
 {
 private:
     using Self = SingleValueDataString;
@@ -198,6 +472,8 @@ private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return size >= 0;
@@ -221,14 +497,14 @@ public:
             assert_cast<ColumnString &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
         writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -398,6 +674,13 @@ public:
     {
         return true;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 static_assert(
@@ -414,6 +697,8 @@ private:
     Field value;
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return !value.isNull();
@@ -427,24 +712,24 @@ public:
             to.insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            data_type.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type, Arena *)
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
     {
         bool is_not_null;
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            data_type.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -574,6 +859,13 @@ public:
     {
         return false;
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -591,6 +883,22 @@ struct AggregateFunctionMinData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfLess(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfLessMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -602,6 +910,22 @@ struct AggregateFunctionMaxData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeIfGreater(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeIfGreaterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -613,6 +937,22 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeFirstTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeFirstTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
 template <typename Data>
@@ -624,8 +964,86 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = Data::is_compilable;
+
+    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+    {
+        Data::compileChangeEveryTime(builder, aggregate_data_ptr, value_to_check);
+    }
+
+    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+    {
+        Data::compileChangeEveryTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    }
+
+#endif
 };
 
+template <typename Data>
+struct AggregateFunctionSingleValueOrNullData : Data
+{
+    static constexpr bool is_nullable = true;
+
+    using Self = AggregateFunctionSingleValueOrNullData;
+
+    bool first_value = true;
+    bool is_null = false;
+
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
+    {
+        if (first_value)
+        {
+            first_value = false;
+            this->change(column, row_num, arena);
+            return true;
+        }
+        else if (!this->isEqualTo(column, row_num))
+        {
+            is_null = true;
+        }
+        return false;
+    }
+
+    bool changeIfBetter(const Self & to, Arena * arena)
+    {
+        if (first_value)
+        {
+            first_value = false;
+            this->change(to, arena);
+            return true;
+        }
+        else if (!this->isEqualTo(to))
+        {
+            is_null = true;
+        }
+        return false;
+    }
+
+    void insertResultInto(IColumn & to) const
+    {
+        if (is_null || first_value)
+        {
+            to.insertDefault();
+        }
+        else
+        {
+            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+            col.getNullMapColumn().insertDefault();
+            this->Data::insertResultInto(col.getNestedColumn());
+        }
+    }
+
+    static const char * name() { return "singleValueOrNull"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+};
 
 /** Implement 'heavy hitters' algorithm.
   * Selects most frequent value if its frequency is more than 50% in each thread of execution.
@@ -635,7 +1053,7 @@ struct AggregateFunctionAnyLastData : Data
 template <typename Data>
 struct AggregateFunctionAnyHeavyData : Data
 {
-    size_t counter = 0;
+    UInt64 counter = 0;
 
     using Self = AggregateFunctionAnyHeavyData;
 
@@ -678,19 +1096,26 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
-        Data::write(buf, data_type);
+        Data::write(buf, serialization);
         writeBinary(counter, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
-        Data::read(buf, data_type, arena);
+        Data::read(buf, serialization, arena);
         readBinary(counter, buf);
     }
 
     static const char * name() { return "anyHeavy"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    static constexpr bool is_compilable = false;
+
+#endif
+
 };
 
 
@@ -698,12 +1123,12 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
-    DataTypePtr & type;
+    SerializationPtr serialization;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
-        , type(this->argument_types[0])
+    AggregateFunctionsSingleValue(const DataTypePtr & type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
+        , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
@@ -718,27 +1143,30 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return type;
+        auto result_type = this->argument_types.at(0);
+        if constexpr (Data::is_nullable)
+            return makeNullable(result_type);
+        return result_type;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
-        this->data(place).write(buf, *type.get());
+        this->data(place).write(buf, *serialization);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).read(buf, *type.get(), arena);
+        this->data(place).read(buf, *serialization, arena);
     }
 
     bool allocatesMemoryInArena() const override
@@ -746,10 +1174,66 @@ public:
         return Data::allocatesMemoryInArena();
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+
+        return canBeNativeType(*this->argument_types[0]);
+    }
+
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            Data::compileChangeIfBetterMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+        {
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        }
+        else
+        {
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+
+#endif
 };
 
 }

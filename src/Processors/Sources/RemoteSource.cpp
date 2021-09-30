@@ -1,14 +1,16 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <DataStreams/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteQueryExecutorReadContext.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
 
-RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_)
+RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_)
     : SourceWithProgress(executor->getHeader(), false)
     , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
+    , async_read(async_read_)
 {
     /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
     const auto & sample = getPort().getHeader();
@@ -19,8 +21,35 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
 
 RemoteSource::~RemoteSource() = default;
 
-Chunk RemoteSource::generate()
+ISource::Status RemoteSource::prepare()
 {
+    /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
+    if (was_query_canceled)
+    {
+        getPort().finish();
+        return Status::Finished;
+    }
+
+    if (is_async_state)
+        return Status::Async;
+
+    Status status = SourceWithProgress::prepare();
+    /// To avoid resetting the connection (because of "unfinished" query) in the
+    /// RemoteQueryExecutor it should be finished explicitly.
+    if (status == Status::Finished)
+    {
+        query_executor->finish(&read_context);
+        is_async_state = false;
+    }
+    return status;
+}
+
+std::optional<Chunk> RemoteSource::tryGenerate()
+{
+    /// onCancel() will do the cancel if the query was sent.
+    if (was_query_canceled)
+        return {};
+
     if (!was_query_sent)
     {
         /// Progress method will be called on Progress packet.
@@ -38,11 +67,28 @@ Chunk RemoteSource::generate()
         was_query_sent = true;
     }
 
-    auto block = query_executor->read();
+    Block block;
+
+    if (async_read)
+    {
+        auto res = query_executor->read(read_context);
+        if (std::holds_alternative<int>(res))
+        {
+            fd = std::get<int>(res);
+            is_async_state = true;
+            return Chunk();
+        }
+
+        is_async_state = false;
+
+        block = std::get<Block>(std::move(res));
+    }
+    else
+        block = query_executor->read();
 
     if (!block)
     {
-        query_executor->finish();
+        query_executor->finish(&read_context);
         return {};
     }
 
@@ -62,7 +108,19 @@ Chunk RemoteSource::generate()
 
 void RemoteSource::onCancel()
 {
-    query_executor->cancel();
+    was_query_canceled = true;
+    query_executor->cancel(&read_context);
+    // is_async_state = false;
+}
+
+void RemoteSource::onUpdatePorts()
+{
+    if (getPort().isFinished())
+    {
+        was_query_canceled = true;
+        query_executor->finish(&read_context);
+        // is_async_state = false;
+    }
 }
 
 
@@ -108,9 +166,9 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read)
 {
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info));
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read));
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));

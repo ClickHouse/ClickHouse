@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 export CURR_DATABASE="test_lazy_01014_concurrent_${CLICKHOUSE_DATABASE}"
@@ -98,12 +100,12 @@ timeout $TIMEOUT bash -c show_tables_func 2> /dev/null &
 wait
 sleep 1
 
-${CLICKHOUSE_CLIENT} -n -q "
-    DROP TABLE IF EXISTS $CURR_DATABASE.log;
-    DROP TABLE IF EXISTS $CURR_DATABASE.slog;
-    DROP TABLE IF EXISTS $CURR_DATABASE.tlog;
-    DROP TABLE IF EXISTS $CURR_DATABASE.tlog2;
-"
-#    DROP DATABASE $CURR_DATABASE; -- This fails for some reason
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $CURR_DATABASE.log;" 2>/dev/null
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $CURR_DATABASE.slog;" 2>/dev/null
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $CURR_DATABASE.tlog;" 2>/dev/null
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $CURR_DATABASE.tlog2;" 2>/dev/null
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE $CURR_DATABASE"
 
 echo "Test OK"
+

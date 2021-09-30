@@ -72,16 +72,11 @@ public:
         }
         else
         {
-            std::stringstream error_message;
-            error_message << "Too many redirects while trying to access " << initial_uri.toString();
-
-            throw Exception(error_message.str(), ErrorCodes::TOO_MANY_REDIRECTS);
+            throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
         }
     }
 
-    virtual ~UpdatableSessionBase()
-    {
-    }
+    virtual ~UpdatableSessionBase() = default;
 };
 
 
@@ -97,6 +92,7 @@ namespace detail
     protected:
         Poco::URI uri;
         std::string method;
+        std::string content_encoding;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -108,11 +104,11 @@ namespace detail
         RemoteHostFilter remote_host_filter;
         std::function<void(size_t)> next_callback;
 
-        std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
+        std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
-            if (uri.getPath().empty())
-                uri.setPath("/");
+            if (uri_.getPath().empty())
+                uri_.setPath("/");
 
             Poco::Net::HTTPRequest request(method, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
@@ -128,7 +124,7 @@ namespace detail
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri.toString());
+            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri_.toString());
 
             auto sess = session->getSession();
 
@@ -142,6 +138,7 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
+                content_encoding = response.get("Content-Encoding", "");
                 return istr;
 
             }
@@ -208,6 +205,8 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
+            if (!working_buffer.empty())
+                impl->position() = position();
             if (!impl->next())
                 return false;
             internal_buffer = impl->buffer();
@@ -232,6 +231,11 @@ namespace detail
             next_callback = next_callback_;
             /// Some data maybe already read
             next_callback(count());
+        }
+
+        const std::string & getCompressionMethod() const
+        {
+            return content_encoding;
         }
     };
 }

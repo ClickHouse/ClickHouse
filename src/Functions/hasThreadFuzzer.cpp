@@ -16,7 +16,7 @@ class FunctionHasThreadFuzzer : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionHasThreadFuzzer>();
     }
@@ -31,12 +31,14 @@ public:
         return 0;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
     }

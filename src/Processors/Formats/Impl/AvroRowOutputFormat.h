@@ -18,11 +18,13 @@ namespace DB
 {
 class WriteBuffer;
 
+class AvroSerializerTraits;
+
 class AvroSerializer
 {
 public:
-    AvroSerializer(const ColumnsWithTypeAndName & columns);
-    const avro::ValidSchema & getSchema() const { return schema; }
+    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>);
+    const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
 private:
@@ -34,10 +36,11 @@ private:
     };
 
     /// Type names for different complex types (e.g. enums, fixed strings) must be unique. We use simple incremental number to give them different names.
-    static SchemaWithSerializeFn createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment);
+    SchemaWithSerializeFn createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment, const String & column_name);
 
     std::vector<SerializeFn> serialize_fns;
-    avro::ValidSchema schema;
+    avro::ValidSchema valid_schema;
+    std::unique_ptr<AvroSerializerTraits> traits;
 };
 
 class AvroRowOutputFormat : public IRowOutputFormat
@@ -48,7 +51,7 @@ public:
 
     String getName() const override { return "AvroRowOutputFormat"; }
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const IDataType &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override {}
     virtual void writePrefix() override;
     virtual void writeSuffix() override;
 

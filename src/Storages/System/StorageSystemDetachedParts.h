@@ -12,10 +12,10 @@ namespace DB
   * column and column aliases which we don't need.
   */
 class StorageSystemDetachedParts final :
-        public ext::shared_ptr_helper<StorageSystemDetachedParts>,
+        public shared_ptr_helper<StorageSystemDetachedParts>,
         public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDetachedParts>;
+    friend struct shared_ptr_helper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
 
@@ -25,8 +25,8 @@ protected:
     Pipe read(
             const Names & /* column_names */,
             const StorageMetadataPtr & metadata_snapshot,
-            const SelectQueryInfo & query_info,
-            const Context & context,
+            SelectQueryInfo & query_info,
+            ContextPtr context,
             QueryProcessingStage::Enum /*processed_stage*/,
             const size_t /*max_block_size*/,
             const unsigned /*num_streams*/) override;

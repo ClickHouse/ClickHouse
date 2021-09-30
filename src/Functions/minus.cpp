@@ -10,6 +10,7 @@ struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
@@ -19,7 +20,7 @@ struct MinusImpl
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
-            return bigint_cast<Result>(bigint_cast<CastA>(a)) - bigint_cast<Result>(bigint_cast<CastB>(b));
+            return static_cast<Result>(static_cast<CastA>(a)) - static_cast<Result>(static_cast<CastB>(b));
         }
         else
             return static_cast<Result>(a) - b;

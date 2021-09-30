@@ -1,5 +1,20 @@
 #pragma once
 
+/// __has_feature supported only by clang.
+///
+/// But libcxx/libcxxabi overrides it to 0,
+/// thus the checks for __has_feature will be wrong.
+///
+/// NOTE:
+/// - __has_feature cannot be simply undefined,
+///   since this will be broken if some C++ header will be included after
+///   including <common/defines.h>
+/// - it should not have fallback to 0,
+///   since this may create false-positive detection (common problem)
+#if defined(__clang__) && defined(__has_feature)
+#    define ch_has_feature __has_feature
+#endif
+
 #if defined(_MSC_VER)
 #   if !defined(likely)
 #      define likely(x)   (x)
@@ -32,8 +47,8 @@
 
 /// Check for presence of address sanitizer
 #if !defined(ADDRESS_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(address_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(address_sanitizer)
 #            define ADDRESS_SANITIZER 1
 #        endif
 #    elif defined(__SANITIZE_ADDRESS__)
@@ -42,8 +57,8 @@
 #endif
 
 #if !defined(THREAD_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(thread_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(thread_sanitizer)
 #            define THREAD_SANITIZER 1
 #        endif
 #    elif defined(__SANITIZE_THREAD__)
@@ -52,13 +67,37 @@
 #endif
 
 #if !defined(MEMORY_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(memory_sanitizer)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(memory_sanitizer)
 #            define MEMORY_SANITIZER 1
 #        endif
 #    elif defined(__MEMORY_SANITIZER__)
 #        define MEMORY_SANITIZER 1
 #    endif
+#endif
+
+#if !defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#    if defined(__has_feature)
+#        if __has_feature(undefined_behavior_sanitizer)
+#            define UNDEFINED_BEHAVIOR_SANITIZER 1
+#        endif
+#    elif defined(__UNDEFINED_BEHAVIOR_SANITIZER__)
+#        define UNDEFINED_BEHAVIOR_SANITIZER 1
+#    endif
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+#    define BOOST_USE_ASAN 1
+#    define BOOST_USE_UCONTEXT 1
+#endif
+
+#if defined(THREAD_SANITIZER)
+#    define BOOST_USE_TSAN 1
+#    define BOOST_USE_UCONTEXT 1
+#endif
+
+#if defined(ARCADIA_BUILD) && defined(BOOST_USE_UCONTEXT)
+#    undef BOOST_USE_UCONTEXT
 #endif
 
 /// TODO: Strange enough, there is no way to detect UB sanitizer.
@@ -70,18 +109,16 @@
 #    define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
+#    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
 
-#if defined __GNUC__ && !defined __clang__
-#    define OPTIMIZE(x) __attribute__((__optimize__(x)))
-#else
-#    define OPTIMIZE(x)
-#endif
-
-/// A macro for suppressing warnings about unused variables or function results.
-/// Useful for structured bindings which have no standard way to declare this.
-#define UNUSED(...) (void)(__VA_ARGS__)
+/// A template function for suppressing warnings about unused variables or function results.
+template <typename... Args>
+constexpr void UNUSED(Args &&... args [[maybe_unused]])
+{
+}

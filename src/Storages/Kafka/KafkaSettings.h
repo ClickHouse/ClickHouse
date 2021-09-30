@@ -20,7 +20,7 @@ class ASTStorage;
     M(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
     /* default is min(max_block_size, kafka_max_block_size)*/ \
     M(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
-    /* default is = min_insert_block_size / kafka_num_consumers  */ \
+    /* default is = max_insert_block_size / kafka_num_consumers  */ \
     M(UInt64, kafka_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Kafka.", 0) \
     /* default is stream_flush_interval_ms */ \
     M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
@@ -29,7 +29,8 @@ class ASTStorage;
     M(Char, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
     M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
-    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0)
+    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
+    M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
 
     /** TODO: */
     /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */

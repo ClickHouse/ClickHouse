@@ -1,6 +1,6 @@
 # system.mutations {#system_tables-mutations}
 
-Таблица содержит информацию о ходе выполнения [мутаций](../../sql-reference/statements/alter/index.md#mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы. 
+Таблица содержит информацию о ходе выполнения [мутаций](../../sql-reference/statements/alter/index.md#mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы.
 
 Столбцы:
 
@@ -45,4 +45,3 @@
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/mutations) <!--hide-->

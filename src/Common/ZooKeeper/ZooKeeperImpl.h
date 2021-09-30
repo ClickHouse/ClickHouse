@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -79,18 +80,19 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperSession;
 }
 
+namespace DB
+{
+    class ZooKeeperLog;
+}
 
 namespace Coordination
 {
 
 using namespace DB;
 
-struct ZooKeeperRequest;
-
-
 /** Usage scenario: look at the documentation for IKeeper class.
   */
-class ZooKeeper : public IKeeper
+class ZooKeeper final : public IKeeper
 {
 public:
     struct Node
@@ -100,9 +102,6 @@ public:
     };
 
     using Nodes = std::vector<Node>;
-
-    using XID = int32_t;
-    using OpNum = int32_t;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -115,17 +114,21 @@ public:
         const String & auth_data,
         Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_);
+        Poco::Timespan operation_timeout_,
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return expired; }
+    bool isExpired() const override { return requests_queue.isClosed(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    void executeGenericRequest(
+        const ZooKeeperRequestPtr & request,
+        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -172,6 +175,22 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
+    /// Without forcefully invalidating (finalizing) ZooKeeper session before
+    /// establishing a new one, there was a possibility that server is using
+    /// two ZooKeeper sessions simultaneously in different parts of code.
+    /// This is strong antipattern and we always prevented it.
+
+    /// ZooKeeper is linearizeable for writes, but not linearizeable for
+    /// reads, it only maintains "sequential consistency": in every session
+    /// you observe all events in order but possibly with some delay. If you
+    /// perform write in one session, then notify different part of code and
+    /// it will do read in another session, that read may not see the
+    /// already performed write.
+
+    void finalize()  override { finalize(false, false); }
+
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
 private:
     String root_path;
     ACLs default_acls;
@@ -180,20 +199,23 @@ private:
     Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
+    /// To avoid excessive getpeername(2) calls.
+    Poco::Net::SocketAddress socket_address;
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
     int64_t session_id = 0;
 
     std::atomic<XID> next_xid {1};
-    std::atomic<bool> expired {false};
-    std::mutex push_request_mutex;
+    /// Mark session finalization start. Used to avoid simultaneous
+    /// finalization from different threads. One-shot flag.
+    std::atomic<bool> finalization_started {false};
 
     using clock = std::chrono::steady_clock;
 
     struct RequestInfo
     {
-        std::shared_ptr<ZooKeeperRequest> request;
+        ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallback watch;
         clock::time_point time;
@@ -201,7 +223,7 @@ private:
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -243,34 +265,10 @@ private:
     template <typename T>
     void read(T &);
 
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
+
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
+    std::shared_ptr<ZooKeeperLog> zk_log;
 };
-
-struct ZooKeeperResponse;
-using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
-
-/// Exposed in header file for Yandex.Metrica code.
-struct ZooKeeperRequest : virtual Request
-{
-    ZooKeeper::XID xid = 0;
-    bool has_watch = false;
-    /// If the request was not send and the error happens, we definitely sure, that is has not been processed by the server.
-    /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
-    bool probably_sent = false;
-
-    ZooKeeperRequest() = default;
-    ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() override = default;
-
-    virtual ZooKeeper::OpNum getOpNum() const = 0;
-
-    /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out) const;
-
-    virtual void writeImpl(WriteBuffer &) const = 0;
-
-    virtual ZooKeeperResponsePtr makeResponse() const = 0;
-};
-
 
 }

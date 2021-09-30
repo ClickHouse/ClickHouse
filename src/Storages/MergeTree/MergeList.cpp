@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
 #include <common/getThreadId.h>
 #include <Common/CurrentThread.h>
@@ -8,19 +9,51 @@
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
-    : database{database_}
-    , table{table_}
-    , partition_id{future_part.part_info.partition_id}
-    , result_part_name{future_part.name}
-    , result_part_path{future_part.path}
-    , result_data_version{future_part.part_info.getDataVersion()}
-    , num_parts{future_part.parts.size()}
+
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr)
+{
+    // Each merge is executed into separate background processing pool thread
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
+    if (background_thread_memory_tracker)
+    {
+        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
+        /// which does not have any limits and sampling settings configured.
+        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
+        /// that has limits and sampling configured.
+        MemoryTracker * parent;
+        if (background_thread_memory_tracker->level == VariableContext::Thread &&
+            (parent = background_thread_memory_tracker->getParent()) &&
+            parent != &total_memory_tracker)
+        {
+            background_thread_memory_tracker = parent;
+        }
+
+        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
+        background_thread_memory_tracker->setParent(memory_tracker_ptr);
+    }
+}
+
+
+MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
+{
+    // Unplug memory_tracker from current background processing pool thread
+
+    if (background_thread_memory_tracker)
+        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+}
+
+MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
+    : table_id{table_id_}
+    , partition_id{future_part->part_info.partition_id}
+    , result_part_name{future_part->name}
+    , result_part_path{future_part->path}
+    , result_part_info{future_part->part_info}
+    , num_parts{future_part->parts.size()}
     , thread_id{getThreadId()}
-    , merge_type{future_part.merge_type}
+    , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
 {
-    for (const auto & source_part : future_part.parts)
+    for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getFullPath());
@@ -30,26 +63,18 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
         total_rows_count += source_part->index_granularity.getTotalRows();
     }
 
-    if (!future_part.parts.empty())
+    if (!future_part->parts.empty())
     {
-        source_data_version = future_part.parts[0]->info.getDataVersion();
-        is_mutation = (result_data_version != source_data_version);
-    }
-
-    /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
-    if (background_thread_memory_tracker)
-    {
-        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-        background_thread_memory_tracker->setParent(&memory_tracker);
+        source_data_version = future_part->parts[0]->info.getDataVersion();
+        is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 }
 
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;
-    res.database = database;
-    res.table = table;
+    res.database = table_id.getDatabaseName();
+    res.table = table_id.getTableName();
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;
@@ -79,11 +104,7 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement()
-{
-    /// Unplug memory_tracker from current background processing pool thread
-    if (background_thread_memory_tracker)
-        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
-}
+MergeListElement::~MergeListElement() = default;
+
 
 }

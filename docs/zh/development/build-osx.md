@@ -43,7 +43,7 @@ $ cd ..
 
 为此，请创建以下文件：
 
-/图书馆/LaunchDaemons/限制.maxfilesplist:
+/资源库/LaunchDaemons/limit.maxfiles.plist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -79,4 +79,4 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 
 可以通过 `ulimit -n` 命令来检查是否生效。
 
-[来源文章](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

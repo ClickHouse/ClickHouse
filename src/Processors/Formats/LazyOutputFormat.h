@@ -29,12 +29,22 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void finish()
+    void onCancel() override
     {
         finished_processing = true;
         /// Clear queue in case if somebody is waiting lazy_format to push.
         queue.clear();
     }
+
+    void finalize() override
+    {
+        finished_processing = true;
+
+        /// In case we are waiting for result.
+        queue.emplace(Chunk());
+    }
+
+    bool expectMaterializedColumns() const override { return false; }
 
 protected:
     void consume(Chunk chunk) override
@@ -45,14 +55,6 @@ protected:
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
-
-    void finalize() override
-    {
-        finished_processing = true;
-
-        /// In case we are waiting for result.
-        queue.emplace(Chunk());
-    }
 
 private:
 

@@ -3,7 +3,6 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <sstream>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <common/types.h>
 #include <Common/HashTable/Hash.h>
@@ -14,8 +13,11 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
+
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -30,6 +32,8 @@ namespace ErrorCodes
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -55,9 +59,10 @@ template <typename T,
     ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
-    bool good(const UInt32 hash)
+private:
+    bool good(UInt32 hash) const
     {
-        return hash == ((hash >> skip_degree) << skip_degree);
+        return (hash & skip_mask) == 0;
     }
 
 public:
@@ -73,15 +78,12 @@ public:
         total_values = 0;
     }
 
-    void insert(const T & v, const UInt64 determinator)
+    void insert(const T & v, UInt64 determinator)
     {
         if (isNaN(v))
             return;
 
-        const UInt32 hash = intHash64(determinator);
-        if (!good(hash))
-            return;
-
+        UInt32 hash = intHash64(determinator);
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -136,15 +138,11 @@ public:
             throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample size");
         sorted = false;
 
-        if (b.skip_degree > skip_degree)
-        {
-            skip_degree = b.skip_degree;
-            thinOut();
-        }
+        if (skip_degree < b.skip_degree)
+            setSkipDegree(b.skip_degree);
 
         for (const auto & sample : b.samples)
-            if (good(sample.second))
-                insertImpl(sample.first, sample.second);
+            insertImpl(sample.first, sample.second);
 
         total_values += b.total_values;
     }
@@ -166,6 +164,11 @@ public:
         sorted = false;
     }
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+
     void write(DB::WriteBuffer & buf) const
     {
         size_t size = samples.size();
@@ -173,8 +176,25 @@ public:
         DB::writeIntBinary<size_t>(total_values, buf);
 
         for (size_t i = 0; i < size; ++i)
-            DB::writePODBinary(samples[i], buf);
+        {
+            /// There was a mistake in this function.
+            /// Instead of correctly serializing the elements,
+            ///  it was writing them with uninitialized padding.
+            /// Here we ensure that padding is zero without changing the protocol.
+            /// TODO: After implementation of "versioning aggregate function state",
+            /// change the serialization format.
+
+            Element elem;
+            memset(&elem, 0, sizeof(elem));
+            elem = samples[i];
+
+            DB::writePODBinary(elem, buf);
+        }
     }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
@@ -185,20 +205,46 @@ private:
     size_t total_values = 0;   /// How many values were inserted (regardless if they remain in sample or not).
     bool sorted = false;
     Array samples;
-    UInt8 skip_degree = 0;     /// The number N determining that we save only one per 2^N elements in average.
+
+    /// The number N determining that we store only one per 2^N elements in average.
+    UInt8 skip_degree = 0;
+
+    /// skip_mask is calculated as (2 ^ skip_degree - 1). We store an element only if (hash & skip_mask) == 0.
+    /// For example, if skip_degree==0 then skip_mask==0 means we store each element;
+    /// if skip_degree==1 then skip_mask==0b0001 means we store one per 2 elements in average;
+    /// if skip_degree==4 then skip_mask==0b1111 means we store one per 16 elements in average.
+    UInt32 skip_mask = 0;
 
     void insertImpl(const T & v, const UInt32 hash)
     {
+        if (!good(hash))
+            return;
+
         /// Make a room for plus one element.
         while (samples.size() >= max_sample_size)
         {
-            ++skip_degree;
-            if (skip_degree > detail::MAX_SKIP_DEGREE)
-                throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
-            thinOut();
+            setSkipDegree(skip_degree + 1);
+
+            /// Still good?
+            if (!good(hash))
+                return;
         }
 
         samples.emplace_back(v, hash);
+    }
+
+    void setSkipDegree(UInt8 skip_degree_)
+    {
+        if (skip_degree_ == skip_degree)
+            return;
+        if (skip_degree_ > detail::MAX_SKIP_DEGREE)
+            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+        skip_degree = skip_degree_;
+        if (skip_degree == detail::MAX_SKIP_DEGREE)
+            skip_mask = static_cast<UInt32>(-1);
+        else
+            skip_mask = (1 << skip_degree) - 1;
+        thinOut();
     }
 
     void thinOut()

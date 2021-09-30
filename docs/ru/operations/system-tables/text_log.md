@@ -42,7 +42,7 @@ microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information
-query_id:                
+query_id:
 logger_name:             DNSCacheUpdater
 message:                 Update period 15 seconds
 revision:                54440
@@ -50,4 +50,3 @@ source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void 
 source_line:             45
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/text_log) <!--hide-->

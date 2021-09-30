@@ -6,7 +6,7 @@ if (ENABLE_CLANG_TIDY)
         message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
     endif()
 
-    find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-11" "clang-tidy-10" "clang-tidy-9" "clang-tidy-8")
+    find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-13" "clang-tidy-12" "clang-tidy-11" "clang-tidy-10" "clang-tidy-9" "clang-tidy-8")
 
     if (CLANG_TIDY_PATH)
         message(STATUS
@@ -15,6 +15,10 @@ if (ENABLE_CLANG_TIDY)
             See the .clang-tidy file at the root directory to configure the checks.")
 
         set (USE_CLANG_TIDY ON)
+
+        # clang-tidy requires assertions to guide the analysis
+        # Note that NDEBUG is set implicitly by CMake for non-debug builds
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -UNDEBUG")
 
         # The variable CMAKE_CXX_CLANG_TIDY will be set inside src and base directories with non third-party code.
         # set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")

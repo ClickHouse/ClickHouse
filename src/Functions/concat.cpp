@@ -7,10 +7,10 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <ext/map.h>
-#include <ext/range.h>
+#include <common/map.h>
+#include <common/range.h>
 
 #include "formatString.h"
 
@@ -33,8 +33,8 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(const Context & context_) : context(context_) {}
-    static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
+    explicit ConcatImpl(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -43,6 +43,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -60,7 +62,7 @@ public:
                     + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
@@ -72,7 +74,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
@@ -85,9 +87,9 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextWeakPtr context;
 
-    ColumnPtr executeBinary(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const IColumn * c0 = arguments[0].column.get();
         const IColumn * c1 = arguments[1].column.get();
@@ -114,7 +116,7 @@ private:
         return c_res;
     }
 
-    ColumnPtr executeFormatImpl(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);
@@ -187,30 +189,30 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(const Context & context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
         {
-            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         }
         else
-            return std::make_unique<DefaultFunction>(
-                FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -223,7 +225,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

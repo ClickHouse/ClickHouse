@@ -18,26 +18,43 @@ namespace DB
 class ClickHouseDictionarySource final : public IDictionarySource
 {
 public:
+    struct Configuration
+    {
+        const std::string host;
+        const std::string user;
+        const std::string password;
+        const std::string db;
+        const std::string table;
+        const std::string query;
+        const std::string where;
+        const std::string invalidate_query;
+        const std::string update_field;
+        const UInt64 update_lag;
+        const UInt16 port;
+        const bool is_local;
+        const bool secure;
+    };
+
     ClickHouseDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & path_to_settings,
-        const std::string & config_prefix,
+        const Configuration & configuration_,
         const Block & sample_block_,
-        const Context & context,
-        const std::string & default_database);
+        ContextMutablePtr context_,
+        std::shared_ptr<Session> local_session_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
+
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -50,32 +67,23 @@ public:
 
     /// Used for detection whether the hashtable should be preallocated
     /// (since if there is WHERE then it can filter out too much)
-    bool hasWhere() const { return !where.empty(); }
+    bool hasWhere() const { return !configuration.where.empty(); }
 
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
+    Pipe createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
 
     std::string doInvalidateQuery(const std::string & request) const;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const std::string host;
-    const UInt16 port;
-    const bool secure;
-    const std::string user;
-    const std::string password;
-    const std::string db;
-    const std::string table;
-    const std::string where;
-    const std::string update_field;
-    std::string invalidate_query;
+    const Configuration configuration;
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    Context context;
-    const bool is_local;
+    std::shared_ptr<Session> local_session;
+    ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");

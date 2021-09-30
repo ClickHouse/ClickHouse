@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <common/EnumReflection.h>
 
 
 namespace DB
@@ -30,7 +31,7 @@ namespace DB
   *  , (comma)
   *
   * In all kinds except cross and comma, there are join condition in one of following forms:
-  *  USING (a, b c)
+  *  USING (a, b, c)
   *  USING a, b, c
   *  ON expr...
   *

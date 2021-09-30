@@ -151,19 +151,59 @@ Types of intervals:
 - `QUARTER`
 - `YEAR`
 
+You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
+
 !!! warning "Warning"
     Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 
-Example:
+Examples:
 
 ``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
 ```
 
 ``` text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
-│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+``` text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+``` text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
+
+!!! note "Note"
+    The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
+
+
+Examples:
+
+``` sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+``` text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
 ```
 
 **See Also**
@@ -171,17 +211,17 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
 -   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
-## Logical Negation Operator {#logical-negation-operator}
-
-`NOT a` – The `not(a)` function.
-
 ## Logical AND Operator {#logical-and-operator}
 
-`a AND b` – The`and(a, b)` function.
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
 
 ## Logical OR Operator {#logical-or-operator}
 
-`a OR b` – The `or(a, b)` function.
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+
+## Logical Negation Operator {#logical-negation-operator}
+
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
 ## Conditional Operator {#conditional-operator}
 
@@ -228,7 +268,7 @@ The following operators do not have a priority since they are brackets:
 ## Associativity {#associativity}
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
+Sometimes this does not work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed into a single call of these functions.
 
@@ -242,6 +282,8 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     -   `1`, if the value is `NULL`.
     -   `0` otherwise.
 -   For other values, the `IS NULL` operator always returns `0`.
+
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
@@ -274,4 +316,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/operators/) <!--hide-->
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.

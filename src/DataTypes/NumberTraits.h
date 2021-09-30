@@ -3,7 +3,6 @@
 #include <type_traits>
 
 #include <Core/Types.h>
-#include <Common/UInt128.h>
 
 
 namespace DB
@@ -47,7 +46,7 @@ template <> struct Construct<false, false, 1> { using Type = UInt8; };
 template <> struct Construct<false, false, 2> { using Type = UInt16; };
 template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
-template <> struct Construct<false, false, 16> { using Type = UInt256; }; /// TODO: we cannot use our UInt128 here
+template <> struct Construct<false, false, 16> { using Type = UInt128; };
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
 template <> struct Construct<false, true, 1> { using Type = Float32; };
 template <> struct Construct<false, true, 2> { using Type = Float32; };
@@ -104,9 +103,20 @@ template <typename A, typename B> struct ResultOfIntegerDivision
         sizeof(A)>::Type;
 };
 
-/** Division with remainder you get a number with the same number of bits as in divisor.
-    */
+/** Division with remainder you get a number with the same number of bits as in divisor,
+  * or larger in case of signed type.
+  */
 template <typename A, typename B> struct ResultOfModulo
+{
+    static constexpr bool result_is_signed = is_signed_v<A>;
+    /// If modulo of division can yield negative number, we need larger type to accommodate it.
+    /// Example: toInt32(-199) % toUInt8(200) will return -199 that does not fit in Int8, only in Int16.
+    static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B)) : sizeof(B);
+    using Type0 = typename Construct<result_is_signed, false, size_of_result>::Type;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
+};
+
+template <typename A, typename B> struct ResultOfModuloLegacy
 {
     using Type0 = typename Construct<is_signed_v<A> || is_signed_v<B>, false, sizeof(B)>::Type;
     using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
@@ -162,14 +172,14 @@ template <typename A, typename B>
 struct ResultOfIf
 {
     static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
-    static constexpr bool has_integer = is_integer_v<A> || is_integer_v<B>;
+    static constexpr bool has_integer = is_integer<A> || is_integer<B>;
     static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
     static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
     static constexpr bool has_big_int = is_big_int_v<A> || is_big_int_v<B>;
 
     static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
     static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_integer = max(is_integer_v<A> ? sizeof(A) : 0, is_integer_v<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
     static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
 
     using ConstructedType = typename Construct<has_signed, has_float,
@@ -178,11 +188,12 @@ struct ResultOfIf
                 ? max(sizeof(A), sizeof(B)) * 2
                 : max(sizeof(A), sizeof(B))>::Type;
 
-    using ConstructedTypeWithoutUUID = std::conditional_t<std::is_same_v<A, UInt128> || std::is_same_v<B, UInt128>, Error, ConstructedType>;
-    using ConstructedWithUUID = std::conditional_t<std::is_same_v<A, UInt128> && std::is_same_v<B, UInt128>, A, ConstructedTypeWithoutUUID>;
-
-    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedWithUUID,
-        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>, std::conditional_t<(sizeof(A) > sizeof(B)), A, B>, Error>>;
+    using Type =
+        std::conditional_t<std::is_same_v<A, B>, A,
+        std::conditional_t<is_decimal<A> && is_decimal<B>,
+            std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
+        std::conditional_t<!is_decimal<A> && !is_decimal<B>,
+            ConstructedType, Error>>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
@@ -218,7 +229,7 @@ using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>,
 template <typename T>
 static inline auto littleBits(const T & x)
 {
-    return bigint_cast<UInt8>(x);
+    return static_cast<UInt8>(x);
 }
 
 }

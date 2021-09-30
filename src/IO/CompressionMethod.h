@@ -1,14 +1,13 @@
 #pragma once
 
-#include <string>
 #include <memory>
+#include <string>
 
 #include <Core/Defines.h>
 
 
 namespace DB
 {
-
 class ReadBuffer;
 class WriteBuffer;
 
@@ -26,7 +25,15 @@ enum class CompressionMethod
     /// DEFLATE compression with zlib header and Adler32 checksum.
     /// This option corresponds to HTTP Content-Encoding: deflate.
     Zlib,
-    Brotli
+    /// LZMA2-based content compression
+    /// This option corresponds to HTTP Content-Encoding: xz
+    Xz,
+    /// Zstd compressor
+    ///  This option corresponds to HTTP Content-Encoding: zstd
+    Zstd,
+    Brotli,
+    Lz4,
+    Bzip2
 };
 
 /// How the compression method is named in HTTP.

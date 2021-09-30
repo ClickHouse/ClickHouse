@@ -1,5 +1,7 @@
 #include <mutex>
-#include <Common/FieldVisitors.h>
+#include <common/bit_cast.h>
+
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -9,10 +11,11 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -55,7 +58,7 @@ class FunctionTransform : public IFunction
 {
 public:
     static constexpr auto name = "transform";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTransform>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTransform>(); }
 
     String getName() const override
     {
@@ -63,6 +66,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
@@ -143,7 +147,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
@@ -184,15 +188,14 @@ public:
     }
 
 private:
-    static ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
         ColumnsWithTypeAndName args = arguments;
         args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(args);
+        auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
 
         return impl->execute(args, result_type, input_rows_count);
     }
@@ -491,7 +494,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -507,7 +510,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -523,7 +526,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
@@ -541,7 +544,7 @@ private:
         ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref = it ? it->getMapped() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
@@ -562,7 +565,8 @@ private:
         ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = table.find(src[i]);
+            Field key = src[i];
+            const auto * it = table.find(key.reinterpret<UInt64>());
             StringRef ref;
 
             if (it)
@@ -723,7 +727,7 @@ private:
     mutable Cache cache;
 
     /// Can be called from different threads. It works only on the first call.
-    void initialize(const Array & from, const Array & to, ColumnsWithTypeAndName & arguments) const
+    void initialize(const Array & from, const Array & to, const ColumnsWithTypeAndName & arguments) const
     {
         if (cache.initialized)
             return;
@@ -778,50 +782,66 @@ private:
 
         /// Note: Doesn't check the duplicates in the `from` array.
 
-        if (from[0].getType() != Field::Types::String && to[0].getType() != Field::Types::String)
+        const IDataType & from_type = *arguments[0].type;
+
+        if (from[0].getType() != Field::Types::String)
         {
-            cache.table_num_to_num = std::make_unique<Cache::NumToNum>();
-            auto & table = *cache.table_num_to_num;
-            for (size_t i = 0; i < size; ++i)
+            if (to[0].getType() != Field::Types::String)
             {
-                // Field may be of Float type, but for the purpose of bitwise
-                // equality we can treat them as UInt64, hence the reinterpret().
-                table[from[i].reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                cache.table_num_to_num = std::make_unique<Cache::NumToNum>();
+                auto & table = *cache.table_num_to_num;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    Field key = convertFieldToType(from[i], from_type);
+                    if (key.isNull())
+                        continue;
+
+                    // Field may be of Float type, but for the purpose of bitwise
+                    // equality we can treat them as UInt64, hence the reinterpret().
+                    table[key.reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                }
+            }
+            else
+            {
+                cache.table_num_to_string = std::make_unique<Cache::NumToString>();
+                auto & table = *cache.table_num_to_string;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    Field key = convertFieldToType(from[i], from_type);
+                    if (key.isNull())
+                        continue;
+
+                    const String & str_to = to[i].get<const String &>();
+                    StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                    table[key.reinterpret<UInt64>()] = ref;
+                }
             }
         }
-        else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
+        else
         {
-            cache.table_num_to_string = std::make_unique<Cache::NumToString>();
-            auto & table = *cache.table_num_to_string;
-            for (size_t i = 0; i < size; ++i)
+            if (to[0].getType() != Field::Types::String)
             {
-                const String & str_to = to[i].get<const String &>();
-                StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[from[i].reinterpret<UInt64>()] = ref;
+                cache.table_string_to_num = std::make_unique<Cache::StringToNum>();
+                auto & table = *cache.table_string_to_num;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const String & str_from = from[i].get<const String &>();
+                    StringRef ref{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
+                    table[ref] = (*used_to)[i].reinterpret<UInt64>();
+                }
             }
-        }
-        else if (from[0].getType() == Field::Types::String && to[0].getType() != Field::Types::String)
-        {
-            cache.table_string_to_num = std::make_unique<Cache::StringToNum>();
-            auto & table = *cache.table_string_to_num;
-            for (size_t i = 0; i < size; ++i)
+            else
             {
-                const String & str_from = from[i].get<const String &>();
-                StringRef ref{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                table[ref] = (*used_to)[i].reinterpret<UInt64>();
-            }
-        }
-        else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)
-        {
-            cache.table_string_to_string = std::make_unique<Cache::StringToString>();
-            auto & table = *cache.table_string_to_string;
-            for (size_t i = 0; i < size; ++i)
-            {
-                const String & str_from = from[i].get<const String &>();
-                const String & str_to = to[i].get<const String &>();
-                StringRef ref_from{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                StringRef ref_to{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[ref_from] = ref_to;
+                cache.table_string_to_string = std::make_unique<Cache::StringToString>();
+                auto & table = *cache.table_string_to_string;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const String & str_from = from[i].get<const String &>();
+                    const String & str_to = to[i].get<const String &>();
+                    StringRef ref_from{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
+                    StringRef ref_to{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                    table[ref_from] = ref_to;
+                }
             }
         }
 

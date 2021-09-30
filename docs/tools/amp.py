@@ -62,7 +62,6 @@ def build_amp(lang, args, cfg):
         for root, _, filenames in os.walk(site_temp):
             if 'index.html' in filenames:
                 paths.append(prepare_amp_html(lang, args, root, site_temp, main_site_dir))
-        test.test_amp(paths, lang)
     logging.info(f'Finished building AMP version for {lang}')
 
 

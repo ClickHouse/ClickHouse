@@ -61,6 +61,7 @@ public:
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
@@ -70,6 +71,7 @@ public:
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
@@ -77,10 +79,15 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
+    bool hasEqualValues() const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
+    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
@@ -119,6 +126,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    ColumnPtr compress() const override;
+
     void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(offsets);
@@ -131,6 +140,8 @@ public:
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }
+
+    bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
 private:
     WrappedPtr data;
@@ -169,6 +180,14 @@ private:
     ColumnPtr filterTuple(const Filter & filt, ssize_t result_size_hint) const;
     ColumnPtr filterNullable(const Filter & filt, ssize_t result_size_hint) const;
     ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
+
+    int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator=nullptr) const;
+
+    template <typename Comparator>
+    void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
+
+    template <typename Comparator>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
 };
 
 

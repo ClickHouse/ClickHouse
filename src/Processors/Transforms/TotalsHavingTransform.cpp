@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 void finalizeChunk(Chunk & chunk)
@@ -27,13 +28,22 @@ void finalizeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
+Block TotalsHavingTransform::transformHeader(
+    Block block,
+    const ActionsDAG * expression,
+    const std::string & filter_column_name,
+    bool remove_filter,
+    bool final)
 {
     if (final)
         finalizeBlock(block);
 
     if (expression)
-        expression->execute(block);
+    {
+        block = expression->updateHeader(std::move(block));
+        if (remove_filter)
+            block.erase(filter_column_name);
+    }
 
     return block;
 }
@@ -43,20 +53,19 @@ TotalsHavingTransform::TotalsHavingTransform(
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
     const std::string & filter_column_,
+    bool remove_filter_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
+    , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
 {
-    if (!filter_column_name.empty())
-        filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
-
     finalized_header = getInputPort().getHeader();
     finalizeBlock(finalized_header);
 
@@ -64,11 +73,19 @@ TotalsHavingTransform::TotalsHavingTransform(
     if (expression)
     {
         auto totals_header = finalized_header;
-        expression->execute(totals_header);
+        size_t num_rows = totals_header.rows();
+        expression->execute(totals_header, num_rows);
+        filter_column_pos = totals_header.getPositionByName(filter_column_name);
+        if (remove_filter)
+            totals_header.erase(filter_column_name);
         outputs.emplace_back(totals_header, this);
     }
     else
+    {
+        if (!filter_column_name.empty())
+            filter_column_pos = finalized_header.getPositionByName(filter_column_name);
         outputs.emplace_back(finalized_header, this);
+    }
 
     /// Initialize current totals with initial state.
     current_totals.reserve(header.columns());
@@ -155,17 +172,26 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     {
         /// Compute the expression in HAVING.
         const auto & cur_header = final ? finalized_header : getInputPort().getHeader();
+        size_t num_rows = finalized.getNumRows();
         auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
-        expression->execute(finalized_block);
+
+        for (const auto & action : expression->getActions())
+        {
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                throw Exception("Having clause cannot contain arrayJoin", ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        expression->execute(finalized_block, num_rows);
+        ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
+        if (remove_filter)
+            finalized_block.erase(filter_column_name);
         auto columns = finalized_block.getColumns();
 
-        ColumnPtr filter_column_ptr = columns[filter_column_pos];
         ConstantFilterDescription const_filter_description(*filter_column_ptr);
 
         if (const_filter_description.always_true)
         {
             addToTotals(chunk, nullptr);
-            auto num_rows = columns.front()->size();
             chunk.setColumns(std::move(columns), num_rows);
             return;
         }
@@ -198,7 +224,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             }
         }
 
-        auto num_rows = columns.front()->size();
+        num_rows = columns.front()->size();
         chunk.setColumns(std::move(columns), num_rows);
     }
 
@@ -221,6 +247,9 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             /// the corresponding totals column.
             const ColumnAggregateFunction::Container & vec = column->getData();
             size_t size = vec.size();
+
+            if (filter && filter->size() != size)
+                throw Exception("Filter has size which differs from column size", ErrorCodes::LOGICAL_ERROR);
 
             if (filter)
             {
@@ -255,10 +284,13 @@ void TotalsHavingTransform::prepareTotals()
 
     if (expression)
     {
+        size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
-        expression->execute(block);
+        expression->execute(block, num_rows);
+        if (remove_filter)
+            block.erase(filter_column_name);
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
-        totals = Chunk(block.getColumns(), block.rows());
+        totals = Chunk(block.getColumns(), num_rows);
     }
 }
 

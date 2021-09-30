@@ -1,37 +1,36 @@
 #pragma once
 
-#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/SelectQueryInfo.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
-class Context;
 
 /// Builds reverse polish notation
 template <typename RPNElement>
-class RPNBuilder
+class RPNBuilder : WithContext
 {
 public:
     using RPN = std::vector<RPNElement>;
     using AtomFromASTFunc = std::function<
-            bool(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)>;
+            bool(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out)>;
 
-    RPNBuilder(const SelectQueryInfo & query_info, const Context & context_, const AtomFromASTFunc & atomFromAST_)
-        : context(context_), atomFromAST(atomFromAST_)
+    RPNBuilder(const SelectQueryInfo & query_info, ContextPtr context_, const AtomFromASTFunc & atomFromAST_)
+        : WithContext(context_), atomFromAST(atomFromAST_)
     {
         /** Evaluation of expressions that depend only on constants.
           * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
           */
-        block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
+        block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, getContext());
 
-        /// Trasform WHERE section to Reverse Polish notation
+        /// Transform WHERE section to Reverse Polish notation
         const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
         if (select.where())
         {
@@ -80,7 +79,7 @@ private:
             }
         }
 
-        if (!atomFromAST(node, context, block_with_constants, element))
+        if (!atomFromAST(node, getContext(), block_with_constants, element))
         {
             element.function = RPNElement::FUNCTION_UNKNOWN;
         }
@@ -91,6 +90,8 @@ private:
     bool operatorFromAST(const ASTFunction * func, RPNElement & out)
     {
         /// Functions AND, OR, NOT.
+        /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+        /// (or, the same thing - calling the function `and` from one argument).
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         if (func->name == "not")
@@ -102,7 +103,7 @@ private:
         }
         else
         {
-            if (func->name == "and")
+            if (func->name == "and" || func->name == "indexHint")
                 out.function = RPNElement::FUNCTION_AND;
             else if (func->name == "or")
                 out.function = RPNElement::FUNCTION_OR;
@@ -113,7 +114,6 @@ private:
         return true;
     }
 
-    const Context & context;
     const AtomFromASTFunc & atomFromAST;
     Block block_with_constants;
     RPN rpn;

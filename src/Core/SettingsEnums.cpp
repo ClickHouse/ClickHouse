@@ -12,6 +12,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
+    extern const int UNKNOWN_UNION;
 }
 
 
@@ -78,8 +79,8 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
      {"warning",     LogsLevel::warning},
      {"information", LogsLevel::information},
      {"debug",       LogsLevel::debug},
-     {"trace",       LogsLevel::trace}})
-
+     {"trace",       LogsLevel::trace},
+     {"test",        LogsLevel::test}})
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
     {{"QUERY_START",                QUERY_START},
@@ -96,4 +97,23 @@ IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DA
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64}})
 
+IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
+    {{"",         UnionMode::Unspecified},
+     {"ALL",      UnionMode::ALL},
+     {"DISTINCT", UnionMode::DISTINCT}})
+
+IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none",         DistributedDDLOutputMode::NONE},
+     {"throw",    DistributedDDLOutputMode::THROW},
+     {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
+     {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
+
+IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      HandleKafkaErrorMode::DEFAULT},
+     {"stream",       HandleKafkaErrorMode::STREAM}})
+
+IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
+     {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
+     {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 }

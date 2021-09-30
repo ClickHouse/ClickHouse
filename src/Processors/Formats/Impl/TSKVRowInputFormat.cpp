@@ -1,7 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 
 namespace DB
@@ -30,7 +30,7 @@ void TSKVRowInputFormat::readPrefix()
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
-    skipBOMIfExists(in);
+    skipBOMIfExists(*in);
 }
 
 
@@ -89,13 +89,13 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         }
     }
 
-    throw Exception("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    throw ParsingException("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
 bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     const auto & header = getPort().getHeader();
@@ -105,17 +105,17 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
-    if (unlikely(*in.position() == '\n'))
+    if (unlikely(*in->position() == '\n'))
     {
         /// An empty string. It is permissible, but it is unclear why.
-        ++in.position();
+        ++in->position();
     }
     else
     {
         while (true)
         {
             StringRef name_ref;
-            bool has_value = readName(in, name_ref, name_buf);
+            bool has_value = readName(*in, name_ref, name_buf);
             ssize_t index = -1;
 
             if (has_value)
@@ -131,7 +131,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
-                    readEscapedStringInto(sink, in);
+                    readEscapedStringInto(sink, *in);
                 }
                 else
                 {
@@ -142,10 +142,11 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
+                    const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !type->isNullable())
-                        read_columns[index] = DataTypeNullable::deserializeTextEscaped(*columns[index], in, format_settings, type);
+                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
-                        header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
+                        serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
                 }
             }
             else
@@ -155,18 +156,18 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
             }
 
-            if (in.eof())
+            if (in->eof())
             {
-                throw Exception("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ParsingException("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
             }
-            else if (*in.position() == '\t')
+            else if (*in->position() == '\t')
             {
-                ++in.position();
+                ++in->position();
                 continue;
             }
-            else if (*in.position() == '\n')
+            else if (*in->position() == '\n')
             {
-                ++in.position();
+                ++in->position();
                 break;
             }
             else
@@ -197,7 +198,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
 void TSKVRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(in);
+    skipToUnescapedNextLineOrEOF(*in);
 }
 
 

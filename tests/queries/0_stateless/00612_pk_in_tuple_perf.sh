@@ -2,6 +2,7 @@
 
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -43,3 +44,6 @@ query="SELECT count() FROM pk_in_tuple_perf_non_const WHERE (u, d) IN ((0, today
 
 $CLICKHOUSE_CLIENT --query "$query"
 $CLICKHOUSE_CLIENT --query "$query FORMAT JSON" | grep "rows_read"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE pk_in_tuple_perf"
+$CLICKHOUSE_CLIENT --query "DROP TABLE pk_in_tuple_perf_non_const"

@@ -15,7 +15,7 @@ NamesAndTypesList StorageSystemFormats::getNamesAndTypes()
     };
 }
 
-void StorageSystemFormats::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     const auto & formats = FormatFactory::instance().getAllFormats();
     for (const auto & pair : formats)

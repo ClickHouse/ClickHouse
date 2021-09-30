@@ -57,7 +57,7 @@ Identifiers are:
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x, _1, X_y__Z123_.`
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -103,6 +103,28 @@ Depending on the data format (input or output), `NULL` may have a different repr
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
 In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
+
+### Heredoc {#heredeoc}
+
+A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is". 
+
+You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT $smth$SHOW CREATE VIEW my_view$smth$;
+```
+
+Result:
+
+```text
+┌─'SHOW CREATE VIEW my_view'─┐
+│ SHOW CREATE VIEW my_view   │
+└────────────────────────────┘
+```
 
 ## Functions {#functions}
 
@@ -171,7 +193,7 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception.
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception. You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias) to `1`.
 
 ## Asterisk {#asterisk}
 
@@ -183,4 +205,4 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
-[Original article](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->

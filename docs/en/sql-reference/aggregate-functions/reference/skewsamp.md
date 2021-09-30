@@ -12,7 +12,7 @@ It represents an unbiased estimate of the skewness of a random variable if passe
 skewSamp(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
@@ -23,5 +23,5 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 **Example**
 
 ``` sql
-SELECT skewSamp(value) FROM series_with_value_column
+SELECT skewSamp(value) FROM series_with_value_column;
 ```

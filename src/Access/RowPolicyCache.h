@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledRowPolicies.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <mutex>
 #include <map>
 #include <unordered_map>
@@ -41,7 +41,7 @@ private:
     const AccessControlManager & access_control_manager;
     std::unordered_map<UUID, PolicyInfo> all_policies;
     bool all_policies_read = false;
-    ext::scope_guard subscription;
+    scope_guard subscription;
     std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies;
     std::mutex mutex;
 };

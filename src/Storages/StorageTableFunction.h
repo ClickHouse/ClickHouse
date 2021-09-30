@@ -4,7 +4,7 @@
 #include <Processors/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
 
@@ -32,7 +32,7 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
-    StoragePtr getNested() const override
+    StoragePtr getNestedImpl() const
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
@@ -45,6 +45,20 @@ public:
         get_nested = {};
         return nested;
     }
+
+    StoragePtr getNested() const override
+    {
+        StoragePtr nested_storage = getNestedImpl();
+        assert(!nested_storage->getStoragePolicy());
+        assert(!nested_storage->storesDataOnDisk());
+        return nested_storage;
+    }
+
+    /// Table functions cannot have storage policy and cannot store data on disk.
+    /// We may check if table is readonly or stores data on disk on DROP TABLE.
+    /// Avoid loading nested table by returning nullptr/false for all table functions.
+    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+    bool storesDataOnDisk() const override { return false; }
 
     String getName() const override
     {
@@ -62,6 +76,13 @@ public:
             nested->shutdown();
     }
 
+    void flush() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->flush();
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -72,8 +93,8 @@ public:
     Pipe read(
             const Names & column_names,
             const StorageMetadataPtr & metadata_snapshot,
-            const SelectQueryInfo & query_info,
-            const Context & context,
+            SelectQueryInfo & query_info,
+            ContextPtr context,
             QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
             unsigned num_streams) override
@@ -89,21 +110,27 @@ public:
         {
             auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
                                                          query_info, context, processed_stage);
+
+            auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                    pipe.getHeader().getColumnsWithTypeAndName(),
+                    to_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name);
+            auto convert_actions = std::make_shared<ExpressionActions>(
+                convert_actions_dag,
+                ExpressionActionsSettings::fromSettings(context->getSettingsRef(), CompileExpressions::yes));
+
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ConvertingTransform>(
-                       header,
-                       to_header,
-                       ConvertingTransform::MatchColumnsMode::Name);
+                return std::make_shared<ExpressionTransform>(header, convert_actions);
             });
         }
         return pipe;
     }
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            const Context & context) override
+            ContextPtr context) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();

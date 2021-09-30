@@ -6,9 +6,10 @@
 
 Столбцы:
 
--   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Идентификатор потока.
--   `query_id` ([String](../../sql-reference/data-types/string.md)) — Идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
--   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — [Трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
+-   `thread_name` ([String](../../sql-reference/data-types/string.md)) — имя потока.
+-   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор потока.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
+-   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — [трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
 
 **Пример**
 
@@ -21,12 +22,14 @@ SET allow_introspection_functions = 1;
 Получение символов из объектных файлов ClickHouse:
 
 ``` sql
-WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G
+WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_name, thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
 ``` text
 Row 1:
 ──────
+thread_name: clickhouse-serv
+
 thread_id: 686
 query_id:  1a11f70b-626d-47c1-b948-f9c7b206395d
 res:       sigqueue
@@ -51,12 +54,14 @@ __clone
 Получение имен файлов и номеров строк в исходном коде ClickHouse:
 
 ``` sql
-WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G
+WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_name, thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
 ``` text
 Row 1:
 ──────
+thread_name: clickhouse-serv
+
 thread_id: 686
 query_id:  cad353e7-1c29-4b2e-949f-93e597ab7a54
 res:       /lib/x86_64-linux-gnu/libc-2.27.so
@@ -78,11 +83,9 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 /lib/x86_64-linux-gnu/libc-2.27.so
 ```
 
-**См. также**
+**Смотрите также**
 
--   [Функции интроспекции](../../sql-reference/functions/introspection.md) — Что такое функции интроспекции и как их использовать.
--   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — Содержит трассировки стека, собранные профилировщиком выборочных запросов.
--   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Описание и пример использования функции `arrayMap`.
--   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Описание и пример использования функции `arrayFilter`.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/stack_trace) <!--hide-->
+-   [Функции интроспекции](../../sql-reference/functions/introspection.md) — описание функций интроспекции и примеры использования.
+-   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
+-   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — описание и пример использования функции `arrayMap`.
+-   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — описание и пример использования функции `arrayFilter`.

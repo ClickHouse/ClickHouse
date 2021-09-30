@@ -1,3 +1,7 @@
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <string.h>
 #include <IO/BitHelpers.h>
 
@@ -76,7 +80,8 @@ std::string dumpContents(const T& container,
                          const size_t cols_in_row = 8)
 
 {
-    std::stringstream sstr;
+    std::stringstream sstr;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    sstr.exceptions(std::ios::failbit);
     dumpBuffer(std::begin(container), std::end(container), &sstr, col_sep, row_sep, cols_in_row);
 
     return sstr.str();
@@ -157,7 +162,6 @@ TEST_P(BitIO, WriteAndRead)
 
         BitReader reader(data.data(), data.size());
 
-        int bitpos = 0;
         int item = 0;
         for (const auto & bv : bits_and_vals)
         {
@@ -171,7 +175,6 @@ TEST_P(BitIO, WriteAndRead)
             ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
-            bitpos += bv.first;
         }
     }
 }

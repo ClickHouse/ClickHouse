@@ -23,19 +23,19 @@ The supported formats are:
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
-| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -49,7 +49,7 @@ The supported formats are:
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
@@ -57,6 +57,9 @@ The supported formats are:
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -71,7 +74,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when ‘extremes’ is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -383,7 +386,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row, similar to `TabSeparatedWithNames`.
+Also prints the header row, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
@@ -456,9 +459,12 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
-See also the [JSONEachRow](#jsoneachrow) format.
+**See Also**
 
-## JSONString {#jsonstring}
+-   [JSONEachRow](#jsoneachrow) format
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
+
+## JSONStrings {#jsonstrings}
 
 Differs from JSON only in that data fields are output in strings, not in typed JSON values.
 
@@ -507,14 +513,41 @@ Example:
 }
 ```
 
+## JSONAsString {#jsonasstring}
+
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
+
+This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+Result:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
 ## JSONCompact {#jsoncompact}
-## JSONCompactString {#jsoncompactstring}
+## JSONCompactStrings {#jsoncompactstrings}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
 Example:
 
-``` json
+```
 // JSONCompact
 {
         "meta":
@@ -546,8 +579,8 @@ Example:
 }
 ```
 
-```json
-// JSONCompactString
+```
+// JSONCompactStrings
 {
         "meta":
         [
@@ -579,9 +612,9 @@ Example:
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringEachRow {#jsonstringeachrow}
+## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
 When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
 
@@ -594,9 +627,9 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 When inserting the data, you should provide a separate JSON value for each row.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yield progress information as JSON values.
+Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -606,9 +639,9 @@ Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yiel
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow`/`JSONCompactStringEachRow` in that the column names and types are written as the first two rows.
+Differs from `JSONCompactEachRow`/`JSONCompactStringsEachRow` in that the column names and types are written as the first two rows.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -629,7 +662,7 @@ ClickHouse allows:
 -   Any order of key-value pairs in the object.
 -   Omitting some values.
 
-ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You don’t have to separate them with line breaks.
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You do not have to separate them with line breaks.
 
 **Omitted values processing**
 
@@ -737,9 +770,9 @@ SELECT * FROM json_each_row_nested
 
 ## Native {#native}
 
-The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is “columnar” – it doesn’t convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is “columnar” – it does not convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
-You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It doesn’t make sense to work with this format yourself.
+You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It does not make sense to work with this format yourself.
 
 ## Null {#null}
 
@@ -910,10 +943,6 @@ test: string with 'quotes' and      with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-## VerticalRaw {#verticalraw}
-
-Similar to [Vertical](#vertical), but with escaping disabled. This format is only suitable for outputting query results, not for parsing (receiving data and inserting it in the table).
-
 ## XML {#xml}
 
 XML format is suitable only for output, not for parsing. Example:
@@ -1006,7 +1035,7 @@ struct Message {
 }
 ```
 
-Deserialization is effective and usually doesn’t increase the system load.
+Deserialization is effective and usually does not increase the system load.
 
 See also [Format Schema](#formatschema).
 
@@ -1097,17 +1126,18 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)                   | `long`                       |
 | `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                       | `float`                      |
 | `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                       | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [String](../sql-reference/data-types/string.md)                                                                       | `bytes`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](../sql-reference/data-types/string.md)                                                                       | `bytes` or `string` \*       |
 | `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql-reference/data-types/fixedstring.md)                                                          | `fixed(N)`                   |
 | `enum`                                      | [Enum(8\|16)](../sql-reference/data-types/enum.md)                                                                    | `enum`                       |
 | `array(T)`                                  | [Array(T)](../sql-reference/data-types/array.md)                                                                      | `array(T)`                   |
 | `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql-reference/data-types/date.md)                                                                    | `union(null, T)`             |
 | `null`                                      | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md)                                        | `null`                       |
-| `int (date)` \*                             | [Date](../sql-reference/data-types/date.md)                                                                           | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-micros)` \* |
+| `int (date)` \**                            | [Date](../sql-reference/data-types/date.md)                                                                           | `int (date)` \**             |
+| `long (timestamp-millis)` \**               | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \**               | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-micros)` \* |
 
-\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+\* `bytes` is default, controlled by [output_format_avro_string_column_pattern](../operations/settings/settings.md#settings-output_format_avro_string_column_pattern)
+\** [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro data types: `record` (non-root), `map`
 
@@ -1213,15 +1243,20 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                     |
 | `DATE32`                     | [Date](../sql-reference/data-types/date.md)               | `UINT16`                     |
 | `DATE64`, `TIMESTAMP`        | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
-| `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `STRING`                     |
-| —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                     |
+| `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `BINARY`                     |
+| —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                     |
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
+| `LIST`                       | [Array](../sql-reference/data-types/array.md)             | `LIST`                       |
+| `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                     |
+| `MAP`                        | [Map](../sql-reference/data-types/map.md)                 | `MAP`                        |
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
 ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Unsupported Parquet data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting and Selecting Data {#inserting-and-selecting-data}
 
@@ -1230,6 +1265,8 @@ You can insert Parquet data from a file into ClickHouse table by the following c
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
@@ -1243,7 +1280,61 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 
-`Arrow` is Apache Arrow’s “file mode” format. It is designed for in-memory random access.
+`Arrow` is Apache Arrow’s "file mode" format. It is designed for in-memory random access.
+
+### Data Types Matching {#data_types-matching-arrow}
+
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Arrow data type (`INSERT`) | ClickHouse data type                                | Arrow data type (`SELECT`) |
+|----------------------------|-----------------------------------------------------|----------------------------|
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                  |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                  |
+| `DATE32`                   | [Date](../sql-reference/data-types/date.md)         | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                   |
+| `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)     | `BINARY`                   |
+| `STRING`, `BINARY`         | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
+| `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                  |
+| `DECIMAL256`               | [Decimal256](../sql-reference/data-types/decimal.md)| `DECIMAL256`               |
+| `LIST`                     | [Array](../sql-reference/data-types/array.md)       | `LIST`                     |
+| `STRUCT`                   | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                 |
+| `MAP`                      | [Map](../sql-reference/data-types/map.md)           | `MAP`                    |
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
+
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary) setting that allows to output [LowCardinality](../sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type.
+
+ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the Arrow `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported Arrow data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+
+### Inserting Data {#inserting-data-arrow}
+
+You can insert Arrow data from a file into ClickHouse table by the following command:
+
+``` bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) setting.
+
+### Selecting Data {#selecting-data-arrow}
+
+You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+```
 
 ## ArrowStream {#data-format-arrow-stream}
 
@@ -1251,34 +1342,39 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
 ### Data Types Matching {#data_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| ORC data type (`INSERT`) | ClickHouse data type                                |
-|--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   |
+| ORC data type (`INSERT`) | ClickHouse data type                                | ORC data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------|--------------------------|
+| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                  |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                   |
+| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                 |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                  |
+| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                 |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                  |
+| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                 |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                  |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
+| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
+| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
+| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
+| `LIST`                   | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
+| `STRUCT`                 | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                 |
+| `MAP`                    | [Map](../sql-reference/data-types/map.md)           | `MAP`                    |
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
 ### Inserting Data {#inserting-data-2}
 
@@ -1288,7 +1384,102 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested) setting.
+
+### Selecting Data {#selecting-data-2}
+
+You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
+```
+
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
+
+## LineAsString {#lineasstring}
+
+In this format, every line of input data is interpreted as a single string value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+Result:
+
+``` text
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
+
+## Regexp {#data-format-regexp}
+
+Each line of imported data is parsed according to the regular expression.
+
+When working with the `Regexp` format, you can use the following settings:
+
+- `format_regexp` — [String](../sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). The following escaping rules are supported:
+    - CSV (similarly to [CSV](#csv))
+    - JSON (similarly to [JSONEachRow](#jsoneachrow))
+    - Escaped (similarly to [TSV](#tabseparated))
+    - Quoted (similarly to [Values](#data-format-values))
+    - Raw (extracts subpatterns as a whole, no escaping rules)
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+
+**Usage**
+
+The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
+
+The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting.
+
+If the regular expression does not match the line and `format_regexp_skip_unmatched` is set to 1, the line is silently skipped. If `format_regexp_skip_unmatched` is set to 0, exception is thrown.
+
+**Example**
+
+Consider the file data.tsv:
+
+```text
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+and the table:
+
+```sql
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+Import command:
+
+```bash
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+```
+
+Query:
+
+```sql
+SELECT * FROM imp_regex_table;
+```
+
+Result:
+
+```text
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
 
 ## Format Schema {#formatschema}
 
@@ -1315,27 +1506,74 @@ Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
 
-## LineAsString {#lineasstring}
+## RawBLOB {#rawblob}
 
-In this format, a sequence of string objects separated by a newline character is interpreted as a single value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+In this format, all input data is read to a single value. It is possible to parse only a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
+The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
+
+Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
+`RawBLOB`:
+- data is output in binary format, no escaping;
+- there are no delimiters between values;
+- no newline at the end of each value.
+[TabSeparatedRaw] (#tabseparatedraw):
+- data is output without escaping;
+- the rows contain values separated by tabs;
+- there is a line feed after the last value in every row.
+
+The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
+`RawBLOB`:
+- String fields are output without being prefixed by length.
+`RowBinary`:
+- String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
+
+When an empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
+
+``` text
+Code: 108. DB::Exception: No data to insert
+```
 
 **Example**
 
-Query:
-
-``` sql
-DROP TABLE IF EXISTS line_as_string;
-CREATE TABLE line_as_string (field String) ENGINE = Memory;
-INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
-SELECT * FROM line_as_string;
+``` bash
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ```
 
 Result:
 
 ``` text
-┌─field─────────────────────────────────────────────┐
-│ "I love apple", "I love banana", "I love orange"; │
-└───────────────────────────────────────────────────┘
+f9725a22f9191e064120d718e26862a9  -
 ```
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+## MsgPack {#msgpack}
+
+ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
+
+### Data Types Matching {#data-types-matching-msgpack}
+
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      | MessagePack data type (`SELECT`)   |
+|--------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------|
+| `uint N`, `positive fixint`                                        | [UIntN](../sql-reference/data-types/int-uint.md)          | `uint N`                           |
+| `int N`                                                            | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
+| `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          | `uint 8`                           |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           | `bin 8`, `bin 16`, `bin 32`        |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [FixedString](../sql-reference/data-types/fixedstring.md) | `bin 8`, `bin 16`, `bin 32`        |
+| `float 32`                                                         | [Float32](../sql-reference/data-types/float.md)           | `float 32`                         |
+| `float 64`                                                         | [Float64](../sql-reference/data-types/float.md)           | `float 64`                         |
+| `uint 16`                                                          | [Date](../sql-reference/data-types/date.md)               | `uint 16`                          |
+| `uint 32`                                                          | [DateTime](../sql-reference/data-types/datetime.md)       | `uint 32`                          |
+| `uint 64`                                                          | [DateTime64](../sql-reference/data-types/datetime.md)     | `uint 64`                          |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 | `fixmap`, `map 16`, `map 32`       |
+
+Example:
+
+Writing to a file ".msgpk":
+
+```sql
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```

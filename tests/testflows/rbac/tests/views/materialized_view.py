@@ -30,19 +30,19 @@ def allow_experimental_alter_materialized_view_structure(node):
 def create(self, node=None):
     """Test the RBAC functionality of the `CREATE MATERIALIZED VIEW` command.
     """
-    Scenario(run=create_without_create_view_privilege)
-    Scenario(run=create_with_create_view_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_revoked_create_view_privilege_revoked_directly_or_from_role)
-    Scenario(run=create_without_source_table_privilege)
-    Scenario(run=create_with_source_table_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_subquery_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_join_query_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_union_query_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_join_union_subquery_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_nested_views_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_target_table_privilege_directly_or_via_role)
-    Scenario(run=create_with_populate_privilege_granted_directly_or_via_role)
-    Scenario(run=create_with_populate_source_table_privilege_granted_directly_or_via_role)
+    Scenario(run=create_without_create_view_privilege, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_create_view_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_revoked_create_view_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_without_source_table_privilege, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_join_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_union_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_join_union_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_nested_views_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_target_table_privilege_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_populate_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_with_populate_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def create_without_create_view_privilege(self, node=None):
@@ -612,13 +612,17 @@ def create_with_populate_privilege_granted_directly_or_via_role(self, node=None)
 
     if node is None:
         node = self.context.node
+
     with user(node, f"{user_name}"):
+
         Scenario(test=create_with_populate,
             name="create with populate privilege granted directly")(grant_target_name=user_name, user_name=user_name)
 
     with user(node, f"{user_name}"), role(node, f"{role_name}"):
+
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
+
         Scenario(test=create_with_populate,
             name="create with populate privilege granted through a role")(grant_target_name=role_name, user_name=user_name)
 
@@ -632,17 +636,22 @@ def create_with_populate(self, user_name, grant_target_name, node=None):
 
     if node is None:
         node = self.context.node
+
     try:
+
         with When("I grant CREATE VIEW privilege"):
             node.query(f"GRANT CREATE VIEW ON {view_name} TO {grant_target_name}")
+
         with Then("I attempt to create a view as the user"):
             node.query(f"CREATE MATERIALIZED VIEW {view_name} ENGINE = Memory POPULATE AS SELECT 1",
                 settings = [("user", f"{user_name}")], exitcode=exitcode, message=message)
 
         with When("I grant INSERT privilege on the view"):
             node.query(f"GRANT INSERT ON {view_name} TO {grant_target_name}")
+
         with Given("I don't have a view"):
             node.query(f"DROP VIEW IF EXISTS {view_name}")
+
         with Then("I attempt to create a view as the user"):
             node.query(f"CREATE MATERIALIZED VIEW {view_name} ENGINE = Memory POPULATE AS SELECT 1",
                 settings = [("user", f"{user_name}")])
@@ -714,17 +723,17 @@ def create_with_populate_source_table(self, user_name, grant_target_name, node=N
 def select(self, node=None):
     """Test the RBAC functionality of the `SELECT FROM materialized view` command
     """
-    Scenario(run=select_without_select_privilege)
-    Scenario(run=select_with_select_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_select_privilege_revoked_directly_or_from_role)
-    Scenario(run=select_without_source_table_privilege)
-    Scenario(run=select_with_source_table_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_subquery_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_join_query_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_union_query_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_join_union_subquery_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_nested_views_privilege_granted_directly_or_via_role)
-    Scenario(run=select_with_privilege_granted_directly_or_via_role_without_target_table_privilege)
+    Scenario(run=select_without_select_privilege, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_select_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_select_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_without_source_table_privilege, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_join_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_union_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_join_union_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_nested_views_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_with_privilege_granted_directly_or_via_role_without_target_table_privilege, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def select_without_select_privilege(self, node=None):
@@ -1266,9 +1275,9 @@ def select_without_target_table_privilege(self, grant_target_name, user_name, no
 def select_from_tables(self, node=None):
     """Testing RBAC functionality of SELECT for tables related to materialized views - target tables, source tables.
     """
-    Scenario(run=select_from_implicit_target_table_privilege_granted_directly_or_via_role)
-    Scenario(run=select_from_explicit_target_table_privilege_granted_directly_or_via_role)
-    Scenario(run=select_from_source_table_privilege_granted_directly_or_via_role)
+    Scenario(run=select_from_implicit_target_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_from_explicit_target_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_from_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 @Requirements(
@@ -1447,8 +1456,8 @@ def select_from_source_table(self, grant_target_name, user_name, node=None):
 def drop(self, node=None):
     """Test the RBAC functionality of the `DROP VIEW` command.
     """
-    Scenario(run=drop_with_privilege_granted_directly_or_via_role)
-    Scenario(run=drop_with_revoked_privilege_revoked_directly_or_from_role)
+    Scenario(run=drop_with_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=drop_with_revoked_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def drop_with_privilege_granted_directly_or_via_role(self, node=None):
@@ -1554,15 +1563,15 @@ def modify_query(self, node=None):
         node = self.context.node
 
     with allow_experimental_alter_materialized_view_structure(node):
-        Scenario(run=modify_query_with_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_privilege_revoked_directly_or_from_role)
-        Scenario(run=modify_query_without_source_table_privilege)
-        Scenario(run=modify_query_with_source_table_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_subquery_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_join_query_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_union_query_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_join_union_subquery_privilege_granted_directly_or_via_role)
-        Scenario(run=modify_query_with_nested_views_privilege_granted_directly_or_via_role)
+        Scenario(run=modify_query_with_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_without_source_table_privilege, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_join_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_union_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_join_union_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+        Scenario(run=modify_query_with_nested_views_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def modify_query_with_privilege_granted_directly_or_via_role(self, node=None):
@@ -2049,9 +2058,9 @@ def modify_query_with_nested_views(self, grant_target_name, user_name, node=None
 def insert(self, node=None):
     """Check RBAC functionality of INSERT with materialized views.
     """
-    Scenario(run=insert_on_source_table_privilege_granted_directly_or_via_role)
-    Scenario(run=insert_with_privilege_granted_directly_or_via_role)
-    Scenario(run=insert_on_target_table_privilege_granted_directly_or_via_role)
+    Scenario(run=insert_on_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=insert_with_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=insert_on_target_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 @Requirements(
@@ -2094,7 +2103,7 @@ def insert_on_source_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the source table"):
                 node.query(f"GRANT INSERT ON {table1_name} TO {grant_target_name}")
             with Then("I attempt to insert into the source table"):
-                node.query(f"INSERT INTO {table1_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {table1_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):
@@ -2143,7 +2152,7 @@ def insert_with_insert_privilege(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the view"):
                 node.query(f"GRANT INSERT ON {view_name} TO {grant_target_name}")
             with Then("I attempt to insert into the view"):
-                node.query(f"INSERT INTO {view_name}(d) VALUES ('01-01-2020')",
+                node.query(f"INSERT INTO {view_name}(d) VALUES ('2020-01-01')",
                     settings = [("user",f"{user_name}")])
 
         finally:
@@ -2192,7 +2201,7 @@ def insert_on_target_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the target table"):
                 node.query(f"GRANT INSERT ON {table0_name} TO {grant_target_name}")
             with Then("I attempt to insert into the target table"):
-                node.query(f"INSERT INTO {table0_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {table0_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):
@@ -2239,7 +2248,7 @@ def insert_on_target_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the target table"):
                 node.query(f"GRANT INSERT ON {implicit_table_name} TO {grant_target_name}")
             with Then("I attempt to insert into the target table"):
-                node.query(f"INSERT INTO {implicit_table_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {implicit_table_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):
@@ -2259,10 +2268,9 @@ def feature(self, stress=None, parallel=None, node="clickhouse1"):
         self.context.stress = parallel
 
     tasks = []
-    pool = Pool(3)
-
-    try:
-        for suite in loads(current_module(), Suite):
-            run_scenario(pool, tasks, suite)
-    finally:
-        join(tasks)
+    with Pool(3) as pool:
+        try:
+            for suite in loads(current_module(), Suite):
+                run_scenario(pool, tasks, suite)
+        finally:
+            join(tasks)

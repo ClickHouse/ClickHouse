@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Tags: long, no-unbundled, no-parallel
 
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 function query {
@@ -17,7 +19,7 @@ function ch_url() {
 
 # Check correct exceptions handling
 
-exception_pattern="displayText() = DB::Exception:[[:print:]]*"
+exception_pattern="DB::Exception:[[:print:]]*"
 
 function check_only_exception() {
     local res

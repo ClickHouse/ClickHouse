@@ -17,6 +17,7 @@ struct BitRotateLeftImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
@@ -43,7 +44,7 @@ struct BitRotateLeftImpl
 };
 
 struct NameBitRotateLeft { static constexpr auto name = "bitRotateLeft"; };
-using FunctionBitRotateLeft = BinaryArithmeticOverloadResolver<BitRotateLeftImpl, NameBitRotateLeft>;
+using FunctionBitRotateLeft = BinaryArithmeticOverloadResolver<BitRotateLeftImpl, NameBitRotateLeft, true, false>;
 
 }
 

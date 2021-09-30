@@ -5,7 +5,9 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
 #include <common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -21,7 +23,7 @@ const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_,
+    const ContextPtr & context_,
     const Names & columns,
     Poco::Logger * log_,
     size_t max_block_size_,
@@ -34,8 +36,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals(), storage.getStorageID()))
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
 }
 
@@ -77,66 +79,52 @@ Block KafkaBlockInputStream::readImpl()
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
-
-    MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
+    auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
+
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
-    InputPort port(input_format->getPort().getHeader(), input_format.get());
-    connect(input_format->getPort(), port);
-    port.setNeeded();
-
-    auto read_kafka_message = [&]
-    {
-        size_t new_rows = 0;
-
-        while (true)
-        {
-            auto status = input_format->prepare();
-
-            switch (status)
-            {
-                case IProcessor::Status::Ready:
-                    input_format->work();
-                    break;
-
-                case IProcessor::Status::Finished:
-                    input_format->resetParser();
-                    return new_rows;
-
-                case IProcessor::Status::PortFull:
-                {
-                    auto chunk = port.pull();
-
-                    // that was returning bad value before https://github.com/ClickHouse/ClickHouse/pull/8005
-                    // if will be backported should go together with #8005
-                    auto chunk_rows = chunk.getNumRows();
-                    new_rows += chunk_rows;
-
-                    auto columns = chunk.detachColumns();
-                    for (size_t i = 0, s = columns.size(); i < s; ++i)
-                    {
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-                    }
-                    break;
-                }
-                case IProcessor::Status::NeedData:
-                case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
-                case IProcessor::Status::ExpandPipeline:
-                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    };
-
+    std::optional<std::string> exception_message;
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    {
+        if (put_error_to_stream)
+        {
+            exception_message = e.message();
+            for (const auto & column : result_columns)
+            {
+                // read_kafka_message could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
+
+                // all data columns will get default value in case of error
+                column->insertDefault();
+            }
+
+            return 1;
+        }
+        else
+        {
+            e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
+            throw;
+        }
+    };
+
+    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+
     while (true)
     {
-        auto new_rows = buffer->poll() ? read_kafka_message() : 0;
+        size_t new_rows = 0;
+        exception_message.reset();
+        if (buffer->poll())
+            new_rows = executor.execute();
 
         if (new_rows)
         {
@@ -189,6 +177,20 @@ Block KafkaBlockInputStream::readImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                if (put_error_to_stream)
+                {
+                    if (exception_message)
+                    {
+                        auto payload = buffer->currentPayload();
+                        virtual_columns[8]->insert(payload);
+                        virtual_columns[9]->insert(*exception_message);
+                    }
+                    else
+                    {
+                        virtual_columns[8]->insertDefault();
+                        virtual_columns[9]->insertDefault();
+                    }
+                }
             }
 
             total_rows = total_rows + new_rows;
@@ -203,7 +205,11 @@ Block KafkaBlockInputStream::readImpl()
         }
         else
         {
-            LOG_WARNING(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
+            // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
+            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
+            // currently we just skip them with note in logs.
+            buffer->storeLastReadMessageOffset();
+            LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
         }
 
         if (!buffer->hasMorePolledMessages()
@@ -223,7 +229,7 @@ Block KafkaBlockInputStream::readImpl()
     // i.e. will not be stored anythere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
-    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
+    auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())

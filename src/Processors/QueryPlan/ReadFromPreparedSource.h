@@ -9,15 +9,27 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_ = nullptr);
+    explicit ReadFromPreparedSource(Pipe pipe_, ContextPtr context_ = nullptr);
 
-    String getName() const override { return "ReadNothing"; }
+    String getName() const override { return "ReadFromPreparedSource"; }
 
-    void initializePipeline(QueryPipeline & pipeline) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     Pipe pipe;
-    std::shared_ptr<Context> context;
+    ContextPtr context;
+};
+
+class ReadFromStorageStep : public ReadFromPreparedSource
+{
+public:
+    ReadFromStorageStep(Pipe pipe_, String storage_name)
+        : ReadFromPreparedSource(std::move(pipe_))
+    {
+        setStepDescription(storage_name);
+    }
+
+    String getName() const override { return "ReadFromStorage"; }
 };
 
 }

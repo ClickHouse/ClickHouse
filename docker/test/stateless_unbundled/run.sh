@@ -13,8 +13,4 @@ dpkg -i package_folder/clickhouse-test_*.deb
 
 service clickhouse-server start && sleep 5
 
-if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
-    SKIP_LIST_OPT="--use-skip-list"
-fi
-
-clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+clickhouse-test --testname --shard --zookeeper "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

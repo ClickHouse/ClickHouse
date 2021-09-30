@@ -1,7 +1,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControlManager.h>
 #include <Core/Settings.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -155,6 +155,9 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     const String & setting_name = change.name;
+
+    if (setting_name == "profile")
+        return true;
 
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field

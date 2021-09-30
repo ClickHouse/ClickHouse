@@ -4,15 +4,18 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Core/BigInt.h>
 
 #include <common/unaligned.h>
-#include <ext/scope_guard.h>
+#include <common/sort.h>
+#include <common/scope_guard.h>
+
 
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -29,7 +32,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename T>
+template class DecimalPaddedPODArray<Decimal32>;
+template class DecimalPaddedPODArray<Decimal64>;
+template class DecimalPaddedPODArray<Decimal128>;
+template class DecimalPaddedPODArray<Decimal256>;
+template class DecimalPaddedPODArray<DateTime64>;
+
+template <is_decimal T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
     auto & other = static_cast<const Self &>(rhs_);
@@ -41,7 +50,7 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                      PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                      int direction, int nan_direction_hint) const
@@ -50,38 +59,34 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                                          compare_results, direction, nan_direction_hint);
 }
 
-template <typename T>
+template <is_decimal T>
+bool ColumnDecimal<T>::hasEqualValues() const
+{
+    return this->template hasEqualValuesImpl<ColumnDecimal<T>>();
+}
+
+template <is_decimal T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (is_POD)
-    {
-        auto * pos = arena.allocContinue(sizeof(T), begin);
-        memcpy(pos, &data[n], sizeof(T));
-        return StringRef(pos, sizeof(T));
-    }
-    else
-    {
-        char * pos = arena.allocContinue(BigInt<T>::size, begin);
-        return BigInt<Int256>::serialize(data[n], pos);
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
+    memcpy(pos, &data[n], sizeof(T));
+    return StringRef(pos, sizeof(T));
 }
 
-template <typename T>
+template <is_decimal T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    if constexpr (is_POD)
-    {
-        data.push_back(unalignedLoad<T>(pos));
-        return pos + sizeof(T);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(pos));
-        return pos + BigInt<Int256>::size;
-    }
+    data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
-template <typename T>
+template <is_decimal T>
+const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+{
+    return pos + sizeof(T);
+}
+
+template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
@@ -90,13 +95,13 @@ UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
         return static_cast<NativeT>(data[n]);
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n].value);
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = data.size();
@@ -117,13 +122,13 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test
@@ -142,7 +147,7 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
     permutation(reverse, limit, res);
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     if (equal_ranges.empty())
@@ -162,10 +167,10 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
     {
         const auto& [first, last] = equal_ranges[i];
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+            std::sort(res.begin() + first, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+            std::sort(res.begin() + first, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
 
         auto new_first = first;
@@ -193,12 +198,11 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
         /// Since then we are working inside the interval.
 
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] < data[b]; });
-
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
@@ -224,7 +228,7 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
     }
 }
 
-template <typename T>
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = limit ? std::min(data.size(), limit) : data.size();
@@ -240,7 +244,7 @@ ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t li
     return res;
 }
 
-template <typename T>
+template <is_decimal T>
 MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 {
     auto res = this->create(0, scale);
@@ -251,46 +255,28 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (is_POD)
-        {
-            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-            {
-                void * tail = &new_col.data[count];
-                memset(tail, 0, (size - count) * sizeof(T));
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < count; i++)
-                new_col.data[i] = data[i];
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-                for (size_t i = count; i < size; i++)
-                    new_col.data[i] = T{};
+        if (size > count)
+        {
+            void * tail = &new_col.data[count];
+            memset(tail, 0, (size - count) * sizeof(T));
         }
     }
 
     return res;
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    if constexpr (is_POD)
-    {
-        T tmp;
-        memcpy(&tmp, src, sizeof(T));
-        data.emplace_back(tmp);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(src));
-    }
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
@@ -302,16 +288,11 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (is_POD)
-        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
-    else
-    {
-        for (size_t i = 0; i < length; i++)
-            data[old_size + i] = src_vec.data[start + i];
-    }
+
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
-template <typename T>
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
@@ -340,13 +321,19 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     return res;
 }
 
-template <typename T>
+template <is_decimal T>
+void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
+{
+    expandDataByMask<T>(data, mask, inverted);
+}
+
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
-template <typename T>
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
@@ -373,13 +360,37 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
     return res;
 }
 
-template <typename T>
+template <is_decimal T>
 void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
 }
 
-template <typename T>
+template <is_decimal T>
+ColumnPtr ColumnDecimal<T>::compress() const
+{
+    size_t source_size = data.size() * sizeof(T);
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    return ColumnCompressed::create(data.size(), compressed->size(),
+        [compressed = std::move(compressed), column_size = data.size(), scale = this->scale]
+        {
+            auto res = ColumnDecimal<T>::create(column_size, scale);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+            return res;
+        });
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.empty())
@@ -408,4 +419,6 @@ template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
+template class ColumnDecimal<DateTime64>;
+
 }

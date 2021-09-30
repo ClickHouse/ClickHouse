@@ -237,7 +237,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
             previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
     }
     else
-        /// This function may be heavy to execute in prepare. But it happens no more then twice, and make code simpler.
+        /// This function may be heavy to execute in prepare. But it happens no more than twice, and make code simpler.
         splitChunk(data);
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;

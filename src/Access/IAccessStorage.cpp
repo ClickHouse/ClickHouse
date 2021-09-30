@@ -1,5 +1,6 @@
 #include <Access/IAccessStorage.h>
 #include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -196,6 +197,16 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+        res.emplace_back(readName(id));
+    return res;
+}
+
+
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
     String name;
@@ -203,6 +214,19 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
     if (!tryCall(func))
         return {};
     return name;
+}
+
+
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+    {
+        if (auto name = tryReadName(id))
+            res.emplace_back(std::move(name).value());
+    }
+    return res;
 }
 
 
@@ -376,21 +400,21 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(id, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
-    ext::scope_guard subscriptions;
+    scope_guard subscriptions;
     for (const auto & id : ids)
         subscriptions.join(subscribeForChangesImpl(id, handler));
     return subscriptions;
@@ -417,53 +441,60 @@ void IAccessStorage::notify(const Notifications & notifications)
 
 
 UUID IAccessStorage::login(
-    const String & user_name,
-    const String & password,
+    const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool replace_exception_with_cannot_authenticate) const
 {
     try
     {
-        return loginImpl(user_name, password, address, external_authenticators);
+        return loginImpl(credentials, address, external_authenticators);
     }
     catch (...)
     {
         if (!replace_exception_with_cannot_authenticate)
             throw;
 
-        tryLogCurrentException(getLogger(), user_name + ": Authentication failed");
-        throwCannotAuthenticate(user_name);
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        throwCannotAuthenticate(credentials.getUserName());
     }
 }
 
 
 UUID IAccessStorage::loginImpl(
-    const String & user_name,
-    const String & password,
+    const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators) const
 {
-    if (auto id = find<User>(user_name))
+    if (auto id = find<User>(credentials.getUserName()))
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (!isPasswordCorrectImpl(*user, password, external_authenticators))
-                throwInvalidPassword();
-
             if (!isAddressAllowedImpl(*user, address))
                 throwAddressNotAllowed(address);
+
+            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+                throwInvalidCredentials();
 
             return *id;
         }
     }
-    throwNotFound(EntityType::USER, user_name);
+    throwNotFound(EntityType::USER, credentials.getUserName());
 }
 
 
-bool IAccessStorage::isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const
+bool IAccessStorage::areCredentialsValidImpl(
+    const User & user,
+    const Credentials & credentials,
+    const ExternalAuthenticators & external_authenticators) const
 {
-    return user.authentication.isCorrectPassword(password, user.getName(), external_authenticators);
+    if (!credentials.isReady())
+        return false;
+
+    if (credentials.getUserName() != user.getName())
+        return false;
+
+    return user.authentication.areCredentialsValid(credentials, external_authenticators);
 }
 
 
@@ -471,6 +502,7 @@ bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IP
 {
     return user.allowed_client_hosts.contains(address);
 }
+
 
 UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
 {
@@ -578,9 +610,9 @@ void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address
     throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 }
 
-void IAccessStorage::throwInvalidPassword()
+void IAccessStorage::throwInvalidCredentials()
 {
-    throw Exception("Invalid password", ErrorCodes::WRONG_PASSWORD);
+    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
 }
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)

@@ -9,4 +9,35 @@ toc_title: Date
 
 Дата хранится без учёта часового пояса.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/date/) <!--hide-->
+**Пример**
+
+Создание таблицы и добавление в неё данных:
+
+``` sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+``` sql
+INSERT INTO dt Values (1546300800, 1), ('2019-01-01', 2);
+SELECT * FROM dt;
+```
+
+``` text
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+└────────────┴──────────┘
+```
+
+**См. также**
+
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
+-   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
+-   [Тип данных `DateTime`](../../sql-reference/data-types/datetime.md)
+
+

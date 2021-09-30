@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
+#include <common/EnumReflection.h>
 
 
 namespace DB
@@ -38,8 +39,8 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
 Pipe StorageSystemStoragePolicies::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -55,7 +56,7 @@ Pipe StorageSystemStoragePolicies::read(
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
     MutableColumnPtr col_prefer_not_to_merge = ColumnUInt8::create();
 
-    for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
+    for (const auto & [policy_name, policy_ptr] : context->getPoliciesMap())
     {
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)
@@ -68,7 +69,7 @@ Pipe StorageSystemStoragePolicies::read(
             for (const auto & disk_ptr : volumes[i]->getDisks())
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
-            col_volume_type->insert(volumeTypeToString(volumes[i]->getType()));
+            col_volume_type->insert(magic_enum::enum_name(volumes[i]->getType()));
             col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
             col_prefer_not_to_merge->insert(volumes[i]->areMergesAvoided() ? 1 : 0);

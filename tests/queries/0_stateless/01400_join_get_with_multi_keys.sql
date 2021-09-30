@@ -13,3 +13,4 @@ INSERT INTO test_lc VALUES ('ab', '1', 0.1), ('ab', '2', 0.2), ('cd', '3', 0.3);
 SELECT joinGet(test_lc, 'c', 'ab', '1');
 
 DROP TABLE test_joinGet;
+DROP TABLE test_lc;

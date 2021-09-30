@@ -1,9 +1,11 @@
-# docker build -t yandex/clickhouse-unbundled-builder .
-FROM yandex/clickhouse-deb-builder
+# docker build -t clickhouse/unbundled-builder .
+FROM clickhouse/deb-builder
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
+    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.jfrog.io/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${CODENAME}.deb" \
     && dpkg -i /tmp/arrow-keyring.deb
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get update \
@@ -15,12 +17,16 @@ RUN apt-get update \
         devscripts \
         libc++-dev \
         libc++abi-dev \
+        libboost-all-dev \
         libboost-program-options-dev \
         libboost-system-dev \
         libboost-filesystem-dev \
         libboost-thread-dev \
         libboost-iostreams-dev \
         libboost-regex-dev \
+        libboost-context-dev \
+        libboost-coroutine-dev \
+        libboost-graph-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \
@@ -33,9 +39,6 @@ RUN apt-get update \
         libjemalloc-dev \
         libmsgpack-dev \
         libcurl4-openssl-dev \
-        opencl-headers \
-        ocl-icd-libopencl1 \
-        intel-opencl-icd \
         unixodbc-dev \
         odbcinst \
         tzdata \
@@ -56,6 +59,7 @@ RUN apt-get update \
         libprotoc-dev \
         libgrpc++-dev \
         protobuf-compiler-grpc \
+        libc-ares-dev \
         rapidjson-dev \
         libsnappy-dev \
         libparquet-dev \
@@ -64,6 +68,8 @@ RUN apt-get update \
         libbz2-dev \
         libavro-dev \
         libfarmhash-dev \
+        librocksdb-dev \
+        libgflags-dev \
         libmysqlclient-dev \
         --yes --no-install-recommends
 

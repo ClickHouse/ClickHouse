@@ -39,7 +39,7 @@ template <typename ArraySink> struct NullableArraySink;
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
@@ -140,17 +140,17 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#if !__clang__
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wsuggest-override"
+#if !defined(__clang__)
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wsuggest-override"
 #elif __clang_major__ >= 11
-    #pragma GCC diagnostic push
-#ifdef HAS_SUGGEST_OVERRIDE
-    #pragma GCC diagnostic ignored "-Wsuggest-override"
-#endif
-#ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
-    #pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
-#endif
+#   pragma GCC diagnostic push
+#   ifdef HAS_SUGGEST_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-override"
+#   endif
+#   ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#   endif
 #endif
 
 template <typename Base>
@@ -233,8 +233,8 @@ struct ConstSource : public Base
     }
 };
 
-#if !__clang__ || __clang_major__ >= 11
-#pragma GCC diagnostic pop
+#if !defined(__clang__) || __clang_major__ >= 11
+#   pragma GCC diagnostic pop
 #endif
 
 struct StringSource
@@ -281,6 +281,11 @@ struct StringSource
         return offsets[row_num] - prev_offset - 1;
     }
 
+    size_t getColumnSize() const
+    {
+        return offsets.size();
+    }
+
     Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset - 1};
@@ -320,7 +325,7 @@ struct StringSource
 };
 
 
-/// Differs to StringSource by having 'offest' and 'length' in code points instead of bytes in getSlice* methods.
+/// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
   *      hello
@@ -355,9 +360,9 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
@@ -367,14 +372,14 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
 
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -384,19 +389,19 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -417,6 +422,7 @@ struct FixedStringSource
     const UInt8 * end;
     size_t string_size;
     size_t row_num = 0;
+    size_t column_size = 0;
 
     explicit FixedStringSource(const ColumnFixedString & col)
             : string_size(col.getN())
@@ -424,6 +430,7 @@ struct FixedStringSource
         const auto & chars = col.getChars();
         pos = chars.data();
         end = pos + chars.size();
+        column_size = col.size();
     }
 
     void next()
@@ -450,6 +457,11 @@ struct FixedStringSource
     size_t getElementSize() const
     {
         return string_size;
+    }
+
+    size_t getColumnSize() const
+    {
+        return column_size;
     }
 
     Slice getWhole() const
@@ -495,7 +507,7 @@ struct IStringSource
     virtual bool isEnd() const = 0;
     virtual size_t getSizeForReserve() const = 0;
     virtual Slice getWhole() const = 0;
-    virtual ~IStringSource() {}
+    virtual ~IStringSource() = default;
 };
 
 
@@ -708,7 +720,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Column = ColumnVectorOrDecimal<T>;
 
     using SinkType = NumericArraySink<T>;
 
@@ -755,6 +767,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
     using SinkType = GenericArraySink;
+    using Column = IColumn;
 
     const IColumn * column;
     size_t total_rows;

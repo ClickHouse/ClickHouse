@@ -8,16 +8,37 @@
 namespace DB
 {
 
-/** Reads from the concatenation of multiple ReadBuffers
-  */
+/// Reads from the concatenation of multiple ReadBuffer's
 class ConcatReadBuffer : public ReadBuffer
 {
 public:
-    using ReadBuffers = std::vector<ReadBuffer *>;
+    using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
+
+    ConcatReadBuffer() : ReadBuffer(nullptr, 0), current(buffers.end())
+    {
+    }
+
+    explicit ConcatReadBuffer(Buffers && buffers_) : ReadBuffer(nullptr, 0), buffers(std::move(buffers_)), current(buffers.begin())
+    {
+        assert(!buffers.empty());
+    }
+
+    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer()
+    {
+        appendBuffer(wrapReadBufferReference(buf1));
+        appendBuffer(wrapReadBufferReference(buf2));
+    }
+
+    void appendBuffer(std::unique_ptr<ReadBuffer> buffer)
+    {
+        assert(!count());
+        buffers.push_back(std::move(buffer));
+        current = buffers.begin();
+    }
 
 protected:
-    ReadBuffers buffers;
-    ReadBuffers::iterator current;
+    Buffers buffers;
+    Buffers::iterator current;
 
     bool nextImpl() override
     {
@@ -25,11 +46,16 @@ protected:
             return false;
 
         /// First reading
-        if (working_buffer.size() == 0 && (*current)->hasPendingData())
+        if (working_buffer.empty())
         {
-            working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
-            return true;
+            if ((*current)->hasPendingData())
+            {
+                working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
+                return true;
+            }
         }
+        else
+            (*current)->position() = position();
 
         if (!(*current)->next())
         {
@@ -48,16 +74,6 @@ protected:
 
         working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
         return true;
-    }
-
-public:
-    ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin()) {}
-
-    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(nullptr, 0)
-    {
-        buffers.push_back(&buf1);
-        buffers.push_back(&buf2);
-        current = buffers.begin();
     }
 };
 

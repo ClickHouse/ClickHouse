@@ -12,6 +12,7 @@
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -73,7 +74,26 @@ public:
 private:
     void run();
 
-    void searchForMissingPart(const String & part_name);
+    /// Search for missing part and queue fetch if possible. Otherwise
+    /// remove part from zookeeper and queue.
+    void searchForMissingPartAndFetchIfPossible(const String & part_name, bool exists_in_zookeeper);
+
+    std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
+
+    enum MissingPartSearchResult
+    {
+        /// We found this part on other replica, let's fetch it.
+        FoundAndNeedFetch,
+        /// We found covering part or source part with same min and max block number
+        /// don't need to fetch because we should do it during normal queue processing.
+        FoundAndDontNeedFetch,
+        /// Covering part not found anywhere and exact part_name doesn't found on other
+        /// replicas.
+        LostForever,
+    };
+
+    /// Search for missing part on other replicas or covering part on all replicas (including our replica).
+    MissingPartSearchResult searchForMissingPartOnOtherReplicas(const String & part_name);
 
     StorageReplicatedMergeTree & storage;
     String log_name;

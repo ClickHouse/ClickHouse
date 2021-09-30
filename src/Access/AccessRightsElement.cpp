@@ -1,169 +1,162 @@
 #include <Access/AccessRightsElement.h>
-#include <Dictionaries/IDictionary.h>
 #include <Common/quoteString.h>
-#include <boost/range/algorithm/sort.hpp>
-#include <boost/range/algorithm/unique.hpp>
-#include <boost/range/algorithm_ext/is_sorted.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
 {
 namespace
 {
-    using Kind = AccessRightsElementWithOptions::Kind;
-
-    String formatOptions(bool grant_option, Kind kind, const String & inner_part)
+    void formatColumnNames(const Strings & columns, String & result)
     {
-        if (kind == Kind::REVOKE)
+        result += "(";
+        bool need_comma = false;
+        for (const auto & column : columns)
         {
-            if (grant_option)
-                return "REVOKE GRANT OPTION " + inner_part;
-            else
-                return "REVOKE " + inner_part;
+            if (need_comma)
+                result += ", ";
+            need_comma = true;
+            result += backQuoteIfNeed(column);
         }
-        else
-        {
-            if (grant_option)
-                return "GRANT " + inner_part + " WITH GRANT OPTION";
-            else
-                return "GRANT " + inner_part;
-        }
+        result += ")";
     }
 
-
-    String formatONClause(const String & database, bool any_database, const String & table, bool any_table)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, String & result)
     {
-        String msg = "ON ";
-
+        result += "ON ";
         if (any_database)
-            msg += "*.";
-        else if (!database.empty())
-            msg += backQuoteIfNeed(database) + ".";
-
-        if (any_table)
-            msg += "*";
+        {
+            result += "*.*";
+        }
         else
-            msg += backQuoteIfNeed(table);
-        return msg;
+        {
+            if (!database.empty())
+            {
+                result += backQuoteIfNeed(database);
+                result += ".";
+            }
+            if (any_table)
+                result += "*";
+            else
+                result += backQuoteIfNeed(table);
+        }
     }
 
-
-    String formatAccessFlagsWithColumns(const AccessFlags & access_flags, const Strings & columns, bool any_column)
+    void formatOptions(bool grant_option, bool is_partial_revoke, String & result)
     {
-        String columns_in_parentheses;
+        if (is_partial_revoke)
+        {
+            if (grant_option)
+                result.insert(0, "REVOKE GRANT OPTION ");
+            else
+                result.insert(0, "REVOKE ");
+        }
+        else
+        {
+            if (grant_option)
+                result.insert(0, "GRANT ").append(" WITH GRANT OPTION");
+            else
+                result.insert(0, "GRANT ");
+        }
+    }
+
+    void formatAccessFlagsWithColumns(const AccessFlags & access_flags, const Strings & columns, bool any_column, String & result)
+    {
+        String columns_as_str;
         if (!any_column)
         {
             if (columns.empty())
-                return "USAGE";
-            for (const auto & column : columns)
             {
-                columns_in_parentheses += columns_in_parentheses.empty() ? "(" : ", ";
-                columns_in_parentheses += backQuoteIfNeed(column);
+                result += "USAGE";
+                return;
             }
-            columns_in_parentheses += ")";
+            formatColumnNames(columns, columns_as_str);
         }
 
         auto keywords = access_flags.toKeywords();
         if (keywords.empty())
-            return "USAGE";
+        {
+            result += "USAGE";
+            return;
+        }
 
-        String msg;
+        bool need_comma = false;
         for (const std::string_view & keyword : keywords)
         {
-            if (!msg.empty())
-                msg += ", ";
-            msg += String{keyword} + columns_in_parentheses;
+            if (need_comma)
+                result.append(", ");
+            need_comma = true;
+            result += keyword;
+            result += columns_as_str;
         }
-        return msg;
     }
-}
 
-
-String AccessRightsElement::toString() const
-{
-    return formatAccessFlagsWithColumns(access_flags, columns, any_column) + " " + formatONClause(database, any_database, table, any_table);
-}
-
-String AccessRightsElementWithOptions::toString() const
-{
-    return formatOptions(grant_option, kind, AccessRightsElement::toString());
-}
-
-String AccessRightsElements::toString() const
-{
-    if (empty())
-        return "USAGE ON *.*";
-
-    String res;
-    String inner_part;
-
-    for (size_t i = 0; i != size(); ++i)
+    String toStringImpl(const AccessRightsElement & element, bool with_options)
     {
-        const auto & element = (*this)[i];
-
-        if (!inner_part.empty())
-            inner_part += ", ";
-        inner_part += formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column);
-
-        bool next_element_uses_same_table = false;
-        if (i != size() - 1)
-        {
-            const auto & next_element = (*this)[i + 1];
-            if (element.sameDatabaseAndTable(next_element))
-                next_element_uses_same_table = true;
-        }
-
-        if (!next_element_uses_same_table)
-        {
-            if (!res.empty())
-                res += ", ";
-            res += inner_part + " " + formatONClause(element.database, element.any_database, element.table, element.any_table);
-            inner_part.clear();
-        }
+        String result;
+        formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, result);
+        result += " ";
+        formatONClause(element.database, element.any_database, element.table, element.any_table, result);
+        if (with_options)
+            formatOptions(element.grant_option, element.is_partial_revoke, result);
+        return result;
     }
 
-    return res;
+    String toStringImpl(const AccessRightsElements & elements, bool with_options)
+    {
+        if (elements.empty())
+            return with_options ? "GRANT USAGE ON *.*" : "USAGE ON *.*";
+
+        String result;
+        String part;
+
+        for (size_t i = 0; i != elements.size(); ++i)
+        {
+            const auto & element = elements[i];
+
+            if (!part.empty())
+                part += ", ";
+            formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, part);
+
+            bool next_element_uses_same_table_and_options = false;
+            if (i != elements.size() - 1)
+            {
+                const auto & next_element = elements[i + 1];
+                if (element.sameDatabaseAndTable(next_element) && element.sameOptions(next_element))
+                    next_element_uses_same_table_and_options = true;
+            }
+
+            if (!next_element_uses_same_table_and_options)
+            {
+                part += " ";
+                formatONClause(element.database, element.any_database, element.table, element.any_table, part);
+                if (with_options)
+                    formatOptions(element.grant_option, element.is_partial_revoke, part);
+                if (result.empty())
+                    result = std::move(part);
+                else
+                    result.append(", ").append(part);
+                part.clear();
+            }
+        }
+
+        return result;
+    }
 }
 
-String AccessRightsElementsWithOptions::toString() const
+
+String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
+String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
+String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+
+void AccessRightsElements::eraseNonGrantable()
 {
-    if (empty())
-        return "GRANT USAGE ON *.*";
-
-    String res;
-    String inner_part;
-
-    for (size_t i = 0; i != size(); ++i)
+    boost::range::remove_erase_if(*this, [](AccessRightsElement & element)
     {
-        const auto & element = (*this)[i];
-
-        if (!inner_part.empty())
-            inner_part += ", ";
-        inner_part += formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column);
-
-        bool next_element_uses_same_mode_and_table = false;
-        if (i != size() - 1)
-        {
-            const auto & next_element = (*this)[i + 1];
-            if (element.sameDatabaseAndTable(next_element) && element.sameOptions(next_element))
-                next_element_uses_same_mode_and_table = true;
-        }
-
-        if (!next_element_uses_same_mode_and_table)
-        {
-            if (!res.empty())
-                res += ", ";
-            res += formatOptions(
-                element.grant_option,
-                element.kind,
-                inner_part + " " + formatONClause(element.database, element.any_database, element.table, element.any_table));
-            inner_part.clear();
-        }
-    }
-
-    return res;
+        element.eraseNonGrantable();
+        return element.empty();
+    });
 }
 
 }

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS db_for_dict;
 CREATE DATABASE db_for_dict;
 
@@ -17,7 +19,7 @@ CREATE DICTIONARY db_for_dict.dict_with_hashed_layout
 )
 PRIMARY KEY key1
 LAYOUT(HASHED)
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'db_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'db_for_dict'))
 LIFETIME(MIN 1 MAX 10);
 
 SELECT dictGet('db_for_dict.dict_with_hashed_layout', 'value', toUInt64(2));

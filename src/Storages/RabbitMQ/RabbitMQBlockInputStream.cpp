@@ -1,12 +1,10 @@
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 namespace DB
 {
@@ -14,7 +12,7 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Context & context_,
+    ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
@@ -52,22 +50,17 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
 }
 
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer || !buffer->isChannelUpdateAllowed())
+    if (!buffer)
         return false;
 
-    if (buffer->isChannelError())
-        return true;
-
-    ChannelPtr channel = buffer->getChannel();
-
-    return !channel || !channel->usable();
+    return buffer->needChannelUpdate();
 }
 
 
@@ -78,8 +71,8 @@ void RabbitMQBlockInputStream::updateChannel()
 
     buffer->updateAckTracker();
 
-    storage.updateChannel(buffer->getChannel());
-    buffer->setupChannel();
+    if (storage.updateChannel(buffer->getChannel()))
+        buffer->setupChannel();
 }
 
 
@@ -90,57 +83,11 @@ Block RabbitMQBlockInputStream::readImpl()
 
     finished = true;
 
-    MutableColumns result_columns = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
-
     auto input_format = FormatFactory::instance().getInputFormat(
             storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
-    InputPort port(input_format->getPort().getHeader(), input_format.get());
-    connect(input_format->getPort(), port);
-    port.setNeeded();
-
-    auto read_rabbitmq_message = [&]
-    {
-        size_t new_rows = 0;
-
-        while (true)
-        {
-            auto status = input_format->prepare();
-
-            switch (status)
-            {
-                case IProcessor::Status::Ready:
-                    input_format->work();
-                    break;
-
-                case IProcessor::Status::Finished:
-                    input_format->resetParser();
-                    return new_rows;
-
-                case IProcessor::Status::PortFull:
-                {
-                    auto chunk = port.pull();
-
-                    auto chunk_rows = chunk.getNumRows();
-                    new_rows += chunk_rows;
-
-                    auto columns = chunk.detachColumns();
-
-                    for (size_t i = 0, s = columns.size(); i < s; ++i)
-                    {
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-                    }
-                    break;
-                }
-                case IProcessor::Status::NeedData:
-                case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
-                case IProcessor::Status::ExpandPipeline:
-                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    };
+    StreamingFormatExecutor executor(non_virtual_header, input_format);
 
     size_t total_rows = 0;
 
@@ -149,7 +96,7 @@ Block RabbitMQBlockInputStream::readImpl()
         if (buffer->eof())
             break;
 
-        auto new_rows = read_rabbitmq_message();
+        auto new_rows = executor.execute();
 
         if (new_rows)
         {
@@ -184,7 +131,7 @@ Block RabbitMQBlockInputStream::readImpl()
     if (total_rows == 0)
         return Block();
 
-    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
+    auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())

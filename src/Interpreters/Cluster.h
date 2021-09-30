@@ -1,13 +1,25 @@
 #pragma once
 
-#include <map>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+
 #include <Poco/Net/SocketAddress.h>
+
+#include <map>
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 namespace DB
 {
+
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -27,22 +39,31 @@ public:
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
+    /// Local are also treated as remote if treat_local_port_as_remote is set and the local address includes a port
     /// 'clickhouse_port' - port that this server instance listen for queries.
     /// This parameter is needed only to check that some address is local (points to ourself).
     ///
     /// Used for remote() function.
-    Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-            const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote,
-            bool secure = false, Int64 priority = 1);
+    Cluster(
+        const Settings & settings,
+        const std::vector<std::vector<String>> & names,
+        const String & username,
+        const String & password,
+        UInt16 clickhouse_port,
+        bool treat_local_as_remote,
+        bool treat_local_port_as_remote,
+        bool secure = false,
+        Int64 priority = 1);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
 
     /// is used to set a limit on the size of the timeout
-    static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
+    static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
 public:
+    using SlotToShard = std::vector<UInt64>;
+
     struct Address
     {
         /** In configuration file,
@@ -64,7 +85,7 @@ public:
         */
 
         String host_name;
-        UInt16 port;
+        UInt16 port{0};
         String user;
         String password;
 
@@ -87,6 +108,7 @@ public:
         Int64 priority = 1;
 
         Address() = default;
+
         Address(
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
@@ -94,13 +116,17 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
+
         Address(
             const String & host_port_,
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,
+            bool treat_local_port_as_remote,
             bool secure_ = false,
-            Int64 priority_ = 1);
+            Int64 priority_ = 1,
+            UInt32 shard_index_ = 0,
+            UInt32 replica_index_ = 0);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -133,6 +159,25 @@ public:
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
 
+    /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+    ///
+    /// Contains different path for permutations of:
+    /// - prefer_localhost_replica
+    ///   Notes with prefer_localhost_replica==0 will contains local nodes.
+    /// - use_compact_format_in_distributed_parts_names
+    ///   See toFullString()
+    ///
+    /// This is cached to avoid looping by replicas in insertPathForInternalReplication().
+    struct ShardInfoInsertPathForInternalReplication
+    {
+        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=0
+        std::string prefer_localhost_replica;
+        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
+        std::string no_prefer_localhost_replica;
+        /// use_compact_format_in_distributed_parts_names=1
+        std::string compact;
+    };
+
     struct ShardInfo
     {
     public:
@@ -141,13 +186,10 @@ public:
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & pathForInsert(bool prefer_localhost_replica) const;
+        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
 
     public:
-        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && prefer_localhost_replica
-        std::string dir_name_for_internal_replication;
-        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && !prefer_localhost_replica
-        std::string dir_name_for_internal_replication_with_local;
+        ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         UInt32 weight = 1;
@@ -198,7 +240,6 @@ public:
     bool maybeCrossReplication() const;
 
 private:
-    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:
@@ -232,6 +273,8 @@ private:
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;
+
+    String name;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -248,7 +291,7 @@ public:
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix);
+    void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
 public:
     using Impl = std::map<String, ClusterPtr>;

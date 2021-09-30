@@ -73,8 +73,8 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 
     size_t saved_hash;
 
-    HashSetCellWithSavedHash() : Base() {}
-    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {}
+    HashSetCellWithSavedHash() : Base() {} //-V730
+    HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {} //-V730
 
     bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }

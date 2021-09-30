@@ -28,7 +28,7 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-
+        <default_database>default<default_database>
         <databases>
             <database_name>
                 <table_name>
@@ -139,7 +139,7 @@ You can assign a quotas set for the user. For a detailed description of quotas c
 
 ### user_name/databases {#user-namedatabases}
 
-In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
+In this section, you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
 
 **Example**
 
@@ -159,4 +159,4 @@ The following configuration forces that user `user1` can only see the rows of `t
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

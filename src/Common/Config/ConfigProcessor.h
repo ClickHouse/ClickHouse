@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
+
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -11,12 +15,9 @@
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <common/logger_useful.h>
 
 
@@ -97,7 +98,7 @@ public:
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
-    /// Set path of main config.xml. It will be cutted from all configs placed to preprocessed_configs/
+    /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
 
 public:
@@ -141,3 +142,4 @@ private:
 };
 
 }
+

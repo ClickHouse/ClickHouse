@@ -1,19 +1,24 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
 
 static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
 {
-    bool columns_already_distinct = true;
-    for (const auto & name : columns)
-        if (distinct_names.count(name) == 0)
-            columns_already_distinct = false;
+    if (distinct_names.empty())
+        return false;
 
-    return columns_already_distinct;
+    /// Now we need to check that distinct_names is a subset of columns.
+    std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
+    for (const auto & name : distinct_names)
+        if (columns_set.count(name) == 0)
+            return false;
+
+    return true;
 }
 
 static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_distinct_columns)
@@ -58,7 +63,7 @@ DistinctStep::DistinctStep(
     }
 }
 
-void DistinctStep::transformPipeline(QueryPipeline & pipeline)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
         return;
@@ -66,9 +71,9 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline)
     if (!pre_distinct)
         pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
         return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
@@ -96,6 +101,15 @@ void DistinctStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << '\n';
+}
+
+void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & column : columns)
+        columns_array->add(column);
+
+    map.add("Columns", std::move(columns_array));
 }
 
 }

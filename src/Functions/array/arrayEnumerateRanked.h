@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -90,12 +90,13 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context & /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -116,7 +117,7 @@ public:
         return type;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -142,7 +143,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }
@@ -150,7 +151,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 template <typename Derived>
 ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -304,10 +305,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const size_t depth_to_look = arrays_depths.max_array_depth;
     const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
-    using Map = ClearableHashMapWithStackMemory<UInt128, UInt32,
+    using Container = ClearableHashMapWithStackMemory<UInt128, UInt32,
         UInt128TrivialHash, INITIAL_SIZE_DEGREE>;
 
-    Map indices;
+    Container indices;
 
     std::vector<size_t> indices_by_depth(depth_to_look);
     std::vector<size_t> current_offset_n_by_depth(depth_to_look);

@@ -34,6 +34,12 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     if (!agg_info)
         throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
+    /** If the remote servers used a two-level aggregation method,
+      *  then blocks will contain information about the number of the bucket.
+      * Then the calculations can be parallelized by buckets.
+      * We decompose the blocks to the bucket numbers indicated in them.
+      */
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
     block.info.is_overflows = agg_info->is_overflows;
     block.info.bucket_num = agg_info->bucket_num;
@@ -46,7 +52,7 @@ Chunk MergingAggregatedTransform::generate()
     if (!generate_started)
     {
         generate_started = true;
-        LOG_TRACE(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
+        LOG_DEBUG(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
         /// Exception safety. Make iterator valid in case any method below throws.
         next_block = blocks.begin();

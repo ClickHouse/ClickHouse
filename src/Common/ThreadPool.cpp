@@ -3,6 +3,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
+#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -56,6 +57,13 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 }
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_threads;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
     std::lock_guard lock(mutex);
@@ -67,6 +75,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
     queue_size = value;
+    /// Reserve memory to get rid of allocations
+    jobs.reserve(queue_size);
 }
 
 
@@ -74,7 +84,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
 {
-    auto on_error = [&]
+    auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
         {
@@ -84,7 +94,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
                 std::swap(exception, first_exception);
                 std::rethrow_exception(exception);
             }
-            throw DB::Exception("Cannot schedule a task", DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+            throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+                "Cannot schedule a task: {} (threads={}, jobs={})", reason,
+                threads.size(), scheduled_jobs);
         }
         else
             return false;
@@ -98,20 +110,30 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
         {
             if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
-                return on_error();
+                return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
             job_finished.wait(lock, pred);
 
         if (shutdown)
-            return on_error();
+            return on_error("shutdown");
 
-        jobs.emplace(std::move(job), priority);
-        ++scheduled_jobs;
+        /// We must not to allocate any memory after we emplaced a job in a queue.
+        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
-        if (threads.size() < std::min(max_threads, scheduled_jobs))
+        /// Check if there are enough threads to process job.
+        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            threads.emplace_front();
+            try
+            {
+                threads.emplace_front();
+            }
+            catch (...)
+            {
+                /// Most likely this is a std::bad_alloc exception
+                return on_error("cannot allocate thread slot");
+            }
+
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
@@ -119,19 +141,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 threads.pop_front();
-
-                /// Remove the job and return error to caller.
-                /// Note that if we have allocated at least one thread, we may continue
-                /// (one thread is enough to process all jobs).
-                /// But this condition indicate an error nevertheless and better to refuse.
-
-                jobs.pop();
-                --scheduled_jobs;
-                return on_error();
+                return on_error("cannot allocate thread");
             }
         }
+
+        jobs.emplace(std::move(job), priority);
+        ++scheduled_jobs;
+        new_job_or_shutdown.notify_one();
     }
-    new_job_or_shutdown.notify_one();
+
     return ReturnType(true);
 }
 
@@ -158,6 +176,10 @@ void ThreadPoolImpl<Thread>::wait()
 {
     {
         std::unique_lock lock(mutex);
+        /// Signal here just in case.
+        /// If threads are waiting on condition variables, but there are some jobs in the queue
+        /// then it will prevent us from deadlock.
+        new_job_or_shutdown.notify_all();
         job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
         if (first_exception)
@@ -172,6 +194,10 @@ void ThreadPoolImpl<Thread>::wait()
 template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
+    /// Note: should not use logger from here,
+    /// because it can be an instance of GlobalThreadPool that is a global variable
+    /// and the destruction order of global variables is unspecified.
+
     finalize();
 }
 
@@ -199,8 +225,16 @@ size_t ThreadPoolImpl<Thread>::active() const
 }
 
 template <typename Thread>
+bool ThreadPoolImpl<Thread>::finished() const
+{
+    std::unique_lock lock(mutex);
+    return shutdown;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
@@ -216,7 +250,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = jobs.top().job;
+                /// boost::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+                job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
             }
             else
@@ -224,12 +260,14 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// shutdown is true, simply finish the thread.
                 return;
             }
+
         }
 
         if (!need_shutdown)
         {
             try
             {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 

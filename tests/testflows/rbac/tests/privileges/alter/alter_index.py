@@ -26,7 +26,7 @@ aliases = {
     "MATERIALIZE INDEX" : ["ALTER MATERIALIZE INDEX", "MATERIALIZE INDEX"],
     "CLEAR INDEX": ["ALTER CLEAR INDEX", "CLEAR INDEX"],
     "DROP INDEX": ["ALTER DROP INDEX", "DROP INDEX"],
-    "ALTER INDEX": ["ALTER INDEX", "INDEX"] # super-privilege
+    "ALTER INDEX": ["ALTER INDEX", "INDEX", "ALL"] # super-privilege
 }
 
 # Extra permutation is for 'ALTER INDEX' super-privilege
@@ -128,10 +128,10 @@ def check_order_by_when_privilege_is_granted(table, user, node):
     column = "order"
 
     with Given("I run sanity check"):
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d", settings = [("user", user)])
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b", settings = [("user", user)])
 
     with And("I add new column and modify order using that column"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (d, {column})")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32, MODIFY ORDER BY (b, {column})")
 
     with When(f"I insert random data into the ordered-by column {column}"):
         data = random.sample(range(1,1000),100)
@@ -151,7 +151,7 @@ def check_order_by_when_privilege_is_granted(table, user, node):
 
     with And("I verify that the sorting key is present in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"ORDER BY (d, {column})" in output['statement'], error()
+        assert f"ORDER BY (b, {column})" in output['statement'], error()
 
     with But(f"I cannot drop the required column {column}"):
         exitcode, message = errors.missing_columns(column)
@@ -163,21 +163,13 @@ def check_sample_by_when_privilege_is_granted(table, user, node):
     """
     column = 'sample'
 
-    with Given(f"I add new column {column}"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} UInt32")
-
     with When(f"I add sample by clause"):
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY (d, {column})",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
             settings = [("user", user)])
 
     with Then("I verify that the sample is in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
-        assert f"SAMPLE BY (d, {column})" in output['statement'], error()
-
-    with But(f"I cannot drop the required column {column}"):
-        exitcode, message = errors.missing_columns(column)
-        node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
-            exitcode=exitcode, message=message)
+        assert f"SAMPLE BY b" in output['statement'], error()
 
 def check_add_index_when_privilege_is_granted(table, user, node):
     """Ensures ADD INDEX runs as expected when the privilege is granted to the specified user
@@ -258,7 +250,7 @@ def check_order_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY ORDER BY d",
+        node.query(f"ALTER TABLE {table} MODIFY ORDER BY b",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_sample_by_when_privilege_is_not_granted(table, user, node):
@@ -266,7 +258,7 @@ def check_sample_by_when_privilege_is_not_granted(table, user, node):
     """
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
-        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY d",
+        node.query(f"ALTER TABLE {table} MODIFY SAMPLE BY b",
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 def check_add_index_when_privilege_is_not_granted(table, user, node):
@@ -302,7 +294,6 @@ def check_drop_index_when_privilege_is_not_granted(table, user, node):
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 @TestScenario
-@Flags(TE)
 def user_with_some_privileges(self, table_type, node=None):
     """Check that user with any permutation of ALTER INDEX subprivileges is able
     to alter the table for privileges granted, and not for privileges not granted.
@@ -325,7 +316,6 @@ def user_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Revoke("1.0"),
 )
@@ -355,7 +345,6 @@ def user_with_revoked_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Grant("1.0"),
 )
@@ -385,7 +374,6 @@ def role_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 def user_with_revoked_role(self, table_type, node=None):
     """Check that user with a role that has ALTER INDEX privilege on a table is unable to
     ALTER INDEX from that table after the role with privilege has been revoked from the user.
@@ -416,7 +404,6 @@ def user_with_revoked_role(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Cluster("1.0"),
 )
@@ -448,345 +435,16 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
                     with Finally("I drop the user on cluster"):
                         node.query(f"DROP USER {user_name} ON CLUSTER sharded_cluster")
 
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Grant("1.0"),
-)
-def user_with_privileges_from_user_with_grant_option(self, table_type, node=None):
-    """Check that user is able to ALTER INDEX on a table when granted privilege
-    from another user with grant option.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            with table(node, table_name, table_type),user(node, user0_name), user(node, user1_name):
-                with When("I grant privileges needed for iteration with grant option to user"):
-                    node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
-
-                with And("I grant privileges to another user via grant option"):
-                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
-                        settings = [("user", user0_name)])
-
-                with Then(f"I try to ALTER INDEX with given privileges"):
-                    alter_index_privilege_handler(permutation, table_name, user1_name, node)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Grant("1.0"),
-)
-def role_with_privileges_from_user_with_grant_option(self, table_type, node=None):
-    """Check that user is able to ALTER INDEX on a table when granted a role with
-    ALTER INDEX privilege that was granted by another user with grant option.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role_name = f"role_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role_name):
-                    with When("I grant needed subprivileges with grant option to user"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
-
-                    with And("I grant privileges to a role via grant option"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name}",
-                            settings = [("user", user0_name)])
-
-                    with And("I grant the role to another user"):
-                        node.query(f"GRANT {role_name} TO {user1_name}")
-
-                    with Then(f"I try to ALTER INDEX with given privileges"):
-                        alter_index_privilege_handler(permutation, table_name, user1_name, node)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Grant("1.0"),
-)
-def user_with_privileges_from_role_with_grant_option(self, table_type, node=None):
-    """Check that user is able to ALTER INDEX on a table when granted privilege from
-    a role with grant option
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role_name = f"role_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role_name):
-                    with When(f"I grant privileges with grant option to a role"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION")
-
-                    with And("I grant role to a user"):
-                        node.query(f"GRANT {role_name} TO {user0_name}")
-
-                    with And("I grant privileges to a user via grant option"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
-                            settings = [("user", user0_name)])
-
-                    with Then(f"I try to ALTER INDEX with given privileges"):
-                        alter_index_privilege_handler(permutation, table_name, user1_name, node)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Grant("1.0"),
-)
-def role_with_privileges_from_role_with_grant_option(self, table_type, node=None):
-    """Check that a user is able to ALTER INDEX on a table with a role that was
-    granted privilege by another role with grant option
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role0_name = f"role0_{getuid()}"
-    role1_name = f"role1_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role0_name), role(node, role1_name):
-                    with When(f"I grant privilege with grant option to role"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role0_name} WITH GRANT OPTION")
-
-                    with And("I grant the role to a user"):
-                        node.query(f"GRANT {role0_name} TO {user0_name}")
-
-                    with And("I grant privileges to another role via grant option"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name}",
-                            settings = [("user", user0_name)])
-
-                    with And("I grant the second role to another user"):
-                        node.query(f"GRANT {role1_name} TO {user1_name}")
-
-                    with Then(f"I try to ALTER INDEX with given privileges"):
-                        alter_index_privilege_handler(permutation, table_name, user1_name, node)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Revoke("1.0"),
-)
-def revoke_privileges_from_user_via_user_with_grant_option(self, table_type, node=None):
-    """Check that user is unable to revoke a privilege they don't have access to from a user.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            # This test does not apply when no privileges are granted (permutation 0)
-            if permutation == 0:
-                continue
-
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with Given(f"I grant privileges with grant option to user0"):
-                    node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
-
-                with And(f"I grant privileges with grant option to user1"):
-                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name} WITH GRANT OPTION",
-                        settings=[("user", user0_name)])
-
-                with When("I revoke privilege from user0 using user1"):
-                    node.query(f"REVOKE {privileges} ON {table_name} FROM {user0_name}",
-                        settings=[("user", user1_name)])
-
-                with Then("I verify that user0 has privileges revoked"):
-                    exitcode, message = errors.not_enough_privileges(user0_name)
-                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
-                        settings=[("user", user0_name)], exitcode=exitcode, message=message)
-                    node.query(f"REVOKE {privileges} ON {table_name} FROM {user1_name}",
-                        settings=[("user", user0_name)], exitcode=exitcode, message=message)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Revoke("1.0"),
-)
-def revoke_privileges_from_role_via_user_with_grant_option(self, table_type, node=None):
-    """Check that user is unable to revoke a privilege they don't have access to from a role.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role_name = f"role_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            # This test does not apply when no privileges are granted (permutation 0)
-            if permutation == 0:
-                continue
-
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role_name):
-                    with Given(f"I grant privileges with grant option to role0"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION")
-
-                    with And("I grant role0 to user0"):
-                        node.query(f"GRANT {role_name} TO {user0_name}")
-
-                    with And(f"I grant privileges with grant option to user1"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name} WITH GRANT OPTION",
-                            settings=[("user", user0_name)])
-
-                    with When("I revoke privilege from role0 using user1"):
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role_name}",
-                            settings=[("user", user1_name)])
-
-                    with Then("I verify that role0(user0) has privileges revoked"):
-                        exitcode, message = errors.not_enough_privileges(user0_name)
-                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {user1_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Revoke("1.0"),
-)
-def revoke_privileges_from_user_via_role_with_grant_option(self, table_type, node=None):
-    """Check that user with a role is unable to revoke a privilege they don't have access to from a user.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role_name = f"role_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            # This test does not apply when no privileges are granted (permutation 0)
-            if permutation == 0:
-                continue
-
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role_name):
-                    with Given(f"I grant privileges with grant option to user0"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
-
-                    with And(f"I grant privileges with grant option to role1"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION",
-                            settings=[("user", user0_name)])
-
-                    with When("I grant role1 to user1"):
-                        node.query(f"GRANT {role_name} TO {user1_name}")
-
-                    with And("I revoke privilege from user0 using role1(user1)"):
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {user0_name}",
-                            settings=[("user" ,user1_name)])
-
-                    with Then("I verify that user0 has privileges revoked"):
-                        exitcode, message = errors.not_enough_privileges(user0_name)
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-
-@TestScenario
-@Flags(TE)
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_GrantOption_Revoke("1.0"),
-)
-def revoke_privileges_from_role_via_role_with_grant_option(self, table_type, node=None):
-    """Check that user with a role is unable to revoke a privilege they don't have access to from a role.
-    """
-    if node is None:
-        node = self.context.node
-
-    table_name = f"merge_tree_{getuid()}"
-    user0_name = f"user0_{getuid()}"
-    user1_name = f"user1_{getuid()}"
-    role0_name = f"role0_{getuid()}"
-    role1_name = f"role1_{getuid()}"
-
-    for permutation in permutations(table_type):
-        privileges = alter_index_privileges(permutation)
-
-        with When(f"granted={privileges}"):
-            # This test does not apply when no privileges are granted (permutation 0)
-            if permutation == 0:
-                continue
-
-            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
-                with role(node, role0_name), role(node, role1_name):
-                    with Given(f"I grant privileges with grant option to role0"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role0_name} WITH GRANT OPTION")
-
-                    with And("I grant role0 to user0"):
-                        node.query(f"GRANT {role0_name} TO {user0_name}")
-
-                    with And(f"I grant privileges with grant option to role1"):
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name} WITH GRANT OPTION",
-                            settings=[("user", user0_name)])
-
-                    with When("I grant role1 to user1"):
-                        node.query(f"GRANT {role1_name} TO {user1_name}")
-
-                    with And("I revoke privilege from role0(user0) using role1(user1)"):
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role0_name}",
-                            settings=[("user", user1_name)])
-
-                    with Then("I verify that role0(user0) has privileges revoked"):
-                        exitcode, message = errors.not_enough_privileges(user0_name)
-                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role1_name}",
-                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
-
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
-@Flags(TE)
 @Name("alter index")
 def feature(self, node="clickhouse1", stress=None, parallel=None):
     self.context.node = self.context.cluster.node(node)
@@ -803,13 +461,10 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            pool = Pool(13)
-            try:
+            with Pool(5) as pool:
                 tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario), {"table_type" : table_type})
+                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
                 finally:
                     join(tasks)
-            finally:
-                pool.close()

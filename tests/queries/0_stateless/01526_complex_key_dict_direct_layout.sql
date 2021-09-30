@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS db_01526;
 
 CREATE DATABASE db_01526;
@@ -22,7 +24,7 @@ CREATE DICTIONARY db_01526.dict1
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column, second_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict1' PASSWORD '' DB 'db_01526'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict1' PASSWORD '' DB 'db_01526'))
 LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT dictGet('db_01526.dict1', 'third_column', (number, number + 1)) FROM numbers(4);

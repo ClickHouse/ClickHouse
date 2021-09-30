@@ -9,6 +9,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentProfiles(FunctionFactory &);
+void registerFunctionCurrentRoles(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -28,6 +30,7 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
 void registerFunctionReplicate(FunctionFactory &);
@@ -41,10 +44,12 @@ void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
 void registerFunctionBuildId(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
-void registerFunctionTimeZone(FunctionFactory &);
+void registerFunctionTimezone(FunctionFactory &);
+void registerFunctionTimezoneOf(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
 void registerFunctionRunningDifference(FunctionFactory &);
 void registerFunctionRunningDifferenceStartingWithFirstValue(FunctionFactory &);
+void registerFunctionRunningConcurrency(FunctionFactory &);
 void registerFunctionFinalizeAggregation(FunctionFactory &);
 void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
@@ -64,6 +69,18 @@ void registerFunctionCountDigits(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
+void registerFunctionErrorCodeToName(FunctionFactory &);
+void registerFunctionTcpPort(FunctionFactory &);
+void registerFunctionGetServerPort(FunctionFactory &);
+void registerFunctionByteSize(FunctionFactory &);
+void registerFunctionFile(FunctionFactory & factory);
+void registerFunctionConnectionId(FunctionFactory & factory);
+void registerFunctionPartitionId(FunctionFactory & factory);
+void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionQueryID(FunctionFactory & factory);
+void registerFunctionInitialQueryID(FunctionFactory & factory);
+void registerFunctionServerUUID(FunctionFactory &);
+void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -73,6 +90,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentProfiles(factory);
+    registerFunctionCurrentRoles(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -92,6 +111,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
     registerFunctionReplicate(factory);
@@ -105,10 +125,12 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionVersion(factory);
     registerFunctionBuildId(factory);
     registerFunctionUptime(factory);
-    registerFunctionTimeZone(factory);
+    registerFunctionTimezone(factory);
+    registerFunctionTimezoneOf(factory);
     registerFunctionRunningAccumulate(factory);
     registerFunctionRunningDifference(factory);
     registerFunctionRunningDifferenceStartingWithFirstValue(factory);
+    registerFunctionRunningConcurrency(factory);
     registerFunctionFinalizeAggregation(factory);
     registerFunctionToLowCardinality(factory);
     registerFunctionLowCardinalityIndices(factory);
@@ -128,6 +150,18 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGlobalVariable(factory);
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
+    registerFunctionErrorCodeToName(factory);
+    registerFunctionTcpPort(factory);
+    registerFunctionGetServerPort(factory);
+    registerFunctionByteSize(factory);
+    registerFunctionFile(factory);
+    registerFunctionConnectionId(factory);
+    registerFunctionPartitionId(factory);
+    registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionQueryID(factory);
+    registerFunctionInitialQueryID(factory);
+    registerFunctionServerUUID(factory);
+    registerFunctionZooKeeperSessionUptime(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

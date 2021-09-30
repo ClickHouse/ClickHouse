@@ -18,11 +18,11 @@ public:
     bool hasStaticStructure() const override { return true; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Input"; }
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String structure;
 };

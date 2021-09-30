@@ -57,6 +57,11 @@ public:
         return chars.size() + sizeof(n);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return n;
+    }
+
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);
@@ -107,6 +112,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -127,6 +134,11 @@ public:
                                                compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return hasEqualValuesImpl<ColumnFixedString>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
@@ -134,6 +146,8 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -150,6 +164,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    ColumnPtr compress() const override;
 
     void reserve(size_t size) override
     {
@@ -178,6 +194,5 @@ public:
 
     size_t getN() const { return n; }
 };
-
 
 }

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -30,7 +30,7 @@ class FunctionGlobalVariable : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionGlobalVariable>();
     }
@@ -45,6 +45,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!checkColumnConst<ColumnString>(arguments[0].column.get()))
@@ -58,7 +60,7 @@ public:
             return variable->second.type;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col = arguments[0];
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
@@ -77,8 +79,11 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map = {
-        {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}, {"version", {std::make_shared<DataTypeString>(), "5.7.30"}}};
+    std::unordered_map<String, TypeAndValue> global_variable_map
+        = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
+           {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
+           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
+           {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
 };
 
 }

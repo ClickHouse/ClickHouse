@@ -2,11 +2,11 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/fast_background_pool.xml', 'configs/log_conf.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/fast_background_pool.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/fast_background_pool.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/fast_background_pool.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -28,12 +28,13 @@ def count_ttl_merges_in_queue(node, table):
     return int(result.strip())
 
 
-def count_ttl_merges_in_background_pool(node, table):
-    result = node.query(
-        "SELECT count() FROM system.merges WHERE merge_type = 'TTL_DELETE' and table = '{}'".format(table))
-    if not result:
-        return 0
-    return int(result.strip())
+def count_ttl_merges_in_background_pool(node, table, level):
+    result = TSV(node.query(
+        "SELECT * FROM system.merges WHERE merge_type = 'TTL_DELETE' and table = '{}'".format(table)))
+    count = len(result)
+    if count >= level:
+        print("count_ttl_merges_in_background_pool: merges more than warn level:\n{}".format(result))
+    return count
 
 
 def count_regular_merges_in_background_pool(node, table):
@@ -54,6 +55,7 @@ def count_running_mutations(node, table):
 # but it revealed a bug when we assign different merges to the same part
 # on the borders of partitions.
 def test_no_ttl_merges_in_busy_pool(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_ttl")
     node1.query(
         "CREATE TABLE test_ttl (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0, number_of_free_entries_in_pool_to_execute_mutation = 0")
 
@@ -67,7 +69,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
 
     while count_running_mutations(node1, "test_ttl") < 6:
         print("Mutations count", count_running_mutations(node1, "test_ttl"))
-        assert count_ttl_merges_in_background_pool(node1, "test_ttl") == 0
+        assert count_ttl_merges_in_background_pool(node1, "test_ttl", 1) == 0
         time.sleep(0.5)
 
     node1.query("SYSTEM START TTL MERGES")
@@ -86,6 +88,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_ttl_v2")
     node1.query(
         "CREATE TABLE test_ttl_v2 (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
 
@@ -100,7 +103,7 @@ def test_limited_ttl_merges_in_empty_pool(started_cluster):
 
     merges_with_ttl_count = set({})
     while True:
-        merges_with_ttl_count.add(count_ttl_merges_in_background_pool(node1, "test_ttl_v2"))
+        merges_with_ttl_count.add(count_ttl_merges_in_background_pool(node1, "test_ttl_v2", 3))
         time.sleep(0.01)
         if node1.query("SELECT COUNT() FROM test_ttl_v2") == "0\n":
             break
@@ -109,13 +112,14 @@ def test_limited_ttl_merges_in_empty_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
+    node1.query("DROP TABLE IF EXISTS replicated_ttl")
     node1.query(
         "CREATE TABLE replicated_ttl (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
 
     node1.query("SYSTEM STOP TTL MERGES")
 
     for i in range(100):
-        node1.query("INSERT INTO replicated_ttl SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(1)".format(i))
+        node1.query_with_retry("INSERT INTO replicated_ttl SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(1)".format(i))
 
     assert node1.query("SELECT COUNT() FROM replicated_ttl") == "100\n"
 
@@ -124,7 +128,7 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
     merges_with_ttl_count = set({})
     entries_with_ttl_count = set({})
     while True:
-        merges_with_ttl_count.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl"))
+        merges_with_ttl_count.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl", 3))
         entries_with_ttl_count.add(count_ttl_merges_in_queue(node1, "replicated_ttl"))
         time.sleep(0.01)
         if node1.query("SELECT COUNT() FROM replicated_ttl") == "0\n":
@@ -136,7 +140,9 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
 
 def test_limited_ttl_merges_two_replicas(started_cluster):
     # Actually this test quite fast and often we cannot catch any merges.
-    # To check for sure just add some sleeps in mergePartsToTemporaryPart
+    node1.query("DROP TABLE IF EXISTS replicated_ttl_2")
+    node2.query("DROP TABLE IF EXISTS replicated_ttl_2")
+
     node1.query(
         "CREATE TABLE replicated_ttl_2 (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t2', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
     node2.query(
@@ -146,7 +152,7 @@ def test_limited_ttl_merges_two_replicas(started_cluster):
     node2.query("SYSTEM STOP TTL MERGES")
 
     for i in range(100):
-        node1.query(
+        node1.query_with_retry(
             "INSERT INTO replicated_ttl_2 SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(10000)".format(i))
 
     node2.query("SYSTEM SYNC REPLICA replicated_ttl_2", timeout=10)
@@ -159,8 +165,8 @@ def test_limited_ttl_merges_two_replicas(started_cluster):
     merges_with_ttl_count_node1 = set({})
     merges_with_ttl_count_node2 = set({})
     while True:
-        merges_with_ttl_count_node1.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl_2"))
-        merges_with_ttl_count_node2.add(count_ttl_merges_in_background_pool(node2, "replicated_ttl_2"))
+        merges_with_ttl_count_node1.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl_2", 3))
+        merges_with_ttl_count_node2.add(count_ttl_merges_in_background_pool(node2, "replicated_ttl_2", 3))
         if node1.query("SELECT COUNT() FROM replicated_ttl_2") == "0\n" and node2.query(
                 "SELECT COUNT() FROM replicated_ttl_2") == "0\n":
             break

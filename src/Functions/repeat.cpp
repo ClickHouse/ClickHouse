@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 
 
@@ -124,12 +124,39 @@ struct RepeatImpl
     }
 
 private:
+    // A very fast repeat implementation, only invoke memcpy for O(log(n)) times.
+    // as the calling times decreases, more data will be copied for each memcpy, thus
+    // SIMD optimization will be more efficient.
     static void process(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
     {
-        for (UInt64 i = 0; i < repeat_time; ++i)
+        if (unlikely(repeat_time <= 0))
         {
-            memcpy(dst, src, size - 1);
-            dst += size - 1;
+            *dst = 0;
+            return;
+        }
+
+        size -= 1;
+        UInt64 k = 0;
+        UInt64 last_bit = repeat_time & 1;
+        repeat_time >>= 1;
+
+        const UInt8 * dst_hdr = dst;
+        memcpy(dst, src, size);
+        dst += size;
+
+        while (repeat_time > 0)
+        {
+            UInt64 cpy_size = size * (1ULL << k);
+            memcpy(dst, dst_hdr, cpy_size);
+            dst += cpy_size;
+            if (last_bit)
+            {
+                memcpy(dst, dst_hdr, cpy_size);
+                dst += cpy_size;
+            }
+            k += 1;
+            last_bit = repeat_time & 1;
+            repeat_time >>= 1;
         }
         *dst = 0;
     }
@@ -146,11 +173,13 @@ class FunctionRepeat : public IFunction
 
 public:
     static constexpr auto name = "repeat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRepeat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRepeat>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -165,7 +194,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & strcolumn = arguments[0].column;
         const auto & numcolumn = arguments[1].column;
@@ -225,7 +254,7 @@ public:
 
 void registerFunctionRepeat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRepeat>();
+    factory.registerFunction<FunctionRepeat>(FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,12 +1,15 @@
 #pragma once
 #include <Databases/IDatabase.h>
 
+#include <Interpreters/DatabaseCatalog.h>
+
 namespace DB
 {
 
 template<typename StorageT, typename... StorageArgs>
 void attach(IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
         /// Attach to Ordinary database

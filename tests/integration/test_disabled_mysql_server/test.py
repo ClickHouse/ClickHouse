@@ -22,10 +22,10 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
+    def __init__(self, started_cluster, user='root', password='clickhouse'):
         self.user = user
-        self.port = port
-        self.hostname = hostname
+        self.port = cluster.mysql_port
+        self.hostname = cluster.mysql_ip
         self.password = password
         self.mysql_connection = None   # lazy init
 
@@ -45,16 +45,17 @@ class MySQLNodeInstance:
 
 
 def test_disabled_mysql_server(started_cluster):
-    with contextlib.closing(MySQLNodeInstance()) as mysql_node:
-        mysql_node.query("CREATE DATABASE test_db;")
-        mysql_node.query("CREATE TABLE test_db.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    with contextlib.closing(MySQLNodeInstance(started_cluster)) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_db_disabled;")
+        mysql_node.query("CREATE DATABASE test_db_disabled;")
+        mysql_node.query("CREATE TABLE test_db_disabled.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
 
     with PartitionManager() as pm:
-        clickhouse_node.query("CREATE DATABASE test_db ENGINE = MySQL('mysql1:3306', 'test_db', 'root', 'clickhouse')")
+        clickhouse_node.query("CREATE DATABASE test_db_disabled ENGINE = MySQL('mysql57:3306', 'test_db_disabled', 'root', 'clickhouse')")
             
         pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
         clickhouse_node.query("SELECT * FROM system.parts")
         clickhouse_node.query("SELECT * FROM system.mutations")
         clickhouse_node.query("SELECT * FROM system.graphite_retentions")
 
-        clickhouse_node.query("DROP DATABASE test_db")
+        clickhouse_node.query("DROP DATABASE test_db_disabled")

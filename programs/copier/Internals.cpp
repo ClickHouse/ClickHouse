@@ -1,6 +1,8 @@
 #include "Internals.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 
 namespace DB
 {
@@ -13,7 +15,7 @@ using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
-    std::stringstream ss(xml_data);
+    std::stringstream ss(xml_data);         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
@@ -63,9 +65,21 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
             std::numeric_limits<size_t>::max());
 }
 
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
+Block getBlockWithAllStreamData(QueryPipeline pipeline)
 {
-    return squashStreamIntoOneBlock(stream)->read();
+    QueryPipelineBuilder builder;
+    builder.init(std::move(pipeline));
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(
+        builder.getHeader(),
+        std::numeric_limits<size_t>::max(),
+        std::numeric_limits<size_t>::max()));
+
+    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    Block block;
+    PullingPipelineExecutor executor(cur_pipeline);
+    executor.pull(block);
+
+    return block;
 }
 
 
@@ -222,8 +236,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                                + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                                 ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)

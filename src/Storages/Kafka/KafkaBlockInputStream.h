@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
@@ -20,7 +19,7 @@ public:
     KafkaBlockInputStream(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::shared_ptr<Context> & context_,
+        const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
         size_t max_block_size_,
@@ -40,7 +39,7 @@ public:
 private:
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
-    const std::shared_ptr<Context> context;
+    ContextPtr context;
     Names column_names;
     Poco::Logger * log;
     UInt64 max_block_size;
@@ -52,6 +51,7 @@ private:
 
     const Block non_virtual_header;
     const Block virtual_header;
+    const HandleKafkaErrorMode handle_error_mode;
 };
 
 }

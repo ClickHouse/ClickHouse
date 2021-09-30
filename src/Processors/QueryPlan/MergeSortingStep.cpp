@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ MergeSortingStep::MergeSortingStep(
     size_t max_merged_block_size_,
     UInt64 limit_,
     size_t max_bytes_before_remerge_,
+    double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
@@ -36,6 +38,7 @@ MergeSortingStep::MergeSortingStep(
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
+    , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
 {
@@ -50,20 +53,21 @@ void MergeSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
-void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
+void MergeSortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
+        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return nullptr;
 
         return std::make_shared<MergeSortingTransform>(
                 header, description, max_merged_block_size, limit,
                 max_bytes_before_remerge / pipeline.getNumStreams(),
+                remerge_lowered_memory_bytes_ratio,
                 max_bytes_before_external_sort,
                 tmp_volume,
                 min_free_disk_space);
@@ -79,6 +83,14 @@ void MergeSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+}
+
+void MergeSortingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(description, input_streams.front().header));
+
+    if (limit)
+        map.add("Limit", limit);
 }
 
 }

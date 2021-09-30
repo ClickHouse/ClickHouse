@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-debug, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 TMP_DIR="/tmp"
@@ -64,7 +66,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
     LIFETIME(0)
     LAYOUT($type());
 
@@ -77,7 +79,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_tuple' PASSWORD '' DB 'test_01037'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_tuple' PASSWORD '' DB 'test_01037'))
     LIFETIME(0)
     LAYOUT($type());
 

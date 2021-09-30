@@ -1,5 +1,5 @@
 ---
-toc_priority: 6
+toc_priority: 10
 toc_title: RabbitMQ
 ---
 
@@ -21,11 +21,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = RabbitMQ SETTINGS
-    rabbitmq_host_port = 'host:port',
+    rabbitmq_host_port = 'host:port' [or rabbitmq_address = 'amqp(s)://guest:guest@localhost/vhost'],
     rabbitmq_exchange_name = 'exchange_name',
     rabbitmq_format = 'data_format'[,]
     [rabbitmq_exchange_type = 'exchange_type',]
     [rabbitmq_routing_key_list = 'key1,key2,...',]
+    [rabbitmq_secure = 0,]
     [rabbitmq_row_delimiter = 'delimiter_symbol',]
     [rabbitmq_schema = '',]
     [rabbitmq_num_consumers = N,]
@@ -59,9 +60,30 @@ Optional parameters:
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
 
-Required configuration:
+SSL connection:
+
+Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
+
+Also format settings can be added along with rabbitmq-related settings.
+
+Example:
+
+``` sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64,
+    date DateTime
+  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
+                            rabbitmq_exchange_name = 'exchange1',
+                            rabbitmq_format = 'JSONEachRow',
+                            rabbitmq_num_consumers = 5,
+                            date_time_input_format = 'best_effort';
+```
 
 The RabbitMQ server configuration should be added using the ClickHouse config file.
+
+Required configuration:
 
 ``` xml
  <rabbitmq>
@@ -70,16 +92,12 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
  </rabbitmq>
 ```
 
-Example:
+Additional configuration:
 
-``` sql
-  CREATE TABLE queue (
-    key UInt64,
-    value UInt64
-  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
-                            rabbitmq_exchange_name = 'exchange1',
-                            rabbitmq_format = 'JSONEachRow',
-                            rabbitmq_num_consumers = 5;
+``` xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
 ```
 
 ## Description {#description}
@@ -105,6 +123,7 @@ Exchange type options:
 -   `consistent_hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
 Setting `rabbitmq_queue_base` may be used for the following cases:
+
 -   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
 -   to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
 -   to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
@@ -150,3 +169,5 @@ Example:
 -   `_redelivered` - `redelivered` flag of the message.
 -   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
 -   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

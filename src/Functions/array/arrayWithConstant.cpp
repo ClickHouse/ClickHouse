@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
@@ -30,10 +30,12 @@ class FunctionArrayWithConstant : public IFunction
 public:
     static constexpr auto name = "arrayWithConstant";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayWithConstant>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayWithConstant>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -47,7 +49,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t num_rows) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t num_rows) const override
     {
         const auto * col_num = arguments[0].column.get();
         const auto * col_value = arguments[1].column.get();

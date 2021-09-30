@@ -18,20 +18,26 @@ namespace ErrorCodes
 }
 
 
-RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
-                                                 const ConnectionTimeouts & timeouts,
-                                                 const String & query_,
-                                                 const Settings & settings_,
-                                                 const ClientInfo & client_info_)
+RemoteInserter::RemoteInserter(
+    Connection & connection_,
+    const ConnectionTimeouts & timeouts,
+    const String & query_,
+    const Settings & settings_,
+    const ClientInfo & client_info_)
     : connection(connection_), query(query_)
 {
     ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.client_trace_context
+            = CurrentThread::get().thread_trace_context;
+    }
 
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info);
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false);
 
     while (true)
     {
@@ -65,19 +71,16 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
 }
 
 
-void RemoteBlockOutputStream::write(const Block & block)
+void RemoteInserter::write(Block block)
 {
-    if (header)
-        assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
-
     try
     {
-        connection.sendData(block);
+        connection.sendData(block, /* name */"", /* scalar */false);
     }
     catch (const NetException &)
     {
         /// Try to get more detailed exception from server
-        auto packet_type = connection.checkPacket();
+        auto packet_type = connection.checkPacket(/* timeout_microseconds */0);
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             Packet packet = connection.receivePacket();
@@ -89,17 +92,17 @@ void RemoteBlockOutputStream::write(const Block & block)
 }
 
 
-void RemoteBlockOutputStream::writePrepared(ReadBuffer & input, size_t size)
+void RemoteInserter::writePrepared(ReadBuffer & buf, size_t size)
 {
     /// We cannot use 'header'. Input must contain block with proper structure.
-    connection.sendPreparedData(input, size);
+    connection.sendPreparedData(buf, size);
 }
 
 
-void RemoteBlockOutputStream::writeSuffix()
+void RemoteInserter::onFinish()
 {
     /// Empty block means end of data.
-    connection.sendData(Block());
+    connection.sendData(Block(), /* name */"", /* scalar */false);
 
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)
@@ -122,7 +125,7 @@ void RemoteBlockOutputStream::writeSuffix()
     finished = true;
 }
 
-RemoteBlockOutputStream::~RemoteBlockOutputStream()
+RemoteInserter::~RemoteInserter()
 {
     /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection,
     ///  to not leave the connection in unsynchronized state.

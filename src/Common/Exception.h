@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 
+#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
@@ -23,8 +24,11 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
+    using FramePointers = std::vector<void *>;
+
     Exception() = default;
-    Exception(const std::string & msg, int code);
+    Exception(const std::string & msg, int code, bool remote_ = false);
+    Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -59,18 +63,26 @@ public:
         extendedMessage(message);
     }
 
+    /// Used to distinguish local exceptions from the one that was received from remote node.
+    void setRemoteException(bool remote_ = true) { remote = remote_; }
+    bool isRemoteException() const { return remote; }
+
     std::string getStackTraceString() const;
+    /// Used for system.errors
+    FramePointers getStackFramePointers() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
+    bool remote = false;
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
 
 
 std::string getExceptionStackTraceString(const std::exception & e);
+std::string getExceptionStackTraceString(std::exception_ptr e);
 
 
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.
@@ -92,6 +104,40 @@ private:
 
     const char * name() const throw() override { return "DB::ErrnoException"; }
     const char * className() const throw() override { return "DB::ErrnoException"; }
+};
+
+
+/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
+/// more convenient calculation of problem line number.
+class ParsingException : public Exception
+{
+public:
+    ParsingException();
+    ParsingException(const std::string & msg, int code);
+    ParsingException(int code, const std::string & message);
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    ParsingException(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {}
+
+
+    std::string displayText() const
+#if defined(POCO_CLICKHOUSE_PATCH)
+    override
+#endif
+    ;
+
+    int getLineNumber() { return line_number_; }
+    void setLineNumber(int line_number) { line_number_ = line_number;}
+
+private:
+    ssize_t line_number_{-1};
+    mutable std::string formatted_message_;
+
+    const char * name() const throw() override { return "DB::ParsingException"; }
+    const char * className() const throw() override { return "DB::ParsingException"; }
 };
 
 
@@ -122,6 +168,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
+int getExceptionErrorCode(std::exception_ptr e);
 
 
 /// An execution status of any piece of code, contains return code and optional error
@@ -136,6 +183,8 @@ struct ExecutionStatus
     : code(return_code), message(exception_message) {}
 
     static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
+
+    static ExecutionStatus fromText(const std::string & data);
 
     std::string serializeText() const;
 

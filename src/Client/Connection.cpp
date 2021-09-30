@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -7,10 +8,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/TimeoutSetter.h>
+#include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -22,7 +24,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
@@ -53,6 +55,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -73,6 +76,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -102,6 +110,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -121,16 +131,23 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
+        /// disconnect() will reset the socket, get timeouts before.
+        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
+            e.displayText(), getDescription(),
+            socket->getReceiveTimeout().totalMilliseconds(),
+            socket->getSendTimeout().totalMilliseconds());
+
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
 
 void Connection::disconnect()
 {
+    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -201,6 +218,12 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
+
+    /// Prevent read after eof in readVarUInt in case of reset connection
+    /// (Poco should throw such exception while reading from socket but
+    /// sometimes it doesn't for unknown reason)
+    if (in->eof())
+        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -397,7 +420,12 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+    /// Query is not executed within sendQuery() function.
+    ///
+    /// And what this means that temporary timeout (via TimeoutSetter) is not
+    /// enough, since next query can use timeout from the previous query in this case.
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
 
     if (settings)
     {
@@ -408,7 +436,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -483,7 +511,7 @@ void Connection::sendQuery(
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
-        sendData(Block());
+        sendData(Block(), "", false);
         out->next();
     }
 }
@@ -528,10 +556,28 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
+void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
+    writeVectorBinary(uuids, *out);
+    out->next();
+}
+
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
+
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -546,6 +592,12 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
+    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
+    /// dedicated revision after introducing scalars, so this will still break some versions with
+    /// revision 54428.
+    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
+        return;
+
     if (data.empty())
         return;
 
@@ -614,7 +666,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name);
+        connection.sendData(block, table_data.table_name, false);
     }
 
 private:
@@ -630,7 +682,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
-        sendData(Block());
+        sendData(Block(), "", false);
         return;
     }
 
@@ -646,13 +698,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        QueryPipeline pipeline;
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
+        QueryPipelineBuilder pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
-            if (type != QueryPipeline::StreamType::Main)
+            if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
             return sink;
         });
@@ -664,11 +720,11 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
         /// If table is empty, send empty block with name.
         if (read_rows == 0)
-            sendData(sink->getPort().getHeader(), elem->table_name);
+            sendData(sink->getPort().getHeader(), elem->table_name, false);
     }
 
     /// Send empty block, which means end of data transfer.
-    sendData(Block());
+    sendData(Block(), "", false);
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
@@ -778,6 +834,13 @@ Packet Connection::receivePacket()
             case Protocol::Server::EndOfStream:
                 return res;
 
+            case Protocol::Server::PartUUIDs:
+                readVectorBinary(res.part_uuids, *in);
+                return res;
+
+            case Protocol::Server::ReadTaskRequest:
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -788,6 +851,9 @@ Packet Connection::receivePacket()
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -875,13 +941,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -891,7 +957,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -899,7 +965,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);
@@ -913,6 +979,21 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
             "Unexpected packet from server " + getDescription() + " (expected " + expected
             + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
             ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+}
+
+ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
+{
+    return std::make_unique<Connection>(
+        parameters.host,
+        parameters.port,
+        parameters.default_database,
+        parameters.user,
+        parameters.password,
+        "", /* cluster */
+        "", /* cluster_secret */
+        "client",
+        parameters.compression,
+        parameters.security);
 }
 
 }

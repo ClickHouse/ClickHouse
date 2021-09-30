@@ -1,3 +1,5 @@
+-- Tags: distributed, no-replicated-database, no-parallel, no-fasttest
+
 SET allow_experimental_live_view = 1;
 
 DROP TABLE IF EXISTS lv;
@@ -7,7 +9,7 @@ DROP TABLE IF EXISTS visits_layer;
 CREATE TABLE visits (StartDate Date) ENGINE MergeTree ORDER BY(StartDate);
 CREATE TABLE visits_layer (StartDate Date) ENGINE Distributed(test_cluster_two_shards_localhost,  currentDatabase(), 'visits', rand());
 
-CREATE LIVE VIEW lv AS SELECT * FROM visits_layer ORDER BY StartDate; 
+CREATE LIVE VIEW lv AS SELECT * FROM visits_layer ORDER BY StartDate;
 
 CREATE TABLE visits_layer_lv (StartDate Date) ENGINE Distributed(test_cluster_two_shards_localhost,  currentDatabase(), 'lv', rand());
 
@@ -20,3 +22,4 @@ DROP TABLE visits;
 DROP TABLE visits_layer;
 
 DROP TABLE lv;
+DROP TABLE visits_layer_lv;

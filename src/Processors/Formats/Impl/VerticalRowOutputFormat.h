@@ -22,7 +22,7 @@ public:
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowStartDelimiter() override;
     void writeRowBetweenDelimiter() override;
     void writeSuffix() override;
@@ -35,10 +35,10 @@ public:
     void writeBeforeExtremes() override;
 
 protected:
-    virtual void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const;
+    virtual void writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const;
 
     /// For totals and extremes.
-    void writeSpecialRow(const Columns & columns, size_t row_num, PortKind port_kind, const char * title);
+    void writeSpecialRow(const Columns & columns, size_t row_num, const char * title);
 
     const FormatSettings format_settings;
     size_t field_number = 0;

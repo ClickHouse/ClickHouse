@@ -1,3 +1,7 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
@@ -9,6 +13,7 @@
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
@@ -25,8 +30,11 @@
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/System/StorageSystemParts.h>
+#include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
@@ -38,6 +46,10 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#include <Storages/System/StorageSystemErrors.h>
+#include <Storages/System/StorageSystemWarnings.h>
+#include <Storages/System/StorageSystemDDLWorkerQueue.h>
+
 #if !defined(ARCADIA_BUILD)
     #include <Storages/System/StorageSystemLicenses.h>
     #include <Storages/System/StorageSystemTimeZones.h>
@@ -61,9 +73,14 @@
 #include <Storages/System/StorageSystemQuotasUsage.h>
 #include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Storages/System/StorageSystemAsynchronousInserts.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
+#endif
+
+#if USE_ROCKSDB
+#include <Storages/RocksDB/StorageSystemRocksDB.h>
 #endif
 
 
@@ -108,12 +125,18 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemQuotasUsage>(system_database, "quotas_usage");
     attach<StorageSystemUserDirectories>(system_database, "user_directories");
     attach<StorageSystemPrivileges>(system_database, "privileges");
+    attach<StorageSystemErrors>(system_database, "errors");
+    attach<StorageSystemWarnings>(system_database, "warnings");
+    attach<StorageSystemDataSkippingIndices>(system_database, "data_skipping_indices");
 #if !defined(ARCADIA_BUILD)
     attach<StorageSystemLicenses>(system_database, "licenses");
     attach<StorageSystemTimeZones>(system_database, "time_zones");
 #endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(system_database, "stack_trace");
+#endif
+#if USE_ROCKSDB
+    attach<StorageSystemRocksDB>(system_database, "rocksdb");
 #endif
 }
 
@@ -122,8 +145,10 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attachSystemTablesLocal(system_database);
 
     attach<StorageSystemParts>(system_database, "parts");
+    attach<StorageSystemProjectionParts>(system_database, "projection_parts");
     attach<StorageSystemDetachedParts>(system_database, "detached_parts");
     attach<StorageSystemPartsColumns>(system_database, "parts_columns");
+    attach<StorageSystemProjectionPartsColumns>(system_database, "projection_parts_columns");
     attach<StorageSystemDisks>(system_database, "disks");
     attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
     attach<StorageSystemProcesses>(system_database, "processes");
@@ -132,6 +157,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemMutations>(system_database, "mutations");
     attach<StorageSystemReplicas>(system_database, "replicas");
     attach<StorageSystemReplicationQueue>(system_database, "replication_queue");
+    attach<StorageSystemDDLWorkerQueue>(system_database, "distributed_ddl_queue");
     attach<StorageSystemDistributionQueue>(system_database, "distribution_queue");
     attach<StorageSystemDictionaries>(system_database, "dictionaries");
     attach<StorageSystemModels>(system_database, "models");
@@ -139,6 +165,8 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemGraphite>(system_database, "graphite_retentions");
     attach<StorageSystemMacros>(system_database, "macros");
     attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
+    attach<StorageSystemPartMovesBetweenShards>(system_database, "part_moves_between_shards");
+    attach<StorageSystemAsynchronousInserts>(system_database, "asynchronous_inserts");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");

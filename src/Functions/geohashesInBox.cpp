@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GeoHash.h>
@@ -29,7 +29,7 @@ class FunctionGeohashesInBox : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashesInBox>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -60,6 +60,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
     void execute(
@@ -159,7 +161,7 @@ public:
         result = std::move(col_res);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * lon_min = arguments[0].column.get();
         const IColumn * lat_min = arguments[1].column.get();

@@ -3,7 +3,6 @@
 /// Macros for convenient usage of Poco logger.
 
 #include <fmt/format.h>
-#include <fmt/ostream.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
@@ -43,6 +42,7 @@ namespace
 } while (false)
 
 
+#define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)
 #define LOG_TRACE(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, __VA_ARGS__)
 #define LOG_DEBUG(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG, __VA_ARGS__)
 #define LOG_INFO(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION, __VA_ARGS__)
