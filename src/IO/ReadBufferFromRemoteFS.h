@@ -22,6 +22,7 @@ public:
 
     void reset(bool reset_inner_buf = false);
 
+    bool check = false;
 protected:
     size_t fetch(size_t offset);
 

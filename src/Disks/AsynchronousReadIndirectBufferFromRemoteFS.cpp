@@ -27,7 +27,8 @@ namespace ErrorCodes
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
     AsynchronousReaderPtr reader_, Int32 priority_, std::shared_ptr<ReadBufferFromRemoteFS> impl_)
-    : reader(reader_), priority(priority_), impl(impl_)
+    : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+    , reader(reader_), priority(priority_), impl(impl_), prefetch_buffer(DBMS_DEFAULT_BUFFER_SIZE)
 {
 }
 
@@ -48,6 +49,9 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     std::lock_guard lock(mutex);
+    assert(prefetch_buffer.data() != nullptr);
+    prefetch_buffer.resize(DBMS_DEFAULT_BUFFER_SIZE);
+    impl->set(prefetch_buffer.data(), prefetch_buffer.size());
     prefetch_future = readNext();
 }
 
@@ -65,9 +69,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             size = prefetch_future.get();
             if (size)
             {
-                set(impl->buffer().begin(), impl->buffer().size());
+                memory.swap(prefetch_buffer);
+                set(memory.data(), memory.size());
                 working_buffer.resize(size);
-                impl->reset();
                 absolute_position += size;
             }
         }
@@ -77,12 +81,15 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     else
     {
         std::lock_guard lock(mutex);
+        impl->check = true;
+        impl->set(memory.data(), memory.size());
+        assert(memory.data() != nullptr);
+        assert(impl->buffer().begin() != nullptr);
         size = readNext().get();
         if (size)
         {
-            set(impl->buffer().begin(), impl->buffer().size());
+            set(memory.data(), memory.size());
             working_buffer.resize(size);
-            impl->reset();
             absolute_position += size;
         }
     }
