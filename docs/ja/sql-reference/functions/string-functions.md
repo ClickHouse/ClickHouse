@@ -486,4 +486,4 @@ CRC-64-ECMA多項式を使用して、文字列のCRC64チェックサムを返�
 
 結果の型はUInt64です。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/string_functions/) <!--hide-->

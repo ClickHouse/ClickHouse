@@ -19,6 +19,41 @@
 namespace DB
 {
 
+
+DataTypePtr getCoordinationErrorCodesEnumType()
+{
+    return std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+            {
+                {"ZOK",                         static_cast<Int8>(Coordination::Error::ZOK)},
+
+                {"ZSYSTEMERROR",                static_cast<Int8>(Coordination::Error::ZSYSTEMERROR)},
+                {"ZRUNTIMEINCONSISTENCY",       static_cast<Int8>(Coordination::Error::ZRUNTIMEINCONSISTENCY)},
+                {"ZDATAINCONSISTENCY",          static_cast<Int8>(Coordination::Error::ZDATAINCONSISTENCY)},
+                {"ZCONNECTIONLOSS",             static_cast<Int8>(Coordination::Error::ZCONNECTIONLOSS)},
+                {"ZMARSHALLINGERROR",           static_cast<Int8>(Coordination::Error::ZMARSHALLINGERROR)},
+                {"ZUNIMPLEMENTED",              static_cast<Int8>(Coordination::Error::ZUNIMPLEMENTED)},
+                {"ZOPERATIONTIMEOUT",           static_cast<Int8>(Coordination::Error::ZOPERATIONTIMEOUT)},
+                {"ZBADARGUMENTS",               static_cast<Int8>(Coordination::Error::ZBADARGUMENTS)},
+                {"ZINVALIDSTATE",               static_cast<Int8>(Coordination::Error::ZINVALIDSTATE)},
+
+                {"ZAPIERROR",                   static_cast<Int8>(Coordination::Error::ZAPIERROR)},
+                {"ZNONODE",                     static_cast<Int8>(Coordination::Error::ZNONODE)},
+                {"ZNOAUTH",                     static_cast<Int8>(Coordination::Error::ZNOAUTH)},
+                {"ZBADVERSION",                 static_cast<Int8>(Coordination::Error::ZBADVERSION)},
+                {"ZNOCHILDRENFOREPHEMERALS",    static_cast<Int8>(Coordination::Error::ZNOCHILDRENFOREPHEMERALS)},
+                {"ZNODEEXISTS",                 static_cast<Int8>(Coordination::Error::ZNODEEXISTS)},
+                {"ZNOTEMPTY",                   static_cast<Int8>(Coordination::Error::ZNOTEMPTY)},
+                {"ZSESSIONEXPIRED",             static_cast<Int8>(Coordination::Error::ZSESSIONEXPIRED)},
+                {"ZINVALIDCALLBACK",            static_cast<Int8>(Coordination::Error::ZINVALIDCALLBACK)},
+                {"ZINVALIDACL",                 static_cast<Int8>(Coordination::Error::ZINVALIDACL)},
+                {"ZAUTHFAILED",                 static_cast<Int8>(Coordination::Error::ZAUTHFAILED)},
+                {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
+                {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
+                {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
+            });
+}
+
 NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
@@ -52,36 +87,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
             });
 
-    auto error_enum = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-            {
-                {"ZOK",                         static_cast<Int8>(Coordination::Error::ZOK)},
-
-                {"ZSYSTEMERROR",                static_cast<Int8>(Coordination::Error::ZSYSTEMERROR)},
-                {"ZRUNTIMEINCONSISTENCY",       static_cast<Int8>(Coordination::Error::ZRUNTIMEINCONSISTENCY)},
-                {"ZDATAINCONSISTENCY",          static_cast<Int8>(Coordination::Error::ZDATAINCONSISTENCY)},
-                {"ZCONNECTIONLOSS",             static_cast<Int8>(Coordination::Error::ZCONNECTIONLOSS)},
-                {"ZMARSHALLINGERROR",           static_cast<Int8>(Coordination::Error::ZMARSHALLINGERROR)},
-                {"ZUNIMPLEMENTED",              static_cast<Int8>(Coordination::Error::ZUNIMPLEMENTED)},
-                {"ZOPERATIONTIMEOUT",           static_cast<Int8>(Coordination::Error::ZOPERATIONTIMEOUT)},
-                {"ZBADARGUMENTS",               static_cast<Int8>(Coordination::Error::ZBADARGUMENTS)},
-                {"ZINVALIDSTATE",               static_cast<Int8>(Coordination::Error::ZINVALIDSTATE)},
-
-                {"ZAPIERROR",                   static_cast<Int8>(Coordination::Error::ZAPIERROR)},
-                {"ZNONODE",                     static_cast<Int8>(Coordination::Error::ZNONODE)},
-                {"ZNOAUTH",                     static_cast<Int8>(Coordination::Error::ZNOAUTH)},
-                {"ZBADVERSION",                 static_cast<Int8>(Coordination::Error::ZBADVERSION)},
-                {"ZNOCHILDRENFOREPHEMERALS",    static_cast<Int8>(Coordination::Error::ZNOCHILDRENFOREPHEMERALS)},
-                {"ZNODEEXISTS",                 static_cast<Int8>(Coordination::Error::ZNODEEXISTS)},
-                {"ZNOTEMPTY",                   static_cast<Int8>(Coordination::Error::ZNOTEMPTY)},
-                {"ZSESSIONEXPIRED",             static_cast<Int8>(Coordination::Error::ZSESSIONEXPIRED)},
-                {"ZINVALIDCALLBACK",            static_cast<Int8>(Coordination::Error::ZINVALIDCALLBACK)},
-                {"ZINVALIDACL",                 static_cast<Int8>(Coordination::Error::ZINVALIDACL)},
-                {"ZAUTHFAILED",                 static_cast<Int8>(Coordination::Error::ZAUTHFAILED)},
-                {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
-                {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
-                {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
-            });
+    auto error_enum = getCoordinationErrorCodesEnumType();
 
     auto watch_type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values

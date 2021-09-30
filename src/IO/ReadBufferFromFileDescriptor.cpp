@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 
 
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromFileDescriptorRead;

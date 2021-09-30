@@ -116,6 +116,6 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 **も参照。**
 
--   [仮想列](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [仮想列](https://clickhouse.com/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/file/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/file/) <!--hide-->
