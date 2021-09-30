@@ -18,8 +18,6 @@ struct MergeTreeReaderSettings
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;
-    /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
-    bool convert_nested_to_subcolumns = false;
     /// Validate checksums on reading (should be always enabled in production).
     bool checksum_on_read = true;
 };

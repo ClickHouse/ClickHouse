@@ -249,8 +249,8 @@ MaskInfo extractInvertedMask(
 
 void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
 {
-    for (size_t i = 0; i != mask.size(); ++i)
-        mask[i] = !mask[i];
+    for (auto & byte : mask)
+        byte = !byte;
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 

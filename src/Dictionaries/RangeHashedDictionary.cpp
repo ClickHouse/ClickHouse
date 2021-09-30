@@ -303,8 +303,7 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    QueryPipeline pipeline;
-    pipeline.init(source_ptr->loadAll());
+    QueryPipeline pipeline(source_ptr->loadAll());
 
     PullingPipelineExecutor executor(pipeline);
     Block block;

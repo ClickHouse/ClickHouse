@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- TODO: can't just remove default prefix, it breaks the test!
 
 drop database if exists db_01080;

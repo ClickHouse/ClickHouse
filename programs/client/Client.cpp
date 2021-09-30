@@ -1,4 +1,5 @@
 #include <string>
+
 #include "Common/MemoryTracker.h"
 #include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
@@ -6,6 +7,7 @@
 #include "QueryFuzzer.h"
 #include "Suggest.h"
 #include "TestHint.h"
+#include "TestTags.h"
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -32,7 +34,7 @@
 #include <Poco/Util/Application.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -1078,12 +1080,17 @@ private:
 
         bool echo_query = echo_queries;
 
+        /// Test tags are started with "--" so they are interpreted as comments anyway.
+        /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+        /// because we don't want test tags to be echoed.
+        size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
+
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
         /// An exception is VALUES format where we also support semicolon in
         /// addition to end of line.
 
-        const char * this_query_begin = all_queries_text.data();
+        const char * this_query_begin = all_queries_text.data() + test_tags_length;
         const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
         while (this_query_begin < all_queries_end)
@@ -1935,16 +1942,30 @@ private:
     {
         /// If INSERT data must be sent.
         auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        /// If query isn't parsed, no information can be got from it.
         if (!parsed_insert_query)
             return;
 
+        /// If data is got from file (maybe compressed file)
         if (parsed_insert_query->infile)
         {
+            /// Get name of this file (path to file)
             const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
             const auto in_file = in_file_node.value.safeGet<std::string>();
 
-            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+            std::string compression_method;
+            /// Compression method can be specified in query
+            if (parsed_insert_query->compression)
+            {
+                const auto & compression_method_node = parsed_insert_query->compression->as<ASTLiteral &>();
+                compression_method = compression_method_node.value.safeGet<std::string>();
+            }
 
+            /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
+            /// Buffer for reading from file is created and wrapped with appropriate compression method
+            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+
+            /// Now data is ready to be sent on server.
             try
             {
                 sendDataFrom(*in_buffer, sample, columns_description);
@@ -1955,6 +1976,7 @@ private:
                 throw;
             }
         }
+        /// If query already has data to sent
         else if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
@@ -2028,8 +2050,7 @@ private:
             });
         }
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
         PullingAsyncPipelineExecutor executor(pipeline);
 
         Block block;
@@ -2343,9 +2364,16 @@ private:
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
+                    std::string compression_method;
+                    if (query_with_output->compression)
+                    {
+                        const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                        compression_method = compression_method_node.value.safeGet<std::string>();
+                    }
+
                     out_file_buf = wrapWriteBufferWithCompressionMethod(
                         std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                        chooseCompressionMethod(out_file, ""),
+                        chooseCompressionMethod(out_file, compression_method),
                         /* compression level = */ 3
                     );
 
