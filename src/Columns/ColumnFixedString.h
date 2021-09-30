@@ -32,8 +32,7 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    template <bool positive>
-    struct less;
+    template <bool positive> struct Cmp;
 
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
