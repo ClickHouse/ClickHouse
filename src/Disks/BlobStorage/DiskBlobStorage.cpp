@@ -3,8 +3,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <iostream>
-#include <azure/storage/blobs.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
 
 
 namespace DB
@@ -41,11 +39,30 @@ DiskBlobStorage::DiskBlobStorage(
     const String & remote_fs_root_path_,
     const String & metadata_path_,
     const String & log_name_,
-    size_t thread_pool_size) :
-    IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size) {}
+    size_t thread_pool_size_) :
+    IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size_) {}
 
 
-DiskBlobStorage::DiskBlobStorage() : IDiskRemote("a", "b", "/home/jkuklis/blob_storage", "d", 1) {}
+DiskBlobStorage::DiskBlobStorage() : IDiskRemote("blob_storage", "https://sadttmpstgeus.blob.core.windows.net/data", "/home/jkuklis/blob_storage", "DiskBlobStorage", 1) {}
+
+
+DiskBlobStorage::DiskBlobStorage(
+    const String & name_,
+    const String & metadata_path_,
+    const String & endpoint_url,
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
+    Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+    size_t thread_pool_size_) :
+    IDiskRemote(name_, endpoint_url /* or maybe "" ? */, metadata_path_, "DiskBlobStorage", thread_pool_size_)
+{
+    // list blobs in the container
+    auto list_blobs = blob_container_client_.ListBlobs();
+
+    // print information about the container
+    std::cout << "Storage account: " << list_blobs.ServiceEndpoint
+        << ", container: " << list_blobs.BlobContainerName << "\n\n\n";
+}
+
 
 
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
