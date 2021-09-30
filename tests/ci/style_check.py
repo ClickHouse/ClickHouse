@@ -121,6 +121,15 @@ if __name__ == "__main__":
                 docker_image += ':' + images['clickhouse/style-test']
 
     logging.info("Got docker image %s", docker_image)
+    for i in range(10):
+        try:
+            subprocess.check_output(f"docker pull {docker_image}", shell=True)
+            break
+        except Exception as ex:
+            time.sleep(i * 3)
+            logging.info("Got execption pulling docker %s", ex)
+    else:
+        raise Exception(f"Cannot pull dockerhub for image {docker_image}")
 
     if not aws_secret_key_id  or not aws_secret_key:
         logging.info("No secrets, will not upload anything to S3")
