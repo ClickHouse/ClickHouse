@@ -83,13 +83,9 @@ private:
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
-    TaskThread wait_task;
-
     Records pollBatch(size_t batch_size_);
 
     void readNewRecords(Records & new_records, size_t batch_size_);
-
-    void cleanUnprocessed();
 
     bool nextImpl() override;
 };

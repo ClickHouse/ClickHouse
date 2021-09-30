@@ -5,7 +5,6 @@
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 
-
 namespace Poco
 {
     class Logger;
@@ -19,6 +18,7 @@ public:
         StorageFileLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ContextPtr & context_,
+        const Names & columns,
         size_t max_block_size_,
         size_t poll_time_out_,
         size_t stream_number_,
@@ -37,6 +37,7 @@ private:
     StorageFileLog & storage;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
+    Names column_names;
     UInt64 max_block_size;
 
     size_t poll_time_out;
