@@ -162,8 +162,16 @@ def main(github_secret_key, github_app_id, event):
 
         delete_for_av = []
         for candidate in candidates:
-            if len(delete_for_av) == num_to_kill:
+            if candidate not in set([runner.name for runner in runners]):
+                print(f"Candidate {candidate} was not in runners list, simply delete it")
+                instances_to_kill.append(candidate)
+
+        for candidate in candidates:
+            if len(delete_for_av) + len(instances_to_kill) == num_to_kill:
                 break
+            if candidate in instances_to_kill:
+                continue
+
             for runner in runners:
                 if runner.name == candidate:
                     if not runner.busy:
@@ -172,9 +180,6 @@ def main(github_secret_key, github_app_id, event):
                     else:
                         print(f"Runner {runner.name} is busy, not going to delete it")
                     break
-            else:
-                print(f"Candidate {candidate} was not in runners list, simply delete it")
-                instances_to_kill.append(candidate)
 
         if len(delete_for_av) < num_to_kill:
             print(f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}")
@@ -189,9 +194,9 @@ def main(github_secret_key, github_app_id, event):
         else:
             print(f"Cannot delete {runner.name} from github")
 
-    # push metrics
-    runners = list_runners(access_token)
-    push_metrics_to_cloudwatch(runners, 'RunnersMetrics')
+    ## push metrics
+    #runners = list_runners(access_token)
+    #push_metrics_to_cloudwatch(runners, 'RunnersMetrics')
 
     response = {
         "InstanceIDs": instances_to_kill
@@ -262,7 +267,7 @@ if __name__ == "__main__":
                 "InstanceId": "ip-172-31-45-253.eu-west-1.compute.internal",
                 "InstanceType": "t2.nano",
                 "InstanceMarketOption": "OnDemand"
-            },
+            }
         ],
         "Cause": "SCALE_IN"
     }

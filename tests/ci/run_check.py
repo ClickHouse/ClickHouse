@@ -86,7 +86,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # can be skipped entirely.
 def should_run_checks_for_pr(pr_info):
     # Consider the labels and whether the user is trusted.
-    force_labels = set(['force tests', 'release']).intersection(pr_info.labels)
+    force_labels = set(['force tests']).intersection(pr_info.labels)
     if force_labels:
         return True, "Labeled '{}'".format(', '.join(force_labels))
 
@@ -95,6 +95,9 @@ def should_run_checks_for_pr(pr_info):
 
     if 'can be tested' not in pr_info.labels and not pr_is_by_trusted_user(pr_info.user_login, pr_info.user_orgs):
         return False, "Needs 'can be tested' label"
+
+    if 'release' in pr_info.labels or 'pr-backport' in pr_info.labels or 'pr-cherrypick' in pr_info.labels:
+        return False, "Don't try new checks for release/backports/cherry-picks"
 
     return True, "No special conditions apply"
 
