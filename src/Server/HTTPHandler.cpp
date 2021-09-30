@@ -834,20 +834,12 @@ void HTTPHandler::trySendExceptionToClient(
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
-
-    if (request.isSecure())
-    {
-        size_t hsts_max_age = server.config().getUInt64("hsts_max_age", 0);
-
-        if (hsts_max_age > 0)
-            response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
-    }
-
     ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.

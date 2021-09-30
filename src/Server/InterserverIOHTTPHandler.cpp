@@ -81,14 +81,6 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 {
     setThreadName("IntersrvHandler");
 
-    if (request.isSecure())
-    {
-        size_t hsts_max_age = server.config().getUInt64("hsts_max_age", 0);
-
-        if (hsts_max_age > 0)
-            response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
-    }
-
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
