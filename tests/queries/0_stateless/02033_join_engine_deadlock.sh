@@ -30,7 +30,7 @@ populate_table_bg () {
             INSERT INTO join_block_test
             SELECT toString(number) as id, number * number as num
             FROM system.numbers LIMIT 3000000
-        " --lock_acquire_timeout=20 >/dev/null
+        " >/dev/null
     ) &
 }
 
@@ -54,7 +54,7 @@ read_table_bg () {
                     FROM join_block_test
                 ) AS i2 ON i1.id = toString(i2.num)
             ) AS t2 ON t1.user_id = t2.id
-        " --lock_acquire_timeout=20 >/dev/null
+        " >/dev/null
     ) &
 }
 
