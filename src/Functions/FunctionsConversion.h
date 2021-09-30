@@ -1510,12 +1510,12 @@ public:
 
         if constexpr (to_decimal)
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
@@ -1531,7 +1531,7 @@ public:
             // toDateTime64(value, scale : Integer[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1811,11 +1811,11 @@ public:
         if (isDateTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArgumentTypes(*this, arguments,
-                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
+                FunctionArgumentDescriptors{{"string", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}},
                 // optional
                 FunctionArgumentDescriptors{
-                    {"precision", isUInt8, isColumnConst, "const UInt8"},
-                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
+                    {"precision", &isUInt8<IDataType>, isColumnConst, "const UInt8"},
+                    {"timezone", &isStringOrFixedString<IDataType>, isColumnConst, "const String or FixedString"},
                 });
 
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
