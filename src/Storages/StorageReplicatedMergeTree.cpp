@@ -5483,7 +5483,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     Strings replicas;
     if (mutations_sync == 2) /// wait for all replicas
     {
-        replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+        replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
         /// This replica should be first, to ensure that the mutation will be loaded into memory
         for (auto it = replicas.begin(); it != replicas.end(); ++it)
         {
