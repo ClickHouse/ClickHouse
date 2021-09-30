@@ -413,13 +413,18 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    InterruptListener interrupt_listener;
     ThreadStatus thread_status;
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    if (!is_interactive)
+    is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
+    std::optional<InterruptListener> interrupt_listener;
+    if (is_interactive)
+    {
+        interrupt_listener.emplace();
+    }
+    else
     {
         /// We will terminate process on error
         static KillingErrorHandler error_handler;
@@ -437,7 +442,6 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
-
     connect();
 
     if (is_interactive)
@@ -478,12 +482,10 @@ catch (...)
 
 void LocalServer::processConfig()
 {
-    if (stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty())
+    if (is_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
-
-        is_interactive = true;
 
         if (config().has("multiquery"))
             is_multiquery = true;
