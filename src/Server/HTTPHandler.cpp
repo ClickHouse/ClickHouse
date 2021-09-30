@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
@@ -757,76 +756,84 @@ void HTTPHandler::processQuery(
     }
 
     /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
-    used_output.out->finalize();
+    used_output.finalize();
 }
 
 void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+try
 {
+    response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
+    /// FIXME: make sure that no one else is reading from the same stream at the moment.
+
+    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// to avoid reading part of the current request body in the next request.
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+        && response.getKeepAlive()
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
+        && !request.getStream().eof())
+    {
+        request.getStream().ignoreAll();
+    }
+
+    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+    {
+        response.requireAuthentication("ClickHouse server HTTP API");
+    }
+    else
+    {
+        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+    }
+
+    if (!response.sent() && !used_output.out_maybe_compressed)
+    {
+        /// If nothing was sent yet and we don't even know if we must compress the response.
+        *response.send() << s << std::endl;
+    }
+    else if (used_output.out_maybe_compressed)
+    {
+        /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+        if (used_output.hasDelayed())
+            used_output.out_maybe_delayed_and_compressed.reset();
+
+        /// Send the error message into already used (and possibly compressed) stream.
+        /// Note that the error message will possibly be sent after some data.
+        /// Also HTTP code 200 could have already been sent.
+
+        /// If buffer has data, and that data wasn't sent yet, then no need to send that data
+        bool data_sent = used_output.out->count() != used_output.out->offset();
+
+        if (!data_sent)
+        {
+            used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
+            used_output.out->position() = used_output.out->buffer().begin();
+        }
+
+        writeString(s, *used_output.out_maybe_compressed);
+        writeChar('\n', *used_output.out_maybe_compressed);
+
+        used_output.out_maybe_compressed->next();
+    }
+    else
+    {
+        assert(false);
+        __builtin_unreachable();
+    }
+
+    used_output.finalize();
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Cannot send exception to client");
+
     try
     {
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-        /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-        /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-        /// to avoid reading part of the current request body in the next request.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive()
-            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-            && !request.getStream().eof())
-        {
-            request.getStream().ignoreAll();
-        }
-
-        if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-        {
-            response.requireAuthentication("ClickHouse server HTTP API");
-        }
-        else
-        {
-            response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-        }
-
-        if (!response.sent() && !used_output.out_maybe_compressed)
-        {
-            /// If nothing was sent yet and we don't even know if we must compress the response.
-            *response.send() << s << std::endl;
-        }
-        else if (used_output.out_maybe_compressed)
-        {
-            /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
-            if (used_output.hasDelayed())
-                used_output.out_maybe_delayed_and_compressed.reset();
-
-            /// Send the error message into already used (and possibly compressed) stream.
-            /// Note that the error message will possibly be sent after some data.
-            /// Also HTTP code 200 could have already been sent.
-
-            /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-            bool data_sent = used_output.out->count() != used_output.out->offset();
-
-            if (!data_sent)
-            {
-                used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-                used_output.out->position() = used_output.out->buffer().begin();
-            }
-
-            writeString(s, *used_output.out_maybe_compressed);
-            writeChar('\n', *used_output.out_maybe_compressed);
-
-            used_output.out_maybe_compressed->next();
-            used_output.out->finalize();
-        }
-        else
-        {
-            assert(false);
-            __builtin_unreachable();
-        }
+        used_output.finalize();
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Cannot send exception to client");
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
     }
 }
 
@@ -885,8 +892,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
 
-    if (used_output.out)
-        used_output.out->finalize();
+    used_output.finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
