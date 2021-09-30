@@ -50,22 +50,26 @@ bool ReadBufferFromS3::nextImpl()
     /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
     if (impl)
     {
-        if (use_external_buffer)
-        {
-            impl->set(working_buffer.begin(), working_buffer.size());
-        }
-        else
+        if (!use_external_buffer)
         {
             impl->position() = position();
+            assert(!impl->hasPendingData());
         }
 
-        assert(!impl->hasPendingData());
     }
     else
     {
         /// `impl` is not initialized and we're about to read the first portion of data.
         impl = initialize();
         next_result = impl->hasPendingData();
+    }
+    if (use_external_buffer)
+    {
+        // assert(!impl->buffer().begin() || impl->buffer().begin() != working_buffer.begin());
+        impl->set(internal_buffer.begin(), internal_buffer.size());
+        assert(working_buffer.begin() != nullptr);
+        assert(!internal_buffer.empty());
+        // impl->BufferBase::set(nullptr, 0, 0);
     }
 
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
@@ -99,6 +103,14 @@ bool ReadBufferFromS3::nextImpl()
             /// Try to reinitialize `impl`.
             impl.reset();
             impl = initialize();
+            if (use_external_buffer)
+            {
+                // assert(!impl->buffer().begin() || impl->buffer().begin() != working_buffer.begin());
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
+                // impl->BufferBase::set(nullptr, 0, 0);
+            }
             next_result = impl->hasPendingData();
         }
     }
