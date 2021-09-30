@@ -31,15 +31,8 @@ ReadBufferFromFileLog::ReadBufferFromFileLog(
     , stream_number(stream_number_)
     , max_streams_number(max_streams_number_)
 {
-    cleanUnprocessed();
-    allowed = false;
-}
-
-void ReadBufferFromFileLog::cleanUnprocessed()
-{
-    records.clear();
     current = records.begin();
-    BufferBase::set(nullptr, 0, 0);
+    allowed = false;
 }
 
 bool ReadBufferFromFileLog::poll()
@@ -50,11 +43,10 @@ bool ReadBufferFromFileLog::poll()
         return true;
     }
 
-    buffer_status = BufferStatus::NO_RECORD_RETURNED;
-
     auto new_records = pollBatch(batch_size);
     if (new_records.empty())
     {
+        buffer_status = BufferStatus::NO_RECORD_RETURNED;
         LOG_TRACE(log, "No records returned");
         return false;
     }
@@ -106,33 +98,28 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
 
     for (size_t i = start; i < end; ++i)
     {
-        auto file_name = file_infos.file_names[i];
-        auto & file_ctx = file_infos.context_by_name.at(file_name);
+        const auto & file_name = file_infos.file_names[i];
+
+        auto & file_ctx = StorageFileLog::findInMap(file_infos.context_by_name, file_name);
         if (file_ctx.status == StorageFileLog::FileStatus::NO_CHANGE)
             continue;
 
-        auto & file_meta = file_infos.meta_by_inode.at(file_infos.inode_by_name.at(file_name));
+        auto & file_meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
 
         Record record;
         while (read_records_size < need_records_size && static_cast<UInt64>(file_ctx.reader.tellg()) < file_meta.last_open_end)
         {
-            if (!file_ctx.reader.good())
-            {
-                throw Exception("Can not read from file " + file_name + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-            }
-            UInt64 start_offset = file_ctx.reader.tellg();
+            StorageFileLog::assertStreamGood(file_ctx.reader);
+
             std::getline(file_ctx.reader, record.data);
             record.file_name = file_name;
-            record.offset = start_offset;
+            record.offset = file_ctx.reader.tellg();
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
         UInt64 current_position = file_ctx.reader.tellg();
-        if (!file_ctx.reader.good())
-        {
-            throw Exception("Can not read from file " + file_name + ", stream broken.", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
-        }
+        StorageFileLog::assertStreamGood(file_ctx.reader);
 
         file_meta.last_writen_position = current_position;
 
