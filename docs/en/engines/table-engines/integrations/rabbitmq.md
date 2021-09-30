@@ -170,4 +170,4 @@ Example:
 -   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
 -   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

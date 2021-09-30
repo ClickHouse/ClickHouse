@@ -1,7 +1,7 @@
 # docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -37,17 +37,17 @@ RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-12 \
-        clang-tidy-12 \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         debhelper \
         devscripts \
         gdb  \
         git \
         gperf \
-        lld-12 \
-        llvm-12 \
-        llvm-12-dev \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         moreutils \
         ninja-build \
         perl \

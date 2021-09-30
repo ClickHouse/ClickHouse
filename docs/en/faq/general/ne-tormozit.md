@@ -23,4 +23,4 @@ If you haven’t seen one of those t-shirts in person, you can check them out on
 
 ![iframe](https://www.youtube.com/embed/bSyQahMVZ7w)
 
-P.S. These t-shirts are not for sale, they are given away for free on most [ClickHouse Meetups](https://clickhouse.tech/#meet), usually for best questions or other forms of active participation.
+P.S. These t-shirts are not for sale, they are given away for free on most [ClickHouse Meetups](https://clickhouse.com/#meet), usually for best questions or other forms of active participation.
