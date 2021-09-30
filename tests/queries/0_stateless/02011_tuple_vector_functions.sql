@@ -101,3 +101,6 @@ SELECT LpNorm((1, 2, 3), -1.); -- { serverError 69 }
 SELECT LpNorm((1, 2, 3), -1); -- { serverError 44 }
 SELECT LpNorm((1, 2, 3), 0.); -- { serverError 69 }
 SELECT cosineDistance(materialize((NULL, -2147483648)), (1048577, 1048575));
+
+-- not extra parentheses
+EXPLAIN SYNTAX SELECT -((3, 7, 3), 100);
