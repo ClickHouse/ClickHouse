@@ -715,8 +715,14 @@ bool StorageFileLog::updateFileInfos()
             {
                 String file_name = std::filesystem::path(event.path).filename();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                auto & file_ctx = findInMap(file_infos.context_by_name, file_name);
-                file_ctx.status = FileStatus::UPDATED;
+                /// When new file added and appended, it has two event: DW_ITEM_ADDED
+                /// and DW_ITEM_MODIFIED, since the order of these two events in the
+                /// sequence is uncentain, so we may can not find it in file_infos, just
+                /// skip it, the file info will be handled in DW_ITEM_ADDED case.
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                {
+                    it->second.status = FileStatus::UPDATED;
+                }
                 break;
             }
 
@@ -725,11 +731,12 @@ bool StorageFileLog::updateFileInfos()
             {
                 String file_name = std::filesystem::path(event.path).filename();
                 LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                auto & file_ctx = findInMap(file_infos.context_by_name, file_name);
-                file_ctx.status = FileStatus::REMOVED;
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                {
+                    it->second.status = FileStatus::REMOVED;
+                }
                 break;
             }
-            /// file rename
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
             {
                 auto file_name = std::filesystem::path(event.path).filename();
@@ -739,9 +746,9 @@ bool StorageFileLog::updateFileInfos()
                 auto inode = getInode(event.path);
                 file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
 
+                /// File has been renamed, we should also rename meta file
                 if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                 {
-                    // rename meta file
                     auto old_name = it->second.file_name;
                     it->second.file_name = file_name;
                     if (std::filesystem::exists(getFullMetaPath(old_name)))
