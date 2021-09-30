@@ -212,6 +212,9 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
+    src/Client/ClientBase.cpp
+    src/Client/QueryFuzzer.cpp
+    src/Client/Suggest.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
