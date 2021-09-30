@@ -1758,7 +1758,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         part = merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
-            *merge_entry,
+            (*merge_entry)->ref(),
             table_lock,
             entry.create_time,
             getContext(),
@@ -1898,7 +1898,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_mutated_part, metadata_snapshot, commands, *merge_entry,
+            future_mutated_part, metadata_snapshot, commands, (*merge_entry)->ref(),
             entry.create_time, getContext(), reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
