@@ -139,7 +139,7 @@ private:
                         ///      like in the similar code in `MarkTableIdentifierVisitor`.
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
-                            /// If identifier is broken then can do nothing and get an exception
+                            /// If identifier is broken then we can do nothing and get an exception
                             auto maybe_table_identifier = identifier->createTable();
                             if (maybe_table_identifier)
                                 child->children[i] = maybe_table_identifier;
