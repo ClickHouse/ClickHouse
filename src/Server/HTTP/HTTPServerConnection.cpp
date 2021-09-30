@@ -1,7 +1,6 @@
 #include <Server/HTTP/HTTPServerConnection.h>
 
 #include <Poco/Net/NetException.h>
-#include "Server/HTTP/HTTPResponse.h"
 
 namespace DB
 {
@@ -30,14 +29,6 @@ void HTTPServerConnection::run()
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
-                /// Check method (only supported methods will be processed)
-                if (request.getMethod() != HTTPRequest::HTTP_GET  &&
-                    request.getMethod() != HTTPRequest::HTTP_POST &&
-                    request.getMethod() != HTTPRequest::HTTP_HEAD)
-                {
-                    sendErrorResponse(session,HTTPResponse::HTTP_NOT_IMPLEMENTED);
-                    continue;
-                }
 
                 Poco::Timestamp now;
                 response.setDate(now);

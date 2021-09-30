@@ -2833,6 +2833,43 @@ Possible values:
 
 Default value: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+
+Default value: `\N`.
+
+**Examples**
+
+Query
+
+```sql
+SELECT * from csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+\N
+\N
+```
+
+Query
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Result
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
@@ -3306,7 +3343,7 @@ Result:
 └─────┘
 ```
 
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) or [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) with identical argument to [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
@@ -3323,7 +3360,7 @@ Query:
 
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
@@ -3567,6 +3604,18 @@ Possible values:
 
 Default value: `1000`.
 
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function), and [or](../../sql-reference/functions/logical-functions.md#logical-or-function) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+
+Possible values:
+
+-   `enable` — Enables short-circuit function evaluation for functions that are suitable for it (can throw an exception or computationally heavy).
+-   `force_enable` — Enables short-circuit function evaluation for all functions.
+-   `disable` — Disables short-circuit function evaluation.
+
+Default value: `enable`.
+
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
 Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
@@ -3592,7 +3641,6 @@ Result:
 ┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
 │                                              1 │
 └────────────────────────────────────────────────┘
-
 ```
 
 Query:
@@ -3610,7 +3658,6 @@ Exception: Regexp length too large.
 **See Also**
 
 -   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
-
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 

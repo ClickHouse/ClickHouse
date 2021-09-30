@@ -78,4 +78,4 @@ stack_trace:
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->

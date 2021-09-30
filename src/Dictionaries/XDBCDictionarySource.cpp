@@ -38,29 +38,22 @@ namespace
                                                   const std::string & where_,
                                                   IXDBCBridgeHelper & bridge_)
     {
-        std::string schema = schema_;
-        std::string table = table_;
+        QualifiedTableName qualified_name{schema_, table_};
 
         if (bridge_.isSchemaAllowed())
         {
-            if (schema.empty())
-            {
-                if (auto pos = table.find('.'); pos != std::string::npos)
-                {
-                    schema = table.substr(0, pos);
-                    table = table.substr(pos + 1);
-                }
-            }
+            if (qualified_name.database.empty())
+                qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
         }
         else
         {
-            if (!schema.empty())
+            if (!qualified_name.database.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 
-        return {dict_struct_, db_, schema, table, query_, where_, bridge_.getIdentifierQuotingStyle()};
+        return {dict_struct_, db_, qualified_name.database, qualified_name.table, query_, where_, bridge_.getIdentifierQuotingStyle()};
     }
 }
 

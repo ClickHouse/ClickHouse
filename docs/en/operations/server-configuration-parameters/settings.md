@@ -110,7 +110,7 @@ Load key from environment variable:
 </encryption_codecs>
 ```
 
-Where current_key_id sets the current key for encryption, and all specified keys can be used for decryption.
+Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
 
 All this methods can be applied for multiple keys:
 
@@ -182,6 +182,7 @@ Default value: `1073741824` (1 GB).
     <size_limit>1073741824</size_limit>
 </core_dump>
 ```
+
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
@@ -861,7 +862,7 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! note "Note"
+!!! warning "Warning"
     The trailing slash is mandatory.
 
 **Example**
@@ -950,9 +951,9 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#server_configuration_parameters-query_views_log}
 
-Setting for logging views dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
 
-Queries are logged in the [system.query_views_log](../../operations/system-tables/query_thread_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -1030,8 +1031,7 @@ The default server configuration file `config.xml` contains the following settin
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
 `system.query_log`, `system.text_log`, `system.processes` tables, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries (like names, emails, personal
-identifiers or credit card numbers) to logs.
+sensitive data leakage from SQL queries (like names, emails, personal identifiers or credit card numbers) to logs.
 
 **Example**
 
@@ -1129,7 +1129,7 @@ Example
 
 Path to temporary data for processing large queries.
 
-!!! note "Note"
+!!! warning "Note"
     The trailing slash is mandatory.
 
 **Example**
@@ -1146,9 +1146,9 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
     - `move_factor` is ignored.
-- `keep_free_space_bytes` is ignored.
-- `max_data_part_size_bytes` is ignored.
-- Уou must have exactly one volume in that policy.
+    - `keep_free_space_bytes` is ignored.
+    - `max_data_part_size_bytes` is ignored.
+    - Уou must have exactly one volume in that policy.
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1212,9 +1212,10 @@ This section contains the following parameters:
 
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
--   `session_timeout` — Maximum timeout for the client session in milliseconds.
--   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
--   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+- `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
+- `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -1288,6 +1289,39 @@ The update is performed asynchronously, in a separate system thread.
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
+## distributed_ddl {#server-settings-distributed_ddl}
+
+Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
+Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
+
+**Example**
+
+```xml
+<distributed_ddl>
+    <!-- Path in ZooKeeper to queue with DDL queries -->
+    <path>/clickhouse/task_queue/ddl</path>
+
+    <!-- Settings from this profile will be used to execute DDL queries -->
+    <profile>default</profile>
+
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+    <pool_size>1</pool_size>
+
+    <!--
+         Cleanup settings (active tasks will not be removed)
+    -->
+
+    <!-- Controls task TTL (default 1 week) -->
+    <task_max_lifetime>604800</task_max_lifetime>
+
+    <!-- Controls how often cleanup should be performed (in seconds) -->
+    <cleanup_delay_period>60</cleanup_delay_period>
+
+    <!-- Controls how many tasks could be in the queue -->
+    <max_tasks_in_queue>1000</max_tasks_in_queue>
+</distributed_ddl>
+```
+
 ## access_control_path {#access_control_path}
 
 Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
@@ -1296,7 +1330,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
--   [Access Control and Account Management](../../operations/access-rights.md#access-control)
+- [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
 ## user_directories {#user_directories}
 
@@ -1353,4 +1387,4 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

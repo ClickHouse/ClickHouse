@@ -162,17 +162,17 @@ public:
     struct BlockerInThread
     {
     private:
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
-
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
 
         VariableContext previous_level;
     public:
         /// level_ - block in level and above
-        BlockerInThread(VariableContext level_ = VariableContext::User);
+        explicit BlockerInThread(VariableContext level_ = VariableContext::User);
         ~BlockerInThread();
+
+        BlockerInThread(const BlockerInThread &) = delete;
+        BlockerInThread & operator=(const BlockerInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level)
         {
@@ -195,9 +195,6 @@ public:
     struct LockExceptionInThread
     {
     private:
-        LockExceptionInThread(const LockExceptionInThread &) = delete;
-        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
-
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
         static thread_local bool block_fault_injections;
@@ -207,8 +204,11 @@ public:
     public:
         /// level_ - block in level and above
         /// block_fault_injections_ - block in fault injection too
-        LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
+        explicit LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
         ~LockExceptionInThread();
+
+        LockExceptionInThread(const LockExceptionInThread &) = delete;
+        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {

@@ -53,6 +53,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/TablesLoader.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -271,9 +272,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             renamed = true;
         }
 
-        /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(
-            getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach, skip_startup_tables); //-V560
+        if (!load_database_without_tables)
+        {
+            /// We use global context here, because storages lifetime is bigger than query context lifetime
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
+            loader.loadTables();
+            loader.startupTables();
+        }
     }
     catch (...)
     {

@@ -51,8 +51,8 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -78,8 +78,9 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <filesystem>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -912,6 +913,13 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
@@ -1078,7 +1086,7 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_INFO(log, "Loading user defined objects from {}", path_str);
     try
     {
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
     }
     catch (...)
     {
@@ -1108,6 +1116,7 @@ if (ThreadFuzzer::instance().isEffective())
         database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1462,6 +1471,17 @@ if (ThreadFuzzer::instance().isEffective())
         catch (...)
         {
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load user defined executable functions, throw on error and die
+        try
+        {
+            global_context->loadUserDefinedExecutableFunctions(config());
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 

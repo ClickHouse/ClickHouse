@@ -218,7 +218,6 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
-    buildId.cpp
     byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
@@ -249,7 +248,6 @@ SRCS(
     divide/divide.cpp
     divide/divideImpl.cpp
     dumpColumnStructure.cpp
-    e.cpp
     empty.cpp
     encodeXMLComponent.cpp
     encrypt.cpp
@@ -306,6 +304,7 @@ SRCS(
     h3IndexesAreNeighbors.cpp
     h3IsValid.cpp
     h3ToChildren.cpp
+    h3ToGeoBoundary.cpp
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
@@ -314,7 +313,6 @@ SRCS(
     hasThreadFuzzer.cpp
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
-    hostName.cpp
     hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
@@ -362,6 +360,7 @@ SRCS(
     map.cpp
     match.cpp
     materialize.cpp
+    mathConstants.cpp
     minus.cpp
     modulo.cpp
     moduloOrZero.cpp
@@ -402,7 +401,6 @@ SRCS(
     nullIf.cpp
     padString.cpp
     partitionId.cpp
-    pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
@@ -479,7 +477,7 @@ SRCS(
     s2RectIntersection.cpp
     s2RectUnion.cpp
     s2ToGeo.cpp
-    serverUUID.cpp
+    serverConstants.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
@@ -505,13 +503,11 @@ SRCS(
     synonyms.cpp
     tan.cpp
     tanh.cpp
-    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
     timeSlot.cpp
     timeSlots.cpp
-    timezone.cpp
     timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
@@ -574,9 +570,7 @@ SRCS(
     tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
-    uptime.cpp
     validateNestedArraySizes.cpp
-    version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
     visitParamExtractFloat.cpp
