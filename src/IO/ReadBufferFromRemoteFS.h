@@ -20,11 +20,10 @@ public:
 
     String getFileName() const override { return metadata.metadata_file_path; }
 
-    void reset(bool reset_inner_buf = false);
+    void reset();
 
-    bool check = false;
 protected:
-    size_t fetch(size_t offset);
+    size_t readInto(char * data, size_t size, size_t offset);
 
     virtual SeekableReadBufferPtr createReadBuffer(const String & path) const = 0;
 

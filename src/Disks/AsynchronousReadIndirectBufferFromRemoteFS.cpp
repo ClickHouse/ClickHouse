@@ -26,17 +26,23 @@ namespace ErrorCodes
 
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
-    AsynchronousReaderPtr reader_, Int32 priority_, std::shared_ptr<ReadBufferFromRemoteFS> impl_)
-    : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
-    , reader(reader_), priority(priority_), impl(impl_), prefetch_buffer(DBMS_DEFAULT_BUFFER_SIZE)
+    AsynchronousReaderPtr reader_, Int32 priority_,
+    std::shared_ptr<ReadBufferFromRemoteFS> impl_, size_t buf_size_)
+    : ReadBufferFromFileBase(buf_size_, nullptr, 0)
+    , reader(reader_)
+    , priority(priority_)
+    , impl(impl_)
+    , prefetch_buffer(buf_size_)
 {
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readNext()
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
+    request.buf = data;
+    request.size = size;
     request.offset = absolute_position;
     request.priority = priority;
     return reader->submit(request);
@@ -48,11 +54,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (prefetch_future.valid())
         return;
 
-    std::lock_guard lock(mutex);
-    assert(prefetch_buffer.data() != nullptr);
-    prefetch_buffer.resize(DBMS_DEFAULT_BUFFER_SIZE);
-    impl->set(prefetch_buffer.data(), prefetch_buffer.size());
-    prefetch_future = readNext();
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
 
@@ -65,7 +67,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
         {
-            std::lock_guard lock(mutex);
             size = prefetch_future.get();
             if (size)
             {
@@ -80,12 +81,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
-        std::lock_guard lock(mutex);
-        impl->check = true;
-        impl->set(memory.data(), memory.size());
-        assert(memory.data() != nullptr);
-        assert(impl->buffer().begin() != nullptr);
-        size = readNext().get();
+        size = readInto(memory.data(), memory.size()).get();
         if (size)
         {
             set(memory.data(), memory.size());
@@ -143,7 +139,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     }
 
     pos = working_buffer.end();
-    impl->reset(true);
+    impl->reset();
 
     return absolute_position;
 }
