@@ -26,9 +26,11 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/range.h>
 #include <type_traits>
@@ -276,29 +278,38 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction, WithContext
+class ExecutableFunctionJSON : public IExecutableFunction, WithContext
 {
+
 public:
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
-
-    static constexpr auto name = Name::name;
-    String getName() const override { return Name::name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_)
+        : null_presence(null_presence_), allow_simdjson(allow_simdjson_)
     {
-        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
+
+    String getName() const override { return Name::name; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        /// Choose JSONParser.
+        if (null_presence.has_null_constant)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, result_type, input_rows_count);
+        if (null_presence.has_nullable)
+            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+        return temporary_result;
+    }
+
+private:
+
+    ColumnPtr
+    chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
 #if USE_SIMDJSON
-        if (getContext()->getSettingsRef().allow_simdjson)
+        if (allow_simdjson)
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
@@ -307,6 +318,91 @@ public:
 #else
         return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
+    }
+
+    NullPresence null_presence;
+    bool allow_simdjson;
+};
+
+
+template <typename Name, template<typename> typename Impl>
+class FunctionBaseFunctionJSON : public IFunctionBase
+{
+public:
+    explicit FunctionBaseFunctionJSON(
+        const NullPresence & null_presence_, bool allow_simdjson_, DataTypes argument_types_, DataTypePtr return_type_)
+        : null_presence(null_presence_)
+        , allow_simdjson(allow_simdjson_)
+        , argument_types(std::move(argument_types_))
+        , return_type(std::move(return_type_))
+    {
+    }
+
+    String getName() const override { return Name::name; }
+
+    const DataTypes & getArgumentTypes() const override
+    {
+        return argument_types;
+    }
+
+    const DataTypePtr & getResultType() const override
+    {
+        return return_type;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+    {
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson);
+    }
+
+private:
+    NullPresence null_presence;
+    bool allow_simdjson;
+    DataTypes argument_types;
+    DataTypePtr return_type;
+};
+
+
+/// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
+/// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
+template <typename Name, template<typename> typename Impl>
+class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
+{
+public:
+    static constexpr auto name = Name::name;
+
+    String getName() const override { return name; }
+
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    {
+        return std::make_unique<JSONOverloadResolver>(context_);
+    }
+
+    explicit JSONOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
+    {
+        NullPresence null_presence = getNullPresense(arguments);
+        DataTypePtr return_type;
+        if (null_presence.has_null_constant)
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+        else if (null_presence.has_nullable)
+            return_type = makeNullable(Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments)));
+        else
+            return_type = Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+
+        DataTypes argument_types;
+        argument_types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            argument_types.emplace_back(argument.type);
+        return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
+            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type);
     }
 };
 
