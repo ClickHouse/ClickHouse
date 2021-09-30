@@ -831,10 +831,8 @@ static bool isLimitOrOffsetPositive(const ASTPtr & node, ContextPtr context, con
             "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as Int128",
             ErrorCodes::INVALID_LIMIT_EXPRESSION);
     Int128 value = converted.safeGet<Int128>();
-    if (value >= 0)
-        return true;
-    else
-        return false;
+
+    return value >= 0;
 }
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, ContextPtr context, const std::string & expr)
