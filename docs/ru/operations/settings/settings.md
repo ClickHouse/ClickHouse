@@ -801,11 +801,31 @@ ClickHouse может парсить только базовый формат `Y
 
 Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
-Возможное значение:
+Возможные значения:
 
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -1097,6 +1117,40 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 -   0 — глубина не ограничена.
 
 Значение по умолчанию: `5`.
+
+## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для синхронизации между [репликами](../../engines/table-engines/mergetree-family/replication.md). Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
+
+Значение настройки соблюдается неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -3088,7 +3142,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Значение по умолчанию: `1800`.
 
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
@@ -3105,7 +3159,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
@@ -3299,7 +3353,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)).
 
 Возможные значения:
 
@@ -3341,3 +3395,113 @@ SETTINGS index_granularity = 8192 │
 -   Положительное целое число.
 
 Значение по умолчанию: `1000`.
+
+## log_queries_probability {#log-queries-probability}
+
+Позволяет пользователю записывать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов в секунду.
+
+Возможные значения:
+
+-   0 — запросы не регистрируются в системных таблицах.
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равном `0.5`, примерно половина запросов регистрируется в системных таблицах.
+-   1 — все запросы регистрируются в системных таблицах.
+
+Значение по умолчанию: `1`.
+
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+
+Возможные значения:
+
+-   `enable` — по короткой схеме вычисляются функции, которые подходят для этого (могут сгенерировать исключение или требуют сложных вычислений).
+-   `force_enable` — все функции вычисляются по короткой схеме.
+-   `disable` — вычисление функций по короткой схеме отключено.
+
+Значение по умолчанию: `enable`.
+
+## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
+
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 - длина не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
+```
+
+Результат:
+
+```text
+┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
+```
+
+Результат:
+
+```text
+Exception: Regexp length too large.
+```
+
+**См. также**
+
+-   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+
+## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
+
+Задает максимальную общую длину всех регулярных выражений в каждой [hyperscan-функции](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 - длина не ограничена.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Результат:
+
+```text
+┌─multiMatchAny('abcd', ['a', 'b', 'c', 'd'])─┐
+│                                           1 │
+└─────────────────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
+```
+
+Результат:
+
+```text
+Exception: Total regexp lengths too large.
+```
+
+**См. также**
+
+-   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)

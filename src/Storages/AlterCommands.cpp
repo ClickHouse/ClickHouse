@@ -180,6 +180,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = COMMENT_TABLE;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.get<String>();
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -309,6 +318,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
@@ -450,6 +467,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
+    }
+    else if (type == COMMENT_TABLE)
+    {
+        metadata.comment = *comment;
     }
     else if (type == ADD_INDEX)
     {
@@ -743,7 +764,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
 bool AlterCommand::isCommentAlter() const
 {
-    if (type == COMMENT_COLUMN)
+    if (type == COMMENT_COLUMN || type == COMMENT_TABLE)
     {
         return true;
     }
@@ -841,6 +862,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     apply(metadata, context);
     return result;
 }
+
 
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -959,6 +981,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
+
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
