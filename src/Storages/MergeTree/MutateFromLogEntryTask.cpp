@@ -79,6 +79,10 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
 
+    /// Adjust priority
+    for (auto & item : future_mutated_part->parts)
+        priority += item->getBytesOnDisk();
+
     return {true, [this] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(

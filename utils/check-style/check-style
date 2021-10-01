@@ -195,6 +195,41 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
+# Forbid std::cerr/std::cout in src (fine in programs/utils)
+std_cerr_cout_excludes=(
+    /examples/
+    /tests/
+    _fuzzer
+    # OK
+    src/Common/ProgressIndication.cpp
+    # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
+    src/Common/HashTable/HashTable.h
+    # SensitiveDataMasker::printStats()
+    src/Common/SensitiveDataMasker.cpp
+    # StreamStatistics::print()
+    src/Compression/LZ4_decompress_faster.cpp
+    # ContextSharedPart with subsequent std::terminate()
+    src/Interpreters/Context.cpp
+    # IProcessor::dump()
+    src/Processors/IProcessor.cpp
+    src/Client/ClientBase.cpp
+    src/Client/QueryFuzzer.cpp
+    src/Client/Suggest.cpp
+)
+sources_with_std_cerr_cout=( $(
+    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
+        grep -vP $EXCLUDE_DIRS | \
+        grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
+        xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
+) )
+# Exclude comments
+for src in "${sources_with_std_cerr_cout[@]}"; do
+    # suppress stderr, since it may contain warning for #pargma once in headers
+    if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
+        echo "$src: uses std::cerr/std::cout"
+    fi
+done
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"

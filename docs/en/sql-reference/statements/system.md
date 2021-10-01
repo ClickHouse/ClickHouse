@@ -12,6 +12,8 @@ The list of available `SYSTEM` statements:
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -81,6 +83,17 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 
 ```sql
 SYSTEM RELOAD MODEL <model_name>
+```
+
+## RELOAD FUNCTIONS {#query_language-system-reload-functions}
+
+Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
+
+**Syntax**
+
+```sql
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
