@@ -3340,6 +3340,14 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+Строка с идентификатором слота репликации, созданного пользователем вручную. Эта настройка должна использоваться совместно с [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
+
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
+
+Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.

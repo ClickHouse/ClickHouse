@@ -109,7 +109,7 @@ SELECT * FROM postgresql_db.postgres_table;
 
 ## Notes {#notes}
 
-- Failover of the logical replication slot.
+### Failover of the logical replication slot {logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.
 So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
