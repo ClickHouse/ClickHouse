@@ -536,7 +536,7 @@ void ZooKeeper::sendThread()
 
     try
     {
-        while (!expired)
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_sent = out->count();
 
@@ -568,7 +568,7 @@ void ZooKeeper::sendThread()
                         info.request->has_watch = true;
                     }
 
-                    if (expired)
+                    if (requests_queue.isClosed())
                     {
                         break;
                     }
@@ -611,7 +611,7 @@ void ZooKeeper::receiveThread()
     try
     {
         Int64 waited = 0;
-        while (!expired)
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_received = in->count();
 
@@ -634,7 +634,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait))
             {
-                if (expired)
+                if (requests_queue.isClosed())
                     break;
 
                 receiveEvent();
@@ -827,12 +827,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 
     auto expire_session_if_not_expired = [&]
     {
-        std::lock_guard lock(push_request_mutex);
-        if (!expired)
-        {
-            expired = true;
+        /// No new requests will appear in queue after close()
+        bool was_already_closed = requests_queue.close();
+        if (!was_already_closed)
             active_session_metric_increment.destroy();
-        }
     };
 
     try
@@ -995,17 +993,15 @@ void ZooKeeper::pushRequest(RequestInfo && info)
                 throw Exception("XID overflow", Error::ZSESSIONEXPIRED);
         }
 
-        /// We must serialize 'pushRequest' and 'finalize' (from sendThread, receiveThread) calls
-        ///  to avoid forgotten operations in the queue when session is expired.
-        /// Invariant: when expired, no new operations will be pushed to the queue in 'pushRequest'
-        ///  and the queue will be drained in 'finalize'.
-        std::lock_guard lock(push_request_mutex);
-
-        if (expired)
+        if (requests_queue.isClosed())
             throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+        {
+            if (requests_queue.isClosed())
+                throw Exception("Session expired", Error::ZSESSIONEXPIRED);
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+        }
     }
     catch (...)
     {
