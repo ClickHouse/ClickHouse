@@ -1678,16 +1678,24 @@ struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
             const DataTypes & argument_types_, const Array & parameters_)
         : WindowFunction(name_, argument_types_, parameters_)
     {
-        if (parameters_.size() != 0)
+        if (parameters_.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} cannot be parameterized", name_);
+                "Function {} takes exactly one parameter", name_);
+        }
+        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+
+        if (argument_types.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly one argument", name_);
         }
 
-        if (argument_types.size() != 0)
+        if (!isDateTime(argument_types[0]) && !isDateTime64(argument_types[0]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} takes no arguments", name_);
+                "First argument must be DateTime or DateTime64, '{}' given",
+                argument_types[0]->getName());
         }
     }
 
@@ -1699,13 +1707,35 @@ struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
+        const auto & workspace = transform->workspaces[function_index];
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
+        Float64 last_t = 0;
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[0]];
+                last_t = column_t->getFloat64(column_t->size()-1);
+            }
+        }
+        else
+        {
+            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[0]];
+            last_t = column_t->getFloat64(current_row.row-1);
+        }
+
         IColumn & to = *current_block.output_columns[function_index];
 
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(transform->current_row_number - transform->frame_start.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
+
+        Float64 c = exp((last_t-t)/decay_length);
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(c);
     }
+
+    private:
+        Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public WindowFunction
@@ -1780,7 +1810,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public WindowFunction
         Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
 
         Float64 c = exp((last_t-t)/decay_length);
-        assert_cast<ColumnFloat64 &>(to).getData().push_back((x + c * last_val)/(transform->current_row_number - transform->frame_start.row));
+        assert_cast<ColumnFloat64 &>(to).getData().push_back((x + c * last_val)/c);
     }
 
     private:
