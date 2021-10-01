@@ -24,6 +24,8 @@ namespace DB
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
 * -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
+*
+* We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
 class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {

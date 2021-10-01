@@ -52,6 +52,13 @@ bool ReadBufferFromS3::nextImpl()
     {
         if (!use_external_buffer)
         {
+            /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not, because this branch
+            * means we are prefetching data, each nextImpl() call we can fill
+            * a different buffer.
+            */
             impl->position() = position();
             assert(!impl->hasPendingData());
         }
@@ -65,6 +72,12 @@ bool ReadBufferFromS3::nextImpl()
 
     if (use_external_buffer)
     {
+        /**
+        * use_external_buffer -- means we read into the buffer which
+        * was passed to us from somewhere else. We do not check whether
+        * previously returned buffer was read or not, because this branch
+        * means we are prefetching data.
+        */
         impl->set(internal_buffer.begin(), internal_buffer.size());
         assert(working_buffer.begin() != nullptr);
         assert(!internal_buffer.empty());
