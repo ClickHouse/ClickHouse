@@ -414,17 +414,13 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+    signal(SIGINT, signalHandler);
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
     is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
-    std::optional<InterruptListener> interrupt_listener;
-    if (is_interactive)
-    {
-        interrupt_listener.emplace();
-    }
-    else
+    if (!is_interactive)
     {
         /// We will terminate process on error
         static KillingErrorHandler error_handler;
