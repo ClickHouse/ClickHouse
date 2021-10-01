@@ -1476,7 +1476,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 
@@ -1487,7 +1487,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading embedded dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
             throw;
         }
 
@@ -1498,7 +1498,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 
@@ -1509,7 +1509,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
+            tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 
