@@ -3,6 +3,7 @@
 #include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 #include <Poco/MongoDB/Connection.h>
 
@@ -41,6 +42,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();

@@ -26,7 +26,7 @@
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
@@ -1162,8 +1162,7 @@ try
 
         Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -1200,8 +1199,7 @@ try
             });
         }
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
 
         BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
 

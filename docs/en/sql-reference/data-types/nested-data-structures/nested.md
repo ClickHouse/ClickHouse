@@ -103,4 +103,4 @@ For a DESCRIBE query, the columns in a nested data structure are listed separate
 
 The ALTER query for elements in a nested data structure has limitations.
 
-[Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

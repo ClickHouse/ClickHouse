@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-server/ssl/server.crt</certificateFile>
@@ -14,4 +14,4 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
-</yandex>
+</clickhouse>

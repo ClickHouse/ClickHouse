@@ -276,7 +276,10 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();
-    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
+    const auto byte_size = compressed->byteSize();
+    /// The order of evaluation of function arguments is unspecified
+    /// and could cause interacting with object in moved-from state
+    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
     {
         return ColumnMap::create(compressed->decompress());
     });
