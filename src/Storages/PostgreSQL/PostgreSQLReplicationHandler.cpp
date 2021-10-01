@@ -674,7 +674,6 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx
 {
     std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
-    String schema, table;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
         tables.insert(schema.empty() ? table : schema + '.' + table);

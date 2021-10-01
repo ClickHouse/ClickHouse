@@ -115,7 +115,9 @@ private:
     UInt64 lsn_value;
 
     size_t max_block_size;
+
     bool schema_as_a_part_of_table_name;
+
     bool allow_automatic_update;
 
     String table_to_insert;
