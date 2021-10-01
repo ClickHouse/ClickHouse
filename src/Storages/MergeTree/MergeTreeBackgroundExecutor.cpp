@@ -66,19 +66,10 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 
     /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
-        item->is_done.wait();
-
-    /// Checking that no one else owns the item. We have to acquire the lock so that we have a sequential order
     {
-        std::lock_guard lock(mutex);
-        for (const auto & item : tasks_to_wait)
-            if (!item.unique())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone else is owning the item. Task will live longer than storage. It is a bug");
-    }
-
-    /// Delete items without lock, because we are the only who owns them.
-    for (auto & item : tasks_to_wait)
+        item->is_done.wait();
         item.reset();
+    }
 }
 
 
@@ -129,6 +120,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         pending.push(std::move(item));
         erase_from_active();
         has_tasks.notify_one();
+        item = nullptr;
         return;
     }
 
