@@ -367,15 +367,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         }
         case arrow::Type::TIMESTAMP:
             return readColumnWithTimestampData(arrow_column, column_name);
-#if defined(ARCADIA_BUILD)
-            case arrow::Type::DECIMAL:
-                return readColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, column_name);
-#else
         case arrow::Type::DECIMAL128:
             return readColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
             return readColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, column_name);
-#endif
         case arrow::Type::MAP:
         {
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);

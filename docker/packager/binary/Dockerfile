@@ -1,7 +1,7 @@
 #  docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -44,13 +44,11 @@ RUN apt-get update \
         gdb \
         git \
         gperf \
-        libicu-dev \
-        libreadline-dev \
-        clang-12 \
-        clang-tidy-12 \
-        lld-12 \
-        llvm-12 \
-        llvm-12-dev \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         libicu-dev \
         libreadline-dev \
         moreutils \

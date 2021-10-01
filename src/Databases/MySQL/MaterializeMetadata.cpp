@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/MySQLSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/quoteString.h>
@@ -45,8 +45,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
             connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
             show_create_table_header, mysql_input_stream_settings);
 
-        QueryPipeline pipeline;
-        pipeline.init(Pipe(std::move(show_create_table)));
+        QueryPipeline pipeline(std::move(show_create_table));
 
         Block create_query_block;
         PullingPipelineExecutor executor(pipeline);
@@ -70,8 +69,7 @@ static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entr
     StreamSettings mysql_input_stream_settings(global_settings);
     auto input = std::make_unique<MySQLSource>(connection, query, header, mysql_input_stream_settings);
 
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(input)));
+    QueryPipeline pipeline(std::move(input));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);
@@ -98,8 +96,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     StreamSettings mysql_input_stream_settings(settings, false, true);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW MASTER STATUS;", header, mysql_input_stream_settings);
 
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(input)));
+    QueryPipeline pipeline(std::move(input));
 
     Block master_status;
     PullingPipelineExecutor executor(pipeline);
@@ -126,8 +123,7 @@ void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailo
     const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
     StreamSettings mysql_input_stream_settings(settings, false, true);
     auto variables_input = std::make_unique<MySQLSource>(connection, fetch_query, variables_header, mysql_input_stream_settings);
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(variables_input)));
+    QueryPipeline pipeline(std::move(variables_input));
 
     Block variables_block;
     PullingPipelineExecutor executor(pipeline);
@@ -154,8 +150,7 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
     String grants_query, sub_privs;
     StreamSettings mysql_input_stream_settings(global_settings);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(input)));
+    QueryPipeline pipeline(std::move(input));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);
@@ -205,8 +200,7 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
 
     StreamSettings mysql_input_stream_settings(settings, false, true);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW MASTER LOGS", logs_header, mysql_input_stream_settings);
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(input)));
+    QueryPipeline pipeline(std::move(input));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);
