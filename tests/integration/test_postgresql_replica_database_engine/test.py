@@ -1224,14 +1224,14 @@ def test_schema_1(started_cluster):
         check_tables_are_synchronized("postgresql_replica_{}".format(i), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
     print('Ok')
 
-    altered_table = random.randint(0, NUM_TABLES-1)
-    cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
-    check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+    #altered_table = random.randint(0, NUM_TABLES-1)
+    #cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
 
-    table_name = 'postgresql_replica_{}'.format(altered_table)
-    instance.query("INSERT INTO {}.{} SELECT number, number, number from numbers(5000, 1000)".format(clickhouse_postgres_db, table_name))
-    check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
-    print('Ok')
+    #table_name = 'postgresql_replica_{}'.format(altered_table)
+    #instance.query("INSERT INTO {}.{} SELECT number, number, number from numbers(5000, 1000)".format(clickhouse_postgres_db, table_name))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+    #print('Ok')
 
     drop_materialized_db()
 
@@ -1292,14 +1292,14 @@ def test_schema_2(started_cluster):
         check_tables_are_synchronized("postgresql_replica_{}".format(i), postgres_database=clickhouse_postgres_db);
     print('Ok')
 
-    altered_table = random.randint(0, NUM_TABLES-1)
-    cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
-    check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), postgres_database=clickhouse_postgres_db);
+    #altered_table = random.randint(0, NUM_TABLES-1)
+    #cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), postgres_database=clickhouse_postgres_db);
 
-    table_name = 'postgresql_replica_{}'.format(altered_table)
-    instance.query("INSERT INTO {}.{} SELECT number, number, number from numbers(5000, 1000)".format(clickhouse_postgres_db, table_name))
-    check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), postgres_database=clickhouse_postgres_db);
-    print('Ok')
+    #table_name = 'postgresql_replica_{}'.format(altered_table)
+    #instance.query("INSERT INTO {}.{} SELECT number, number, number from numbers(5000, 1000)".format(clickhouse_postgres_db, table_name))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), postgres_database=clickhouse_postgres_db);
+    #print('Ok')
 
     drop_materialized_db()
 

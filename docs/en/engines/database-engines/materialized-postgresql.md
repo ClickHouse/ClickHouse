@@ -59,6 +59,15 @@ SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 SELECT * FROM database1.table1;
 ```
 
+It is also possible to change settings at run time.
+
+``` sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
+
+
+## PostgreSQL schema {#schema}
+
 PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be used in two ways.
 
 1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
@@ -86,12 +95,6 @@ SELECT * FROM database1.`schema2.table2`;
 
 But in this case all tables in `materialized_postgresql_tables_list` must be written with its schema name.
 
-
-It is also possible to change settings at run time.
-
-``` sql
-ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-```
 
 ## Requirements {#requirements}
 
