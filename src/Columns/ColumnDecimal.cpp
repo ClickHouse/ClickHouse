@@ -150,17 +150,20 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 template <is_decimal T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    IColumn::ComparePredicate less;
     auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
+    auto sort = [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); };
+    auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (reverse)
-        less = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; },
+            equals, sort, partial_sort);
     else
-        less = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
-
-    this->updatePermutationImpl(limit, res, equal_ranges, less, equals,
-        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
-        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; },
+            equals, sort, partial_sort);
 }
 
 template <is_decimal T>
