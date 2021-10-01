@@ -397,7 +397,7 @@ void ConfigProcessor::doIncludesRecursive(
     {
         auto get_incl_node = [&](const std::string & name)
         {
-            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+            return include_from ? getRootNode(include_from.get())->getNodeByPath(name) : nullptr;
         };
 
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
@@ -588,7 +588,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     std::unordered_set<std::string> contributing_zk_paths;
     try
     {
-        Node * node = config->getNodeByPath("yandex/include_from");
+        Node * node = getRootNode(config.get())->getNodeByPath("include_from");
+
         XMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)
