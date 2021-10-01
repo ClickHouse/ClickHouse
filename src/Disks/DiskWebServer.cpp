@@ -4,15 +4,16 @@
 #include <Common/escapeForFileName.h>
 
 #include <Disks/IDiskRemote.h>
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadIndirectBufferFromWebServer.h>
+#include <IO/ReadBufferFromWebServer.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ReadIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/ReadBufferFromRemoteFSGather.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -107,43 +108,6 @@ private:
 };
 
 
-class ReadBufferFromWebServer final : public ReadBufferFromRemoteFS
-{
-public:
-    ReadBufferFromWebServer(
-            const String & uri_,
-            RemoteMetadata metadata_,
-            ContextPtr context_,
-            size_t buf_size_,
-            size_t backoff_threshold_,
-            size_t max_tries_,
-            size_t threadpool_read_)
-        : ReadBufferFromRemoteFS(metadata_)
-        , uri(uri_)
-        , context(context_)
-        , buf_size(buf_size_)
-        , backoff_threshold(backoff_threshold_)
-        , max_tries(max_tries_)
-        , threadpool_read(threadpool_read_)
-    {
-    }
-
-    SeekableReadBufferPtr createReadBuffer(const String & path) const override
-    {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(
-            fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries, threadpool_read);
-    }
-
-private:
-    String uri;
-    ContextPtr context;
-    size_t buf_size;
-    size_t backoff_threshold;
-    size_t max_tries;
-    bool threadpool_read;
-};
-
-
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & url_,
@@ -204,7 +168,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(),
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, meta, getContext(),
         read_settings.remote_fs_buffer_size,
         read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries,
         threadpool_read);

@@ -1,10 +1,8 @@
 #include "AsynchronousReadIndirectBufferFromRemoteFS.h"
 
-#include <IO/ReadBufferFromS3.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Disks/ReadIndirectBufferFromWebServer.h>
 #include <Common/Stopwatch.h>
 #include <IO/ThreadPoolRemoteFSReader.h>
+#include <common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -27,7 +25,7 @@ namespace ErrorCodes
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
     AsynchronousReaderPtr reader_, Int32 priority_,
-    std::shared_ptr<ReadBufferFromRemoteFS> impl_, size_t buf_size_)
+    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, size_t buf_size_)
     : ReadBufferFromFileBase(buf_size_, nullptr, 0)
     , reader(reader_)
     , priority(priority_)
