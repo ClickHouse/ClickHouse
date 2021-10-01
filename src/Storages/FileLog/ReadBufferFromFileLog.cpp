@@ -10,10 +10,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_READ_FROM_ISTREAM;
-}
 
 ReadBufferFromFileLog::ReadBufferFromFileLog(
     StorageFileLog & storage_,
