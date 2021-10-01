@@ -12,14 +12,13 @@
 class FileLogDirectoryWatcher
 {
 public:
-    struct DirEvent
+    struct EventInfo
     {
         Poco::DirectoryWatcher::DirectoryEventType type;
         std::string callback;
-        std::string path;
     };
 
-    using Events = std::vector<DirEvent>;
+    using Events = std::unordered_map<std::string, EventInfo>;
 
     struct Error
     {

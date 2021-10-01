@@ -691,17 +691,17 @@ bool StorageFileLog::updateFileInfos()
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & event : events)
+    for (const auto & [event_path, event_info] : events)
     {
-        switch (event.type)
+        switch (event_info.type)
         {
             case Poco::DirectoryWatcher::DW_ITEM_ADDED:
             {
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
-                if (std::filesystem::is_regular_file(event.path))
+                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
+                if (std::filesystem::is_regular_file(event_path))
                 {
-                    auto file_name = std::filesystem::path(event.path).filename();
-                    auto inode = getInode(event.path);
+                    auto file_name = std::filesystem::path(event_path).filename();
+                    auto inode = getInode(event_path);
 
                     file_infos.file_names.push_back(file_name);
 
@@ -713,8 +713,8 @@ bool StorageFileLog::updateFileInfos()
 
             case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
             {
-                String file_name = std::filesystem::path(event.path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+                String file_name = std::filesystem::path(event_path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                 /// When new file added and appended, it has two event: DW_ITEM_ADDED
                 /// and DW_ITEM_MODIFIED, since the order of these two events in the
                 /// sequence is uncentain, so we may can not find it in file_infos, just
@@ -729,8 +729,8 @@ bool StorageFileLog::updateFileInfos()
             case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
             {
-                String file_name = std::filesystem::path(event.path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+                String file_name = std::filesystem::path(event_path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                 if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                 {
                     it->second.status = FileStatus::REMOVED;
@@ -739,11 +739,11 @@ bool StorageFileLog::updateFileInfos()
             }
             case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
             {
-                auto file_name = std::filesystem::path(event.path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event.callback, event.path);
+                auto file_name = std::filesystem::path(event_path).filename();
+                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
 
                 file_infos.file_names.push_back(file_name);
-                auto inode = getInode(event.path);
+                auto inode = getInode(event_path);
                 file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
 
                 /// File has been renamed, we should also rename meta file
