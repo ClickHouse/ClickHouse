@@ -72,6 +72,7 @@ void registerStorageExternalDistributed(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+void registerStorageFuzzer(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -139,6 +140,8 @@ void registerStorages()
     #if USE_SQLITE
     registerStorageSQLite(factory);
     #endif
+
+    registerStorageFuzzer(factory);
 }
 
 }

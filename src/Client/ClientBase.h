@@ -7,7 +7,7 @@
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
-#include <Client/QueryFuzzer.h>
+#include <Parsers/QueryFuzzer.h>
 #include <boost/program_options.hpp>
 
 namespace po = boost::program_options;
