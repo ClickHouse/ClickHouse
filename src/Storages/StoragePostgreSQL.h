@@ -10,11 +10,15 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
-
 
 class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
@@ -43,6 +47,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+
 private:
     friend class PostgreSQLBlockOutputStream;
 
@@ -50,6 +56,8 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }

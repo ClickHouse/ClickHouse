@@ -93,6 +93,17 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
+## use_skip_indexes {#settings-use_skip_indexes}
+
+Use data skipping indexes during query execution.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
 ## force_data_skipping_indices {#settings-force_data_skipping_indices}
 
 Disables query execution if passed data skipping indices wasn't used.
@@ -810,7 +821,7 @@ If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
@@ -818,23 +829,23 @@ Default value: 2013265920.
 
 ## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
 
-The interval in seconds for ClickHouse to execute the cleanup old temporary directories.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
-Default value: 60.
+Default value: `60` seconds.
 
 ## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
 
-The interval in seconds for ClickHouse to execute the cleanup old parts, WALs, and mutations.
+Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
 
-Possible value:
+Possible values:
 
 -   Any positive integer.
 
-Default value: 1.
+Default value: `1` second.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -3604,6 +3615,18 @@ Possible values:
 
 Default value: `1000`.
 
+## log_queries_probability {#log-queries-probability}
+
+Allows a user to write to [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), and [query_views_log](../../operations/system-tables/query_views_log.md) system tables only a sample of queries selected randomly with the specified probability. It helps to reduce the load with a large volume of queries in a second.
+
+Possible values:
+
+-   0 — Queries are not logged in the system tables.
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0.5`, about half of the queries are logged in the system tables.
+-   1 — All queries are logged in the system tables.
+
+Default value: `1`.
+
 ## short_circuit_function_evaluation {#short-circuit-function-evaluation}
 
 Allows calculating the [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function), and [or](../../sql-reference/functions/logical-functions.md#logical-or-function) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
@@ -3618,7 +3641,7 @@ Default value: `enable`.
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn).
 
 Possible values:
 
@@ -3661,7 +3684,7 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn). 
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn).
 
 Possible values:
 

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <query_masking_rules remove="remove"/>
 
     <query_thread_log remove="remove"/>
@@ -14,4 +14,4 @@
     <opentelemetry_span_log remove="remove" />
     <!-- just in case it will be enabled by default -->
     <zookeeper_log remove="remove" />
-</yandex>
+</clickhouse>

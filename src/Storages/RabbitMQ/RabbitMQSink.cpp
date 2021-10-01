@@ -31,8 +31,7 @@ void RabbitMQSink::onStart()
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getPort().getHeader(), context,
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer, getHeader(), context,
         [this](const Columns & /* columns */, size_t /* rows */)
         {
             buffer->countRow();
@@ -43,7 +42,7 @@ void RabbitMQSink::onStart()
 
 void RabbitMQSink::consume(Chunk chunk)
 {
-    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    child->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 
