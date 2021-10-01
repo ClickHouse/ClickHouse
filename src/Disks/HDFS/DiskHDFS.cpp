@@ -1,13 +1,12 @@
 #include <Disks/HDFS/DiskHDFS.h>
 
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/ReadBufferFromRemoteFS.h>
-#include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <common/logger_useful.h>
+#include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <IO/ReadIndirectBufferFromRemoteFS.h>
+#include <IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/ReadBufferFromRemoteFSGather.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
 
 
 namespace DB
@@ -49,37 +48,6 @@ private:
 };
 
 
-/// Reads data from HDFS using stored paths in metadata.
-class ReadIndirectBufferFromHDFS final : public ReadBufferFromRemoteFS
-{
-public:
-    ReadIndirectBufferFromHDFS(
-            const Poco::Util::AbstractConfiguration & config_,
-            const String & hdfs_uri_,
-            DiskHDFS::Metadata metadata_,
-            size_t buf_size_)
-        : ReadBufferFromRemoteFS(metadata_)
-        , config(config_)
-        , buf_size(buf_size_)
-    {
-        const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
-        hdfs_directory = hdfs_uri_.substr(begin_of_path);
-        hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
-    }
-
-    SeekableReadBufferPtr createReadBuffer(const String & path) const override
-    {
-        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + path, config, buf_size);
-    }
-
-private:
-    const Poco::Util::AbstractConfiguration & config;
-    String hdfs_uri;
-    String hdfs_directory;
-    size_t buf_size;
-};
-
-
 DiskHDFS::DiskHDFS(
     const String & disk_name_,
     const String & hdfs_root_path_,
@@ -103,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto hdfs_impl = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {

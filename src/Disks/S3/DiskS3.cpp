@@ -16,19 +16,17 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/WriteIndirectBufferFromRemoteFS.h>
-
+#include <Disks/ReadBufferFromRemoteFSGather.h>
 #include <Interpreters/Context.h>
-
 #include <IO/ReadBufferFromS3.h>
+#include <IO/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromRemoteFS.h>
-#include <Disks/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <IO/ReadIndirectBufferFromRemoteFS.h>
+#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 
 #include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
 #include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
@@ -128,39 +126,6 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     }
 }
 
-/// Reads data from S3 using stored paths in metadata.
-class ReadIndirectBufferFromS3 final : public ReadBufferFromRemoteFS
-{
-public:
-    ReadIndirectBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-        const String & bucket_,
-        DiskS3::Metadata metadata_,
-        size_t max_single_read_retries_,
-        size_t buf_size_,
-        bool threadpool_read_ = false)
-        : ReadBufferFromRemoteFS(metadata_)
-        , client_ptr(std::move(client_ptr_))
-        , bucket(bucket_)
-        , max_single_read_retries(max_single_read_retries_)
-        , buf_size(buf_size_)
-        , threadpool_read(threadpool_read_)
-    {
-    }
-
-    SeekableReadBufferPtr createReadBuffer(const String & path) const override
-    {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size, threadpool_read);
-    }
-
-private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
-    const String & bucket;
-    UInt64 max_single_read_retries;
-    size_t buf_size;
-    bool threadpool_read;
-};
-
 DiskS3::DiskS3(
     String name_,
     String bucket_,
@@ -236,7 +201,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
 
-    auto s3_impl = std::make_unique<ReadIndirectBufferFromS3>(
+    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
         settings->client, bucket, metadata,
         settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size, threadpool_read);
 

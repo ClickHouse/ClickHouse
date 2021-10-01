@@ -6,7 +6,7 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
-#include <IO/ReadBufferFromRemoteFS.h>
+#include <Disks/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IDiskRemote.h>
 #include <utility>
 
@@ -32,7 +32,7 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
         AsynchronousReaderPtr reader_, Int32 priority_,
-        std::shared_ptr<ReadBufferFromRemoteFS> impl_,
+        std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
@@ -56,7 +56,7 @@ private:
 
     Int32 priority;
 
-    std::shared_ptr<ReadBufferFromRemoteFS> impl;
+    std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 
     std::future<IAsynchronousReader::Result> prefetch_future;
 

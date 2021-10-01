@@ -11,12 +11,12 @@ namespace DB
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
  *
- * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadIndirectBufferFromWebServer -> ReadWriteBufferFromHTTP.
+ * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
-class ReadIndirectBufferFromWebServer : public SeekableReadBuffer
+class ReadBufferFromWebServer : public SeekableReadBuffer
 {
 public:
-    explicit ReadIndirectBufferFromWebServer(
+    explicit ReadBufferFromWebServer(
         const String & url_, ContextPtr context_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         size_t backoff_threshold_ = 10000, size_t max_tries_ = 4,
