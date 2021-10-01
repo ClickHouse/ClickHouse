@@ -10,9 +10,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/misc.h>
 
 namespace DB
 {
@@ -25,11 +29,12 @@ class AddDefaultDatabaseVisitor
 {
 public:
     explicit AddDefaultDatabaseVisitor(
-        const String & database_name_, bool only_replace_current_database_function_ = false, WriteBuffer * ostr_ = nullptr)
-        : database_name(database_name_)
+        ContextPtr context_,
+        const String & database_name_,
+        bool only_replace_current_database_function_ = false)
+        : context(context_)
+        , database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
-        , visit_depth(0)
-        , ostr(ostr_)
     {}
 
     void visitDDL(ASTPtr & ast) const
@@ -62,11 +67,19 @@ public:
         visit(select, unused);
     }
 
+    void visit(ASTColumns & columns) const
+    {
+        for (auto & child : columns.children)
+            visit(child);
+    }
+
 private:
+
+    ContextPtr context;
+
     const String database_name;
+
     bool only_replace_current_database_function = false;
-    mutable size_t visit_depth;
-    WriteBuffer * ostr;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -115,15 +128,8 @@ private:
 
     void visit(ASTFunction & function, ASTPtr &) const
     {
-        bool is_operator_in = false;
-        for (const auto * name : {"in", "notIn", "globalIn", "globalNotIn"})
-        {
-            if (function.name == name)
-            {
-                is_operator_in = true;
-                break;
-            }
-        }
+        bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
+        bool is_dict_get = functionIsDictGet(function.name);
 
         for (auto & child : function.children)
         {
@@ -131,7 +137,38 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_operator_in && i == 1)
+                    if (is_dict_get && i == 0)
+                    {
+                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
+                        {
+                            if (identifier->compound())
+                                continue;
+
+                            auto storage_id = context->getExternalDictionariesLoader().getStorageID(identifier->name(), context);
+
+                            if (!storage_id.database_name.empty())
+                            {
+                                std::vector<std::string> name_parts = {storage_id.database_name, storage_id.table_name};
+                                child->children[i] = std::make_shared<ASTIdentifier>(std::move(name_parts));
+                            }
+                            else
+                            {
+                                std::vector<std::string> name_parts = {storage_id.table_name};
+                                child->children[i] = std::make_shared<ASTIdentifier>(std::move(name_parts));
+                            }
+                        }
+                        else if (auto * literal = child->children[i]->as<ASTLiteral>())
+                        {
+                            auto & literal_value = literal->value;
+
+                            if (literal_value.getType() != Field::Types::String)
+                                continue;
+
+                            auto dictionary_name = literal_value.get<String>();
+                            literal_value = context->getExternalDictionariesLoader().getStorageID(dictionary_name, context).getFullTableName();
+                        }
+                    }
+                    else if (is_operator_in && i == 1)
                     {
                         /// XXX: for some unknown reason this place assumes that argument can't be an alias,
                         ///      like in the similar code in `MarkTableIdentifierVisitor`.
@@ -149,11 +186,15 @@ private:
                             visit(child->children[i]);
                     }
                     else
+                    {
                         visit(child->children[i]);
+                    }
                 }
             }
             else
+            {
                 visit(child);
+            }
         }
     }
 
@@ -168,7 +209,6 @@ private:
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
-            DumpASTNode dump(*ast, ostr, visit_depth, "addDefaultDatabaseName");
             visit(*t, ast);
             return true;
         }
