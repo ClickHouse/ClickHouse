@@ -2323,6 +2323,11 @@ class ClickHouseInstance:
         shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
         shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
 
+        # For old images, keep 'yandex' as root element name.
+        if self.image.startswith('yandex/'):
+            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.main_config_name)))
+            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.users_config_name)))
+
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(instance_config_dir, 'conf.d'))
