@@ -417,7 +417,13 @@ try
 {
     UseSSL use_ssl;
     MainThreadStatus::getInstance();
-    signal(SIGINT, signalHandler);
+
+    struct sigaction new_act;
+    struct sigaction old_act;
+    new_act.sa_handler = interruptSignalHandler;
+    sigemptyset(&new_act.sa_mask);
+    new_act.sa_flags = 0;
+    sigaction(SIGINT, &new_act, &old_act);
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
