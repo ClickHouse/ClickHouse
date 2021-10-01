@@ -70,10 +70,9 @@ public:
 
         if (!type_column_typed)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument to {} must be a constant string describing type."
-                " Instead there is a column with the following structure: {}",
+                "Second argument to {} must be a constant string describing type. Actual {}",
                 getName(),
-                type_column->dumpStructure());
+                arguments[1].type->getName());
 
         DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
 
