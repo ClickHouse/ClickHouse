@@ -417,6 +417,7 @@ try
 {
     UseSSL use_ssl;
     MainThreadStatus::getInstance();
+    signal(SIGINT, signalHandler);
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
