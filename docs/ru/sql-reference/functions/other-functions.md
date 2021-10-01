@@ -1148,7 +1148,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 Возвращает диапазон индекса, в котором выполняется заданное условие.
 
-Тип: [Uint8](https://clickhouse.yandex/docs/ru/data_types/int_uint/#diapazony-uint).
+Тип: [Uint8](https://clickhouse.com/docs/ru/data_types/int_uint/#diapazony-uint).
 
 **Пример**
 
