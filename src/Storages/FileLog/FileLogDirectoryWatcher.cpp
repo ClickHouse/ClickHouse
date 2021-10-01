@@ -39,53 +39,47 @@ const std::string & FileLogDirectoryWatcher::getPath() const
 void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    DirEvent de;
-    de.callback = "onItemAdded";
-    de.path = ev.item.path();
-    de.type = ev.event;
-    events.push_back(de);
+    EventInfo info{ev.event, "onItemAdded"};
+    events.emplace(ev.item.path(), info);
 }
 
 
 void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    DirEvent de;
-    de.callback = "onItemRemoved";
-    de.path = ev.item.path();
-    de.type = ev.event;
-    events.push_back(de);
+    EventInfo info{ev.event, "onItemRemoved"};
+    events.emplace(ev.item.path(), info);
 }
 
-
+/// Optimize for MODIFY event, during a streamToViews period, since the log files
+/// are append only, there are may a lots of MODIFY events produced for one file.
+/// For example, appending 10000 logs into one file will result in 10000 MODIFY event.
+/// So, if we record all of these events, it will use a lot of memory, and then we
+/// need to handle it one by one in StorageFileLog::updateFileInfos, this is unnecessary
+/// because it is equal to just record and handle one MODIY event
 void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    DirEvent de;
-    de.callback = "onItemModified";
-    de.path = ev.item.path();
-    de.type = ev.event;
-    events.push_back(de);
+    auto event_path = ev.item.path();
+    /// Already have MODIFY event for this file
+    if (auto it = events.find(event_path); it != events.end() && it->second.type == ev.event)
+        return;
+    EventInfo info{ev.event, "onItemModified"};
+    events.emplace(event_path, info);
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    DirEvent de;
-    de.callback = "onItemMovedFrom";
-    de.path = ev.item.path();
-    de.type = ev.event;
-    events.push_back(de);
+    EventInfo info{ev.event, "onItemMovedFrom"};
+    events.emplace(ev.item.path(), info);
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    DirEvent de;
-    de.callback = "onItemMovedTo";
-    de.path = ev.item.path();
-    de.type = ev.event;
-    events.push_back(de);
+    EventInfo info{ev.event, "onItemMovedTo"};
+    events.emplace(ev.item.path(), info);
 }
 
 void FileLogDirectoryWatcher::onError(const Poco::Exception & e)
