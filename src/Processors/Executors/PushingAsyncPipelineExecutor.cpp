@@ -41,6 +41,7 @@ public:
 
     void finish()
     {
+        std::unique_lock lock(mutex);
         is_finished = true;
         condvar.notify_all();
     }
@@ -64,7 +65,7 @@ protected:
 private:
     Chunk data;
     bool has_data = false;
-    std::atomic_bool is_finished = false;
+    bool is_finished = false;
     std::mutex mutex;
     std::condition_variable condvar;
 };
