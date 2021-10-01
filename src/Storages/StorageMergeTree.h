@@ -13,6 +13,9 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -138,6 +141,7 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
+private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
@@ -168,38 +172,8 @@ private:
     /// Wait until mutation finishes mutating parts
     void waitForMutation(const MutationPair& info);
 
-    struct CurrentlyMergingPartsTagger
-    {
-        FutureMergedMutatedPart future_part;
-        ReservationPtr reserved_space;
-        StorageMergeTree & storage;
-        // Optional tagger to maintain volatile parts for the JBOD balancer
-        std::optional<CurrentlySubmergingEmergingTagger> tagger;
-
-        CurrentlyMergingPartsTagger(
-            FutureMergedMutatedPart & future_part_,
-            size_t total_size,
-            StorageMergeTree & storage_,
-            const StorageMetadataPtr & metadata_snapshot,
-            bool is_mutation);
-
-        ~CurrentlyMergingPartsTagger();
-    };
-
-    using CurrentlyMergingPartsTaggerPtr = std::unique_ptr<CurrentlyMergingPartsTagger>;
     friend struct CurrentlyMergingPartsTagger;
 
-    struct MergeMutateSelectedEntry
-    {
-        FutureMergedMutatedPart future_part;
-        CurrentlyMergingPartsTaggerPtr tagger;
-        MutationCommands commands;
-        MergeMutateSelectedEntry(const FutureMergedMutatedPart & future_part_, CurrentlyMergingPartsTaggerPtr && tagger_, const MutationCommands & commands_)
-            : future_part(future_part_)
-            , tagger(std::move(tagger_))
-            , commands(commands_)
-        {}
-    };
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
@@ -212,7 +186,6 @@ private:
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
-    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const Names & deduplicate_by_columns, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
     /**
      * Given a mutations range, iterates over it.
@@ -254,7 +227,7 @@ private:
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
     /// in mutation entries.
-    void updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message);
+    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message);
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
@@ -271,6 +244,8 @@ private:
     friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeSink;
     friend class MergeTreeData;
+    friend class MergePlainMergeTreeTask;
+    friend class MutatePlainMergeTreeTask;
 
 
 protected:

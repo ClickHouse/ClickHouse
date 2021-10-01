@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: deadlock
 
 set -e
 

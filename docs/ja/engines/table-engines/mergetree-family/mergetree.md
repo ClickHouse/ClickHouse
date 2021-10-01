@@ -651,4 +651,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 バックグラウンドマージと突然変異の完了後、古い部分は一定時間後にのみ削除されます (`old_parts_lifetime`).
 この間、他のボリュームまたはディスクには移動されません。 したがって、部品が最終的に除去されるまで、それらは占有されたディスク領域の評価のために考慮される。
 
-[元の記事](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/ru/operations/table_engines/mergetree/) <!--hide-->

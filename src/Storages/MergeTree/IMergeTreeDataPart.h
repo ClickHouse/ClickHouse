@@ -284,7 +284,9 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    MinMaxIndex minmax_idx;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 

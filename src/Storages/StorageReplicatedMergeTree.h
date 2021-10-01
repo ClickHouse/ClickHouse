@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -282,6 +284,9 @@ private:
     friend class ReplicatedMergeTreeQueue;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
+    friend class MergeFromLogEntryTask;
+    friend class MutateFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -470,18 +475,10 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
-    /// Do the merge or recommend to make the fetch instead of the merge
-    bool tryExecuteMerge(const LogEntry & entry);
-
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
-
-    /// Execute MUTATE_PART entry. Part name and mutation commands
-    /// stored in entry. This function relies on MergerMutator class.
-    bool tryExecutePartMutation(const LogEntry & entry);
-
 
     /// Fetch part from other replica (inserted or merged/mutated)
     /// NOTE: Attention! First of all tries to find covering part on other replica
@@ -511,6 +508,9 @@ private:
 
 
     ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
+
+
+    MergeFromLogEntryTaskPtr getTaskToProcessMergeQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
@@ -604,7 +604,6 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
-
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);

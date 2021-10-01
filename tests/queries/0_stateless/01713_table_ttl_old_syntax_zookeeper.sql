@@ -1,3 +1,5 @@
+-- Tags: zookeeper
+
 DROP TABLE IF EXISTS ttl_table;
 
 CREATE TABLE ttl_table

@@ -240,4 +240,4 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 监视表更改并触发后续选择查询。
 - 使用定期刷新从系统表中查看指标。
 
-[原始文章](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
