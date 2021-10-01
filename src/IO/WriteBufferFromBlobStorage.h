@@ -6,9 +6,12 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <memory>
+
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <azure/storage/blobs.hpp>
+#include <azure/core/io/body_stream.hpp>
 
 
 namespace DB
@@ -25,9 +28,13 @@ public:
     void nextImpl() override;
 
 private:
+    void allocateBuffer();
+
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
     const String blob_path;
     size_t buf_size;
+
+    // std::shared_ptr<Azure::Core::IO::FileBodyStream> tmp_buffer;
 };
 
 }
