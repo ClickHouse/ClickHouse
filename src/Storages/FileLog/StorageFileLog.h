@@ -49,8 +49,6 @@ public:
 
     void drop() override;
 
-    bool dropTableImmediately() const override { return true; }
-
     const auto & getFormatName() const { return format_name; }
 
     enum class FileStatus
@@ -64,15 +62,15 @@ public:
     struct FileContext
     {
         FileStatus status = FileStatus::OPEN;
-        UInt64 inode;
-        std::ifstream reader;
+        UInt64 inode{};
+        std::ifstream reader{};
     };
 
     struct FileMeta
     {
         String file_name;
-        UInt64 last_writen_position = 0;
-        UInt64 last_open_end = 0;
+        UInt64 last_writen_position{};
+        UInt64 last_open_end{};
     };
 
     using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
@@ -137,7 +135,7 @@ private:
     /// If path argument of the table is a regular file, it equals to user_files_path
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
-    /// Database meta_path/ + .table_name/
+    /// relative_data_path/ + table_name/
     String root_meta_path;
 
     FileInfos file_infos;
