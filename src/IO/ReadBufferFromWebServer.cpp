@@ -1,4 +1,4 @@
-#include "ReadIndirectBufferFromWebServer.h"
+#include "ReadBufferFromWebServer.h"
 
 #include <common/logger_useful.h>
 #include <common/sleep.h>
@@ -23,11 +23,11 @@ namespace ErrorCodes
 static const auto WAIT_MS = 10;
 
 
-ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
+ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_, ContextPtr context_, size_t buf_size_,
     size_t backoff_threshold_, size_t max_tries_, bool use_external_buffer_)
     : SeekableReadBuffer(nullptr, 0)
-    , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
+    , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
@@ -38,7 +38,7 @@ ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
 }
 
 
-std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
+std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
 
@@ -64,7 +64,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 }
 
 
-bool ReadIndirectBufferFromWebServer::nextImpl()
+bool ReadBufferFromWebServer::nextImpl()
 {
     bool next_result = false, successful_read = false;
     UInt16 milliseconds_to_wait = WAIT_MS;
@@ -148,7 +148,7 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
 }
 
 
-off_t ReadIndirectBufferFromWebServer::seek(off_t offset_, int whence)
+off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {
     if (impl)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
@@ -165,7 +165,7 @@ off_t ReadIndirectBufferFromWebServer::seek(off_t offset_, int whence)
 }
 
 
-off_t ReadIndirectBufferFromWebServer::getPosition()
+off_t ReadBufferFromWebServer::getPosition()
 {
     return offset - available();
 }

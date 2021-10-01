@@ -8,10 +8,11 @@
 #include <Common/setThreadName.h>
 
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromRemoteFS.h>
+#include <Disks/ReadBufferFromRemoteFSGather.h>
 
 #include <future>
 #include <iostream>
+#include <common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -62,6 +63,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
     /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
     pool.scheduleOrThrow([task]{ (*task)(); }, -request.priority);
+
     return future;
 }
 }
