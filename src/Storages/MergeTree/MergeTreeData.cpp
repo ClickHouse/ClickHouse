@@ -280,10 +280,13 @@ MergeTreeData::MergeTreeData(
     if (!attach || !version_file_exists)
     {
         format_version = min_format_version;
-        auto buf = version_file.second->writeFile(version_file.first);
-        writeIntText(format_version.toUnderType(), *buf);
-        if (getContext()->getSettingsRef().fsync_metadata)
-            buf->sync();
+        if (!version_file.second->isReadOnly())
+        {
+            auto buf = version_file.second->writeFile(version_file.first);
+            writeIntText(format_version.toUnderType(), *buf);
+            if (getContext()->getSettingsRef().fsync_metadata)
+                buf->sync();
+        }
     }
     else
     {
@@ -975,6 +978,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
+    size_t suspicious_broken_parts_bytes = 0;
 
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
@@ -1001,17 +1005,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
             if (part_disk_ptr->exists(marker_path))
             {
+                /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
+                size_t size_of_part = IMergeTreeDataPart::calculateTotalSizeOnDisk(part->volume->getDisk(), part->getFullRelativePath());
                 LOG_WARNING(log,
-                    "Detaching stale part {}{}, which should have been deleted after a move. That can only happen "
-                    "after unclean restart of ClickHouse after move of a part having an operation blocking that "
-                    "stale copy of part.",
-                    getFullPathOnDisk(part_disk_ptr), part_name);
-
+                    "Detaching stale part {}{} (size: {}), which should have been deleted after a move. "
+                    "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
+                    getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
                 std::lock_guard loading_lock(mutex);
 
                 broken_parts_to_detach.push_back(part);
 
                 ++suspicious_broken_parts;
+                suspicious_broken_parts_bytes += size_of_part;
 
                 return;
             }
@@ -1040,16 +1045,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                LOG_ERROR(log,
-                    "Detaching broken part {}{}. If it happened after update, it is likely because of backward "
-                    "incompatibility. You need to resolve this manually",
-                    getFullPathOnDisk(part_disk_ptr), part_name);
+                /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
+                size_t size_of_part = IMergeTreeDataPart::calculateTotalSizeOnDisk(part->volume->getDisk(), part->getFullRelativePath());
 
+                LOG_ERROR(log,
+                    "Detaching broken part {}{} (size: {}). "
+                    "If it happened after update, it is likely because of backward incompability. "
+                    "You need to resolve this manually",
+                    getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
                 std::lock_guard loading_lock(mutex);
 
                 broken_parts_to_detach.push_back(part);
 
                 ++suspicious_broken_parts;
+                suspicious_broken_parts_bytes += size_of_part;
 
                 return;
             }
@@ -1096,8 +1105,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
-        throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
-            ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+            "Suspiciously many ({}) broken parts to remove.",
+            suspicious_broken_parts);
+
+    if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
+        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+            "Suspiciously big size ({}) of all broken parts to remove.",
+            formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes));
 
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -3457,10 +3472,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     if (fields_count)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        ConcatReadBuffer buf;
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>("(", 1));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
         auto input_format = FormatFactory::instance().getInput(
             "Values",
@@ -4245,10 +4260,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         const auto & part = parts[part_idx];
 
-        if (!part->minmax_idx.initialized)
+        if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        size_t minmax_idx_size = part->minmax_idx.hyperrectangle.size();
+        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         if (2 * minmax_idx_size + 1 != minmax_count_columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -4263,7 +4278,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             size_t max_pos = i * 2 + 1;
             auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[min_pos]);
             auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[max_pos]);
-            const auto & range = part->minmax_idx.hyperrectangle[i];
+            const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
         }
@@ -4309,9 +4324,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     const auto & query_ptr = query_info.query;
 
-    // Currently projections don't support final yet.
-    if (auto * select = query_ptr->as<ASTSelectQuery>(); select && select->final())
-        return false;
+    if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
+    {
+        // Currently projections don't support final yet.
+        if (select->final())
+            return false;
+
+        // Currently projections don't support ARRAY JOIN yet.
+        if (select->arrayJoinExpressionList().first)
+            return false;
+    }
 
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)

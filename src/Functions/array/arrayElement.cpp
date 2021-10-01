@@ -904,7 +904,7 @@ bool FunctionArrayElement::matchKeyToIndexString(
 template <typename FromType, typename ToType>
 static constexpr bool areConvertibleTypes =
     std::is_same_v<FromType, ToType>
-        || (is_integer_v<FromType> && is_integer_v<ToType>
+        || (is_integer<FromType> && is_integer<ToType>
             && std::is_convertible_v<FromType, ToType>);
 
 template <typename F>

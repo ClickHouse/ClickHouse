@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
@@ -14,9 +15,9 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE test_01150.t2 (x UInt64, s Array(Nullab
 
 function thread_detach_attach {
     while true; do
-        $CLICKHOUSE_CLIENT --query "DETACH DATABASE test_01150" 2>&1 | grep -v -F -e 'Received exception from server' -e 'Code: (219)' -e '(query: '
+        $CLICKHOUSE_CLIENT --query "DETACH DATABASE test_01150" 2>&1 | grep -v -F -e 'Received exception from server' -e 'Code: 219' -e '(query: '
         sleep 0.0$RANDOM
-        $CLICKHOUSE_CLIENT --query "ATTACH DATABASE test_01150" 2>&1 | grep -v -F -e 'Received exception from server' -e 'Code: (219)' -e '(query: '
+        $CLICKHOUSE_CLIENT --query "ATTACH DATABASE test_01150" 2>&1 | grep -v -F -e 'Received exception from server' -e 'Code: 82' -e '(query: '
         sleep 0.0$RANDOM
     done
 }
