@@ -109,11 +109,14 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         Record record;
         while (read_records_size < need_records_size && static_cast<UInt64>(file_ctx.reader.tellg()) < file_meta.last_open_end)
         {
+            /// Need to get offset before reading record from stream
+            record.offset = file_ctx.reader.tellg();
+            record.file_name = file_name;
+
             StorageFileLog::assertStreamGood(file_ctx.reader);
 
             std::getline(file_ctx.reader, record.data);
-            record.file_name = file_name;
-            record.offset = file_ctx.reader.tellg();
+
             new_records.emplace_back(record);
             ++read_records_size;
         }
