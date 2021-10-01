@@ -31,6 +31,10 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 
 -   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
+-   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
+
+-   [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot)
+
 ``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
@@ -82,3 +86,10 @@ ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres
 
 SELECT * FROM postgresql_db.postgres_table;
 ```
+## Примечания {#notes}
+
+### Сбой слота логической репликации {logical-replication-slot-failover}
+
+Слоты логической репликации, которые есть на основном сервере, не доступны на резервных репликах.
+Поэтому в случае сбоя новый основной сервер (который раньше был резевным физическим сервером) не будет знать о слотах, которые были расположены на вышедшем из строя основном сервере. Это приведет к нарушению репликации из PostgreSQL.
+Решением этой проблемы может стать ручное управление слотами репликации и определение постоянного слота репликации (об этом можно прочитать [здесь](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Этот слот нужно назначить с помощью настройки `materialized_postgresql_replication_slot`, и он должен быть экспортирован в параметре `EXPORT SNAPSHOT`. Идентификатор снэпшота нужно передать в настройке `materialized_postgresql_snapshot`.
