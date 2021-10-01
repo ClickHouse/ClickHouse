@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
+#include <Common/escapeForFileName.h>
 
 #include <common/logger_useful.h>
 #include <common/scope_guard_safe.h>
@@ -40,7 +41,7 @@ void DatabaseLazy::loadStoredObjects(
 {
     iterateMetadataFiles(local_context, [this](const String & file_name)
     {
-        const std::string table_name = file_name.substr(0, file_name.size() - 4);
+        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
         fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
         if (fs::exists(detached_permanently_flag))

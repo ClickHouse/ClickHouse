@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse MeetUp едет в Минск!'
-image: 'https://blog-images.clickhouse.tech/ru/2017/clickhouse-meetup-edet-v-minsk/main.jpg'
+image: 'https://blog-images.clickhouse.com/ru/2017/clickhouse-meetup-edet-v-minsk/main.jpg'
 date: '2017-06-13'
 tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь', 'анонс']
 ---
