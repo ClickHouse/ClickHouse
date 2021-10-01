@@ -58,11 +58,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2)
+        size_t arguments_size = arguments.size();
+        if (arguments_size != 2 && arguments_size != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} expected 2 or 3 arguments. Actual {}",
                 getName(),
-                arguments.size());
+                arguments_size);
 
         const auto & type_column = arguments[1].column;
         const auto * type_column_typed = checkAndGetColumnConst<ColumnString>(type_column.get());
@@ -74,31 +75,41 @@ public:
                 getName(),
                 type_column->dumpStructure());
 
-        DataTypePtr type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
 
         if (keep_nullable && arguments.front().type->isNullable())
-            return makeNullable(type);
+            result_type = makeNullable(result_type);
 
-        return type;
+        if (arguments.size() == 3)
+        {
+            auto default_value_type = arguments[2].type;
+
+            if (!areTypesEqual(result_type, default_value_type))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Default value type should be same as cast type. Expected {}. Actual {}",
+                    result_type->getName(),
+                    default_value_type->getName());
+            }
+        }
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t) const override
     {
-        const auto & type_column = arguments[1].column;
-        const auto * type_column_typed = checkAndGetColumnConst<ColumnString>(type_column.get());
-        DataTypePtr type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
-
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const { std::move(non_const_column_to_cast), column_to_cast.type, column_to_cast.name };
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, type);
+        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
+        size_t null_map_data_size = null_map_data.size();
         const auto & nested_column = cast_result_nullable.getNestedColumn();
-        IColumn::MutablePtr result = type->createColumn();
-        result->reserve(null_map_data.size());
+        IColumn::MutablePtr result = return_type->createColumn();
+        result->reserve(null_map_data_size);
 
         size_t start_insert_index = 0;
 
@@ -106,34 +117,30 @@ public:
         if (arguments.size() == 3)
         {
             const auto & default_column_with_type = arguments[2];
-            const auto & default_column_type = default_column_with_type.type;
             auto default_column = default_column_with_type.column->convertToFullColumnIfConst();
-            ColumnWithTypeAndName default_column_to_cast_non_const { std::move(default_column), default_column_type, default_column_with_type.name };
 
-            auto default_column_casted = castColumnAccurate(default_column_to_cast_non_const, return_type);
-
-            for (size_t i = 0; i < null_map_data.size(); ++i)
+            for (size_t i = 0; i < null_map_data_size; ++i)
             {
                 bool is_current_index_null = null_map_data[i];
                 if (!is_current_index_null)
                     continue;
 
-                if (i - start_insert_index > 0)
+                if (i != start_insert_index)
                     result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
 
-                result->insertFrom(*default_column_casted, i);
+                result->insertFrom(*default_column, i);
                 start_insert_index = i + 1;
             }
         }
         else
         {
-            for (size_t i = 0; i < null_map_data.size(); ++i)
+            for (size_t i = 0; i < null_map_data_size; ++i)
             {
                 bool is_current_index_null = null_map_data[i];
                 if (!is_current_index_null)
                     continue;
 
-                if (i - start_insert_index > 0)
+                if (i != start_insert_index)
                     result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
 
                 result->insertDefault();
@@ -141,7 +148,8 @@ public:
             }
         }
 
-        result->insertRangeFrom(nested_column, start_insert_index, null_map_data.size() - start_insert_index);
+        if (null_map_data_size != start_insert_index)
+            result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
 
         return result;
     }
@@ -240,7 +248,7 @@ private:
 
         ColumnWithTypeAndName type_argument =
         {
-            DataTypeString().createColumnConst(arguments.begin()->column->size(), cast_type->getName()),
+            DataTypeString().createColumnConst(1, cast_type->getName()),
             std::make_shared<DataTypeString>(),
             ""
         };
@@ -253,16 +261,6 @@ private:
 
         if (additional_argument_index < arguments.size())
         {
-            const auto & default_value_type = arguments[additional_argument_index].type;
-
-            if (!areTypesEqual(default_value_type, cast_type))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Default value type should be same as cast type. Expected {}. Actual {}",
-                    cast_type->getName(),
-                    default_value_type->getName());
-            }
-
             arguments_with_cast_type.emplace_back(arguments[additional_argument_index]);
             ++additional_argument_index;
         }
