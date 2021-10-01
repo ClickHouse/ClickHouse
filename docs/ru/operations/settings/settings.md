@@ -3346,7 +3346,7 @@ SETTINGS index_granularity = 8192 │
 
 ## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
 
-Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
+Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql.md). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
