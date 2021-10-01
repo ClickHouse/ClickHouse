@@ -3,7 +3,7 @@ toc_priority: 21
 toc_title: Menus
 ---
 
-# New York Public Library "What's on the Menu?" Dataset
+# New York Public Library "What's on the Menu?" Dataset {#menus-dataset}
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
 
@@ -11,34 +11,38 @@ Source: http://menus.nypl.org/data
 The data is in public domain.
 
 The data is from library's archive and it may be incomplete and difficult for statistical analysis. Nevertheless it is also very yummy.
-The size is just 1.3 million records about dishes in the menus (a very small data volume for ClickHouse, but it's still a good example).
+The size is just 1.3 million records about dishes in the menus — it's a very small data volume for ClickHouse, but it's still a good example.
 
-## Download the Dataset
+## Download the Dataset {#download-dataset}
 
-```
+Run the command:
+
+```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
 ```
 
 Replace the link to the up to date link from http://menus.nypl.org/data if needed.
 Download size is about 35 MB.
 
-## Unpack the Dataset
+## Unpack the Dataset {#unpack-dataset}
 
-```
+```bash
 tar xvf 2021_08_01_07_01_17_data.tgz
 ```
 
 Uncompressed size is about 150 MB.
 
 The data is normalized consisted of four tables:
-- Menu: information about menus: the name of the restaurant, the date when menu was seen, etc;
-- Dish: information about dishes: the name of the dish along with some characteristic;
-- MenuPage: information about the pages in the menus; every page belongs to some menu;
-- MenuItem: an item of the menu - a dish along with its price on some menu page: links to dish and menu page.
+- `Menu` — Information about menus: the name of the restaurant, the date when menu was seen, etc.
+- `Dish` — Information about dishes: the name of the dish along with some characteristic.
+- `MenuPage` — Information about the pages in the menus, because every page belongs to some menu.
+- `MenuItem` — An item of the menu. A dish along with its price on some menu page: links to dish and menu page.
 
-## Create the Tables
+## Create the Tables {#create-tables}
 
-```
+We use [Decimal](../../sql-reference/data-types/decimal.md) data type to store prices.
+
+```sql
 CREATE TABLE dish
 (
     id UInt32,
@@ -101,35 +105,33 @@ CREATE TABLE menu_item
 ) ENGINE = MergeTree ORDER BY id;
 ```
 
-We use `Decimal` data type to store prices. Everything else is quite straightforward.
+## Import the Data {#import-data}
 
-## Import Data
+Upload data into ClickHouse, run:
 
-Upload data into ClickHouse:
-
-```
+```bash
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu FORMAT CSVWithNames" < Menu.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu_page FORMAT CSVWithNames" < MenuPage.csv
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
 ```
 
-We use `CSVWithNames` format as the data is represented by CSV with header.
+We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the data is represented by CSV with header.
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable `input_format_null_as_default` as our data does not have NULLs. Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+We disable [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting `--date_time_input_format best_effort` allows to parse `DateTime` fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
+The setting [date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
 
-## Denormalize the Data
+## Denormalize the Data {#denormalize-data}
 
-Data is presented in multiple tables in normalized form. It means you have to perform JOINs if you want to query, e.g. dish names from menu items.
-For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing JOIN every time. It is called "denormalized" data.
+Data is presented in multiple tables in [normalized form](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). It means you have to perform [JOIN](../../sql-reference/statements/select/join.md#select-join) if you want to query, e.g. dish names from menu items.
+For typical analytical tasks it is way more efficient to deal with pre-JOINed data to avoid doing `JOIN` every time. It is called "denormalized" data.
 
-We will create a table that will contain all the data JOINed together:
+We will create a table `menu_item_denorm` where will contain all the data JOINed together:
 
-```
+```sql
 CREATE TABLE menu_item_denorm
 ENGINE = MergeTree ORDER BY (dish_name, created_at)
 AS SELECT
@@ -171,21 +173,32 @@ AS SELECT
 FROM menu_item
     JOIN dish ON menu_item.dish_id = dish.id
     JOIN menu_page ON menu_item.menu_page_id = menu_page.id
-    JOIN menu ON menu_page.menu_id = menu.id
+    JOIN menu ON menu_page.menu_id = menu.id;
 ```
 
-## Validate the Data
+## Validate the Data {#validate-data}
 
+Query:
+
+```sql
+SELECT count() FROM menu_item_denorm;
 ```
-SELECT count() FROM menu_item_denorm
-1329175
+
+Result:
+
+```text
+┌─count()─┐
+│ 1329175 │
+└─────────┘
 ```
 
-## Run Some Queries
+## Run Some Queries {#run-queries}
 
-Averaged historical prices of dishes:
+### Averaged historical prices of dishes {#query-averaged-historical-prices}
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -194,8 +207,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022)
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 100, 100)─┐
 │ 1850 │     618 │                  1.5 │ █▍                           │
 │ 1860 │    1634 │                 1.29 │ █▎                           │
@@ -215,15 +232,15 @@ ORDER BY d ASC
 │ 2000 │    2467 │                11.85 │ ███████████▋                 │
 │ 2010 │     597 │                25.66 │ █████████████████████████▋   │
 └──────┴─────────┴──────────────────────┴──────────────────────────────┘
-
-17 rows in set. Elapsed: 0.044 sec. Processed 1.33 million rows, 54.62 MB (30.00 million rows/s., 1.23 GB/s.)
 ```
 
 Take it with a grain of salt.
 
-### Burger Prices:
+### Burger Prices {#query-burger-prices}
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -232,8 +249,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%burger%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)───────────┐
 │ 1880 │       2 │                 0.42 │ ▋                                     │
 │ 1890 │       7 │                 0.85 │ █▋                                    │
@@ -250,13 +271,13 @@ ORDER BY d ASC
 │ 2000 │      21 │                 7.14 │ ██████████████▎                       │
 │ 2010 │       6 │                18.42 │ ████████████████████████████████████▋ │
 └──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
-
-14 rows in set. Elapsed: 0.052 sec. Processed 1.33 million rows, 94.15 MB (25.48 million rows/s., 1.80 GB/s.)
 ```
 
-### Vodka:
+### Vodka {#query-vodka}
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -265,8 +286,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%vodka%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)─┐
 │ 1910 │       2 │                    0 │                             │
 │ 1920 │       1 │                  0.3 │ ▌                           │
@@ -282,11 +307,13 @@ ORDER BY d ASC
 
 To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
 
-### Caviar:
+### Caviar {#query-caviar}
 
 Let's print caviar prices. Also let's print a name of any dish with caviar.
 
-```
+Query:
+
+```sql
 SELECT
     round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
     count(),
@@ -296,8 +323,12 @@ SELECT
 FROM menu_item_denorm
 WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%caviar%')
 GROUP BY d
-ORDER BY d ASC
+ORDER BY d ASC;
+```
 
+Result:
+
+```text
 ┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)──────┬─any(dish_name)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1090 │       1 │                    0 │                                  │ Caviar                                                                                                                              │
 │ 1880 │       3 │                    0 │                                  │ Caviar                                                                                                                              │
@@ -319,6 +350,6 @@ ORDER BY d ASC
 
 At least they have caviar with vodka. Very nice.
 
-### Test it in Playground
+## Online Playground {#playground}
 
-The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).
+The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUCiAgICByb3VuZCh0b1VJbnQzMk9yWmVybyhleHRyYWN0KG1lbnVfZGF0ZSwgJ15cXGR7NH0nKSksIC0xKSBBUyBkLAogICAgY291bnQoKSwKICAgIHJvdW5kKGF2ZyhwcmljZSksIDIpLAogICAgYmFyKGF2ZyhwcmljZSksIDAsIDUwLCAxMDApLAogICAgYW55KGRpc2hfbmFtZSkKRlJPTSBtZW51X2l0ZW1fZGVub3JtCldIRVJFIChtZW51X2N1cnJlbmN5IElOICgnRG9sbGFycycsICcnKSkgQU5EIChkID4gMCkgQU5EIChkIDwgMjAyMikgQU5EIChkaXNoX25hbWUgSUxJS0UgJyVjYXZpYXIlJykKR1JPVVAgQlkgZApPUkRFUiBCWSBkIEFTQw==).
