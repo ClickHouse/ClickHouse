@@ -138,7 +138,12 @@ private:
                         /// XXX: for some unknown reason this place assumes that argument can't be an alias,
                         ///      like in the similar code in `MarkTableIdentifierVisitor`.
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
-                            child->children[i] = identifier->createTable();
+                        {
+                            /// If identifier is broken then we can do nothing and get an exception
+                            auto maybe_table_identifier = identifier->createTable();
+                            if (maybe_table_identifier)
+                                child->children[i] = maybe_table_identifier;
+                        }
 
                         /// Second argument of the "in" function (or similar) may be a table name or a subselect.
                         /// Rewrite the table name or descend into subselect.
