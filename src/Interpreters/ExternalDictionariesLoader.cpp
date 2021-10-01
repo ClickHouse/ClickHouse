@@ -87,6 +87,21 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
+StorageID ExternalDictionariesLoader::getStorageID(const std::string & dictionary_name, ContextPtr context) const
+{
+    if (has(dictionary_name))
+        return StorageID("", dictionary_name);
+
+    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
+    if (!qualified_name)
+        return StorageID("", dictionary_name);
+
+    if (qualified_name->database.empty())
+        return StorageID(context->getCurrentDatabase(), dictionary_name);
+
+    return StorageID("", dictionary_name);
+}
+
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
     bool has_dictionary = has(dictionary_name);
