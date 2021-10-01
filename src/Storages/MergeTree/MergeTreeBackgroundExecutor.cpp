@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
@@ -58,9 +64,21 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
             item->is_currently_deleting = true;
     }
 
-
+    /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
         item->is_done.wait();
+
+    /// Checking that no one else owns the item. We have to acquire the lock so that we have a sequential order
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & item : tasks_to_wait)
+            if (!item.unique())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone else is owning the item. Task will live longer than storage. It is a bug");
+    }
+
+    /// Delete items without lock, because we are the only who owns them.
+    for (auto & item : tasks_to_wait)
+        item.reset();
 }
 
 
@@ -100,6 +118,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             /// This is significant to order the destructors.
             item->task.reset();
             item->is_done.set();
+            item = nullptr;
             return;
         }
 
@@ -140,6 +159,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         item->task.reset();
         item->is_done.set();
+        item = nullptr;
     }
 }
 
