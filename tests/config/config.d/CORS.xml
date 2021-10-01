@@ -17,5 +17,4 @@
             <value>86400</value>
         </header>
     </http_options_response>
-<clickhouse>
-    
+</clickhouse>
