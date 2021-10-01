@@ -11,7 +11,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/// Has one input and one output. Pulls a block from input, transforms it, and pushes it to output.
+/** Has one input and one output.
+  * Simply pull a block from input, transform it, and push it to output.
+  */
 class ISimpleTransform : public IProcessor
 {
 protected:
@@ -30,11 +32,6 @@ protected:
     /// This allows to escape caching chunks in input port, which can lead to uneven data distribution.
     bool set_input_not_needed_after_read = true;
 
-    virtual void transform(Chunk &)
-    {
-        throw Exception("Method transform is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     virtual void transform(Chunk & input_chunk, Chunk & output_chunk)
     {
         transform(input_chunk);
@@ -46,6 +43,11 @@ protected:
 
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
+
+    virtual void transform(Chunk &)
+    {
+        throw Exception("Method transform is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     Status prepare() override;
     void work() override;

@@ -73,7 +73,7 @@ class JSONArray : public IItem
 public:
     void add(ItemPtr value) { values.push_back(std::move(value)); }
     void add(std::string value) { add(std::make_unique<JSONString>(std::move(value))); }
-    void add(std::string_view value) { add(std::make_unique<JSONString>(value)); }
+    void add(const char * value) { add(std::make_unique<JSONString>(value)); }
     void add(bool value) { add(std::make_unique<JSONBool>(std::move(value))); }
 
     template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>

@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Implementation for OFFSET N (without limit)
-/// This processor supports multiple inputs and outputs if inputs count == outputs count.
+/// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
 class OffsetTransform : public IProcessor
 {

@@ -603,8 +603,8 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
     return res;
 }
 
@@ -1848,8 +1848,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        max_threads_execute_query = settings.max_distributed_connections;
-        max_streams = settings.max_distributed_connections;
+        max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
     UInt64 max_block_size = settings.max_block_size;

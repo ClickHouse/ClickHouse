@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 #include <concepts>
+#include <span>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -1061,20 +1062,10 @@ inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename It>
-void writeBinary(It begin, It end, WriteBuffer & buf)
+template <class T>
+void writeBinary(std::span<T> x, WriteBuffer & buf)
 {
-    const size_t size = end - begin;
-    writeVarUInt(size, buf);
-
-    for (size_t i = 0; i < size; ++i)
-        writeBinary(begin + i, buf);
-}
-
-template <typename T>
-void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
-{
-    size_t size = x.size();
+    const size_t size = x.size();
     writeVarUInt(size, buf);
     for (size_t i = 0; i < size; ++i)
         writeBinary(x[i], buf);

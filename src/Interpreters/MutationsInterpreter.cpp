@@ -11,12 +11,13 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -216,13 +217,20 @@ bool isStorageTouchedByMutations(
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
-    BlockInputStreamPtr in = interpreter.execute().getInputStream();
+    auto io = interpreter.execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
-    Block block = in->read();
+    Block block;
+    while (!block.rows())
+        executor.pull(block);
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} instead of 1", block.rows());
+        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
+            ErrorCodes::LOGICAL_ERROR);
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
@@ -391,10 +399,10 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter is already prepared");
+        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (commands.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty mutation commands list");
+        throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
@@ -402,9 +410,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
-
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
-
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
@@ -657,8 +663,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND,
-                "Unknown mutation command type: {}", static_cast<int>(command.type));
+            throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -763,8 +768,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const auto & ast : stage.filters)
             all_asts->children.push_back(ast);
 
-        for (const auto & [column_name, updated_ast] : stage.column_to_updated)
-            all_asts->children.push_back(updated_ast);
+        for (const auto & kv : stage.column_to_updated)
+            all_asts->children.push_back(kv.second);
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
         for (const String & column : stage.output_columns)
@@ -823,23 +828,20 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     }
 
     /// Execute first stage as a SELECT statement.
+
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-
-    ASTs & children = select->select()->children;
-
     for (const auto & column_name : prepared_stages[0].output_columns)
-        children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
     /// Don't let select list be empty.
-    if (children.empty())
-        children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+    if (select->select()->children.empty())
+        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
 
     if (!prepared_stages[0].filters.empty())
     {
         ASTPtr where_expression;
-
         if (prepared_stages[0].filters.size() == 1)
             where_expression = prepared_stages[0].filters[0];
         else
@@ -857,7 +859,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -906,8 +908,7 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
 void MutationsInterpreter::validate()
 {
     if (!select_interpreter)
-        select_interpreter = std::make_unique<InterpreterSelectQuery>(
-            mutation_ast, context, storage, metadata_snapshot, select_limits);
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -919,10 +920,10 @@ void MutationsInterpreter::validate()
         {
             const auto nondeterministic_func_name = findFirstNonDeterministicFunctionName(command, context);
             if (nondeterministic_func_name)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                throw Exception(
                     "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
-                    "Function '{}' is non-deterministic",
-                    *nondeterministic_func_name);
+                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
+                    ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -942,19 +943,20 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
 
-    auto pipeline = addStreamsForLaterStages(stages, plan);
+    auto builder = addStreamsForLaterStages(stages, plan);
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder->getHeader()))
     {
-        pipeline->addSimpleTransform([&](const Block & header)
+        builder->addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -1029,4 +1031,5 @@ void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
     if (mutation_kind < kind)
         mutation_kind = kind;
 }
+
 }

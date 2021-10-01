@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string_view>
 #include <common/types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
+
 
 namespace DB
 {
@@ -12,16 +12,13 @@ enum class MutationType { Ordinary, Lightweight };
 
 /**
  * A mutation entry for non-replicated MergeTree storage engines.
- *
- * Stores information about mutation in:
- *   - mutation_N.txt (if type is MutationType::Ordinary) or in
- *   - lwmutation_N.txt (if type is MutationType::Lightweight),
- * where N is block_number.
- *
- * On creation, writes mutation info to tmp_[lw]mutation_N.txt file until commit() is called.
+ * Stores information about mutation in file mutation_N.txt where N is block_number.
+ * On creation, writes mutation info to tmp_mutation_N.txt file until commit() is called.
  */
 struct MergeTreeMutationEntry
 {
+    MutationType type;
+
     time_t create_time;
     MutationCommands commands;
 
@@ -29,8 +26,6 @@ struct MergeTreeMutationEntry
     String path_prefix;
     String file_name;
     bool is_temp;
-
-    MutationType type;
 
     Int64 block_number = 0;
 
@@ -56,4 +51,5 @@ struct MergeTreeMutationEntry
 
     ~MergeTreeMutationEntry();
 };
+
 }
