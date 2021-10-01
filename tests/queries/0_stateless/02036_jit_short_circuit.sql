@@ -7,8 +7,6 @@ CREATE TABLE test_table (message String) ENGINE=TinyLog;
 
 INSERT INTO test_table VALUES ('Test');
 
-SELECT if(action = 'bonus', sport_amount, 0) * 100 FROM
-    (SELECT JSONExtract(message, 'action', 'String') AS action,
-    JSONExtract(message, 'sport_amount', 'Float64') AS sport_amount　FROM test_table);
+SELECT if(action = 'bonus', sport_amount, 0) * 100 FROM (SELECT message AS action, cast(message, 'Float64') AS sport_amount FROM test_table);
 
 DROP TABLE test_table;
