@@ -1292,7 +1292,7 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
     {
         res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
-        if (!volume->getDisk()->exists(fs::path(getFullRelativePath()) / res))
+        if (!volume->getDisk()->exists(fs::path(storage.relative_data_path) / res))
             return res;
 
         LOG_WARNING(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
