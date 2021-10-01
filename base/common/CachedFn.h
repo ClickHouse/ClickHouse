@@ -36,7 +36,6 @@ public:
                 return it->second;
         }
 
-        /// The calculations themselves are not done under mutex.
         Result res = std::apply(Func, key);
 
         {
@@ -55,7 +54,8 @@ public:
 
         {
             std::lock_guard lock(mutex);
-            cache.emplace(std::move(key), std::move(res));
+            // TODO Can't use emplace(std::move(key), ..), causes test_host_ip_change errors.
+            cache[key] = std::move(res);
         }
     }
 
