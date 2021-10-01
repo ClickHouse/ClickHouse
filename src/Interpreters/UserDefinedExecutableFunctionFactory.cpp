@@ -110,8 +110,7 @@ public:
             shell_command_source_configuration,
             process_pool));
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
+        QueryPipeline pipeline(std::move(pipe));
 
         PullingPipelineExecutor executor(pipeline);
 
