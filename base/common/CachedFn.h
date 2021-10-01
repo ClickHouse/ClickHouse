@@ -5,13 +5,12 @@
 #include "FnTraits.h"
 
 /**
- * Cache for a functor that decays to a pointer-to-function.
- * The size is unlimited. Values are stored permanently and never evicted.
- * Suitable only for simplest cases.
- *
+ * Caching proxy for a functor that decays to a pointer-to-function.
+ * Saves pairs (func args, func result on args).
+ * Cache size is unlimited. Cache items are evicted only on manual drop.
  * Invocation/update is O(log(saved cache values)).
  *
- * @example CachedFn<&my_func> cached; cached(arg);
+ * See Common/tests/cached_fn.cpp for examples.
   */
 template <auto * Func>
 struct CachedFn
