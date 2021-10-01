@@ -16,7 +16,7 @@ node = cluster.add_instance('node', stay_alive=True, main_configs=[])
 # Something like https://reviews.llvm.org/D33325
 def skip_test_msan(instance):
     if instance.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+        pytest.skip("Memory Sanitizer cannot work with vfork")
 
 
 def copy_file_to_container(local_path, dist_path, container_id):
