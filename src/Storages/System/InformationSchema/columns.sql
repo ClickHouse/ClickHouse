@@ -45,7 +45,9 @@ ATTACH VIEW columns
     `COLLATION_NAME` Nullable(String) ALIAS collation_name,
     `DOMAIN_CATALOG` Nullable(String) ALIAS domain_catalog,
     `DOMAIN_SCHEMA` Nullable(String) ALIAS domain_schema,
-    `DOMAIN_NAME` Nullable(String) ALIAS domain_name
+    `DOMAIN_NAME` Nullable(String) ALIAS domain_name,
+    `COLUMN_COMMENT` Nullable(String) ALIAS column_comment,
+    `COLUMN_TYPE` Nullable(String) ALIAS column_type
 ) AS
 SELECT
     database AS table_catalog,
@@ -70,5 +72,7 @@ SELECT
     NULL AS collation_name,
     NULL AS domain_catalog,
     NULL AS domain_schema,
-    NULL AS domain_name
+    NULL AS domain_name,
+    NULL AS column_comment,
+    NULL AS column_type
 FROM system.columns
