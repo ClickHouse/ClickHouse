@@ -18,9 +18,18 @@ void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
         visit(*dict_source, data);
 }
 
-bool DDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
+bool DDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
-    return !node->as<ASTStorage>();
+    if (node->as<ASTStorage>())
+        return false;
+
+    if (auto * create = node->as<ASTCreateQuery>())
+    {
+        if (child.get() == create->select)
+            return false;
+    }
+
+    return true;
 }
 
 void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
