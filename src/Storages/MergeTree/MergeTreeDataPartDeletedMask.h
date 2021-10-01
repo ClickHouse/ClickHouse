@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/// Per-part info about rows deleted by point deletes.
+/// Per-part info about rows deleted by lightweight mutations.
 struct MergeTreeDataPartDeletedMask
 {
     static constexpr auto FILE_NAME = "deleted_mask.bin";

@@ -42,7 +42,7 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
 {
     writeVarUInt(1, out); //format version
     writeVarUInt(deleted_rows_hash, out);
-    writeBinary(deleted_rows, out);
+    writeBinary(std::span{deleted_rows}, out);
 }
 
 void MergeTreeDataPartDeletedMask::update(const MergeTreeDataPartDeletedMask& other)
@@ -60,6 +60,6 @@ void MergeTreeDataPartDeletedMask::updateWrite(const MergeTreeDataPartDeletedMas
 
     out.seek(0, SEEK_END); //reposition after previously added rows
 
-    writeBinary(other.deleted_rows.begin(), other.deleted_rows.end(), out);
+    writeBinary(std::span{other.deleted_rows}, out);
 }
 }

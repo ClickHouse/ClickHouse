@@ -431,7 +431,7 @@ StorageMergeTree::MutationPair StorageMergeTree::startMutation(const MutationCom
         LOG_INFO(log, "Added mutation: {}", out.file_name);
     }
     background_operations_assignee.trigger();
-    return version;
+    return out;
 }
 
 
@@ -687,8 +687,8 @@ void StorageMergeTree::loadMutations()
                 MergeTreeMutationEntry entry(disk, path, name);
                 Int64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", name, entry.commands.size());
-                auto [it, emplaced] = current_mutations_by_id.emplace(name, std::move(entry));
-                current_mutations_by_version.emplace(block_number, it->second);
+                auto [mutations_it, emplaced] = current_mutations_by_id.emplace(name, std::move(entry));
+                current_mutations_by_version.emplace(block_number, mutations_it->second);
             }
             else if (startsWith(name, "tmp_mutation_"))
             {
@@ -874,7 +874,7 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.count(part);
 }
 
-std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
+std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */)
 {
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
@@ -1047,7 +1047,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
         {
-            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+            mutate_entry = selectPartToMutate(metadata_snapshot, nullptr, share_lock);
             has_mutations = !current_mutations_by_version.empty();
         }
     }

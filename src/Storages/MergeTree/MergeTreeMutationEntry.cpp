@@ -67,10 +67,16 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
 
     int format_version;
 
-    *buf >> "format version: 1" >> format_version >> "\n";
+    *buf >> "format version: " >> format_version >> "\n";
+
+    assert(format_version <= 2);
+
+    String type_str;
 
     if (format_version == 2)
-        *buf >> "type: " >> type >> "\n";
+        *buf >> "type: " >> type_str >> "\n";
+
+    type = *magic_enum::enum_cast<MutationType>(type_str); // FIXME ignore invalid types as for now
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
