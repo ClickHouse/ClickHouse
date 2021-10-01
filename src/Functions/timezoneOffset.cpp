@@ -12,7 +12,6 @@ using FunctiontimezoneOffset = FunctionDateOrDateTimeToSomething<DataTypeInt32, 
 void registerFunctiontimezoneOffset(FunctionFactory & factory)
 {
     factory.registerFunction<FunctiontimezoneOffset>();
-    factory.registerAlias("timeZoneOffset", "timezoneOffset");
 }
 
 }

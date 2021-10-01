@@ -8,10 +8,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -413,7 +413,12 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+    /// Query is not executed within sendQuery() function.
+    ///
+    /// And what this means that temporary timeout (via TimeoutSetter) is not
+    /// enough, since next query can use timeout from the previous query in this case.
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
 
     if (settings)
     {
@@ -424,7 +429,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -551,15 +556,6 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     out->next();
 }
 
-
-void Connection::sendReadTaskResponse(const String & response)
-{
-    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
-    out->next();
-}
-
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -580,12 +576,6 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
-    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
-    /// dedicated revision after introducing scalars, so this will still break some versions with
-    /// revision 54428.
-    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
-        return;
-
     if (data.empty())
         return;
 
@@ -826,9 +816,6 @@ Packet Connection::receivePacket()
                 readVectorBinary(res.part_uuids, *in);
                 return res;
 
-            case Protocol::Server::ReadTaskRequest:
-                return res;
-
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -929,13 +916,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException() const
+std::unique_ptr<Exception> Connection::receiveException()
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -945,7 +932,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 }
 
 
-Progress Connection::receiveProgress() const
+Progress Connection::receiveProgress()
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -953,7 +940,7 @@ Progress Connection::receiveProgress() const
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo() const
+BlockStreamProfileInfo Connection::receiveProfileInfo()
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

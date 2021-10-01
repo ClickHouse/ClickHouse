@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include <Core/Defines.h>
 #include <DataStreams/BlockIO.h>
 #include <IO/Progress.h>
@@ -22,7 +23,6 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-#include <vector>
 
 
 namespace CurrentMetrics
@@ -33,9 +33,9 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class Context;
 struct Settings;
 class IAST;
-class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -68,11 +68,10 @@ struct QueryStatusInfo
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
-    std::string current_database;
 };
 
 /// Query and information about its execution.
-class QueryStatus : public WithContext
+class QueryStatus
 {
 protected:
     friend class ProcessList;
@@ -82,6 +81,9 @@ protected:
 
     String query;
     ClientInfo client_info;
+
+    /// Is set once when init
+    Context * query_context = nullptr;
 
     /// Info about all threads involved in query execution
     ThreadGroupStatusPtr thread_group;
@@ -111,9 +113,6 @@ protected:
     BlockInputStreamPtr query_stream_in;
     BlockOutputStreamPtr query_stream_out;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
-
     enum QueryStreamsStatus
     {
         NotInitialized,
@@ -128,7 +127,6 @@ protected:
 public:
 
     QueryStatus(
-        ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_);
@@ -173,6 +171,9 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    Context * tryGetQueryContext() { return query_context; }
+    const Context * tryGetQueryContext() const { return query_context; }
+
     /// Copies pointers to in/out streams
     void setQueryStreams(const BlockIO & io);
 
@@ -188,12 +189,6 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
-
-    /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
-
-    /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
 };
 
 
@@ -287,7 +282,7 @@ protected:
 
     /// List of queries
     Container processes;
-    size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_size;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
@@ -309,7 +304,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextPtr query_context);
+    EntryPtr insert(const String & query_, const IAST * ast, Context & query_context);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }

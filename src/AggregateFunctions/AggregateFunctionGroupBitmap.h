@@ -9,25 +9,18 @@
 // TODO include this last because of a broken roaring header. See the comment inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
-
 namespace DB
 {
-
 /// Counts bitmap operation on numbers.
 template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
 {
 public:
-    AggregateFunctionBitmap(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {})
-    {
-    }
+    AggregateFunctionBitmap(const DataTypePtr & type) : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}) { }
 
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -50,7 +43,6 @@ public:
 };
 
 
-/// This aggregate function takes the states of AggregateFunctionBitmap as its argument.
 template <typename T, typename Data, typename Policy>
 class AggregateFunctionBitmapL2 final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>
 {
@@ -63,13 +55,6 @@ public:
     String getName() const override { return Policy::name; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    DataTypePtr getStateType() const override
-    {
-        return this->argument_types.at(0);
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -114,7 +99,6 @@ public:
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
 };
-
 
 template <typename Data>
 class BitmapAndPolicy

@@ -38,13 +38,13 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 | BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)         |
 | FLOAT                            | [Float32](../../sql-reference/data-types/float.md)          |
 | DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)          |
-| DATE                             | [Date](../../sql-reference/data-types/date.md)              |
-| DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)      |
-| BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| DATE                             | [日期](../../sql-reference/data-types/date.md)              |
+| DATETIME, TIMESTAMP              | [日期时间](../../sql-reference/data-types/datetime.md)      |
+| BINARY                           | [固定字符串](../../sql-reference/data-types/fixedstring.md) |
 
-其他的MySQL数据类型将全部都转换为[String](../../sql-reference/data-types/string.md)。
+其他的MySQL数据类型将全部都转换为[字符串](../../sql-reference/data-types/string.md)。
 
-同时以上的所有类型都支持[Nullable](../../sql-reference/data-types/nullable.md)。
+同时以上的所有类型都支持[可为空](../../sql-reference/data-types/nullable.md)。
 
 ## 使用示例 {#shi-yong-shi-li}
 

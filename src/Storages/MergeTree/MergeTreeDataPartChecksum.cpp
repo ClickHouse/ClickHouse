@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -47,9 +48,6 @@ void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & p
 {
     if (!disk->exists(path))
         throw Exception(fullPath(disk, path) + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    if (disk->isDirectory(path))
-        // This is a projection, no need to check its size.
-        return;
     UInt64 size = disk->getFileSize(path);
     if (size != file_size)
         throw Exception(fullPath(disk, path) + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
@@ -295,23 +293,6 @@ String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
     SipHash hash_of_all_files;
 
-    for (const auto & [name, checksum] : files)
-    {
-        updateHash(hash_of_all_files, name);
-        hash_of_all_files.update(checksum.file_hash);
-    }
-
-    UInt64 lo;
-    UInt64 hi;
-    hash_of_all_files.get128(lo, hi);
-
-    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
-}
-
-MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTotalChecksumUInt128() const
-{
-    SipHash hash_of_all_files;
-
     for (const auto & elem : files)
     {
         const String & name = elem.first;
@@ -321,9 +302,10 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
         hash_of_all_files.update(checksum.file_hash);
     }
 
-    MergeTreeDataPartChecksums::Checksum::uint128 ret;
-    hash_of_all_files.get128(reinterpret_cast<char *>(&ret));
-    return ret;
+    UInt64 lo, hi;
+    hash_of_all_files.get128(lo, hi);
+
+    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
@@ -394,8 +376,11 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     SipHash hash_of_uncompressed_files_state;
     SipHash uncompressed_hash_of_compressed_files_state;
 
-    for (const auto & [name, checksum] : full_checksums_.files)
+    for (const auto & elem : full_checksums_.files)
     {
+        const String & name = elem.first;
+        const auto & checksum = elem.second;
+
         updateHash(hash_of_all_files_state, name);
         hash_of_all_files_state.update(checksum.file_hash);
 
@@ -415,7 +400,7 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
 
     auto get_hash = [] (SipHash & hash, uint128 & data)
     {
-        hash.get128(data);
+        hash.get128(data.first, data.second);
     };
 
     get_hash(hash_of_all_files_state, hash_of_all_files);

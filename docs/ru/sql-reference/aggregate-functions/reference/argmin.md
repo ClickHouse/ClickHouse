@@ -20,7 +20,7 @@ argMin(arg, val)
 argMin(tuple(arg, val))
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `arg` — аргумент.
 -   `val` — значение.
@@ -29,7 +29,7 @@ argMin(tuple(arg, val))
 
 -   Значение `arg`, соответствующее минимальному значению `val`.
 
-Тип: соответствует типу `arg`.
+Тип: соответствует типу `arg`. 
 
 Если передан кортеж:
 
@@ -63,3 +63,4 @@ SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
 └──────────────────────┴─────────────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmin/) <!--hide-->

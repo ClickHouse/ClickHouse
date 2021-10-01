@@ -43,7 +43,6 @@ enum class CompressionMethodByte : uint8_t
     T64      = 0x93,
     DoubleDelta = 0x94,
     Gorilla     = 0x95,
-    Encrypted   = 0x96,
 };
 
 }

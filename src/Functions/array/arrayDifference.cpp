@@ -13,14 +13,12 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
   */
 struct ArrayDifferenceImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -58,32 +56,13 @@ struct ArrayDifferenceImpl
         {
             if (pos == begin)
             {
-                dst[pos] = {};
+                dst[pos] = 0;
                 prev = src[pos];
             }
             else
             {
                 Element curr = src[pos];
-
-                if constexpr (IsDecimalNumber<Element>)
-                {
-                    using ResultNativeType = typename Result::NativeType;
-
-                    ResultNativeType result_value;
-                    bool overflow = common::subOverflow(
-                        static_cast<ResultNativeType>(curr.value),
-                        static_cast<ResultNativeType>(prev.value),
-                        result_value);
-                    if (overflow)
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-
-                    dst[pos] = Result(result_value);
-                }
-                else
-                {
-                    dst[pos] = curr - prev;
-                }
-
+                dst[pos] = curr - prev;
                 prev = curr;
             }
         }
@@ -129,6 +108,7 @@ struct ArrayDifferenceImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
             executeType< UInt16,  Int32>(mapped, array, res) ||
             executeType< UInt32,  Int64>(mapped, array, res) ||

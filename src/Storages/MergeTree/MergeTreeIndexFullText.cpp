@@ -101,17 +101,14 @@ MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
 void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
+        throw Exception("Attempt to write empty fulltext index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     for (const auto & bloom_filter : bloom_filters)
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), params.filter_size);
 }
 
-void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
 {
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
-
     for (auto & bloom_filter : bloom_filters)
     {
         istr.read(reinterpret_cast<char *>(
@@ -169,7 +166,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenExtractorPtr token_extactor_)
@@ -182,7 +179,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     rpn = std::move(
             RPNBuilder<RPNElement>(
                     query_info, context,
-                    [this] (const ASTPtr & node, ContextPtr /* context */, Block & block_with_constants, RPNElement & out) -> bool
+                    [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
                     {
                         return this->atomFromAST(node, block_with_constants, out);
                     }).extractRPN());
@@ -569,7 +566,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const
+        const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
 };

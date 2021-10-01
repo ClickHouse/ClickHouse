@@ -59,7 +59,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                                             "or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, "
                                             "ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail "
                                             "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
-                                            "this can be caused by disk bit rot. This exception protects ClickHouse "
+                                            "this can be caused by disk bit rott. This exception protects ClickHouse "
                                             "from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
@@ -184,7 +184,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 }
 
 
-static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
+void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -210,35 +210,8 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
                             ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
-}
 
-
-void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
-{
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
-}
-
-
-void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
-{
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
-
-    if (codec->isNone())
-    {
-        /// Shortcut for NONE codec to avoid extra memcpy.
-        /// We doing it by changing the buffer `to` to point to existing uncompressed data.
-
-        UInt8 header_size = ICompressionCodec::getHeaderSize();
-        if (size_compressed_without_checksum < header_size)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
-                    size_compressed_without_checksum, static_cast<size_t>(header_size));
-
-        to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
-    }
-    else
-        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 
@@ -253,3 +226,4 @@ CompressedReadBufferBase::~CompressedReadBufferBase() = default;    /// Proper d
 
 
 }
+

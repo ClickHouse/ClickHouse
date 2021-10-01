@@ -52,11 +52,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_changes = settings_changes->clone();
         res->children.push_back(res->settings_changes);
     }
-    if (settings_resets)
-    {
-        res->settings_resets = settings_resets->clone();
-        res->children.push_back(res->settings_resets);
-    }
     if (values)
     {
         res->values = values->clone();
@@ -142,9 +137,8 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index_decl->formatImpl(settings, state, frame);
 
-        if (first)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-        else if (index)    /// AFTER
+        /// AFTER
+        if (index)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
             index->formatImpl(settings, state, frame);
@@ -182,41 +176,6 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
                       << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         constraint->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::ADD_PROJECTION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD PROJECTION " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        projection_decl->formatImpl(settings, state, frame);
-
-        if (first)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-        else if (projection)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
-            projection->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::DROP_PROJECTION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << (clear_projection ? "CLEAR " : "DROP ") << "PROJECTION " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        projection->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::MATERIALIZE_PROJECTION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << "MATERIALIZE PROJECTION " << (settings.hilite ? hilite_none : "");
-        projection->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
@@ -286,7 +245,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "
-                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+                      << "PARTITION " << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "")
                       << " FROM " << (settings.hilite ? hilite_none : "") << DB::quote << from;
@@ -305,27 +264,6 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
-
-        if (!with_name.empty())
-        {
-            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
-                          << " " << DB::quote << with_name;
-        }
-    }
-    else if (type == ASTAlterCommand::UNFREEZE_PARTITION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
-
-        if (!with_name.empty())
-        {
-            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
-                          << " " << DB::quote << with_name;
-        }
-    }
-    else if (type == ASTAlterCommand::UNFREEZE_ALL)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE";
 
         if (!with_name.empty())
         {
@@ -384,11 +322,6 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
         settings_changes->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::RESET_SETTING)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESET SETTING " << (settings.hilite ? hilite_none : "");
-        settings_resets->formatImpl(settings, state, frame);
-    }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY QUERY " << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
@@ -435,8 +368,7 @@ bool ASTAlterQuery::isSettingsAlter() const
 
 bool ASTAlterQuery::isFreezeAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
-        || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
+    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL);
 }
 
 /** Get the text that identifies this element. */

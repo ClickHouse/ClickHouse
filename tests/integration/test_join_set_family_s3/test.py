@@ -4,13 +4,16 @@ import sys
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/minio.xml", "configs/ssl.xml"],
+                             main_configs=["configs/minio.xml", "configs/ssl.xml", "configs/config.d/log_conf.xml"],
                              with_minio=True, stay_alive=True)
         logging.info("Starting cluster...")
         cluster.start()

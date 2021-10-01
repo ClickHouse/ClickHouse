@@ -138,8 +138,7 @@
             "docker/test/stateless_unbundled",
             "docker/test/stateless_pytest",
             "docker/test/integration/base",
-            "docker/test/fuzzer",
-            "docker/test/keeper-jepsen"
+            "docker/test/fuzzer"
          ]
     },
     "docker/packager/unbundled": {
@@ -159,10 +158,6 @@
     },
     "docker/test/sqlancer": {
         "name": "yandex/clickhouse-sqlancer-test",
-        "dependent": []
-    },
-    "docker/test/keeper-jepsen": {
-        "name": "yandex/clickhouse-keeper-jepsen-test",
         "dependent": []
     }
 }

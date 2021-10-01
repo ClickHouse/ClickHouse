@@ -3,8 +3,8 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd/include
-    contrib/restricted/fast_float/include
+    contrib/libs/zstd
+    contrib/restricted/fast_float
 )
 
 PEERDIR(
@@ -18,7 +18,7 @@ PEERDIR(
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | grep -v -F fuzzers | grep -v -P 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

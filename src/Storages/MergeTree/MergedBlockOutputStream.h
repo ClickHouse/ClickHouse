@@ -34,7 +34,6 @@ public:
     void writeSuffix() override;
 
     /// Finilize writing part and fill inner structures
-    /// If part is new and contains projections, they should be added before invoking this method.
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
             bool sync = false,

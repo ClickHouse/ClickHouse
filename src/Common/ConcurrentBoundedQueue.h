@@ -9,6 +9,7 @@
 
 #include <common/MoveOrCopyIfThrow.h>
 #include <Common/Exception.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -16,6 +17,36 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+
+namespace detail
+{
+    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<T>>
+    struct MoveOrCopyIfThrow;
+
+    template <typename T>
+    struct MoveOrCopyIfThrow<T, true>
+    {
+        void operator()(T && src, T & dst) const
+        {
+            dst = std::forward<T>(src);
+        }
+    };
+
+    template <typename T>
+    struct MoveOrCopyIfThrow<T, false>
+    {
+        void operator()(T && src, T & dst) const
+        {
+            dst = src;
+        }
+    };
+
+    template <typename T>
+    void moveOrCopyIfThrow(T && src, T & dst)
+    {
+        MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
+    }
 }
 
 /** A very simple thread-safe queue of limited size.
@@ -64,10 +95,8 @@ private:
     }
 
 public:
-    explicit ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill)
-        , empty_count(max_fill, max_fill)
-    {}
+    ConcurrentBoundedQueue(size_t max_fill)
+        : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
 
     void push(const T & x)
     {

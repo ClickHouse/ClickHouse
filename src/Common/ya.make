@@ -14,7 +14,7 @@ PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid
+    contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
@@ -32,7 +32,6 @@ SRCS(
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
-    Config/YAMLParser.cpp
     Config/configReadClient.cpp
     CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
@@ -44,16 +43,10 @@ SRCS(
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
-    FieldVisitorDump.cpp
-    FieldVisitorHash.cpp
-    FieldVisitorSum.cpp
-    FieldVisitorToString.cpp
-    FieldVisitorWriteBinary.cpp
+    FieldVisitors.cpp
     FileChecker.cpp
-    IO.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
-    JSONBuilder.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp
@@ -63,7 +56,6 @@ SRCS(
     PipeFDs.cpp
     ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
-    ProgressIndication.cpp
     QueryProfiler.cpp
     RWLock.cpp
     RemoteHostFilter.cpp
@@ -85,12 +77,10 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
-    Throttler.cpp
     TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
-    VersionNumber.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
@@ -102,7 +92,6 @@ SRCS(
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp
     clearPasswordFromCommandLine.cpp
-    clickhouse_malloc.cpp
     createHardLink.cpp
     escapeForFileName.cpp
     filesystemHelpers.cpp
@@ -116,7 +105,6 @@ SRCS(
     hasLinuxCapability.cpp
     hex.cpp
     isLocalAddress.cpp
-    isValidUTF8.cpp
     malloc.cpp
     new_delete.cpp
     parseAddress.cpp

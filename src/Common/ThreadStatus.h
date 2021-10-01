@@ -1,20 +1,20 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
-#include <IO/Progress.h>
+#include <common/StringRef.h>
+#include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ProfileEvents.h>
-#include <common/StringRef.h>
 
-#include <boost/noncopyable.hpp>
+#include <Core/SettingsEnums.h>
 
-#include <functional>
-#include <map>
+#include <IO/Progress.h>
+
 #include <memory>
+#include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <functional>
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco
@@ -26,6 +26,7 @@ namespace Poco
 namespace DB
 {
 
+class Context;
 class QueryStatus;
 class ThreadStatus;
 class QueryProfilerReal;
@@ -37,8 +38,6 @@ struct RUsageCounters;
 struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
-struct ViewRuntimeData;
-class QueryViewsLog;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -59,8 +58,8 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    ContextWeakPtr query_context;
-    ContextWeakPtr global_context;
+    Context * query_context = nullptr;
+    Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
     std::function<void()> fatal_error_callback;
@@ -73,7 +72,7 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    UInt64 normalized_query_hash = 0;
+    UInt64 normalized_query_hash;
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
@@ -123,9 +122,9 @@ protected:
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 
     /// Is set once
-    ContextWeakPtr global_context;
+    Context * global_context = nullptr;
     /// Use it only from current thread
-    ContextWeakPtr query_context;
+    Context * query_context = nullptr;
 
     String query_id;
 
@@ -145,7 +144,6 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
-    friend class PushingToViewsBlockOutputStream;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -153,9 +151,6 @@ protected:
 
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
-
-    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
-    bool query_profiled_enabled = true;
 
 public:
     ThreadStatus();
@@ -183,9 +178,9 @@ public:
         return query_id;
     }
 
-    auto getQueryContext() const
+    const Context * getQueryContext() const
     {
-        return query_context.lock();
+        return query_context;
     }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
@@ -208,7 +203,7 @@ public:
 
     /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
-    void attachQueryContext(ContextPtr query_context);
+    void attachQueryContext(Context & query_context);
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();
@@ -216,12 +211,8 @@ public:
     /// Update ProfileEvents and dumps info to system.query_thread_log
     void finalizePerformanceCounters();
 
-    /// Set the counters last usage to now
-    void resetPerformanceCountersLastUsage();
-
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
-
 
 protected:
     void applyQuerySettings();
@@ -233,8 +224,6 @@ protected:
     void finalizeQueryProfiler();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
-
-    void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 

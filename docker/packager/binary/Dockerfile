@@ -37,27 +37,35 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install \
         bash \
-        build-essential \
+        cmake \
         ccache \
+        curl \
+        gcc-9 \
+        g++-9 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         clang-11 \
         clang-tidy-11 \
-        cmake \
-        curl \
-        g++-10 \
-        gcc-10 \
-        gdb \
-        git \
-        gperf \
-        libicu-dev \
-        libreadline-dev \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
-        moreutils \
+        libicu-dev \
+        libreadline-dev \
         ninja-build \
-        pigz \
-        rename \
+        gperf \
+        git \
+        opencl-headers \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         tzdata \
+        gperf \
+        cmake \
+        gdb \
+        rename \
+        build-essential \
         --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler
@@ -74,7 +82,7 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd .. \
     && rm -rf apple-libtapi
 
-# Build and install tools for cross-linking to Darwin (x86-64)
+# Build and install tools for cross-linking to Darwin
 RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
@@ -83,21 +91,12 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd ../.. \
     && rm -rf cctools-port
 
-# Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
-    && ./configure --prefix=/cctools --with-libtapi=/cctools \
-        --target=aarch64-apple-darwin \
-    && make install \
-    && cd ../.. \
-    && rm -rf cctools-port
-
-# Download toolchain and SDK for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+# Download toolchain for Darwin
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
-RUN wget -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
+RUN wget --no-check-certificate -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
 
 # Download toolchain for FreeBSD 11.3
 RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
@@ -114,4 +113,4 @@ RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["/bin/bash", "/build.sh"]

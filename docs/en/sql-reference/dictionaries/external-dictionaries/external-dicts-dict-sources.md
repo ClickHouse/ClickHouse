@@ -53,25 +53,21 @@ optional settings are available:
 or
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
 Types of sources (`source_type`):
 
 -   [Local file](#dicts-external_dicts_dict_sources-local_file)
--   [Executable File](#dicts-external_dicts_dict_sources-executable)
--   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
+-   [Executable file](#dicts-external_dicts_dict_sources-executable)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
-    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -89,19 +85,15 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
 
 -   `path` – The absolute path to the file.
--   `format` – The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
+-   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
 When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
-
-**See Also**
-
--   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
@@ -114,47 +106,14 @@ Example of settings:
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
         <format>TabSeparated</format>
-        <implicit_key>false</implicit_key>
     </executable>
 </source>
 ```
 
 Setting fields:
 
--   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
--   `format` — The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
--   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
-
-That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
-
-## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
-
-Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts.
-
-Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
-
-Example of settings:
-
-``` xml
-<source>
-    <executable_pool>
-        <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
-        <format>TabSeparated</format>
-        <pool_size>10</pool_size>
-        <max_command_execution_time>10<max_command_execution_time>
-        <implicit_key>false</implicit_key>
-    </executable_pool>
-</source>
-```
-
-Setting fields:
-
--   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
--   `format` — The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
--   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions.
--   `command_termination_timeout` — Executable pool script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
--   `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
--   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
+-   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
@@ -486,7 +445,6 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -504,7 +462,6 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
-    fail_on_connection_loss 'true'
 ))
 ```
 
@@ -529,8 +486,6 @@ Setting fields:
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
--   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
-
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
@@ -546,7 +501,6 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-      <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
 ```
@@ -563,7 +517,6 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
-    fail_on_connection_loss 'true'
 ))
 ```
 
@@ -581,7 +534,6 @@ Example of settings:
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
-        <secure>1</secure>
     </clickhouse>
 </source>
 ```
@@ -597,8 +549,7 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
-    secure 1
-));
+))
 ```
 
 Setting fields:
@@ -611,7 +562,6 @@ Setting fields:
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
--   `secure` - Use ssl for connection.
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -709,7 +659,7 @@ Example of settings:
 
 Setting fields:
 - `host` – The Cassandra host or comma-separated list of hosts.
-- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
+- `port` – The port on the Cassandra servers. If not specified, default port is used.
 - `user` – Name of the Cassandra user.
 - `password` – Password of the Cassandra user.
 - `keyspace` – Name of the keyspace (database).
@@ -723,52 +673,4 @@ Default value is 1 (the first key column is a partition key and other key column
 - `where` – Optional selection criteria.
 - `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 
-### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
-
-Example of settings:
-
-``` xml
-<source>
-  <postgresql>
-      <port>5432</port>
-      <user>clickhouse</user>
-      <password>qwerty</password>
-      <db>db_name</db>
-      <table>table_name</table>
-      <where>id=10</where>
-      <invalidate_query>SQL_QUERY</invalidate_query>
-  </postgresql>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(POSTGRESQL(
-    port 5432
-    host 'postgresql-hostname'
-    user 'postgres_user'
-    password 'postgres_password'
-    db 'db_name'
-    table 'table_name'
-    replica(host 'example01-1' port 5432 priority 1)
-    replica(host 'example01-2' port 5432 priority 2)
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-))
-```
-
-Setting fields:
-
--   `host` – The host on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `replica` – Section of replica configurations. There can be multiple sections.
-        - `replica/host` – The PostgreSQL host.
-        - `replica/port` – The PostgreSQL port.
-        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
--   `db` – Name of the database.
--   `table` – Name of the table.
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

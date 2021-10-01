@@ -9,7 +9,7 @@
 namespace DB
 {
 
-using AsyncCallback = std::function<void(int, Poco::Timespan, const std::string &)>;
+using AsyncCallback = std::function<void(int, const Poco::Timespan &, const std::string &)>;
 
 class Epoll
 {

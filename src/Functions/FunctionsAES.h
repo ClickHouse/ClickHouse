@@ -141,14 +141,13 @@ class FunctionEncrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEncrypt>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEncrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -417,14 +416,13 @@ class FunctionDecrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDecrypt>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDecrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
