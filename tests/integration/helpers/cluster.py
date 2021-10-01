@@ -2001,11 +2001,12 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
+            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+
             sleep_time = 0.1
             num_steps = int(stop_wait_sec / sleep_time)
             stopped = False
             for step in range(num_steps):
-                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
                 time.sleep(sleep_time)
                 ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
                 if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
