@@ -13,41 +13,43 @@ FORMAT Vertical
 ```
 
 ``` text
+Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
+
 Row 1:
 ──────
-database:                   merge
-table:                      visits
-engine:                     ReplicatedCollapsingMergeTree
-is_leader:                  1
-can_become_leader:          1
-is_readonly:                0
-is_session_expired:         0
-future_parts:               1
-parts_to_check:             0
-zookeeper_path:             /clickhouse/tables/01-06/visits
-replica_name:               example01-06-1.yandex.ru
-replica_path:               /clickhouse/tables/01-06/visits/replicas/example01-06-1.yandex.ru
-columns_version:            9
-queue_size:                 1
-inserts_in_queue:           0
-merges_in_queue:            1
-part_mutations_in_queue:    0
-queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        1970-01-01 00:00:00
-merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 1970-01-01 00:00:00
-oldest_part_to_get:
-oldest_part_to_merge_to:    20200220_20284_20840_7
-oldest_part_to_mutate_to:
-log_max_index:              596273
-log_pointer:                596274
-last_queue_update:          2020-02-20 08:34:32
-absolute_delay:             0
-total_replicas:             2
-active_replicas:            2
-last_queue_update_exception:
-zookeeper_exception:
-replica_is_active:          {'example01-06-1.yandex.ru':1}
+database:                    default
+table:                       test
+engine:                      ReplicatedMergeTree
+is_leader:                   1
+can_become_leader:           1
+is_readonly:                 0
+is_session_expired:          0
+future_parts:                0
+parts_to_check:              0
+zookeeper_path:              /test/t
+replica_name:                1
+replica_path:                /test/t/replicas/1
+columns_version:             -1
+queue_size:                  0
+inserts_in_queue:            0
+merges_in_queue:             0
+part_mutations_in_queue:     0
+queue_oldest_time:           1970-01-01 03:00:00
+inserts_oldest_time:         1970-01-01 03:00:00
+merges_oldest_time:          1970-01-01 03:00:00
+part_mutations_oldest_time:  1970-01-01 03:00:00
+oldest_part_to_get:          
+oldest_part_to_merge_to:     
+oldest_part_to_mutate_to:    
+log_max_index:               0
+log_pointer:                 0
+last_queue_update:           1970-01-01 03:00:00
+absolute_delay:              0
+total_replicas:              1
+active_replicas:             1
+last_queue_update_exception: 
+zookeeper_exception:         
+replica_is_active:           {'1':1}
 ```
 
 Columns:
