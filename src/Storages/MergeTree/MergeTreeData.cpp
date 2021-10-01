@@ -4886,7 +4886,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
         if (auto part_in_memory = asInMemoryPart(part))
         {
-            auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze_");
+            auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
             part_in_memory->flushToDisk(relative_data_path, flushed_part_path, metadata_snapshot);
             src_part_path = fs::path(relative_data_path) / flushed_part_path / "";
         }
