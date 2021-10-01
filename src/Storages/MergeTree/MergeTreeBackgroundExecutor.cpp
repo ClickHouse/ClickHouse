@@ -103,7 +103,11 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             return;
         }
 
-        pending.push(item);
+        /// After the `guard` destruction `item` has to be in moved from state
+        /// Not to own the object it points to.
+        /// Otherwise the destruction of the task won't be ordered with the destruction of the
+        /// storage.
+        pending.push(std::move(item));
         erase_from_active();
         has_tasks.notify_one();
         return;
