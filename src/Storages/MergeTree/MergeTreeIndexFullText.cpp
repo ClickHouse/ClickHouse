@@ -477,7 +477,11 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-            const auto & map_column_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
+            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
+            if (!column_ast_identifier)
+                return false;
+
+            const auto & map_column_name = column_ast_identifier->name();
 
             size_t map_keys_key_column_num = 0;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
