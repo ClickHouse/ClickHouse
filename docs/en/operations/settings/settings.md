@@ -3557,7 +3557,7 @@ A user-created replication slot. Must be used together with [materialized_postgr
 
 ## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
