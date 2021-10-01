@@ -152,6 +152,20 @@ struct ColumnFixedString::Cmp
     }
 };
 
+struct ColumnFixedString::less
+{
+    Cmp<true> cmp;
+    explicit less(const ColumnFixedString & parent_) : cmp(parent_) {}
+    int operator()(size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; }
+};
+
+struct ColumnFixedString::greater
+{
+    Cmp<true> cmp;
+    explicit greater(const ColumnFixedString & parent_) : cmp(parent_) {}
+    int operator()(size_t lhs, size_t rhs) { return cmp(lhs, rhs) > 0; }
+};
+
 void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = size();
@@ -162,16 +176,20 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit >= s)
         limit = 0;
 
-    ComparePredicate less;
-    if (reverse)
-        less = [cmp = Cmp<false>(*this)](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; };
-    else
-        less = [cmp = Cmp<true>(*this)](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; };
-
     if (limit)
-        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+    {
+        if (reverse)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
+        else
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
+    }
     else
-        std::sort(res.begin(), res.end(), less);
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), greater(*this));
+        else
+            std::sort(res.begin(), res.end(), less(*this));
+    }
 }
 
 void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
@@ -396,13 +414,12 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    auto less = [cmp = Cmp<true>(*this)](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; };
-
+    auto cmp_less = less(*this);
     for (size_t i = 1; i < col_size; ++i)
     {
-        if (less(i, min_idx))
+        if (cmp_less(i, min_idx))
             min_idx = i;
-        else if (less(max_idx, i))
+        else if (cmp_less(max_idx, i))
             max_idx = i;
     }
 

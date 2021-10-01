@@ -489,13 +489,6 @@ protected:
     template <typename Derived>
     bool hasEqualValuesImpl() const;
 
-    using ComparePredicate = std::function<bool(size_t, size_t)>;
-
-    /// Forward declaration of `Permutation::iterator`.
-    using PermutationIter = size_t *;
-    using Sort = std::function<void(PermutationIter, PermutationIter, ComparePredicate)>;
-    using PartialSort = std::function<void(PermutationIter, PermutationIter, PermutationIter, ComparePredicate)>;
-
     /// Uses std::sort and partial_sort as default algorithms.
     /// Implements 'less' and 'equals' via comparator.
     /// If 'less' and 'equals' can be implemented more optimal
@@ -508,12 +501,13 @@ protected:
         EqualRanges & equal_ranges,
         Comparator cmp) const;
 
+    template <typename Less, typename Equals, typename Sort, typename PartialSort>
     void updatePermutationImpl(
         size_t limit,
         Permutation & res,
         EqualRanges & equal_ranges,
-        ComparePredicate less,
-        ComparePredicate equals,
+        Less less,
+        Equals equals,
         Sort full_sort,
         PartialSort partial_sort) const;
 };
