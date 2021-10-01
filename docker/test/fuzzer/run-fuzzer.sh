@@ -12,7 +12,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-12_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
 
 function clone
 {

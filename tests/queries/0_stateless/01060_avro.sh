@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-unbundled, no-parallel, no-fasttest
 
 set -e
 

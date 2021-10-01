@@ -26,7 +26,7 @@ BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$B
 
 if [ -z $ROOT_DIR ]; then
     # Checkout ClickHouse sources
-    git clone -b stable --recursive https://github.com/yandex/ClickHouse.git
+    git clone -b stable --recursive https://github.com/ClickHouse/ClickHouse.git
     cd ClickHouse
 fi
 
@@ -50,4 +50,4 @@ cd ..
 
 
 ## Caveats
-#  If you intend to run clickhouse-server, make sure to increase system's maxfiles variable. See [MacOS.md](https://github.com/yandex/ClickHouse/blob/master/MacOS.md) for more details.
+#  If you intend to run clickhouse-server, make sure to increase system's maxfiles variable. See [MacOS.md](https://github.com/ClickHouse/ClickHouse/blob/master/MacOS.md) for more details.
