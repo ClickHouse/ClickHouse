@@ -83,7 +83,6 @@ StorageFileLog::StorageFileLog(
 
 #ifndef NDEBUG
         assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-        assert(file_infos.file_names.size() == file_infos.inode_by_name.size());
         assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 #endif
 
@@ -670,7 +669,6 @@ bool StorageFileLog::updateFileInfos()
         {
 #ifndef NDEBUG
             assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-            assert(file_infos.file_names.size() == file_infos.inode_by_name.size());
             assert(file_infos.file_names.size() == file_infos.context_by_name.size());
             assert(file_infos.file_names.size() == 1);
 #endif
@@ -784,7 +782,6 @@ bool StorageFileLog::updateFileInfos()
     /// These file infos should always have same size(one for one)
 #ifndef NDEBUG
     assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.inode_by_name.size());
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 #endif
 
