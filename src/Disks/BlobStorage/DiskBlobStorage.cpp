@@ -49,16 +49,16 @@ public:
 };
 
 
-DiskBlobStorage::DiskBlobStorage(
-    const String & name_,
-    const String & remote_fs_root_path_,
-    const String & metadata_path_,
-    const String & log_name_,
-    size_t thread_pool_size_) :
-    IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size_) {}
+// DiskBlobStorage::DiskBlobStorage(
+//     const String & name_,
+//     const String & remote_fs_root_path_,
+//     const String & metadata_path_,
+//     const String & log_name_,
+//     size_t thread_pool_size_) :
+//     IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size_) {}
 
 
-DiskBlobStorage::DiskBlobStorage() : IDiskRemote("blob_storage", "https://sadttmpstgeus.blob.core.windows.net/data", "/home/jkuklis/blob_storage", "DiskBlobStorage", 1) {}
+// DiskBlobStorage::DiskBlobStorage() : IDiskRemote("blob_storage", "https://sadttmpstgeus.blob.core.windows.net/data", "/home/jkuklis/blob_storage", "DiskBlobStorage", 1) {}
 
 
 DiskBlobStorage::DiskBlobStorage(
@@ -66,9 +66,10 @@ DiskBlobStorage::DiskBlobStorage(
     const String & metadata_path_,
     const String & /* endpoint_url */,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential> /* managed_identity_credential_ */,
-    Azure::Storage::Blobs::BlobContainerClient /* blob_container_client_ */,
+    Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
     size_t thread_pool_size_) :
-    IDiskRemote(name_, "" /* or maybe endpoint_url ?*/, metadata_path_, "DiskBlobStorage", thread_pool_size_)
+    IDiskRemote(name_, "" /* or maybe endpoint_url ?*/, metadata_path_, "DiskBlobStorage", thread_pool_size_),
+    blob_container_client(blob_container_client_)
 {
 
 }
@@ -95,7 +96,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
 
 std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     const String & path,
-    size_t,
+    size_t buf_size,
     WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
@@ -105,7 +106,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     LOG_DEBUG(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + blob_path);
 
-    auto buffer = std::make_unique<WriteBufferFromBlobStorage>();
+    auto buffer = std::make_unique<WriteBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + blob_path, buf_size);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromBlobStorage>>(std::move(buffer), std::move(metadata), path);
 }

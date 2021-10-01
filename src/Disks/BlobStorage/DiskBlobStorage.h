@@ -26,14 +26,14 @@ class DiskBlobStorage final : public IDiskRemote
 {
 public:
 
-    DiskBlobStorage(
-        const String & name_,
-        const String & remote_fs_root_path_,
-        const String & metadata_path_,
-        const String & log_name_,
-        size_t thread_pool_size);
+    // DiskBlobStorage(
+    //     const String & name_,
+    //     const String & remote_fs_root_path_,
+    //     const String & metadata_path_,
+    //     const String & log_name_,
+    //     size_t thread_pool_size);
 
-    DiskBlobStorage();
+    // DiskBlobStorage();
 
     DiskBlobStorage(
         const String & name_,
@@ -45,29 +45,31 @@ public:
     );
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const String &,
-        size_t,
-        size_t,
-        size_t,
-        size_t,
-        MMappedFileCache *) const override;
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t direct_io_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String &,
-        size_t,
-        WriteMode) override;
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override;
 
     DiskType::Type getType() const override;
 
     bool supportZeroCopyReplication() const override;
 
-    bool checkUniqueId(const String &) const override;
+    bool checkUniqueId(const String & id) const override;
 
-    void removeFromRemoteFS(RemoteFSPathKeeperPtr) override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
 
     RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
 private:
+
+    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
 
 };
 
