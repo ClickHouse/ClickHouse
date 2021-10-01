@@ -152,7 +152,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
     }
 
-    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
+    AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
