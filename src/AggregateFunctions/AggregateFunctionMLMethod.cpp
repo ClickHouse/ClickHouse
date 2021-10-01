@@ -186,9 +186,9 @@ void LinearModelData::read(ReadBuffer & buf)
 void LinearModelData::write(WriteBuffer & buf) const
 {
     writeBinary(bias, buf);
-    writeBinary(weights, buf);
+    writeBinary(std::span{weights}, buf);
     writeBinary(iter_num, buf);
-    writeBinary(gradient_batch, buf);
+    writeBinary(std::span{gradient_batch}, buf);
     writeBinary(batch_size, buf);
     weights_updater->write(buf);
 }
@@ -234,8 +234,8 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
 
 void Adam::write(WriteBuffer & buf) const
 {
-    writeBinary(average_gradient, buf);
-    writeBinary(average_squared_gradient, buf);
+    writeBinary(std::span{average_gradient}, buf);
+    writeBinary(std::span{average_squared_gradient}, buf);
 }
 
 void Adam::read(ReadBuffer & buf)
@@ -326,7 +326,7 @@ void Nesterov::read(ReadBuffer & buf)
 
 void Nesterov::write(WriteBuffer & buf) const
 {
-    writeBinary(accumulated_gradient, buf);
+    writeBinary(std::span{accumulated_gradient}, buf);
 }
 
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
@@ -391,7 +391,7 @@ void Momentum::read(ReadBuffer & buf)
 
 void Momentum::write(WriteBuffer & buf) const
 {
-    writeBinary(accumulated_gradient, buf);
+    writeBinary(std::span{accumulated_gradient}, buf);
 }
 
 void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
