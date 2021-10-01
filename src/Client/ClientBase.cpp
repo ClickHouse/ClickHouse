@@ -74,6 +74,21 @@ namespace ErrorCodes
 namespace DB
 {
 
+volatile sig_atomic_t need_cancel_query = false;
+volatile sig_atomic_t query_cancelled = true;
+
+/// This signal handler is set only for sigint.
+void signalHandler(int signum)
+{
+    if (query_cancelled)
+        return;
+    /// Exit if it is a second sigint and query is not cancelled yet.
+    if (need_cancel_query && !query_cancelled)
+        exit(signum);
+    need_cancel_query = true;
+}
+
+
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
     ParserQuery parser(end);
@@ -454,8 +469,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    InterruptListener interrupt_listener;
-    bool cancelled = false;
+    query_cancelled = false;
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -473,22 +487,21 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
             /// Has the Ctrl+C been pressed and thus the query should be cancelled?
             /// If this is the case, inform the server about it and receive the remaining packets
             /// to avoid losing sync.
-            if (!cancelled)
+            if (!query_cancelled)
             {
                 auto cancel_query = [&] {
                     connection->sendCancel();
-                    cancelled = true;
+                    query_cancelled = true;
                     if (is_interactive)
                     {
                         progress_indication.clearProgressOutput();
                         std::cout << "Cancelling query." << std::endl;
                     }
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+                    need_cancel_query = false;
                 };
 
-                if (interrupt_listener.check())
+                if (need_cancel_query)
                 {
                     cancel_query();
                 }
@@ -513,12 +526,15 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 break;
         }
 
-        if (!receiveAndProcessPacket(parsed_query, cancelled))
+        if (!receiveAndProcessPacket(parsed_query, query_cancelled))
             break;
     }
 
-    if (cancelled && is_interactive)
+    if (query_cancelled && is_interactive)
         std::cout << "Query was cancelled." << std::endl;
+
+    /// Mark that there is no query in execution.
+    query_cancelled = true;
 }
 
 

@@ -30,6 +30,8 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+void signalHandler(int signum);
+
 class ClientBase : public Poco::Util::Application
 {
 
