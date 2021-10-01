@@ -8,12 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
