@@ -213,16 +213,21 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    IColumn::ComparePredicate cmp_less;
-    if (reverse)
-        cmp_less = greater(*this, nan_direction_hint);
-    else
-        cmp_less = less(*this, nan_direction_hint);
+    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
+    auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
-    this->updatePermutationImpl(limit, res, equal_range,
-        cmp_less, equals(*this, nan_direction_hint),
-        [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); },
-        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
+    if (reverse)
+        this->updatePermutationImpl(
+            limit, res, equal_range,
+            greater(*this, nan_direction_hint),
+            equals(*this, nan_direction_hint),
+            sort, partial_sort);
+    else
+        this->updatePermutationImpl(
+            limit, res, equal_range,
+            less(*this, nan_direction_hint),
+            equals(*this, nan_direction_hint),
+            sort, partial_sort);
 }
 
 template <typename T>
