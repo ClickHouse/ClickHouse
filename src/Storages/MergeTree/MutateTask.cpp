@@ -18,7 +18,6 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
     extern const Metric PartMutation;
 }
 
@@ -566,8 +565,9 @@ public:
             level_parts[current_level] = std::move(parts);
         }
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -876,8 +876,9 @@ public:
 
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -987,8 +988,9 @@ class MutateSomePartColumnsTask : public IExecutableTask
 public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
