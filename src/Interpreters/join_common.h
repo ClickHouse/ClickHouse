@@ -12,7 +12,9 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
+
 using ColumnRawPtrs = std::vector<const IColumn *>;
+using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
@@ -21,12 +23,14 @@ bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
+void convertColumnsToNullable(MutableColumns & mutable_columns, size_t starting_pos = 0);
 void removeColumnNullability(ColumnWithTypeAndName & column);
 void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column);
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
 void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
