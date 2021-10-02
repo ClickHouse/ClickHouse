@@ -46,10 +46,17 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , allow_automatic_update(replication_settings.materialized_postgresql_allow_automatic_update)
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings.materialized_postgresql_tables_list)
+    , schema_list(replication_settings.materialized_postgresql_schema_list)
     , schema_can_be_in_tables_list(replication_settings.materialized_postgresql_tables_list_with_schema)
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
     , milliseconds_to_wait(RESCHEDULE_MS)
 {
+    if (!schema_list.empty() && !tables_list.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and tables list at the same time");
+
+    if (!schema_list.empty() && !postgres_schema.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and common schema at the same time");
+
     replication_slot = replication_settings.materialized_postgresql_replication_slot;
     if (replication_slot.empty())
     {
@@ -58,8 +65,11 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     }
     publication_name = fmt::format("{}_ch_publication", replication_identifier);
 
-    startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
+    startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
+
+    if (!schema_list.empty())
+        schema_as_a_part_of_table_name = true;
 }
 
 
@@ -71,6 +81,8 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 
 void PostgreSQLReplicationHandler::startup()
 {
+    /// We load tables in a separate thread, because this database is not created yet.
+    /// (will get "database is currently dropped or renamed")
     startup_task->activateAndSchedule();
 }
 
@@ -80,7 +92,14 @@ String PostgreSQLReplicationHandler::doubleQuoteWithPossibleSchema(const String 
     if (table_name.starts_with("\""))
         return table_name;
 
-    if (auto pos = table_name.find('.'); schema_can_be_in_tables_list && !tables_list.empty() && pos != std::string::npos)
+    /// !schema_list.empty() -- We replicate all tables from specifies schemas.
+    /// In this case when tables list is fetched, we append schema with dot. But without quotes.
+
+    /// If there is a setting `tables_list`, then table names can be put there along with schema,
+    /// separated by dot and with no quotes. We add double quotes in this case.
+    bool schema_in_name = (schema_can_be_in_tables_list && !tables_list.empty()) || !schema_list.empty();
+
+    if (auto pos = table_name.find('.'); schema_in_name && pos != std::string::npos)
     {
         schema_as_a_part_of_table_name = true;
 
@@ -96,21 +115,27 @@ String PostgreSQLReplicationHandler::doubleQuoteWithPossibleSchema(const String 
 }
 
 
-void PostgreSQLReplicationHandler::waitConnectionAndStart()
+void PostgreSQLReplicationHandler::checkConnectionAndStart()
 {
     try
     {
         postgres::Connection connection(connection_info);
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
-        startSynchronization(false);
+        startSynchronization(is_attach);
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
+        if (!is_attach)
+            throw;
+
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
         startup_task->scheduleAfter(RESCHEDULE_MS);
     }
     catch (...)
     {
+        if (!is_attach)
+            throw;
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
@@ -170,7 +195,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
-                e.addMessage("while loading table {}.{}", postgres_database, table_name);
+                e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
@@ -269,7 +294,9 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
-    query_str = fmt::format("SELECT * FROM {}", doubleQuoteWithPossibleSchema(table_name));
+    auto quoted_name = doubleQuoteWithPossibleSchema(table_name);
+    query_str = fmt::format("SELECT * FROM {}", quoted_name);
+    LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
@@ -566,6 +593,8 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
              boost::trim(table_name);
     }
 
+    /// Try to fetch tables list from publication if there is not tables list.
+    /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
     if (publication_exists_before_startup)
     {
         if (!is_attach)
@@ -586,7 +615,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
 
                 {
                     pqxx::nontransaction tx(connection.getRef());
-                    result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+                    result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
@@ -624,19 +653,19 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
 
     if (result_tables.empty())
     {
-        if (!tables_list.empty())
-        {
-            result_tables = NameSet(expected_tables.begin(), expected_tables.end());
-        }
-        else
+        if (tables_list.empty())
         {
             /// Fetch all tables list from database. Publication does not exist yet, which means
             /// that no replication took place. Publication will be created in
             /// startSynchronization method.
             {
                 pqxx::nontransaction tx(connection.getRef());
-                result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+                result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
             }
+        }
+        else
+        {
+            result_tables = NameSet(expected_tables.begin(), expected_tables.end());
         }
     }
 

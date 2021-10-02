@@ -14,6 +14,8 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -29,13 +31,34 @@ namespace ErrorCodes
 template<typename T>
 std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
-    std::unordered_set<std::string> tables;
-    std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                    "WHERE schemaname != 'pg_catalog' AND {}",
-                                    postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+    Names schemas;
+    boost::split(schemas, postgres_schema, [](char c){ return c == ','; });
+    for (String & key : schemas)
+        boost::trim(key);
 
-    for (auto table_name : tx.template stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
+    std::unordered_set<std::string> tables;
+    if (schemas.size() <= 1)
+    {
+        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
+                                        "WHERE schemaname != 'pg_catalog' AND {}",
+                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(std::get<0>(table_name));
+
+        return tables;
+    }
+
+    /// We add schema to table name only in case of multiple schemas for the whole database engine.
+    /// Because there is no need to add it if there is only one schema.
+    /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
+    for (const auto & schema : schemas)
+    {
+        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
+                                        "WHERE schemaname != 'pg_catalog' AND {}",
+                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(schema));
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(schema + '.' + std::get<0>(table_name));
+    }
 
     return tables;
 }

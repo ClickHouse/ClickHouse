@@ -79,7 +79,7 @@ private:
 
     /// Methods to manage replication.
 
-    void waitConnectionAndStart();
+    void checkConnectionAndStart();
 
     void consumerFunc();
 
@@ -123,6 +123,9 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
+
+    String schema_list;
+
     bool schema_can_be_in_tables_list;
 
     bool user_managed_slot = true;

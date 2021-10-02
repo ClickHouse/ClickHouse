@@ -3540,6 +3540,14 @@ Sets a comma-separated list of PostgreSQL database tables, which will be replica
 
 Default value: empty list — means whole PostgreSQL database will be replicated.
 
+## materialized_postgresql_schema {#materialized-postgresql-schema}
+
+Default value: empty string. (Default schema is used)
+
+## materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
+
+Default value: empty list. (Default schema is used)
+
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
 Allow reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
