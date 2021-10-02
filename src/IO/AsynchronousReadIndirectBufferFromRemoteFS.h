@@ -16,6 +16,7 @@ namespace DB
 
 /**
 * Reads data from S3/HDFS/Web using stored paths in metadata.
+* This class is an asynchronous version of ReadIndirectBufferFromRemoteFS.
 *
 * Buffers chain for diskS3:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
