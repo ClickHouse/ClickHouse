@@ -1,6 +1,6 @@
 #include <stdexcept>
-#include "common/getMemoryAmount.h"
-#include "common/getPageSize.h"
+#include <base/getMemoryAmount.h>
+#include <base/getPageSize.h>
 
 #include <unistd.h>
 #include <sys/types.h>
