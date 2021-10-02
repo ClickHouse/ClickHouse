@@ -2,7 +2,7 @@
 
 #include <Common/SharedLibrary.h>
 #include <Bridge/LibraryBridgeHelper.h>
-#include <common/LocalDateTime.h>
+#include <base/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>

@@ -6,7 +6,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 

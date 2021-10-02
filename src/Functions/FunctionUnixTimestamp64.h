@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB

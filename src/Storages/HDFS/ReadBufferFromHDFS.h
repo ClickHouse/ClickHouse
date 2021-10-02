@@ -10,7 +10,7 @@
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h> // Y_IGNORE
-#include <common/types.h>
+#include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
 

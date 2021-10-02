@@ -29,8 +29,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/scope_guard.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
