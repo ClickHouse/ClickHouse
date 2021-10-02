@@ -717,15 +717,23 @@ bool Client::processWithFuzzing(const String & full_query)
         return true;
     }
 
-    // Don't repeat inserts, the tables grow too big. Also don't repeat
-    // creates because first we run the unmodified query, it will succeed,
-    // and the subsequent queries will fail. When we run out of fuzzer
-    // errors, it may be interesting to add fuzzing of create queries that
-    // wraps columns into LowCardinality or Nullable. Also there are other
-    // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-    // them as well. Also there is no point fuzzing DROP queries.
+    // Don't repeat:
+    // - INSERT -- Because the tables may grow too big.
+    // - CREATE -- Because first we run the unmodified query, it will succeed,
+    //             and the subsequent queries will fail.
+    //             When we run out of fuzzer errors, it may be interesting to
+    //             add fuzzing of create queries that wraps columns into
+    //             LowCardinality or Nullable.
+    //             Also there are other kinds of create queries such as CREATE
+    //             DICTIONARY, we could fuzz them as well.
+    // - DROP   -- No point in this (by the same reasons).
+    // - SET    -- The time to fuzz the settings has not yet come
+    //             (see comments in Client/QueryFuzzer.cpp)
     size_t this_query_runs = query_fuzzer_runs;
-    if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>() || orig_ast->as<ASTDropQuery>())
+    if (orig_ast->as<ASTInsertQuery>() ||
+        orig_ast->as<ASTCreateQuery>() ||
+        orig_ast->as<ASTDropQuery>() ||
+        orig_ast->as<ASTSetQuery>())
     {
         this_query_runs = 1;
     }
