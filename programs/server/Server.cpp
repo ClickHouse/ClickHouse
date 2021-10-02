@@ -343,7 +343,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 4096));
 
     return address;
 }
