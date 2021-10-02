@@ -160,5 +160,6 @@ toc_title: Adopters
 | <a href="https://chelpipegroup.com/" class="favicon">ChelPipe Group</a> | Analytics | — | — | — | [Blog post, June 2021](https://vc.ru/trade/253172-tyazhelomu-proizvodstvu-user-friendly-sayt-internet-magazin-trub-dlya-chtpz) |
 | <a href="https://zagravagames.com/en/" class="favicon">Zagrava Trading</a> | — | — | — | — | [Job offer, May 2021](https://twitter.com/datastackjobs/status/1394707267082063874) |
 | <a href="https://beeline.ru/" class="favicon">Beeline</a> | Telecom | Data Platform | — | — | [Blog post, July 2021](https://habr.com/en/company/beeline/blog/567508/) |
+| <a href="https://ecommpay.com/" class="favicon">Ecommpay</a> | Payment Processing | Logs | — | — | [Video, Nov 2019](https://www.youtube.com/watch?v=d3GdZTOWGLk) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->
