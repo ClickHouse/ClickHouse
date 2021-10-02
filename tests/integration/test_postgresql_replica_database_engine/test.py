@@ -69,6 +69,13 @@ def create_postgres_db(cursor, name='postgres_database'):
 def drop_postgres_db(cursor, name='postgres_database'):
     cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
 
+def drop_postgres_schema(cursor, schema_name):
+    cursor.execute('DROP SCHEMA IF EXISTS {} CASCADE'.format(schema_name))
+
+def create_postgres_schema(cursor, schema_name):
+    drop_postgres_schema(cursor, schema_name)
+    cursor.execute('CREATE SCHEMA {}'.format(schema_name))
+
 def create_clickhouse_postgres_db(ip, port, name='postgres_database', database_name='postgres_database', schema_name=''):
     drop_clickhouse_postgres_db(name)
     if len(schema_name) == 0:
@@ -1162,67 +1169,60 @@ def test_predefined_connection_configuration(started_cluster):
     drop_materialized_db()
 
 
-def test_schema_1(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
+insert_counter = 0
+
+def test_database_with_multiple_non_default_schemas_1(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
 
+    NUM_TABLES = 5
     schema_name = 'test_schema'
-    cursor.execute('DROP SCHEMA IF EXISTS {} CASCADE'.format(schema_name))
-    cursor.execute('CREATE SCHEMA {}'.format(schema_name))
-
     clickhouse_postgres_db = 'postgres_database_with_schema'
-    create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port,
-                                  name=clickhouse_postgres_db, schema_name=schema_name)
-
-    NUM_TABLES=5
     publication_tables = ''
+    insert_counter = 0
+
+    def insert_into_tables():
+        global insert_counter
+        clickhouse_postgres_db = 'postgres_database_with_schema'
+        for i in range(NUM_TABLES):
+            table_name = f'postgresql_replica_{i}'
+            instance.query(f"INSERT INTO {clickhouse_postgres_db}.{table_name} SELECT number, number from numbers(1000 * {insert_counter}, 1000)")
+        insert_counter += 1
+
+    def assert_show_tables(expected):
+        result = instance.query('SHOW TABLES FROM test_database')
+        assert(result == expected)
+        print('assert show tables Ok')
+
+    def check_all_tables_are_synchronized():
+        for i in range(NUM_TABLES):
+            print('checking table', i)
+            check_tables_are_synchronized("postgresql_replica_{}".format(i), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+        print('synchronization Ok')
+
+    create_postgres_schema(cursor, schema_name)
+    create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port, name=clickhouse_postgres_db, schema_name=schema_name)
 
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)
         create_postgres_table_with_schema(cursor, schema_name, table_name);
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(1000)".format(clickhouse_postgres_db, table_name))
-
         if publication_tables != '':
             publication_tables += ', '
         publication_tables += schema_name + '.' + table_name
 
-    create_materialized_db(ip=started_cluster.postgres_ip,
-                           port=started_cluster.postgres_port,
-                           settings=["materialized_postgresql_tables_list = '{}'".format(publication_tables),
-                                     "materialized_postgresql_allow_automatic_update = 1"])
+    insert_into_tables()
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                           settings=[f"materialized_postgresql_tables_list = '{publication_tables}'", "materialized_postgresql_allow_automatic_update = 1"])
 
-    for i in range(NUM_TABLES):
-        table_name = 'postgresql_replica_{}'.format(i)
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(1000, 1000)".format(clickhouse_postgres_db, table_name))
-
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
-
-    result = instance.query('SHOW TABLES FROM test_database')
-    assert(result == "test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
-    print('Ok')
+    check_all_tables_are_synchronized()
+    assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
 
     instance.restart_clickhouse()
+    check_all_tables_are_synchronized()
+    assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
 
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
-
-    result = instance.query('SHOW TABLES FROM test_database')
-    assert(result == "test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
-    print('Ok')
-
-    for i in range(NUM_TABLES):
-        table_name = 'postgresql_replica_{}'.format(i)
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(2000, 1000)".format(clickhouse_postgres_db, table_name))
-
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
-    print('Ok')
+    insert_into_tables()
+    check_all_tables_are_synchronized()
 
     #altered_table = random.randint(0, NUM_TABLES-1)
     #cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
@@ -1236,61 +1236,122 @@ def test_schema_1(started_cluster):
     drop_materialized_db()
 
 
-def test_schema_2(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
+def test_database_with_multiple_non_default_schemas_2(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
 
-    schema_name = 'test_schema'
-    cursor.execute('DROP SCHEMA IF EXISTS {} CASCADE'.format(schema_name))
-    cursor.execute('CREATE SCHEMA {}'.format(schema_name))
+    NUM_TABLES = 2
+    schemas_num = 2
+    schema_list = 'schema0, schema1'
+    insert_counter = 0
 
-    clickhouse_postgres_db = 'postgres_database_with_schema'
-    create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port,
-                                  name=clickhouse_postgres_db, schema_name=schema_name)
+    def check_all_tables_are_synchronized():
+        for i in range(schemas_num):
+            schema_name = f'schema{i}'
+            clickhouse_postgres_db = f'clickhouse_postgres_db{i}'
+            for ti in range(NUM_TABLES):
+                table_name = f'postgresql_replica_{ti}'
+                print(f'checking table {schema_name}.{table_name}')
+                check_tables_are_synchronized(f'{table_name}', schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+        print('synchronized Ok')
+
+    def insert_into_tables():
+        global insert_counter
+        for i in range(schemas_num):
+            clickhouse_postgres_db = f'clickhouse_postgres_db{i}'
+            for ti in range(NUM_TABLES):
+                table_name = f'postgresql_replica_{ti}'
+                instance.query(f'INSERT INTO {clickhouse_postgres_db}.{table_name} SELECT number, number from numbers(1000 * {insert_counter}, 1000)')
+        insert_counter += 1
+
+    def assert_show_tables(expected):
+        result = instance.query('SHOW TABLES FROM test_database')
+        assert(result == expected)
+        print('assert show tables Ok')
+
+    for i in range(schemas_num):
+        schema_name = f'schema{i}'
+        clickhouse_postgres_db = f'clickhouse_postgres_db{i}'
+        create_postgres_schema(cursor, schema_name)
+        create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port, name=clickhouse_postgres_db, schema_name=schema_name)
+        for ti in range(NUM_TABLES):
+            table_name = f'postgresql_replica_{ti}'
+            create_postgres_table_with_schema(cursor, schema_name, table_name);
+
+    insert_into_tables()
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                           settings=[f"materialized_postgresql_schema_list = '{schema_list}'", "materialized_postgresql_allow_automatic_update = 1"])
+
+    check_all_tables_are_synchronized()
+    insert_into_tables()
+    assert_show_tables("schema0.postgresql_replica_0\nschema0.postgresql_replica_1\nschema1.postgresql_replica_0\nschema1.postgresql_replica_1\n")
+
+    instance.restart_clickhouse()
+    assert_show_tables("schema0.postgresql_replica_0\nschema0.postgresql_replica_1\nschema1.postgresql_replica_0\nschema1.postgresql_replica_1\n")
+    check_all_tables_are_synchronized()
+    insert_into_tables()
+    check_all_tables_are_synchronized()
+
+    #altered_table = random.randint(0, NUM_TABLES-1)
+    #cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+
+    #table_name = 'postgresql_replica_{}'.format(altered_table)
+    #instance.query("INSERT INTO {}.{} SELECT number, number, number from numbers(5000, 1000)".format(clickhouse_postgres_db, table_name))
+    #check_tables_are_synchronized("postgresql_replica_{}".format(altered_table), schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+    #print('Ok')
+
+    drop_materialized_db()
+
+
+def test_database_with_single_non_default_schema(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
 
     NUM_TABLES=5
+    schema_name = 'test_schema'
+    clickhouse_postgres_db = 'postgres_database_with_schema'
+    insert_counter = 0
+
+    def insert_into_tables():
+        global insert_counter
+        clickhouse_postgres_db = 'postgres_database_with_schema'
+        for i in range(NUM_TABLES):
+            table_name = f'postgresql_replica_{i}'
+            instance.query(f"INSERT INTO {clickhouse_postgres_db}.{table_name} SELECT number, number from numbers(1000 * {insert_counter}, 1000)")
+        insert_counter += 1
+
+    def assert_show_tables(expected):
+        result = instance.query('SHOW TABLES FROM test_database')
+        assert(result == expected)
+        print('assert show tables Ok')
+
+    def check_all_tables_are_synchronized():
+        for i in range(NUM_TABLES):
+            print('checking table', i)
+            check_tables_are_synchronized("postgresql_replica_{}".format(i), postgres_database=clickhouse_postgres_db);
+        print('synchronization Ok')
+
+    create_postgres_schema(cursor, schema_name)
+    create_clickhouse_postgres_db(ip=cluster.postgres_ip, port=cluster.postgres_port, name=clickhouse_postgres_db, schema_name=schema_name)
+
     for i in range(NUM_TABLES):
         table_name = 'postgresql_replica_{}'.format(i)
         create_postgres_table_with_schema(cursor, schema_name, table_name);
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(1000)".format(clickhouse_postgres_db, table_name))
 
-    create_materialized_db(ip=started_cluster.postgres_ip,
-                           port=started_cluster.postgres_port,
-                           settings=["materialized_postgresql_schema = '{}'".format(schema_name),
-                                     "materialized_postgresql_allow_automatic_update = 1"])
+    insert_into_tables()
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                           settings=[f"materialized_postgresql_schema = '{schema_name}'", "materialized_postgresql_allow_automatic_update = 1"])
 
-    for i in range(NUM_TABLES):
-        table_name = 'postgresql_replica_{}'.format(i)
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(3000, 1000)".format(clickhouse_postgres_db, table_name))
-
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), postgres_database=clickhouse_postgres_db);
-
-    result = instance.query('SHOW TABLES FROM test_database')
-    assert(result == "postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n")
-    print('Ok')
+    insert_into_tables()
+    check_all_tables_are_synchronized()
+    assert_show_tables("postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n")
 
     instance.restart_clickhouse()
-
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), postgres_database=clickhouse_postgres_db);
-
-    result = instance.query('SHOW TABLES FROM test_database')
-    assert(result == "postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n")
-    print('Ok')
-
-    for i in range(NUM_TABLES):
-        table_name = 'postgresql_replica_{}'.format(i)
-        instance.query("INSERT INTO {}.{} SELECT number, number from numbers(4000, 1000)".format(clickhouse_postgres_db, table_name))
-
-    for i in range(NUM_TABLES):
-        print('checking table', i)
-        check_tables_are_synchronized("postgresql_replica_{}".format(i), postgres_database=clickhouse_postgres_db);
-    print('Ok')
+    check_all_tables_are_synchronized()
+    assert_show_tables("postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n")
+    insert_into_tables()
+    check_all_tables_are_synchronized()
 
     #altered_table = random.randint(0, NUM_TABLES-1)
     #cursor.execute("ALTER TABLE test_schema.postgresql_replica_{} ADD COLUMN value2 integer".format(altered_table))
