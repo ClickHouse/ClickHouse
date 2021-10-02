@@ -711,6 +711,13 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    // `USE db` should not be executed
+    // since this will break every query after `DROP db`
+    if (orig_ast->as<ASTUseQuery>())
+    {
+        return true;
+    }
+
     if (!orig_ast)
     {
         // Can't continue after a parsing error
