@@ -3,7 +3,7 @@
 #include <cassert>
 
 #include <Parsers/ASTFunction.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>

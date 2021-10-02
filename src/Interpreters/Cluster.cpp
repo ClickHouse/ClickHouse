@@ -1,5 +1,5 @@
 #include <Interpreters/Cluster.h>
-#include <common/SimpleCache.h>
+#include <base/SimpleCache.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB

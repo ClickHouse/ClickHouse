@@ -5,8 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
-#include <common/types.h>
+#include <base/sort.h>
+#include <base/types.h>
 
 
 namespace DB
