@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
-#include <common/CachedFn.h>
+#include <base/CachedFn.h>
 
 using namespace std::chrono_literals;
 
