@@ -156,14 +156,14 @@ struct ColumnFixedString::less
 {
     Cmp<true> cmp;
     explicit less(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; }
+    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) < 0; }
 };
 
 struct ColumnFixedString::greater
 {
     Cmp<true> cmp;
     explicit greater(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) { return cmp(lhs, rhs) > 0; }
+    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) > 0; }
 };
 
 void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const

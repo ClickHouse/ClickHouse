@@ -8,7 +8,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
+#include <base/sort.h>
 #include <algorithm>
 
 namespace DB
