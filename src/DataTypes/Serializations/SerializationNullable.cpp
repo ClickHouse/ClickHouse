@@ -228,7 +228,9 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
     {
         /// This is not null, surely.
         return safeDeserialize<ReturnType>(column, *nested,
-            [] { return false; },
+            [&istr] {
+                return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
+            },
             [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextEscaped(nested_column, istr, settings); });
     }
     else

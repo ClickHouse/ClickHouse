@@ -33,3 +33,5 @@ $CLICKHOUSE_CLIENT --param_test='Hello, world' --query 'SELECT {test:String}'
 
 $CLICKHOUSE_CLIENT --param_test '' --query 'SELECT length({test:String})'
 $CLICKHOUSE_CLIENT --param_test='' --query 'SELECT length({test:String})'
+
+$CLICKHOUSE_CLIENT --param_test='Null' --query 'SELECT {test:Nullable(Nothing)}'
