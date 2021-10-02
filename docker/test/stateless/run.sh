@@ -120,6 +120,10 @@ clickhouse-client --allow_introspection_functions=1 -q "
         arrayStringConcat(trace_array, '\n') AS trace_string
     SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
 " | pigz > /test_output/trace-log.tsv.gz &
+clickhouse-client -q "
+    SELECT * FROM system.part_log FORMAT TSVWithNamesAndTypes
+" | pigz > /test_output/part-log.tsv.gz &
+
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
