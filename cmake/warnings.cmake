@@ -43,10 +43,10 @@ if (COMPILER_CLANG)
     add_warning(range-loop-analysis)
     add_warning(redundant-parens)
     add_warning(reserved-id-macro)
-    add_warning(shadow-field) # clang 8+
+    add_warning(shadow-field)
     add_warning(shadow-uncaptured-local)
     add_warning(shadow)
-    add_warning(string-plus-int) # clang 8+
+    add_warning(string-plus-int)
     add_warning(undef)
     add_warning(unreachable-code-return)
     add_warning(unreachable-code)
@@ -59,6 +59,9 @@ if (COMPILER_CLANG)
     add_warning(anon-enum-enum-conversion)
     add_warning(assign-enum)
     add_warning(bitwise-op-parentheses)
+    add_warning(int-in-bool-context)
+    add_warning(sometimes-uninitialized)
+    add_warning(tautological-bitwise-compare)
 
     # XXX: libstdc++ has some of these for 3way compare
     if (USE_LIBCXX)
