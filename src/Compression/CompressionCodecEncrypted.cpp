@@ -123,7 +123,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
 
 std::string lastErrorString()
 {
-    std::array<char, 1024> buffer;
+    std::array<char, 1024> buffer = {};
     ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
     return std::string(buffer.data());
 }
