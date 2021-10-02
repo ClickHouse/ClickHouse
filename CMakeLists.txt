@@ -328,12 +328,6 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
 
-if (COMPILER_CLANG)
-    # A better alternative to interpreter that evaluates constexpr expressions.
-    # ClickHouse is heavily templated so this may speed up compilation substantially.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fexperimental-new-constant-interpreter")
-endif ()
-
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
