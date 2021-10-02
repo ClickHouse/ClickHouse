@@ -1,7 +1,6 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 
 #include <filesystem>
-#include <iostream>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
