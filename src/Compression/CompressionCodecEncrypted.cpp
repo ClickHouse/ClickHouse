@@ -1,9 +1,9 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
-#include "Common/Exception.h"
-#include "common/types.h"
-#include "IO/VarInt.h"
+#include <Common/Exception.h>
+#include <base/types.h>
+#include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>

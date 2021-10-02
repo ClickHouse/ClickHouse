@@ -1,5 +1,5 @@
 #pragma once
-#include "common/extended_types.h"
+#include <base/extended_types.h>
 
 #if !defined(NO_SANITIZE_UNDEFINED)
 #if defined(__clang__)
