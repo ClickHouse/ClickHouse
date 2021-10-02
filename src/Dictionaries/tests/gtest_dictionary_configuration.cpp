@@ -8,7 +8,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/tests/gtest_global_context.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <gtest/gtest.h>
 

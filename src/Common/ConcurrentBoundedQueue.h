@@ -7,7 +7,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <common/MoveOrCopyIfThrow.h>
+#include <base/MoveOrCopyIfThrow.h>
 #include <Common/Exception.h>
 
 namespace DB

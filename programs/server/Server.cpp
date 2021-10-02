@@ -14,14 +14,14 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard_safe.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/ErrorHandlers.h>
-#include <common/getMemoryAmount.h>
-#include <common/errnoToString.h>
-#include <common/coverage.h>
+#include <base/scope_guard_safe.h>
+#include <base/defines.h>
+#include <base/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <base/ErrorHandlers.h>
+#include <base/getMemoryAmount.h>
+#include <base/errnoToString.h>
+#include <base/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -30,7 +30,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -51,8 +51,8 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -78,6 +78,8 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -251,7 +253,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
@@ -342,7 +343,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 4096));
 
     return address;
 }
@@ -456,40 +457,6 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-static void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::Logger * log)
-{
-#if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
-
-    auto process = ShellCommand::execute(key_command);
-
-    std::string b64_key;
-    readStringUntilEOF(b64_key, process->out);
-    process->wait();
-
-    // turbob64 doesn't like whitespace characters in input. Strip
-    // them before decoding.
-    std::erase_if(b64_key, [](char c)
-    {
-        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    });
-
-    std::vector<char> buf(b64_key.size());
-    const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
-                                    reinterpret_cast<unsigned char *>(buf.data()));
-    if (!key_size)
-        throw Exception("Failed to decode encryption key", ErrorCodes::INCORRECT_DATA);
-    else if (key_size < 16)
-        LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
-
-    const std::string_view key = std::string_view(buf.data(), key_size);
-    CompressionCodecEncrypted::setMasterKey(key);
-
-#else
-    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
-#endif
-}
-
-
 [[noreturn]] void forceShutdown()
 {
 #if defined(THREAD_SANITIZER) && defined(OS_LINUX)
@@ -547,8 +514,6 @@ if (ThreadFuzzer::instance().isEffective())
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
-
-    global_context->initializeBackgroundExecutors();
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
@@ -883,7 +848,10 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-            global_context->setExternalModelsConfig(config);
+
+            global_context->loadOrReloadDictionaries(*config);
+            global_context->loadOrReloadModels(*config);
+            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -891,6 +859,9 @@ if (ThreadFuzzer::instance().isEffective())
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            if (config->has("max_concurrent_queries"))
+                global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
             if (!initial_loading)
             {
@@ -904,6 +875,8 @@ if (ThreadFuzzer::instance().isEffective())
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -944,6 +917,17 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
+    /// Initialize background executors after we load default_profile config.
+    /// This is needed to load proper values of background_pool_size etc.
+    global_context->initializeBackgroundExecutors();
+
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
@@ -976,9 +960,9 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
-    /// Set up encryption.
-    if (config().has("encryption.key_command"))
-        loadEncryptionKey(config().getString("encryption.key_command"), log);
+
+    /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
+    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -1110,7 +1094,7 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_INFO(log, "Loading user defined objects from {}", path_str);
     try
     {
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
     }
     catch (...)
     {
@@ -1140,6 +1124,7 @@ if (ThreadFuzzer::instance().isEffective())
         database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1489,11 +1474,44 @@ if (ThreadFuzzer::instance().isEffective())
         /// try to load dictionaries immediately, throw on error and die
         try
         {
-            global_context->loadDictionaries(config());
+            global_context->loadOrReloadDictionaries(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load embedded dictionaries immediately, throw on error and die
+        try
+        {
+            global_context->tryCreateEmbeddedDictionaries(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
+            throw;
+        }
+
+        /// try to load models immediately, throw on error and die
+        try
+        {
+            global_context->loadOrReloadModels(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load user defined executable functions, throw on error and die
+        try
+        {
+            global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 

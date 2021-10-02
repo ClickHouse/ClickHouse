@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -288,7 +288,9 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    MinMaxIndex minmax_idx;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 

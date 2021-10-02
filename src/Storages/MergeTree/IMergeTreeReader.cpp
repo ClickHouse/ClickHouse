@@ -42,8 +42,10 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    if (settings.convert_nested_to_subcolumns)
+    if (isWidePart(data_part))
     {
+        /// For wide parts convert plain arrays of Nested to subcolumns
+        /// to allow to use shared offset column from cache.
         columns = Nested::convertToSubcolumns(columns);
         part_columns = Nested::collect(part_columns);
     }
