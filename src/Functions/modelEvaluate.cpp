@@ -1,10 +1,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
+#include <base/range.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Columns/ColumnString.h>
-#include <common/range.h>
 #include <string>
 #include <memory>
 #include <DataTypes/DataTypeNullable.h>
