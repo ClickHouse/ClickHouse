@@ -1,6 +1,6 @@
 #include <array>
 #include <gtest/gtest.h>
-#include <common/static_for.h>
+#include <base/static_for.h>
 
 template <int I> constexpr int foo() { return I; }
 

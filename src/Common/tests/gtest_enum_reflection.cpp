@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <common/EnumReflection.h>
+#include <base/EnumReflection.h>
 
 enum class Foo : int { Bar = 0, Baz = 1, other = 2, CAPS = 3, snake_case = 4};
 
