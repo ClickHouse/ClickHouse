@@ -6,7 +6,7 @@
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <base/logger_useful.h>
-#include <common/FnTraits.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
