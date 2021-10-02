@@ -18,7 +18,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
-#include <common/FnTraits.h>
+#include <base/FnTraits.h>
 
 
 namespace DB

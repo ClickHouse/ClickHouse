@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
-#include <common/FnTraits.h>
+#include <base/FnTraits.h>
 
 
 namespace DB

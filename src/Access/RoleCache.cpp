@@ -3,7 +3,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/AccessControlManager.h>
 #include <boost/container/flat_set.hpp>
-#include <common/FnTraits.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
