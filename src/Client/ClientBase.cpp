@@ -74,13 +74,36 @@ namespace ErrorCodes
 namespace DB
 {
 
-std::atomic<bool> catch_signal = false;
+
+std::atomic_flag exit_on_signal = ATOMIC_FLAG_INIT;
+
+class QueryInterruptHandler : private boost::noncopyable
+{
+public:
+    QueryInterruptHandler() { exit_on_signal.clear(); }
+
+    ~QueryInterruptHandler() { exit_on_signal.test_and_set(); }
+
+    bool cancelled() { return exit_on_signal.test(); }
+};
 
 /// This signal handler is set only for sigint.
 void interruptSignalHandler(int signum)
 {
-    if (!catch_signal.exchange(false))
+    if (exit_on_signal.test_and_set())
         _exit(signum);
+}
+
+void ClientBase::setupSignalHandler()
+{
+     exit_on_signal.test_and_set();
+
+     struct sigaction new_act;
+     struct sigaction old_act;
+     new_act.sa_handler = interruptSignalHandler;
+     sigemptyset(&new_act.sa_mask);
+     new_act.sa_flags = 0;
+     sigaction(SIGINT, &new_act, &old_act);
 }
 
 
@@ -465,7 +488,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
     bool cancelled = false;
-    catch_signal.store(true);
+    QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -491,13 +514,13 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                     {
                         progress_indication.clearProgressOutput();
                         std::cout << "Cancelling query." << std::endl;
+
                     }
                     cancelled = true;
-                    catch_signal.store(true);
                 };
 
                 /// handler received sigint
-                if (!catch_signal.load())
+                if (query_interrupt_handler.cancelled())
                 {
                     cancel_query();
                 }
@@ -528,8 +551,6 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 
     if (cancelled && is_interactive)
         std::cout << "Query was cancelled." << std::endl;
-
-    catch_signal.store(false);
 }
 
 
