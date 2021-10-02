@@ -14,8 +14,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/DateLUTImpl.h>
-#include <common/types.h>
+#include <base/DateLUTImpl.h>
+#include <base/types.h>
 #include <Processors/Chunk.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>

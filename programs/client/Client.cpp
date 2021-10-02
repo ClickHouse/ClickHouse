@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -16,8 +16,8 @@
 #include <string>
 #include "Client.h"
 
-#include <common/argsToConfig.h>
-#include <common/find_symbols.h>
+#include <base/argsToConfig.h>
+#include <base/find_symbols.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

@@ -1,9 +1,8 @@
 #pragma once
 
+#include <base/types.h>
 #include <unordered_set>
 #include <mutex>
-
-#include <common/types.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Poco/Timestamp.h>
 

@@ -13,8 +13,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/scope_guard_safe.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -34,7 +34,7 @@
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
-#include <common/ErrorHandlers.h>
+#include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -44,7 +44,7 @@
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
-#include <common/argsToConfig.h>
+#include <base/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
 #include <filesystem>
