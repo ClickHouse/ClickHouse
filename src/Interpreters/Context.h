@@ -14,7 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"

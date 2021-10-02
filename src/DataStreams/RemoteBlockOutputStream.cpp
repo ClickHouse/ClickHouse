@@ -1,7 +1,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 
 #include <Client/Connection.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>

@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <common/EnumReflection.h>
+#include <base/EnumReflection.h>
 #include <Core/TypeId.h>
 
 #if defined(__GNUC__)

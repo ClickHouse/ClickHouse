@@ -24,7 +24,7 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <common/range.h>
+#include <base/range.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB

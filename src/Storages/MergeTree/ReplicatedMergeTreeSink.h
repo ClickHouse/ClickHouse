@@ -2,7 +2,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace Poco { class Logger; }
