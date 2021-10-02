@@ -187,7 +187,7 @@ def encrypt(self, mysql_datatype):
 def feature(self, node="clickhouse1", mysql_node="mysql1"):
     """Check usage of encryption functions with [MySQL database engine].
 
-    [MySQL database engine]: https://clickhouse.tech/docs/en/engines/database-engines/mysql/
+    [MySQL database engine]: https://clickhouse.com/docs/en/engines/database-engines/mysql/
     """
     self.context.node = self.context.cluster.node(node)
     self.context.mysql_node = self.context.cluster.node(mysql_node)

@@ -1,13 +1,13 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
-#include "Common/Exception.h"
-#include "common/types.h"
-#include "IO/VarInt.h"
+#include <Common/Exception.h>
+#include <base/types.h>
+#include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ErrorCodes.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
@@ -123,7 +123,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
 
 std::string lastErrorString()
 {
-    std::array<char, 1024> buffer;
+    std::array<char, 1024> buffer = {};
     ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
     return std::string(buffer.data());
 }

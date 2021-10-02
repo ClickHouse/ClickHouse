@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Timespan.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <DataStreams/SizeLimits.h>
 
 class Stopwatch;

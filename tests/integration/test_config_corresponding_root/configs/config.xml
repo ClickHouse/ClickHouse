@@ -2,7 +2,7 @@
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
@@ -155,7 +155,7 @@
     <mlock_executable>false</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.yandex/docs/en/table_engines/distributed/
+         https://clickhouse.com/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
@@ -209,20 +209,20 @@
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-         Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
+         Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
       -->
 
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.com/docs/en/table_engines/replication/
       -->
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.com/docs/en/table_engines/replication/#creating-replicated-tables
       -->
     <macros incl="macros" optional="true" />
 
@@ -282,7 +282,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr https://clickhouse.com/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -313,7 +313,7 @@
     </part_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
+         See https://clickhouse.com/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -324,7 +324,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.com/docs/en/dicts/external_dicts/
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
@@ -411,4 +411,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-</yandex>
+</clickhouse>

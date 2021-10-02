@@ -21,7 +21,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/JSONBuilder.h>
 
 namespace ProfileEvents

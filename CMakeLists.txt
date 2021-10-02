@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.14)
 
 foreach(policy
         CMP0023
@@ -186,6 +186,14 @@ if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
+
+if (GLIBC_COMPATIBILITY)
+    # NOTE: we may also want to check glibc version and add -include only for 2.32+
+    # however this is extra complexity, especially for cross compiling.
+    # And anyway it should not break anything for <2.32.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+endif()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
     message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
