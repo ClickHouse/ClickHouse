@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 
 #if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
+#   include <base/ReplxxLineReader.h>
 #endif
 
 
