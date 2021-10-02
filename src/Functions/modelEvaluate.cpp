@@ -1,4 +1,3 @@
-#include <Functions/FunctionsExternalModels.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
@@ -100,7 +99,7 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!name_col)
