@@ -56,6 +56,9 @@ if (COMPILER_CLANG)
     add_warning(unneeded-internal-declaration)
     add_warning(implicit-int-float-conversion)
     add_warning(no-delete-null-pointer-checks)
+    add_warning(anon-enum-enum-conversion)
+    add_warning(assign-enum)
+    add_warning(bitwise-op-parentheses)
 
     # XXX: libstdc++ has some of these for 3way compare
     if (USE_LIBCXX)
