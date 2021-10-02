@@ -5,8 +5,8 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
+#include <base/SimpleCache.h>
+#include <base/demangle.h>
 
 #include <cstring>
 #include <filesystem>
