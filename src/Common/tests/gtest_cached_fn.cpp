@@ -10,11 +10,13 @@ constexpr int add(int x, int y)
     return x + y;
 }
 
-static int longFunction(int x, int y)
+int longFunction(int x, int y)
 {
     std::this_thread::sleep_for(1s);
     return x + y;
 }
+
+auto f = [](int x, int y) { return x - y; };
 
 TEST(CachedFn, Basic)
 {
@@ -23,7 +25,9 @@ TEST(CachedFn, Basic)
     const int res = fn(1, 2);
     EXPECT_EQ(fn(1, 2), res);
 
-    auto f = [](int x, int y) { return x - y; };
+    /// In GCC, lambda can't be placed in TEST, producing "<labmda> has no linkage".
+    /// Assuming http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4268.html,
+    /// this is a GCC bug.
     CachedFn<+f> fn2;
 
     const int res2 = fn2(1, 2);
