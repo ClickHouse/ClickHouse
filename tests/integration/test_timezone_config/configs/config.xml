@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <timezone>America/Los_Angeles</timezone>
-</yandex>
+</clickhouse>

@@ -5,7 +5,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>

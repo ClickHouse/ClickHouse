@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <!-- Default HTTP timeout is 30 minutes. Set it to 1 minute. -->
@@ -13,4 +13,4 @@
             <async_insert_busy_timeout_ms>5000</async_insert_busy_timeout_ms>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

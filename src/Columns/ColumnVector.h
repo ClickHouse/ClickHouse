@@ -4,7 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Core/TypeId.h>
