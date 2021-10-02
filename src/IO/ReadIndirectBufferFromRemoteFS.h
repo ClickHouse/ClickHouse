@@ -14,7 +14,10 @@ namespace DB
 
 class ReadBufferFromRemoteFSGather;
 
-/// Reads data from S3/HDFS/Web using stored paths in metadata.
+/**
+* Reads data from S3/HDFS/Web using stored paths in metadata.
+* There is asynchronous version of this class -- AsynchronousReadIndirectBufferFromRemoteFS.
+*/
 class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 
