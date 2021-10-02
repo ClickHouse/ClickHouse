@@ -3,6 +3,7 @@
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 #include <Common/setThreadName.h>
+#include <Common/MemoryTracker.h>
 
 namespace DB
 {
@@ -35,13 +36,16 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 {
-    try {
+    MemoryTracker::BlockerInThread untrack_lock(VariableContext::Global);
+
+    try
+    {
         if (!finished)
             stopAndWait();
     }
     catch (...)
     {
-        /// TODO: Write log
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
