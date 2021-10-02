@@ -322,6 +322,16 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
+static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
+{
+    const ActionsDAG::Node * node_no_alias = node;
+
+    while (node_no_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_no_alias = node_no_alias->children[0];
+
+    return node_no_alias;
+}
+
 static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
@@ -334,7 +344,9 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     {
         for (const auto & child : node.children)
         {
-            if (lazy_executed_nodes.contains(child))
+            const ActionsDAG::Node * child_no_alias = removeAliasIfNecessary(child);
+
+            if (lazy_executed_nodes.contains(child_no_alias))
                 return false;
         }
     }
