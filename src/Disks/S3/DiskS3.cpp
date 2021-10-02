@@ -10,7 +10,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <base/unit.h>
-#include <common/FnTraits.h>
+#include <base/FnTraits.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>

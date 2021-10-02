@@ -5,7 +5,7 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/CachedFn.h>
+#include <base/CachedFn.h>
 #include <base/demangle.h>
 
 #include <cstring>

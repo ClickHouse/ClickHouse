@@ -1,5 +1,5 @@
 #include "DNSResolver.h"
-#include <common/CachedFn.h>
+#include <base/CachedFn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
