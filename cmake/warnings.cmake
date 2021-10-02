@@ -53,6 +53,10 @@ if (COMPILER_CLANG)
     add_warning(unused-exception-parameter)
     add_warning(unused-macros)
     add_warning(unused-member-function)
+    add_warning(dangling-gsl)
+    add_warning(implicit-int-float-conversion)
+    add_warning(no-delete-null-pointer-checks)
+
     # XXX: libstdc++ has some of these for 3way compare
     if (USE_LIBCXX)
         add_warning(zero-as-null-pointer-constant)
