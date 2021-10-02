@@ -89,7 +89,7 @@ private:
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
-    String doubleQuoteWithPossibleSchema(const String & table_name) const;
+    String probablyDoubleQuoteWithSchema(const String & table_name, bool quote = true) const;
 
     Poco::Logger * log;
     ContextPtr context;

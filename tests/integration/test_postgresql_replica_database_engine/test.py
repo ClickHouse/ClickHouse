@@ -463,9 +463,7 @@ def test_clickhouse_restart(started_cluster):
 
 def test_replica_identity_index(started_cluster):
     drop_materialized_db()
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
 
     create_postgres_table(cursor, 'postgresql_replica', template=postgres_table_template_3);
@@ -473,8 +471,7 @@ def test_replica_identity_index(started_cluster):
     cursor.execute("ALTER TABLE postgresql_replica REPLICA IDENTITY USING INDEX idx")
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number, number, number from numbers(50, 10)")
 
-    create_materialized_db(ip=started_cluster.postgres_ip,
-                           port=started_cluster.postgres_port)
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number, number, number from numbers(100, 10)")
     check_tables_are_synchronized('postgresql_replica', order_by='key1');
 
@@ -718,8 +715,8 @@ def test_multiple_databases(started_cluster):
     cursor1 = conn1.cursor()
     cursor2 = conn2.cursor()
 
-    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_1')
-    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_2')
+    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_1', 'postgres_database_1')
+    create_clickhouse_postgres_db(cluster.postgres_ip, cluster.postgres_port, 'postgres_database_2', 'postgres_database_2')
 
     cursors = [cursor1, cursor2]
     for cursor_id in range(len(cursors)):

@@ -391,6 +391,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (storages.find(table_name) == storages.end())
             {
                 markTableAsSkipped(relation_id, table_name);
+                /// TODO: This can happen if we created a publication with this table but then got an exception that this
+                /// table has primary key or something else.
                 LOG_ERROR(log,
                           "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})",
                           table_name, storages.size());

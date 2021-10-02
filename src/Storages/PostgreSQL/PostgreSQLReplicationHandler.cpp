@@ -87,10 +87,14 @@ void PostgreSQLReplicationHandler::startup()
 }
 
 
-String PostgreSQLReplicationHandler::doubleQuoteWithPossibleSchema(const String & table_name) const
+String PostgreSQLReplicationHandler::probablyDoubleQuoteWithSchema(const String & table_name, bool quote) const
 {
     if (table_name.starts_with("\""))
+    {
+        if (!quote)
+            return table_name.substr(1, table_name.size() - 1);
         return table_name;
+    }
 
     /// !schema_list.empty() -- We replicate all tables from specifies schemas.
     /// In this case when tables list is fetched, we append schema with dot. But without quotes.
@@ -109,7 +113,13 @@ String PostgreSQLReplicationHandler::doubleQuoteWithPossibleSchema(const String 
     }
 
     if (postgres_schema.empty())
-        return doubleQuoteString(table_name);
+    {
+        /// We do no need quotes to fetch table structure in case there is no schema. (will not work)
+        if (quote)
+            return doubleQuoteString(table_name);
+        else
+            return table_name;
+    }
 
     return doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(table_name);
 }
@@ -294,7 +304,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
-    auto quoted_name = doubleQuoteWithPossibleSchema(table_name);
+    auto quoted_name = probablyDoubleQuoteWithSchema(table_name);
     query_str = fmt::format("SELECT * FROM {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
@@ -403,7 +413,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             WriteBufferFromOwnString buf;
             for (const auto & storage_data : materialized_storages)
             {
-                buf << doubleQuoteWithPossibleSchema(storage_data.first);
+                buf << probablyDoubleQuoteWithSchema(storage_data.first);
                 buf << ",";
             }
             tables_list = buf.str();
@@ -684,7 +694,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
         for (auto & table_name : tables_names)
         {
             boost::trim(table_name);
-            buf << doubleQuoteWithPossibleSchema(table_name);
+            buf << probablyDoubleQuoteWithSchema(table_name);
             buf << ",";
         }
         tables_list = buf.str();
@@ -705,7 +715,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx
     std::unordered_set<std::string> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
-        tables.insert(schema.empty() ? table : schema + '.' + table);
+        tables.insert((!schema.empty() && schema_as_a_part_of_table_name) ? schema + '.' + table : table);
 
     return tables;
 }
@@ -717,7 +727,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialized_postgresql_database)
         return nullptr;
 
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, doubleQuoteWithPossibleSchema(table_name), true, true, true));
+    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, probablyDoubleQuoteWithSchema(table_name, false), true, true, true));
 }
 
 
