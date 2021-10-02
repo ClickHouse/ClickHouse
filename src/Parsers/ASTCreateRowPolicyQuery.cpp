@@ -3,7 +3,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm/transform.hpp>
 #include <IO/Operators.h>
 

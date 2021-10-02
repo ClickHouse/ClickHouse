@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <common/wide_integer_to_string.h>
+#include <base/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -36,7 +36,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/TypeList.h>
-#include <common/map.h>
+#include <base/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

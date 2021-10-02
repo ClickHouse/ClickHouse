@@ -9,7 +9,7 @@
 #include <Processors/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
