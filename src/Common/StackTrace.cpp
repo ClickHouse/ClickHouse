@@ -6,7 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
 #include <common/CachedFn.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
 #include <cstring>
 #include <filesystem>
