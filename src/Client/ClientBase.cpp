@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 }
@@ -99,11 +100,20 @@ void ClientBase::setupSignalHandler()
      exit_on_signal.test_and_set();
 
      struct sigaction new_act;
-     struct sigaction old_act;
+     memset(&new_act, 0, sizeof(new_act));
+
      new_act.sa_handler = interruptSignalHandler;
-     sigemptyset(&new_act.sa_mask);
      new_act.sa_flags = 0;
-     sigaction(SIGINT, &new_act, &old_act);
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sa.sa_mask);
+#else
+     if (sigemptyset(&new_act.sa_mask))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+#endif
+
+     if (sigaction(SIGINT, &new_act, nullptr))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
 
