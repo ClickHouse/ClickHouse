@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -41,7 +42,7 @@ std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String &
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<void()> & recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
+static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
     bool is_array = false;
