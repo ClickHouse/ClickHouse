@@ -44,6 +44,16 @@ if (COMPILER_GCC)
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
+if (COMPILER_CLANG)
+    # A better alternative to interpreter that evaluates constexpr expressions.
+    # ClickHouse is heavily templated so this may speed up compilation substantially.
+    # Can't set for root folder, produces such errors:
+    #    /usr/include/x86_64-linux-gnu/bits/cpu-set.h:41:21: error: the experimental clang interpreter failed to evaluate an expression
+    # 16   __cpu_mask __bits[__CPU_SETSIZE / __NCPUBITS];
+    # TODO Maybe enable for src/, base/ and contribs/ as for now
+    add_definitions ("-fexperimental-new-constant-interpreter")
+endif ()
+
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
