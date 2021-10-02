@@ -14,6 +14,7 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -189,10 +190,14 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
-    ConfigurationPtr external_models_config;
+
+    ExternalLoaderXMLConfigRepository * external_models_config_repository = nullptr;
     scope_guard models_repository_guard;
 
+    ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
     scope_guard dictionaries_xmls;
+
+    ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
     scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
@@ -1330,6 +1335,11 @@ const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() cons
 ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
     std::lock_guard lock(shared->external_dictionaries_mutex);
+    return getExternalDictionariesLoaderUnlocked();
+}
+
+ExternalDictionariesLoader & Context::getExternalDictionariesLoaderUnlocked()
+{
     if (!shared->external_dictionaries_loader)
         shared->external_dictionaries_loader.emplace(getGlobalContext());
     return *shared->external_dictionaries_loader;
@@ -1343,6 +1353,11 @@ const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDef
 ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
 {
     std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    return getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+}
+
+ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoaderUnlocked()
+{
     if (!shared->external_user_defined_executable_functions_loader)
         shared->external_user_defined_executable_functions_loader.emplace(getGlobalContext());
     return *shared->external_user_defined_executable_functions_loader;
@@ -1366,19 +1381,28 @@ ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
     return *shared->external_models_loader;
 }
 
-void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name)
+void Context::loadOrReloadModels(const Poco::Util::AbstractConfiguration & config)
 {
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "models_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
     std::lock_guard lock(shared->external_models_mutex);
 
-    if (shared->external_models_config && isSameConfigurationWithMultipleKeys(*config, *shared->external_models_config, "", config_name))
+    auto & external_models_loader = getExternalModelsLoaderUnlocked();
+
+    if (shared->external_models_config_repository)
+    {
+        shared->external_models_config_repository->updatePatterns(patterns);
+        external_models_loader.reloadConfig(shared->external_models_config_repository->getName());
         return;
+    }
 
-    shared->external_models_config = config;
-    shared->models_repository_guard .reset();
-    shared->models_repository_guard = getExternalModelsLoaderUnlocked().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(*config, config_name));
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->external_models_config_repository = repository.get();
+    shared->models_repository_guard = external_models_loader.addConfigRepository(std::move(repository));
 }
-
 
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
@@ -1398,27 +1422,58 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
-void Context::tryCreateEmbeddedDictionaries() const
-{
-    static_cast<void>(getEmbeddedDictionariesImpl(true));
-}
-
-void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
+void Context::tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const
 {
     if (!config.getBool("dictionaries_lazy_load", true))
-    {
-        tryCreateEmbeddedDictionaries();
-        getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-    }
-    shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+        static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
-void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
-    getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
-    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
+    bool dictionaries_lazy_load = config.getBool("dictionaries_lazy_load", true);
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderUnlocked();
+    external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
+
+    if (shared->external_dictionaries_config_repository)
+    {
+        shared->external_dictionaries_config_repository->updatePatterns(patterns);
+        external_dictionaries_loader.reloadConfig(shared->external_dictionaries_config_repository->getName());
+        return;
+    }
+
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->external_dictionaries_config_repository = repository.get();
+    shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
+}
+
+void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+{
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+
+    auto & external_user_defined_executable_functions_loader = getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+
+    if (shared->user_defined_executable_functions_config_repository)
+    {
+        shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
+        external_user_defined_executable_functions_loader.reloadConfig(shared->user_defined_executable_functions_config_repository->getName());
+        return;
+    }
+
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->user_defined_executable_functions_config_repository = repository.get();
+    shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
 }
 
 #if USE_NLP
