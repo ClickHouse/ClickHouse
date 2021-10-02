@@ -79,9 +79,6 @@ bool ReadIndirectBufferFromRemoteFS::nextImpl()
     /// and assigned to current buffer.
     swap(*impl);
 
-    if (result)
-        impl->absolute_position += working_buffer.size();
-
     return result;
 }
 
