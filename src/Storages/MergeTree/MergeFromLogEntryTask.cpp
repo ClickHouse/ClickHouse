@@ -194,6 +194,7 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             future_merged_part,
             metadata_snapshot,
             merge_mutate_entry.get(),
+            {} /* projection_merge_list_element */,
             table_lock_holder,
             entry.create_time,
             storage.getContext(),
@@ -201,6 +202,11 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
             entry.deduplicate,
             entry.deduplicate_by_columns,
             storage.merging_params);
+
+
+    /// Adjust priority
+    for (auto & item : future_merged_part->parts)
+        priority += item->getBytesOnDisk();
 
     return {true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {

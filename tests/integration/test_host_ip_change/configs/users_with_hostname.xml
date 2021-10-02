@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <users>
         <default>
             <networks>
@@ -10,4 +10,4 @@
             <profile>default</profile>
         </default>
     </users>
-</yandex>
+</clickhouse>

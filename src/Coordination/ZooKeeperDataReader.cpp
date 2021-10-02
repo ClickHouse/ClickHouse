@@ -575,12 +575,24 @@ void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string
 
     LOG_INFO(log, "Totally have {} logs", existing_logs.size());
 
-    for (auto [zxid, log_path] : existing_logs)
+    std::vector<std::string> stored_files;
+    for (auto it = existing_logs.rbegin(); it != existing_logs.rend(); ++it)
     {
-        if (zxid > storage.zxid)
-            deserializeLogAndApplyToStorage(storage, log_path, log);
-        else
-            LOG_INFO(log, "Skipping log {}, it's ZXID {} is smaller than storages ZXID {}", log_path, zxid, storage.zxid);
+        if (it->first >= storage.zxid)
+        {
+            stored_files.emplace_back(it->second);
+        }
+        else if (it->first < storage.zxid)
+        {
+            /// add the last logfile that is less than the zxid
+            stored_files.emplace_back(it->second);
+            break;
+        }
+    }
+
+    for (auto it = stored_files.rbegin(); it != stored_files.rend(); ++it)
+    {
+        deserializeLogAndApplyToStorage(storage, *it, log);
     }
 }
 

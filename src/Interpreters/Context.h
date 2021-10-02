@@ -48,6 +48,7 @@ class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
+class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -102,8 +103,14 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+template <class Queue>
 class MergeTreeBackgroundExecutor;
-using MergeTreeBackgroundExecutorPtr = std::shared_ptr<MergeTreeBackgroundExecutor>;
+class MergeMutateRuntimeQueue;
+class OrdinaryRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
@@ -282,7 +289,7 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
 
@@ -545,12 +552,15 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     const ExternalModelsLoader & getExternalModelsLoader() const;
+    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -654,6 +664,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+
+    UInt32 getZooKeeperSessionUptime() const;
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
@@ -841,9 +853,10 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutors();
 
-    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
-    MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
-    MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
+    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

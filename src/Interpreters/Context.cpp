@@ -50,6 +50,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
@@ -81,6 +82,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
@@ -106,9 +108,10 @@ namespace CurrentMetrics
 
 
     extern const Metric DelayedInserts;
-    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundCommonPoolTask;
 
 }
 
@@ -145,6 +148,7 @@ struct ContextSharedPart
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
+    mutable std::mutex external_user_defined_executable_functions_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
@@ -183,11 +187,13 @@ struct ContextSharedPart
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
+    mutable std::optional<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
+    scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -235,9 +241,10 @@ struct ContextSharedPart
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
-    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
-    MergeTreeBackgroundExecutorPtr moves_executor;
-    MergeTreeBackgroundExecutorPtr fetch_executor;
+    MergeMutateBackgroundExecutorPtr merge_mutate_executor;
+    OrdinaryBackgroundExecutorPtr moves_executor;
+    OrdinaryBackgroundExecutorPtr fetch_executor;
+    OrdinaryBackgroundExecutorPtr common_executor;
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -315,6 +322,8 @@ struct ContextSharedPart
             fetch_executor->wait();
         if (moves_executor)
             moves_executor->wait();
+        if (common_executor)
+            common_executor->wait();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
@@ -341,10 +350,12 @@ struct ContextSharedPart
             /// But they cannot be created before storages since they may required table as a source,
             /// but at least they can be preserved for storage termination.
             dictionaries_xmls.reset();
+            user_defined_executable_functions_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
+            external_user_defined_executable_functions_loader.reset();
             models_repository_guard.reset();
             external_models_loader.reset();
             buffer_flush_schedule_pool.reset();
@@ -1324,6 +1335,18 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
     return *shared->external_dictionaries_loader;
 }
 
+const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader() const
+{
+    return const_cast<Context *>(this)->getExternalUserDefinedExecutableFunctionsLoader();
+}
+
+ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
+{
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    if (!shared->external_user_defined_executable_functions_loader)
+        shared->external_user_defined_executable_functions_loader.emplace(getGlobalContext());
+    return *shared->external_user_defined_executable_functions_loader;
+}
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
@@ -1389,6 +1412,13 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     }
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
+
+void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+{
+    getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
+    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
 }
 
 #if USE_NLP
@@ -1662,6 +1692,14 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+UInt32 Context::getZooKeeperSessionUptime() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->zookeeper || shared->zookeeper->expired())
+        return 0;
+    return shared->zookeeper->getSessionUptime();
 }
 
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
@@ -2744,56 +2782,81 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 {
     using namespace std::chrono;
 
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout) == 0ms)
-        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
+        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
 
     shared->async_insert_queue = ptr;
 }
 
 void Context::initializeBackgroundExecutors()
 {
-    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
+    const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
-    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
+    /// With this executor we can execute more tasks than threads we have
+    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        getSettingsRef().background_pool_size,
-        getSettingsRef().background_pool_size,
-        CurrentMetrics::BackgroundPoolTask
+        "MergeMutate",
+        /*max_threads_count*/getSettingsRef().background_pool_size,
+        /*max_tasks_count*/max_merges_and_mutations,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
-    shared->moves_executor = MergeTreeBackgroundExecutor::create
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_pool_size, max_merges_and_mutations);
+
+    shared->moves_executor = OrdinaryBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::MOVE,
+        "Move",
         getSettingsRef().background_move_pool_size,
         getSettingsRef().background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask
     );
 
+    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_move_pool_size, getSettingsRef().background_move_pool_size);
 
-    shared->fetch_executor = MergeTreeBackgroundExecutor::create
+    shared->fetch_executor = OrdinaryBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::FETCH,
+        "Fetch",
         getSettingsRef().background_fetches_pool_size,
         getSettingsRef().background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask
     );
+
+    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
+        getSettingsRef().background_fetches_pool_size, getSettingsRef().background_fetches_pool_size);
+
+    shared->common_executor = OrdinaryBackgroundExecutor::create
+    (
+        "Common",
+        getSettingsRef().background_common_pool_size,
+        getSettingsRef().background_common_pool_size,
+        CurrentMetrics::BackgroundCommonPoolTask
+    );
+
+    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
+        getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
 }
 
 
-MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
     return shared->merge_mutate_executor;
 }
 
-MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
+OrdinaryBackgroundExecutorPtr Context::getMovesExecutor() const
 {
     return shared->moves_executor;
 }
 
-MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
+OrdinaryBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
     return shared->fetch_executor;
+}
+
+OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
+{
+    return shared->common_executor;
 }
 
 
@@ -2810,6 +2873,9 @@ ReadSettings Context::getReadSettings() const
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.remote_fs_backoff_threshold = settings.remote_fs_read_backoff_threshold;
+    res.remote_fs_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;

@@ -55,6 +55,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
 namespace DB
@@ -1481,18 +1482,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const Settings & settings = context->getSettingsRef();
     const ConstStoragePtr & storage = query_analyzer.storage();
 
-    bool finalized = false;
-    size_t where_step_num = 0;
+    ssize_t prewhere_step_num = -1;
+    ssize_t where_step_num = -1;
+    ssize_t having_step_num = -1;
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
         chain.finalize();
 
-        if (!finalized)
-        {
-            finalize(chain, where_step_num, query);
-            finalized = true;
-        }
+        finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
         chain.clear();
     };
@@ -1523,6 +1521,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
         {
+            /// Prewhere is always the first one.
+            prewhere_step_num = 0;
             prewhere_info = std::make_shared<PrewhereInfo>(actions, query.prewhere()->getColumnName());
 
             if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
@@ -1591,6 +1591,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
+                having_step_num = chain.steps.size() - 1;
                 before_having = chain.getLastActions();
                 chain.addStep();
             }
@@ -1691,13 +1692,16 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     checkActions();
 }
 
-void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query)
+void ExpressionAnalysisResult::finalize(
+    const ExpressionActionsChain & chain,
+    ssize_t & prewhere_step_num,
+    ssize_t & where_step_num,
+    ssize_t & having_step_num,
+    const ASTSelectQuery & query)
 {
-    size_t next_step_i = 0;
-
-    if (hasPrewhere())
+    if (prewhere_step_num >= 0)
     {
-        const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
+        const ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
         prewhere_info->prewhere_actions->projectInput(false);
 
         NameSet columns_to_remove;
@@ -1710,12 +1714,21 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
+        prewhere_step_num = -1;
     }
 
-    if (hasWhere())
+    if (where_step_num >= 0)
     {
         where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
+        where_step_num = -1;
+    }
+
+    if (having_step_num >= 0)
+    {
+        having_column_name = query.having()->getColumnName();
+        remove_having_filter = chain.steps.at(having_step_num)->required_output.find(having_column_name)->second;
+        having_step_num = -1;
     }
 }
 

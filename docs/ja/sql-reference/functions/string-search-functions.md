@@ -380,4 +380,4 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 !!! note "注"
     For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/string_search_functions/) <!--hide-->
