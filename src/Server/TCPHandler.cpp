@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -32,7 +32,7 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -1131,6 +1131,17 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
+    /// In interserer mode,
+    /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
+    /// (i.e. when the INSERT is done with the global context w/o user),
+    /// so it is better to reset session to avoid using old user.
+    if (is_interserver_mode)
+    {
+        ClientInfo original_session_client_info = session->getClientInfo();
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
+        session->getClientInfo() = original_session_client_info;
+    }
+
     /// Read client info.
     ClientInfo client_info = session->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -1178,11 +1189,13 @@ void TCPHandler::receiveQuery()
             throw NetException("Hash mismatch", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
         /// TODO: change error code?
 
-        /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
-        /// i.e. when the INSERT is done with the global context (w/o user).
-        if (!client_info.initial_user.empty())
+        if (client_info.initial_user.empty())
         {
-            LOG_DEBUG(log, "User (initial): {}", client_info.initial_user);
+            LOG_DEBUG(log, "User (no user, interserver mode)");
+        }
+        else
+        {
+            LOG_DEBUG(log, "User (initial, interserver mode): {}", client_info.initial_user);
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else

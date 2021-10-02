@@ -4,7 +4,7 @@
 
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
-#    include <common/types.h>
+#    include <base/types.h>
 #    include <Common/PODArray.h>
 
 #    include <algorithm>

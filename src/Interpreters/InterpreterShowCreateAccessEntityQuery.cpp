@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm/sort.hpp>
 
 

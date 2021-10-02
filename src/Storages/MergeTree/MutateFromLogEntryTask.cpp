@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -78,6 +78,10 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
+
+    /// Adjust priority
+    for (auto & item : future_mutated_part->parts)
+        priority += item->getBytesOnDisk();
 
     return {true, [this] (const ExecutionStatus & execution_status)
     {
