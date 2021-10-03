@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>8</number_of_free_entries_in_pool_to_execute_mutation>
+    </merge_tree>
+</clickhouse>

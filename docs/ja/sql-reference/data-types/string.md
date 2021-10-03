@@ -17,4 +17,4 @@ ClickHouseにはエンコーディングの概念はありません。 文字列
 同様に、文字列を操作するための特定の関数には、UTF-8でエンコードされたテキストを表すバイトセットが文字列に含まれているという前提の下で
 例えば、 ‘length’ 関数は、文字列の長さをバイト単位で計算します。 ‘lengthUTF8’ 関数は、値がUTF-8でエンコードされていると仮定して、Unicodeコードポイントで文字列の長さを計算します。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/string/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/string/) <!--hide-->

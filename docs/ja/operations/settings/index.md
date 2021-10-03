@@ -30,4 +30,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
 サーバー設定ファイルでのみ行うことができる設定は、このセクションでは説明しません。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->

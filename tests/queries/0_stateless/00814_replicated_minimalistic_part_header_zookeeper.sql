@@ -1,3 +1,5 @@
+-- Tags: replica
+
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
 

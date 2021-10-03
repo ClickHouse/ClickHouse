@@ -28,19 +28,19 @@ bool decimalCheckArithmeticOverflow(ContextPtr context)
     return context->getSettingsRef().decimal_check_overflow;
 }
 
-template <typename T>
+template <is_decimal T>
 Field DataTypeDecimalBase<T>::getDefault() const
 {
     return DecimalField(T(0), scale);
 }
 
-template <typename T>
+template <is_decimal T>
 MutableColumnPtr DataTypeDecimalBase<T>::createColumn() const
 {
     return ColumnType::create(0, scale);
 }
 
-template <typename T>
+template <is_decimal T>
 T DataTypeDecimalBase<T>::getScaleMultiplier(UInt32 scale_)
 {
     return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_);

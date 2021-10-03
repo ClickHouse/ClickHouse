@@ -63,14 +63,14 @@ public:
 
     LogSource(
         size_t block_size_, const NamesAndTypesList & columns_, StorageLog & storage_,
-        size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
+        size_t mark_number_, size_t rows_limit_, ReadSettings read_settings_)
         : SourceWithProgress(getHeader(columns_)),
         block_size(block_size_),
         columns(columns_),
         storage(storage_),
         mark_number(mark_number_),
         rows_limit(rows_limit_),
-        max_read_buffer_size(max_read_buffer_size_)
+        read_settings(std::move(read_settings_))
     {
     }
 
@@ -86,14 +86,14 @@ private:
     size_t mark_number;     /// from what mark to read data
     size_t rows_limit;      /// The maximum number of rows that can be read
     size_t rows_read = 0;
-    size_t max_read_buffer_size;
+    ReadSettings read_settings;
 
     std::unordered_map<String, SerializationPtr> serializations;
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+        Stream(const DiskPtr & disk, const String & data_path, size_t offset, ReadSettings read_settings_)
+            : plain(disk->readFile(data_path, read_settings_.adjustBufferSize(disk->getFileSize(data_path))))
             , compressed(*plain)
         {
             if (offset)
@@ -188,7 +188,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
                 offset = file_it->second.marks[mark_number].offset;
 
             auto & data_file_path = file_it->second.data_file_path;
-            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
+            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, read_settings).first;
 
             return &it->second.compressed;
         };
@@ -306,7 +306,7 @@ private:
 
 void LogSink::consume(Chunk chunk)
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
@@ -332,7 +332,7 @@ void LogSink::onFinish()
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getPort().getHeader())
+    for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -463,6 +463,8 @@ void LogSink::writeMarks(MarksForColumns && marks)
     }
 }
 
+StorageLog::~StorageLog() = default;
+
 StorageLog::StorageLog(
     DiskPtr disk_,
     const String & relative_path_,
@@ -563,7 +565,7 @@ void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
         for (auto & file : files_by_index)
             file->second.marks.reserve(marks_count);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, 32768);
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
         while (!marks_rb->eof())
         {
             for (auto & file : files_by_index)
@@ -678,7 +680,7 @@ Pipe StorageLog::read(
     if (num_streams > marks_size)
         num_streams = marks_size;
 
-    size_t max_read_buffer_size = context->getSettingsRef().max_read_buffer_size;
+    ReadSettings read_settings = context->getReadSettings();
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -694,7 +696,7 @@ Pipe StorageLog::read(
             *this,
             mark_begin,
             rows_end - rows_begin,
-            max_read_buffer_size));
+            read_settings));
     }
 
     /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.

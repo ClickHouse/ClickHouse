@@ -1105,7 +1105,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Files maybe re-created on module load/unload
         try
@@ -1144,7 +1145,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Files can be re-created on:
         /// - module load/unload

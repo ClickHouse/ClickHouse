@@ -12,7 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/map.h>
+#include <base/map.h>
 
 
 namespace DB
@@ -47,8 +47,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    for (const auto & [_, size] : column_sizes)
-        total_size_of_queried_columns += size;
+    for (const auto & name : queried_columns)
+    {
+        auto it = column_sizes.find(name);
+        if (it != column_sizes.end())
+            total_size_of_queried_columns += it->second;
+    }
 
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());
@@ -369,7 +373,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto array_join_expression_list = select.arrayJoinExpressionList();
+    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

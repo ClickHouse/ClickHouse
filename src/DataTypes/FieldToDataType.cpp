@@ -19,23 +19,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 
 DataTypePtr FieldToDataType::operator() (const Null &) const
 {
     return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-}
-
-DataTypePtr FieldToDataType::operator() (const NegativeInfinity &) const
-{
-    throw Exception("It's invalid to have -inf literals in SQL", ErrorCodes::LOGICAL_ERROR);
-}
-
-DataTypePtr FieldToDataType::operator() (const PositiveInfinity &) const
-{
-    throw Exception("It's invalid to have +inf literals in SQL", ErrorCodes::LOGICAL_ERROR);
 }
 
 DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
