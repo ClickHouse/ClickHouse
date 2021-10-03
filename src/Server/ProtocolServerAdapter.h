@@ -5,7 +5,7 @@
 #   include "config_core.h"
 #endif
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <map>
 #include <memory>
