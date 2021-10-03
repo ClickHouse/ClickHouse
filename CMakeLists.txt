@@ -177,8 +177,8 @@ if (COMPILER_CLANG)
 endif ()
 
 if (HAS_RESERVED_IDENTIFIER)
-    add_compile_definitions(HAS_RESERVED_IDENTIFIER)
-endif()
+    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
+endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
