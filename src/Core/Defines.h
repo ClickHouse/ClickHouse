@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
@@ -127,6 +127,9 @@
 
 /// Default limit on recursion depth of recursive descend parser.
 #define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
+
+/// Default limit on query size.
+#define DBMS_DEFAULT_MAX_QUERY_SIZE 262144
 
 /// Max depth of hierarchical dictionary
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000

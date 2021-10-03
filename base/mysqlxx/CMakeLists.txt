@@ -49,6 +49,8 @@ if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
     target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
+target_no_warning(mysqlxx reserved-macro-identifier)
+
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND USE_STATIC_LIBRARIES)
    message(WARNING "Statically linking with system mysql/mariadb only works "
            "if mysql client libraries are built with same openssl version as "

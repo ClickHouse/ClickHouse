@@ -6,7 +6,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -77,6 +77,7 @@ void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
+    settings.native_format = true;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
     auto serialization = type.getDefaultSerialization();

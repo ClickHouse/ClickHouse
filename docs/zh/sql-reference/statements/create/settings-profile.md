@@ -1,0 +1,1 @@
+../../../../en/sql-reference/statements/create/settings-profile.md

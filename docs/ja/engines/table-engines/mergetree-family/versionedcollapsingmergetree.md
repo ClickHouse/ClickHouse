@@ -236,4 +236,4 @@ SELECT * FROM UAct FINAL
 
 これは、データを選択する非常に非効率的な方法です。 大きなテーブルには使用しないでください。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

@@ -1,10 +1,11 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <nanodbc/nanodbc.h>
 #include <mutex>
-#include <common/BorrowedObjectPool.h>
+#include <base/BorrowedObjectPool.h>
 #include <unordered_map>
+
 
 namespace DB
 {
@@ -28,8 +29,8 @@ class ConnectionHolder
 {
 public:
     ConnectionHolder(PoolPtr pool_,
-                     ConnectionPtr connection_,
-                     const String & connection_string_)
+                    ConnectionPtr connection_,
+                    const String & connection_string_)
         : pool(pool_)
         , connection(std::move(connection_))
         , connection_string(connection_string_)
@@ -57,7 +58,7 @@ public:
 private:
     PoolPtr pool;
     ConnectionPtr connection;
-    const String & connection_string;
+    String connection_string;
 };
 
 using ConnectionHolderPtr = std::shared_ptr<ConnectionHolder>;
@@ -80,8 +81,12 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
     }
     catch (const nanodbc::database_error & e)
     {
-        /// SQLState, connection related errors start with 08S0.
-        if (e.state().starts_with("08S0"))
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// SQLState, connection related errors start with 08 (main: 08S01), cursor invalid state is 24000.
+        /// Invalid cursor state is a retriable error.
+        /// Invalid transaction state 25000. Truncate to 2 letters on purpose.
+        /// https://docs.microsoft.com/ru-ru/sql/odbc/reference/appendixes/appendix-a-odbc-error-codes?view=sql-server-ver15
+        if (e.state().starts_with("08") || e.state().starts_with("24") || e.state().starts_with("25"))
         {
             connection_holder->updateConnection();
             return query_func(connection_holder->get());
