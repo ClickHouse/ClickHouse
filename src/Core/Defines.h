@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 
-#define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_SEC 10
