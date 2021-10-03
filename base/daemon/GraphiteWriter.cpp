@@ -2,7 +2,7 @@
 #include <daemon/BaseDaemon.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 
 #include <mutex>
 #include <iomanip>

@@ -115,9 +115,9 @@ void DiskDecorator::listFiles(const String & path, std::vector<String> & file_na
 
 std::unique_ptr<ReadBufferFromFileBase>
 DiskDecorator::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
+    const String & path, const ReadSettings & settings, size_t estimated_size) const
 {
-    return delegate->readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+    return delegate->readFile(path, settings, estimated_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

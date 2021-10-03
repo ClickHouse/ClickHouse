@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Defines.h>
 #include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
-#include <common/range.h>
+#include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push

@@ -72,25 +72,21 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
-    if (max_mark_range_bytes == 0)
-        max_mark_range_bytes = settings.max_read_buffer_size;
-
-    size_t buffer_size = std::min(settings.max_read_buffer_size, max_mark_range_bytes);
+    ReadSettings read_settings = settings.read_settings;
+    if (max_mark_range_bytes != 0)
+        read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             fullPath(disk, path_prefix + data_file_extension),
-            [this, buffer_size, sum_mark_range_bytes, &settings]()
+            [this, sum_mark_range_bytes, read_settings]()
             {
                 return disk->readFile(
                     path_prefix + data_file_extension,
-                    buffer_size,
-                    sum_mark_range_bytes,
-                    settings.min_bytes_to_use_direct_io,
-                    settings.min_bytes_to_use_mmap_io,
-                    settings.mmap_cache.get());
+                    read_settings,
+                    sum_mark_range_bytes);
             },
             uncompressed_cache);
 
@@ -108,12 +104,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
             disk->readFile(
                 path_prefix + data_file_extension,
-                buffer_size,
-                sum_mark_range_bytes,
-                settings.min_bytes_to_use_direct_io,
-                settings.min_bytes_to_use_mmap_io,
-                settings.mmap_cache.get())
-        );
+                read_settings,
+                sum_mark_range_bytes));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

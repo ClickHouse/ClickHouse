@@ -1,3 +1,5 @@
+-- Tags: shard, no-parallel
+
 create database if not exists shard_0;
 create database if not exists shard_1;
 drop table if exists shard_0.tbl;

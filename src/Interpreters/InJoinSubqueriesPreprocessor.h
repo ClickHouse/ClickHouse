@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 #include <string>

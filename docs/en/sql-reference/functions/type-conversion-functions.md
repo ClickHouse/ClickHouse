@@ -152,6 +152,104 @@ Alias: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDate32 {#todate32}
+
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account.
+
+**Syntax** 
+
+``` sql
+toDate32(expr)
+```
+
+**Arguments** 
+
+-   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) or [Date](../../sql-reference/data-types/date.md).
+
+**Returned value**
+
+-   A calendar date.
+
+Type: [Date32](../../sql-reference/data-types/date32.md).
+
+**Example**
+
+1. The value is within the range:
+
+``` sql
+SELECT toDate32('1955-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1955-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+2. The value is outside the range:
+
+``` sql
+SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1925-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+3. With `Date`-type argument:
+
+``` sql
+SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+│ 1970-01-01 │ Date32                                     │
+└────────────┴────────────────────────────────────────────┘
+```
+
+## toDate32OrZero {#todate32-or-zero}
+
+The same as [toDate32](#todate32) but returns the min value of [Date32](../../sql-reference/data-types/date32.md) if invalid argument is received.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+```
+
+Result:
+
+``` text
+┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
+│                   1925-01-01 │         1925-01-01 │
+└──────────────────────────────┴────────────────────┘
+```
+
+## toDate32OrNull {#todate32-or-null}
+
+The same as [toDate32](#todate32) but returns `NULL` if invalid argument is received.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
+```
+
+Result:
+
+``` text
+┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
+│                   1955-01-01 │               ᴺᵁᴸᴸ │
+└──────────────────────────────┴────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
@@ -1340,9 +1438,9 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime {#snowflakeToDateTime}
+## snowflakeToDateTime {#snowflaketodatetime}
 
-Extract time from snowflake id as DateTime format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime](../data-types/datetime.md) format.
 
 **Syntax**
 
@@ -1352,12 +1450,12 @@ snowflakeToDateTime(value [, time_zone])
 
 **Parameters**
 
--   `value` — `snowflake id`, Int64 value.
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--  value converted to the `DateTime` data type.
+-  Input value converted to the [DateTime](../data-types/datetime.md) data type.
 
 **Example**
 
@@ -1376,9 +1474,9 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime64 {#snowflakeToDateTime64}
+## snowflakeToDateTime64 {#snowflaketodatetime64}
 
-Extract time from snowflake id as DateTime64 format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime64](../data-types/datetime64.md) format.
 
 **Syntax**
 
@@ -1388,12 +1486,12 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Parameters**
 
--   `value` — `snowflake id`, Int64 value.
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--  value converted to the `DateTime64` data type.
+-  Input value converted to the [DateTime64](../data-types/datetime64.md) data type.
 
 **Example**
 
@@ -1412,9 +1510,9 @@ Result:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## dateTimeToSnowflake {#dateTimeToSnowflake}
+## dateTimeToSnowflake {#datetimetosnowflake}
 
-Convert DateTime to the first snowflake id at the giving time.
+Converts [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -1426,33 +1524,29 @@ dateTimeToSnowflake(value)
 
 -   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md).
 
-
 **Returned value**
 
--   `value` converted to the `Int64` data type as the first snowflake id at that time.
+-   Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
 Query:
 
 ``` sql
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
-SELECT dateTimeToSnowflake(dt);
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
 ```
 
 Result:
 
 ``` text
-
 ┌─dateTimeToSnowflake(dt)─┐
 │     1426860702823350272 │
 └─────────────────────────┘
 ```
 
+## dateTime64ToSnowflake {#datetime64tosnowflake}
 
-## dateTime64ToSnowflake {#dateTime64ToSnowflake}
-
-Convert DateTime64 to the first snowflake id at the giving time.
+Convert [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -1464,18 +1558,16 @@ dateTime64ToSnowflake(value)
 
 -   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
-
 **Returned value**
 
--   `value` converted to the `Int64` data type as the first snowflake id at that time.
+-   Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
 Query:
 
 ``` sql
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
-SELECT dateTime64ToSnowflake(dt64);
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
 ```
 
 Result:

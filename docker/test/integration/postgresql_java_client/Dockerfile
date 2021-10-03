@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-postgresql-java-client .
+# docker build -t clickhouse/postgresql-java-client .
 # PostgreSQL Java client docker container
 
 FROM ubuntu:18.04

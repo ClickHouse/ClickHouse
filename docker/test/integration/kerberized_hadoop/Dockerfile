@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-kerberized-hadoop .
+# docker build -t clickhouse/kerberized-hadoop .
 
 FROM sequenceiq/hadoop-docker:2.7.0
 RUN sed -i -e 's/^\#baseurl/baseurl/' /etc/yum.repos.d/CentOS-Base.repo

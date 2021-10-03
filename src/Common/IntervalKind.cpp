@@ -9,23 +9,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-const char * IntervalKind::toString() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Second: return "Second";
-        case IntervalKind::Minute: return "Minute";
-        case IntervalKind::Hour: return "Hour";
-        case IntervalKind::Day: return "Day";
-        case IntervalKind::Week: return "Week";
-        case IntervalKind::Month: return "Month";
-        case IntervalKind::Quarter: return "Quarter";
-        case IntervalKind::Year: return "Year";
-    }
-    __builtin_unreachable();
-}
-
-
 Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
