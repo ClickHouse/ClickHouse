@@ -40,6 +40,10 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
+## MD4 {#hash_functions-md4}
+
+Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
+
 ## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).

@@ -2,12 +2,12 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
-#include <common/getThreadId.h>
-#include <common/getPageSize.h>
+#include <base/getThreadId.h>
+#include <base/getPageSize.h>
 
 #include <csignal>
 
