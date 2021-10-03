@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
-#include <common/BuildType.h>
+#include <base/BuildType.h>
 
 extern const char * auto_config_build[];
 
