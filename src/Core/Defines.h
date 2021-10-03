@@ -43,7 +43,6 @@
 #define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
 #define DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC 15
-#define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
