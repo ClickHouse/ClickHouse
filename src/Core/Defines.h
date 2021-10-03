@@ -64,10 +64,6 @@
 
 #define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
 
-/// Marks that extra information is sent to a shard. It could be any magic numbers.
-#define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
-#define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
-
 /// Actually, there may be multiple acquisitions of different locks for a given table within one query.
 /// Check with IStorage class for the list of possible locks
 #define DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC 120
