@@ -37,10 +37,9 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_GET_FILE_STAT;
+    extern const int CANNOT_STAT;
     extern const int NOT_REGULAR_FILE;
-    extern const int READ_META_FILE_FAILED;
-    extern const int FILE_STREAM_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
 }
@@ -262,12 +261,12 @@ void StorageFileLog::deserialize()
 
         if (!tryReadIntText(inode, in))
         {
-            throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", dir_entry.path().c_str());
         }
         assertChar('\n', in);
         if (!tryReadIntText(last_written_pos, in))
         {
-            throw Exception(ErrorCodes::READ_META_FILE_FAILED, "Read meta file {} failed.", dir_entry.path().c_str());
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", dir_entry.path().c_str());
         }
 
         meta.file_name = dir_entry.path().filename();
@@ -282,7 +281,7 @@ UInt64 StorageFileLog::getInode(const String & file_name)
     struct stat file_stat;
     if (stat(file_name.c_str(), &file_stat))
     {
-        throw Exception(ErrorCodes::CANNOT_GET_FILE_STAT, "Can not get stat info of file {}", file_name);
+        throw Exception(ErrorCodes::CANNOT_STAT, "Can not get stat info of file {}", file_name);
     }
     return file_stat.st_ino;
 }
@@ -377,7 +376,7 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
 {
     if (!reader.good())
     {
-        throw Exception(ErrorCodes::FILE_STREAM_ERROR, "Stream is in bad state.");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Stream is in bad state.");
     }
 }
 
@@ -400,7 +399,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(ErrorCodes::FILE_STREAM_ERROR, "File {} has been broken.", file);
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "File {} has been broken.", file);
             }
             /// update file end at the monment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -689,69 +688,69 @@ bool StorageFileLog::updateFileInfos()
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & [event_path, event_info] : events)
+    for (const auto & [event_path, event_infos] : events)
     {
-        switch (event_info.type)
+        String file_name = std::filesystem::path(event_path).filename();
+        for (const auto & event_info : event_infos)
         {
-            case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+            switch (event_info.type)
             {
-                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
-                if (std::filesystem::is_regular_file(event_path))
+                case Poco::DirectoryWatcher::DW_ITEM_ADDED:
                 {
-                    auto file_name = std::filesystem::path(event_path).filename();
-                    auto inode = getInode(event_path);
+                    LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
+                    if (std::filesystem::is_regular_file(event_path))
+                    {
+                        auto inode = getInode(event_path);
+
+                        file_infos.file_names.push_back(file_name);
+
+                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                    }
+                    break;
+                }
+
+                case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
+                {
+                    LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
+                    /// When new file added and appended, it has two event: DW_ITEM_ADDED
+                    /// and DW_ITEM_MODIFIED, since the order of these two events in the
+                    /// sequence is uncentain, so we may can not find it in file_infos, just
+                    /// skip it, the file info will be handled in DW_ITEM_ADDED case.
+                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    {
+                        it->second.status = FileStatus::UPDATED;
+                    }
+                    break;
+                }
+
+                case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
+                case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
+                {
+                    LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
+                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    {
+                        it->second.status = FileStatus::REMOVED;
+                    }
+                    break;
+                }
+                case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
+                {
+                    LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
 
                     file_infos.file_names.push_back(file_name);
-
-                    file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                    auto inode = getInode(event_path);
                     file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-                }
-                break;
-            }
 
-            case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
-            {
-                String file_name = std::filesystem::path(event_path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
-                /// When new file added and appended, it has two event: DW_ITEM_ADDED
-                /// and DW_ITEM_MODIFIED, since the order of these two events in the
-                /// sequence is uncentain, so we may can not find it in file_infos, just
-                /// skip it, the file info will be handled in DW_ITEM_ADDED case.
-                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                {
-                    it->second.status = FileStatus::UPDATED;
-                }
-                break;
-            }
-
-            case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
-            case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
-            {
-                String file_name = std::filesystem::path(event_path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
-                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                {
-                    it->second.status = FileStatus::REMOVED;
-                }
-                break;
-            }
-            case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
-            {
-                auto file_name = std::filesystem::path(event_path).filename();
-                LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
-
-                file_infos.file_names.push_back(file_name);
-                auto inode = getInode(event_path);
-                file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-
-                /// File has been renamed, we should also rename meta file
-                if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
-                {
-                    auto old_name = it->second.file_name;
-                    it->second.file_name = file_name;
-                    if (std::filesystem::exists(getFullMetaPath(old_name)))
+                    /// File has been renamed, we should also rename meta file
+                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                     {
-                        std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        auto old_name = it->second.file_name;
+                        it->second.file_name = file_name;
+                        if (std::filesystem::exists(getFullMetaPath(old_name)))
+                        {
+                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        }
                     }
                 }
             }
