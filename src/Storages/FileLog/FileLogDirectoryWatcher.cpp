@@ -40,7 +40,7 @@ void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::Director
 {
     std::lock_guard<std::mutex> lock(mutex);
     EventInfo info{ev.event, "onItemAdded"};
-    events.emplace(ev.item.path(), info);
+    events[ev.item.path()].emplace_back(info);
 }
 
 
@@ -48,7 +48,7 @@ void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::Direct
 {
     std::lock_guard<std::mutex> lock(mutex);
     EventInfo info{ev.event, "onItemRemoved"};
-    events.emplace(ev.item.path(), info);
+    events[ev.item.path()].emplace_back(info);
 }
 
 /// Optimize for MODIFY event, during a streamToViews period, since the log files
@@ -62,24 +62,24 @@ void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::Direc
     std::lock_guard<std::mutex> lock(mutex);
     auto event_path = ev.item.path();
     /// Already have MODIFY event for this file
-    if (auto it = events.find(event_path); it != events.end() && it->second.type == ev.event)
+    if (auto it = events.find(event_path); it != events.end() && it->second.back().type == ev.event)
         return;
     EventInfo info{ev.event, "onItemModified"};
-    events.emplace(event_path, info);
+    events[event_path].emplace_back(info);
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
     EventInfo info{ev.event, "onItemMovedFrom"};
-    events.emplace(ev.item.path(), info);
+    events[ev.item.path()].emplace_back(info);
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
     EventInfo info{ev.event, "onItemMovedTo"};
-    events.emplace(ev.item.path(), info);
+    events[ev.item.path()].emplace_back(info);
 }
 
 void FileLogDirectoryWatcher::onError(const Poco::Exception & e)
