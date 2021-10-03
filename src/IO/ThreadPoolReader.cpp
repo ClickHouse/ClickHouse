@@ -5,7 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
 #include <unistd.h>
