@@ -81,8 +81,8 @@ StorageFileLog::StorageFileLog(
         loadFiles();
 
 #ifndef NDEBUG
-        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+		assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+		assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 #endif
 
         if (path_is_directory)
@@ -200,14 +200,18 @@ void StorageFileLog::loadFiles()
     {
         InodeToFileMeta valid_metas;
         valid_metas.reserve(file_infos.context_by_name.size());
-        for (const auto & it : file_infos.meta_by_inode)
+        for (const auto & [inode, meta] : file_infos.meta_by_inode)
         {
-            auto file_name = it.second.file_name;
-            if (file_infos.context_by_name.contains(file_name))
-                valid_metas.emplace(it);
+            /// Note, here we need to use inode to judge does the meta file is valid.
+            /// In the case that when a file deleted, then we create new file with the
+            /// same name, it will have different inode number with stored meta file,
+            /// so the stored meta file is invalid
+            if (auto it = file_infos.context_by_name.find(meta.file_name);
+                it != file_infos.context_by_name.end() && it->second.inode == inode)
+                valid_metas.emplace(inode, meta);
             /// Delete meta file from filesystem
             else
-                std::filesystem::remove(getFullMetaPath(file_name));
+                std::filesystem::remove(getFullMetaPath(meta.file_name));
         }
         file_infos.meta_by_inode.swap(valid_metas);
     }
@@ -215,6 +219,10 @@ void StorageFileLog::loadFiles()
 
 void StorageFileLog::serialize() const
 {
+    if (!std::filesystem::exists(root_meta_path))
+    {
+        std::filesystem::create_directories(root_meta_path);
+    }
     for (const auto & it : file_infos.meta_by_inode)
     {
         auto full_name = getFullMetaPath(it.second.file_name);
@@ -231,6 +239,10 @@ void StorageFileLog::serialize() const
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
+    if (!std::filesystem::exists(root_meta_path))
+    {
+        std::filesystem::create_directories(root_meta_path);
+    }
     auto full_name = getFullMetaPath(file_meta.file_name);
     if (!std::filesystem::exists(full_name))
     {
@@ -362,14 +374,21 @@ void StorageFileLog::startup()
 
 void StorageFileLog::shutdown()
 {
-    if (task)
+    try
     {
-        task->stream_cancelled = true;
+        if (task)
+        {
+            task->stream_cancelled = true;
 
-        LOG_TRACE(log, "Waiting for cleanup");
-        task->holder->deactivate();
+            LOG_TRACE(log, "Waiting for cleanup");
+            task->holder->deactivate();
+        }
+        closeFilesAndStoreMeta();
     }
-    closeFilesAndStoreMeta();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void StorageFileLog::assertStreamGood(const std::ifstream & reader)
@@ -698,14 +717,22 @@ bool StorageFileLog::updateFileInfos()
                 case Poco::DirectoryWatcher::DW_ITEM_ADDED:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
+                    /// Check if it is a regular file, and new file may be renamed or removed
                     if (std::filesystem::is_regular_file(event_path))
                     {
                         auto inode = getInode(event_path);
 
                         file_infos.file_names.push_back(file_name);
 
-                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-                        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
+                            it->second = FileMeta{.file_name = file_name};
+                        else
+                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                            it->second = FileContext{.inode = inode};
+                        else
+                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
                     }
                     break;
                 }
@@ -718,9 +745,7 @@ bool StorageFileLog::updateFileInfos()
                     /// sequence is uncentain, so we may can not find it in file_infos, just
                     /// skip it, the file info will be handled in DW_ITEM_ADDED case.
                     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                    {
                         it->second.status = FileStatus::UPDATED;
-                    }
                     break;
                 }
 
@@ -729,28 +754,36 @@ bool StorageFileLog::updateFileInfos()
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                    {
                         it->second.status = FileStatus::REMOVED;
-                    }
                     break;
                 }
                 case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
 
-                    file_infos.file_names.push_back(file_name);
-                    auto inode = getInode(event_path);
-                    file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-
-                    /// File has been renamed, we should also rename meta file
-                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
+                    /// Similar to DW_ITEM_ADDED, but if it removed from an old file
+                    /// should obtain old meta file and rename meta file
+                    if (std::filesystem::is_regular_file(event_path))
                     {
-                        auto old_name = it->second.file_name;
-                        it->second.file_name = file_name;
-                        if (std::filesystem::exists(getFullMetaPath(old_name)))
+                        file_infos.file_names.push_back(file_name);
+                        auto inode = getInode(event_path);
+
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                            it->second = FileContext{.inode = inode};
+                        else
+                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+
+                        /// File has been renamed, we should also rename meta file
+                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                         {
-                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                            auto old_name = it->second.file_name;
+                            it->second.file_name = file_name;
+                            if (std::filesystem::exists(getFullMetaPath(old_name)))
+                                std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
                         }
+                        /// May move from other place, adding new meta info
+                        else
+                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                     }
                 }
             }
