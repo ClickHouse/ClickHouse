@@ -159,7 +159,7 @@ Even in these cases, we recommend applying the function offline and pre-calculat
 
 **Arguments**
 
--   `s` — Input string for SHA-1 hash calculation. [String](../data-types/string.md).
+-   `s` — Input string for SHA hash calculation. [String](../data-types/string.md).
 
 **Returned value**
 
