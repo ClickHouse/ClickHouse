@@ -97,30 +97,34 @@ namespace
                 }
             }
 
-            read_buf = wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadWriteBufferFromHTTP>(
-                    uri,
-                    method,
-                    std::move(callback),
-                    timeouts,
-                    context->getSettingsRef().max_http_get_redirects,
-                    Poco::Net::HTTPBasicCredentials{},
-                    DBMS_DEFAULT_BUFFER_SIZE,
-                    headers,
-                    context->getRemoteHostFilter()),
-                compression_method);
-
-            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            QueryPipelineBuilder builder;
-            builder.init(Pipe(input_format));
-
-            builder.addSimpleTransform([&](const Block & cur_header)
+            /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
+            initialize = [=, this]
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
-            });
+                read_buf = wrapReadBufferWithCompressionMethod(
+                    std::make_unique<ReadWriteBufferFromHTTP>(
+                        uri,
+                        method,
+                        std::move(callback),
+                        timeouts,
+                        context->getSettingsRef().max_http_get_redirects,
+                        Poco::Net::HTTPBasicCredentials{},
+                        DBMS_DEFAULT_BUFFER_SIZE,
+                        headers,
+                        context->getRemoteHostFilter()),
+                    compression_method);
 
-            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(input_format));
+
+                builder.addSimpleTransform([&](const Block & cur_header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
+                });
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+            };
         }
 
         String getName() const override
@@ -130,6 +134,12 @@ namespace
 
         Chunk generate() override
         {
+            if (initialize)
+            {
+                initialize();
+                initialize = {};
+            }
+
             if (!reader)
                 return {};
 
@@ -144,6 +154,8 @@ namespace
         }
 
     private:
+        std::function<void()> initialize;
+
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
@@ -267,6 +279,7 @@ Pipe StorageURLWithFailover::read(
         auto request_uri = uri_option;
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
+
         try
         {
             /// Check for uri accessibility is done in constructor of ReadWriteBufferFromHTTP while creating StorageURLSource.
