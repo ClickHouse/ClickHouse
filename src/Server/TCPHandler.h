@@ -1,6 +1,8 @@
 #pragma once
 
-#include <common/getFQDNOrHostName.h>
+#include <Poco/Net/TCPServerConnection.h>
+
+#include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>

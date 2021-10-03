@@ -27,7 +27,7 @@ public:
 
 public:
     bool reuse_port = false;
-    UInt32 backlog = 64;
+    UInt32 backlog = 4096;
     bool secure = false;
 
     bool allow_direct = true;

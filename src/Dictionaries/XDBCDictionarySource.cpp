@@ -11,8 +11,8 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <base/LocalDateTime.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"

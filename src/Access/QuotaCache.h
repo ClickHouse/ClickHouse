@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledQuota.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <memory>
 #include <mutex>
 #include <map>
