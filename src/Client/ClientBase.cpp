@@ -85,7 +85,7 @@ public:
 
     ~QueryInterruptHandler() { exit_on_signal.test_and_set(); }
 
-    bool cancelled() { return exit_on_signal.test(); }
+    static bool cancelled() { return exit_on_signal.test(); }
 };
 
 /// This signal handler is set only for sigint.
@@ -106,7 +106,7 @@ void ClientBase::setupSignalHandler()
      new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
-    sigemptyset(&sa.sa_mask);
+    sigemptyset(&new_act.sa_mask);
 #else
      if (sigemptyset(&new_act.sa_mask))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
