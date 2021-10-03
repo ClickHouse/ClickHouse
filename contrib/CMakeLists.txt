@@ -381,8 +381,6 @@ function (ensure_target_rooted_in _target _folder)
         set (_folder_prop "${CMAKE_FOLDER}/${_folder_prop}")
     endif ()
 
-    message (STATUS "${_target} goes under ${_folder_prop}")
-
     # Set the updated FOLDER property value back.
     set_target_properties ("${_target}" PROPERTIES FOLDER "${_folder_prop}")
 endfunction ()
