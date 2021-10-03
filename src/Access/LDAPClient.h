@@ -4,7 +4,7 @@
 #   include "config_core.h"
 #endif
 
-#include <common/types.h>
+#include <base/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>
@@ -14,6 +14,7 @@
 #endif
 
 #include <chrono>
+#include <optional>
 #include <set>
 #include <vector>
 

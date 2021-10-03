@@ -1,7 +1,9 @@
-# docker build -t yandex/clickhouse-deb-builder .
+# docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -27,7 +29,7 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
@@ -35,17 +37,17 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-11 \
-        clang-tidy-11 \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         debhelper \
         devscripts \
         gdb  \
         git \
         gperf \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         moreutils \
         ninja-build \
         perl \
@@ -55,15 +57,11 @@ RUN apt-get update \
         tzdata \
         --yes --no-install-recommends
 
-# NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
-# Current workaround is to use latest version proposed repo. Remove as soon as
-# gcc-10.2 appear in stable repo.
-RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+    && apt-get update \
+    && apt-get install gcc-11 g++-11 --yes
 
-RUN apt-get update \
-    && apt-get install gcc-10 g++-10 --yes --no-install-recommends
-
-RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

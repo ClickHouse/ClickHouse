@@ -39,12 +39,24 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on t
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
+Supports multiple replicas that must be listed by `|`. For example:
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+or
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
 **Returned Value**
 
 A table object with the same columns as the original MySQL table.
 
 !!! info "Note"
-    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below. 
+    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 
 **Examples**
 
@@ -98,4 +110,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/table_functions/mysql/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/table_functions/mysql/) <!--hide-->

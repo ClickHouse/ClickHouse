@@ -30,16 +30,11 @@ Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge Pages {#huge-pages}
-
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
-
-``` bash
-$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-```
-
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
+
+!!! warning "Attention"
+    If your system has less than 16 GB of RAM you may experience various memory exceptions because default settings does not match this amount of RAM. Recommended amount of RAM is 32 GB or more. You can use ClickHouse in system with small amount of RAM, even with 2 GB of RAM, but it requires an additional tuning and able to process small ingestion rate.
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -90,6 +85,15 @@ If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+
+## Huge Pages {#huge-pages}
+
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+On newer Linux kernels transparent huge pages are alright.
+
+``` bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
 
 ## Hypervisor configuration
 
@@ -258,4 +262,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

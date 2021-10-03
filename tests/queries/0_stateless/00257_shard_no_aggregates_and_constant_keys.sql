@@ -1,3 +1,5 @@
+-- Tags: shard
+
 select 40 as z from (select * from system.numbers limit 3) group by z;
 select 41 as z from remote('127.0.0.{2,3}', system.one) group by z;
 select count(), 42 AS z from remote('127.0.0.{2,3}', system.one) group by z;

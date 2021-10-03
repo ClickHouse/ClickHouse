@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/RowPolicy.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/UUID.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <unordered_map>
@@ -32,6 +32,7 @@ public:
         friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
     };
 
+    EnabledRowPolicies();
     ~EnabledRowPolicies();
 
     using ConditionType = RowPolicy::ConditionType;

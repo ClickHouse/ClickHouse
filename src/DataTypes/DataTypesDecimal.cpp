@@ -25,14 +25,14 @@ namespace ErrorCodes
 }
 
 
-template <typename T>
+template <is_decimal T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
 
-template <typename T>
+template <is_decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
     if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
@@ -40,14 +40,14 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
     return false;
 }
 
-template <typename T>
+template <is_decimal T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     using PromotedType = DataTypeDecimal<Decimal128>;
     return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
-template <typename T>
+template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
@@ -61,7 +61,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     return x;
 }
 
-template <typename T>
+template <is_decimal T>
 SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);

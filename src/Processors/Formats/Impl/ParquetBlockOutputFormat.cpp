@@ -2,24 +2,15 @@
 
 #if USE_PARQUET
 
-// TODO: clean includes
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
-#include <arrow/api.h>
-#include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
-#include <parquet/deprecated_io.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
@@ -32,11 +23,16 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
-    const Block & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
+    if (!ch_column_to_arrow_column)
+    {
+        const Block & header = getPort(PortKind::Main).getHeader();
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet", false);
+    }
+
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
 
     if (!file_writer)
     {
@@ -87,11 +83,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
            const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
-            auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
-            /// TODO
-            // auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.parquet.row_group_size, 0);
-            // res->disableFlush();
-            return impl;
+            return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
 }
 

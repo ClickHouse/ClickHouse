@@ -17,9 +17,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
+
 
 namespace po = boost::program_options;
 

@@ -3,6 +3,7 @@
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -13,10 +14,10 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <common/sort.h>
-#include <common/unaligned.h>
-#include <ext/bit_cast.h>
-#include <ext/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
 
 #include <cmath>
 #include <cstring>
@@ -303,7 +304,7 @@ template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
-        return ext::bit_cast<UInt64>(data[n]);
+        return bit_cast<UInt64>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
 }
@@ -406,6 +407,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
+{
+    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>

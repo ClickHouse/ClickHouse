@@ -3,6 +3,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
+#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -74,6 +75,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
     queue_size = value;
+    /// Reserve memory to get rid of allocations
+    jobs.reserve(queue_size);
 }
 
 
@@ -191,6 +194,10 @@ void ThreadPoolImpl<Thread>::wait()
 template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
+    /// Note: should not use logger from here,
+    /// because it can be an instance of GlobalThreadPool that is a global variable
+    /// and the destruction order of global variables is unspecified.
+
     finalize();
 }
 
@@ -243,7 +250,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                /// std::priority_queue does not provide interface for getting non-const reference to an element
+                /// boost::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
                 job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
@@ -253,6 +260,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// shutdown is true, simply finish the thread.
                 return;
             }
+
         }
 
         if (!need_shutdown)

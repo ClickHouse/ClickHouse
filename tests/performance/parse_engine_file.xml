@@ -22,6 +22,9 @@
             <value>Native</value>
             <value>Avro</value>
             <value>MsgPack</value>
+            <value>ORC</value>
+            <value>Parquet</value>
+            <value>Arrow</value>
         </values>
     </substitution>
 </substitutions>

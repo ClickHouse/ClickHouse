@@ -46,6 +46,7 @@ class ParserIdentifier : public IParserBase
 {
 public:
     explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -167,6 +168,13 @@ class ParserTableFunctionView : public IParserBase
 {
 protected:
     const char * getName() const override { return "function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+// Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
+class ParserFilterClause : public IParserBase
+{
+    const char * getName() const override { return "filter"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -307,6 +315,7 @@ protected:
 
 
 /** String in single quotes.
+  * String in heredoc $here$txt$here$ equivalent to 'txt'.
   */
 class ParserStringLiteral : public IParserBase
 {
@@ -378,8 +387,8 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    ParserAlias(bool allow_alias_without_as_keyword_)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
+
 private:
     static const char * restricted_keywords[];
 
@@ -466,8 +475,10 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
-        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
+    {
+    }
+
 protected:
 
     const char * getName() const override { return "function with key-value arguments"; }

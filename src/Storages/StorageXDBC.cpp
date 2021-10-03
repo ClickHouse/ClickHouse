@@ -12,7 +12,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -46,8 +46,8 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
+    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
 {
-    log = &Poco::Logger::get("Storage" + bridge_helper->getName());
     uri = bridge_helper->getMainURI();
 }
 
@@ -81,6 +81,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         remote_database_name,
         remote_table_name,
         local_context);
+    LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;
     for (const String & name : column_names)
@@ -114,7 +115,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
@@ -130,7 +131,7 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
-    return std::make_shared<StorageURLBlockOutputStream>(
+    return std::make_shared<StorageURLSink>(
         request_uri,
         format_name,
         getFormatSettings(local_context),

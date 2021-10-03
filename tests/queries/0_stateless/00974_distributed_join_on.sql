@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS source_table1;
 DROP TABLE IF EXISTS source_table2;
 DROP TABLE IF EXISTS distributed_table1;

@@ -36,13 +36,13 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context,
+        ContextPtr global_context,
         bool created_from_ddl) const;
 
     /// Create dictionary from DDL-query
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
-        ContextPtr context) const;
+        ContextPtr global_context) const;
 
     using LayoutCreateFunction = std::function<DictionaryPtr(
         const std::string & name,
@@ -50,7 +50,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr,
-        ContextPtr context,
+        ContextPtr global_context,
         bool created_from_ddl)>;
 
     bool isComplex(const std::string & layout_type) const;

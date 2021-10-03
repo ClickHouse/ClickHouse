@@ -30,12 +30,16 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_)
+        const Block & header_, const SortDescription & sort_description_, bool on_totals_)
         : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
+        , on_totals(on_totals_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
+    if (on_totals)
+        return;
+
     auto try_convert_fields = [](auto & descr, const auto & type)
     {
         auto max_type = Field::Types::Null;
@@ -43,7 +47,7 @@ FillingTransform::FillingTransform(
         DataTypePtr to_type;
 
         /// TODO Wrong results for big integers.
-        if (isInteger(type) || which.isDate() || which.isDateTime())
+        if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
         {
             max_type = Field::Types::Int64;
             to_type = std::make_shared<DataTypeInt64>();
@@ -77,7 +81,7 @@ FillingTransform::FillingTransform(
     };
 
     std::vector<bool> is_fill_column(header_.columns());
-    for (size_t i = 0; i < sort_description.size(); ++i)
+    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
         size_t block_position = header_.getPositionByName(sort_description[i].column_name);
         is_fill_column[block_position] = true;
@@ -99,6 +103,11 @@ FillingTransform::FillingTransform(
         }
     }
 
+    std::set<size_t> unique_positions;
+    for (auto pos : fill_column_positions)
+        if (!unique_positions.insert(pos).second)
+            throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
     for (size_t i = 0; i < header_.columns(); ++i)
         if (!is_fill_column[i])
             other_column_positions.push_back(i);
@@ -106,11 +115,11 @@ FillingTransform::FillingTransform(
 
 IProcessor::Status FillingTransform::prepare()
 {
-    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
         should_insert_first = next_row < filling_row;
 
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
 
         if (filling_row < next_row)
@@ -126,6 +135,9 @@ IProcessor::Status FillingTransform::prepare()
 
 void FillingTransform::transform(Chunk & chunk)
 {
+    if (on_totals)
+        return;
+
     Columns old_fill_columns;
     Columns old_other_columns;
     MutableColumns res_fill_columns;
@@ -220,9 +232,9 @@ void FillingTransform::setResultColumns(Chunk & chunk, MutableColumns & fill_col
     /// fill_columns always non-empty.
     size_t num_rows = fill_columns[0]->size();
 
-    for (size_t i = 0; i < fill_columns.size(); ++i)
+    for (size_t i = 0, size = fill_columns.size(); i < size; ++i)
         result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
-    for (size_t i = 0; i < other_columns.size(); ++i)
+    for (size_t i = 0, size = other_columns.size(); i < size; ++i)
         result_columns[other_column_positions[i]] = std::move(other_columns[i]);
 
     chunk.setColumns(std::move(result_columns), num_rows);

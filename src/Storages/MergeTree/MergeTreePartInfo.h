@@ -1,8 +1,12 @@
 #pragma once
 
+#include <limits>
+#include <optional>
 #include <tuple>
-#include <common/types.h>
-#include <common/DayNum.h>
+#include <vector>
+#include <array>
+#include <base/types.h>
+#include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -63,6 +67,12 @@ struct MergeTreePartInfo
             && mutation >= rhs.mutation;
     }
 
+    /// Return part mutation version, if part wasn't mutated return zero
+    Int64 getMutationVersion() const
+    {
+        return mutation ? mutation : 0;
+    }
+
     /// True if parts do not intersect in any way.
     bool isDisjoint(const MergeTreePartInfo & rhs) const
     {
@@ -85,9 +95,13 @@ struct MergeTreePartInfo
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
+    /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
+    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
-    static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
+
+    static std::optional<MergeTreePartInfo> tryParsePartName(
+        std::string_view part_name, MergeTreeDataFormatVersion format_version);
 
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
@@ -111,7 +125,27 @@ struct DetachedPartInfo : public MergeTreePartInfo
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 
-    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
+    static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "clone",
+        "attaching",
+        "deleting",
+        "tmp-fetch"
+    });
+
+    /// NOTE: It may parse part info incorrectly.
+    /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
+    // This method has different semantics with MergeTreePartInfo::tryParsePartName.
+    // Detached parts are always parsed regardless of their validity.
+    // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
+    static DetachedPartInfo parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version);
+
+private:
+    void addParsedPartInfo(const MergeTreePartInfo& part);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
