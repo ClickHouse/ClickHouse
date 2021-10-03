@@ -20,8 +20,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
-#include <common/getResource.h>
-#include <common/sleep.h>
+#include <base/getResource.h>
+#include <base/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -962,7 +962,7 @@ namespace
             if (isRunning(pid_file))
             {
                 throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after %zu ms",
+                    "The server process still exists after {} tries (delay: {} ms)",
                     num_kill_check_tries, kill_check_delay_ms);
             }
         }

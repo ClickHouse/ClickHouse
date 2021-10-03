@@ -1,5 +1,5 @@
 #include "FileDictionarySource.h"
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -32,8 +32,9 @@ FileDictionarySource::FileDictionarySource(
     , sample_block{sample_block_}
     , context(context_)
 {
-    if (created_from_ddl && !pathStartsWith(filepath, context->getUserFilesPath()))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, context->getUserFilesPath());
+    auto user_files_path = context->getUserFilesPath();
+    if (created_from_ddl && !pathStartsWith(filepath, user_files_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
 }
 
 

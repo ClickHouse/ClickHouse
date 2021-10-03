@@ -73,4 +73,4 @@ Debパッケージ内の不適切な構成は、データベースの不正使�
 
 クレジット：英国の国立サイバーセキュリティセンター（NCSC)
 
-{## [元の記事](https://clickhouse.tech/docs/en/security_changelog/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/security_changelog/) ##}

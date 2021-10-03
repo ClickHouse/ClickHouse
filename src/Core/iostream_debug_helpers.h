@@ -45,4 +45,4 @@ std::ostream & operator<<(std::ostream & stream, const TreeRewriterResult & what
 }
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
-#include <common/iostream_debug_helpers.h>
+#include <base/iostream_debug_helpers.h>

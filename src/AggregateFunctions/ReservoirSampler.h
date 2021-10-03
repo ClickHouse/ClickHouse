@@ -3,7 +3,7 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -121,7 +121,7 @@ public:
     {
         if (samples.empty())
         {
-            if (DB::IsDecimalNumber<T>)
+            if (DB::is_decimal<T>)
                 return 0;
             return onEmpty<double>();
         }
@@ -134,7 +134,7 @@ public:
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
         {
-            if constexpr (DB::IsDecimalNumber<T>)
+            if constexpr (DB::is_decimal<T>)
                 return static_cast<double>(samples[left_index].value);
             else
                 return static_cast<double>(samples[left_index]);
@@ -143,7 +143,7 @@ public:
         double left_coef = right_index - index;
         double right_coef = index - left_index;
 
-        if constexpr (DB::IsDecimalNumber<T>)
+        if constexpr (DB::is_decimal<T>)
             return static_cast<double>(samples[left_index].value) * left_coef + static_cast<double>(samples[right_index].value) * right_coef;
         else
             return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
