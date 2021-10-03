@@ -47,7 +47,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings.materialized_postgresql_tables_list)
     , schema_list(replication_settings.materialized_postgresql_schema_list)
-    , schema_can_be_in_tables_list(replication_settings.materialized_postgresql_tables_list_with_schema)
+    , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings.materialized_postgresql_tables_list_with_schema)
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
     , milliseconds_to_wait(RESCHEDULE_MS)
 {
@@ -67,9 +67,6 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
-
-    if (!schema_list.empty())
-        schema_as_a_part_of_table_name = true;
 }
 
 
@@ -101,9 +98,8 @@ String PostgreSQLReplicationHandler::probablyDoubleQuoteWithSchema(const String 
 
     /// If there is a setting `tables_list`, then table names can be put there along with schema,
     /// separated by dot and with no quotes. We add double quotes in this case.
-    bool schema_in_name = (schema_can_be_in_tables_list && !tables_list.empty()) || !schema_list.empty();
 
-    if (auto pos = table_name.find('.'); schema_in_name && pos != std::string::npos)
+    if (auto pos = table_name.find('.'); schema_as_a_part_of_table_name && pos != std::string::npos)
     {
         schema_as_a_part_of_table_name = true;
 
@@ -580,10 +576,10 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
     postgres::Connection connection(connection_info);
-    NameSet result_tables;
+    std::set<String> result_tables;
     bool publication_exists_before_startup;
 
     {
@@ -638,8 +634,8 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
                 }
 
                 NameSet diff;
-                std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
-                                              result_tables.begin(), result_tables.end(),
+                std::sort(expected_tables.begin(), expected_tables.end());
+                std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(), result_tables.begin(), result_tables.end(),
                                               std::inserter(diff, diff.begin()));
                 if (!diff.empty())
                 {
@@ -650,10 +646,25 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
                             diff_tables += ", ";
                         diff_tables += table_name;
                     }
+                    String publication_tables;
+                    for (const auto & table_name : result_tables)
+                    {
+                        if (!publication_tables.empty())
+                            publication_tables += ", ";
+                        publication_tables += table_name;
+                    }
+                    String listed_tables;
+                    for (const auto & table_name : expected_tables)
+                    {
+                        if (!listed_tables.empty())
+                            listed_tables += ", ";
+                        listed_tables += table_name;
+                    }
 
                     LOG_WARNING(log,
-                                "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}.",
-                                publication_name, diff_tables);
+                                "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}."
+                                "\nPublication tables: {}.\nTables list: {}",
+                                publication_name, diff_tables, publication_tables, listed_tables);
 
                     connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
                 }
@@ -675,7 +686,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
         }
         else
         {
-            result_tables = NameSet(expected_tables.begin(), expected_tables.end());
+            result_tables = std::set(expected_tables.begin(), expected_tables.end());
         }
     }
 
@@ -709,13 +720,13 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables()
 }
 
 
-NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
+std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
     std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
-    std::unordered_set<std::string> tables;
+    std::set<String> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
-        tables.insert((!schema.empty() && schema_as_a_part_of_table_name) ? schema + '.' + table : table);
+        tables.insert(schema_as_a_part_of_table_name ? schema + '.' + table : table);
 
     return tables;
 }

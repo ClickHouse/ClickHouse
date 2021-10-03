@@ -1209,7 +1209,7 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
 
     insert_into_tables()
     create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
-                           settings=[f"materialized_postgresql_tables_list = '{publication_tables}'", "materialized_postgresql_allow_automatic_update = 1"])
+                           settings=[f"materialized_postgresql_tables_list = '{publication_tables}'", "materialized_postgresql_tables_list_with_schema=1", "materialized_postgresql_allow_automatic_update = 1"])
 
     check_all_tables_are_synchronized()
     assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")

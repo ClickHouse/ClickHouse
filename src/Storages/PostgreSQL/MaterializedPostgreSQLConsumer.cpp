@@ -277,7 +277,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -295,7 +297,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -344,7 +348,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
