@@ -7,7 +7,7 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -54,8 +54,8 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -65,6 +65,13 @@ class EnabledQuota;
 struct SelectQueryInfo;
 
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
+using DatabaseAndTableName = std::pair<String, String>;
+
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
+class IBackupEntry;
+using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
+using RestoreDataTasks = std::vector<std::function<void()>>;
 
 struct ColumnSize
 {
@@ -119,6 +126,9 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports insert queries with the PARTITION BY section.
+    virtual bool supportsPartitionBy() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
@@ -187,6 +197,12 @@ public:
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
+
+    /// Prepares entries to backup data of the storage.
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
+
+    /// Extract data from the backup and put it to the storage.
+    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
 
 protected:
     /// Returns whether the column is virtual - by default all columns are real.
@@ -343,7 +359,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual QueryPipelinePtr distributedWrite(
+    virtual QueryPipelineBuilderPtr distributedWrite(
         const ASTInsertQuery & /*query*/,
         ContextPtr /*context*/)
     {
@@ -522,6 +538,9 @@ public:
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /// Returns true if all disks of storage are read-only.
+    virtual bool isStaticStorage() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

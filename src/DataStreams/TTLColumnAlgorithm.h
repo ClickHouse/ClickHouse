@@ -17,7 +17,9 @@ public:
         bool force_,
         const String & column_name_,
         const ExpressionActionsPtr & default_expression_,
-        const String & default_column_name_);
+        const String & default_column_name_,
+        bool is_compact_part_
+    );
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;
@@ -28,6 +30,7 @@ private:
     const String default_column_name;
 
     bool is_fully_empty = true;
+    bool is_compact_part;
 };
 
 }

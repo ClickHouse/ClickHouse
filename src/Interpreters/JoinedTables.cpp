@@ -128,7 +128,7 @@ private:
             /// Table has an alias. We do not need to rewrite qualified names with table alias (match == ColumnMatch::TableName).
             auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
             if (match == IdentifierSemantic::ColumnMatch::AliasedTableName ||
-                match == IdentifierSemantic::ColumnMatch::DbAndTable)
+                match == IdentifierSemantic::ColumnMatch::DBAndTable)
             {
                 if (rewritten)
                     throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name() + "'",
@@ -299,16 +299,17 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
-        if (table)
+        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+        if (storage)
         {
-            if (dynamic_cast<StorageJoin *>(table.get()) ||
-                dynamic_cast<StorageDictionary *>(table.get()))
-                table_join->joined_storage = table;
+            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+                table_join->setStorageJoin(storage_join);
+            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
+                table_join->setStorageJoin(storage_dict);
         }
     }
 
-    if (!table_join->joined_storage &&
+    if (!table_join->isSpecialStorage() &&
         settings.enable_optimize_predicate_expression)
         replaceJoinedTable(select_query);
 
