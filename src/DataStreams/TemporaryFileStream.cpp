@@ -7,6 +7,7 @@
 #include <Processors/ISource.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Core/ProtocolDefines.h>
 
 
 namespace DB
