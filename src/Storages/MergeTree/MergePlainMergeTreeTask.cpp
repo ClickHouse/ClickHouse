@@ -87,6 +87,7 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
