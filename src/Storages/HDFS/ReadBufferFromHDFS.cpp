@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
-struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
+struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
     /// HDFS create/open functions are not thread safe
     static std::mutex hdfs_init_mutex;
@@ -37,8 +37,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_)
-        : hdfs_uri(hdfs_uri_)
+        const Poco::Util::AbstractConfiguration & config_,
+        size_t buf_size_)
+        : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
+        , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
     {
@@ -53,7 +55,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
     }
 
-    ~ReadBufferFromHDFSImpl()
+    ~ReadBufferFromHDFSImpl() override
     {
         std::lock_guard lock(hdfs_init_mutex);
         hdfsCloseFile(fs.get(), fin);
@@ -69,7 +71,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
     }
 
-    int read(char * start, size_t size)
+    bool nextImpl() override
     {
         if (!initialized)
         {
@@ -77,15 +79,24 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
             initialized = true;
         }
 
-        int bytes_read = hdfsRead(fs.get(), fin, start, size);
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), internal_buffer.size());
         if (bytes_read < 0)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
                 hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
-        return bytes_read;
+
+        if (bytes_read)
+        {
+            working_buffer = internal_buffer;
+            working_buffer.resize(bytes_read);
+            offset += bytes_read;
+            return true;
+        }
+
+        return false;
     }
 
-    int seek(off_t offset_, int whence)
+    off_t seek(off_t offset_, int whence) override
     {
         if (initialized)
             throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
@@ -101,7 +112,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         return offset;
     }
 
-    int tell() const
+    off_t getPosition() override
     {
         return offset;
     }
@@ -115,21 +126,21 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         size_t buf_size_)
-    : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_))
+    : SeekableReadBuffer(nullptr, 0)
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_))
 {
 }
 
 
 bool ReadBufferFromHDFS::nextImpl()
 {
-    int bytes_read = impl->read(internal_buffer.begin(), internal_buffer.size());
+    impl->position() = impl->buffer().begin() + offset();
+    auto result = impl->next();
 
-    if (bytes_read)
-        working_buffer.resize(bytes_read);
-    else
-        return false;
-    return true;
+    if (result)
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset); /// use the buffer returned by `impl`
+
+    return result;
 }
 
 
@@ -141,7 +152,7 @@ off_t ReadBufferFromHDFS::seek(off_t off, int whence)
 
 off_t ReadBufferFromHDFS::getPosition()
 {
-    return impl->tell() + count();
+    return impl->getPosition() - available();
 }
 
 }

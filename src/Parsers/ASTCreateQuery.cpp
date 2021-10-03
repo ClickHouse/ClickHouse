@@ -305,8 +305,16 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
     else
     {
+        String action = "CREATE";
+        if (attach)
+            action = "ATTACH";
+        else if (replace_table && create_or_replace)
+            action = "CREATE OR REPLACE";
+        else if (replace_table)
+            action = "REPLACE";
+
         /// Always DICTIONARY
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
                       << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
         if (uuid != UUIDHelpers::Nil)

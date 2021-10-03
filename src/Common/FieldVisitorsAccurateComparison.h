@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -27,7 +27,11 @@ public:
     bool operator() (const T & l, const U & r) const
     {
         if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
-            return std::is_same_v<T, U>;
+        {
+            if constexpr (std::is_same_v<T, Null> && std::is_same_v<U, Null>)
+                return l == r;
+            return false;
+        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -37,13 +41,13 @@ public:
                 return accurate::equalsOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (isDecimalField<T>() && isDecimalField<U>())
+            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l == r;
 
-            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
                 return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
+            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
@@ -75,8 +79,18 @@ public:
     template <typename T, typename U>
     bool operator() (const T & l, const U & r) const
     {
-        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
-            return false;
+        if constexpr (std::is_same_v<T, Null> && std::is_same_v<U, Null>)
+        {
+            return l.isNegativeInfinity() && r.isPositiveInfinity();
+        }
+        else if constexpr (std::is_same_v<T, Null>)
+        {
+            return l.isNegativeInfinity();
+        }
+        else if constexpr (std::is_same_v<U, Null>)
+        {
+            return r.isPositiveInfinity();
+        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -86,13 +100,13 @@ public:
                 return accurate::lessOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (isDecimalField<T>() && isDecimalField<U>())
+            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l < r;
 
-            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
                 return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
+            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
@@ -114,6 +128,18 @@ public:
 
         throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
             ErrorCodes::BAD_TYPE_OF_FIELD);
+    }
+};
+
+
+class FieldVisitorAccurateLessOrEqual : public StaticVisitor<bool>
+{
+public:
+    template <typename T, typename U>
+    bool operator()(const T & l, const U & r) const
+    {
+        auto less_cmp = FieldVisitorAccurateLess();
+        return !less_cmp(r, l);
     }
 };
 

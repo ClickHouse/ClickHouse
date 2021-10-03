@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
 #include <sql.h>
@@ -29,7 +29,7 @@ namespace
 
 void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request, request.getStream());
+    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)

@@ -16,7 +16,7 @@
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 
 #include <mutex>
@@ -50,7 +50,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 
 void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request);
+    HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read")

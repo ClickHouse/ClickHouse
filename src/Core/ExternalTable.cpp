@@ -12,14 +12,15 @@
 #include <IO/LimitReadBuffer.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Formats/FormatFactory.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -159,16 +160,18 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto exception_handling = std::make_shared<EmptySink>(sink->getOutputPort().getHeader());
 
     /// Write data
     data->pipe->resize(1);
 
-    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(*data->pipe->getOutputPort(0), sink->getPort());
+    connect(*data->pipe->getOutputPort(0), sink->getInputPort());
+    connect(sink->getOutputPort(), exception_handling->getPort());
 
     auto processors = Pipe::detachProcessors(std::move(*data->pipe));
     processors.push_back(std::move(sink));
+    processors.push_back(std::move(exception_handling));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);
     executor->execute(/*num_threads = */ 1);

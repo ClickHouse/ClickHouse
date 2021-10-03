@@ -96,7 +96,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
+ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
 
 ### Common Rules for Summation {#common-rules-for-summation}
 
@@ -136,4 +136,4 @@ When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggreg
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

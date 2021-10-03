@@ -12,6 +12,8 @@ The list of available `SYSTEM` statements:
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -38,6 +40,7 @@ The list of available `SYSTEM` statements:
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTORE REPLICA](#query_language-system-restore-replica)
 -   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES {#query_language-system-reload-emdedded-dictionaries}
@@ -82,6 +85,17 @@ Completely reloads a CatBoost model `model_name` if the configuration was update
 SYSTEM RELOAD MODEL <model_name>
 ```
 
+## RELOAD FUNCTIONS {#query_language-system-reload-functions}
+
+Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
+
+**Syntax**
+
+```sql
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
+```
+
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
 Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
@@ -118,7 +132,7 @@ For manage uncompressed data cache parameters use following server level setting
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
 Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Complied expression cache used when query/user/profile enable option [compile](../../operations/settings/settings.md#compile)
+Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
@@ -290,11 +304,64 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
-Initialization replication quene based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
+Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed.
+Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+### RESTORE REPLICA {#query_language-system-restore-replica}
+
+Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
+
+Works only on readonly `ReplicatedMergeTree` tables.
+
+One may execute query after:
+
+  - ZooKeeper root `/` loss.
+  - Replicas path `/replicas` loss.
+  - Individual replica path `/replicas/replica_name/` loss.
+
+Replica attaches locally found parts and sends info about them to Zookeeper.
+Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
+
+!!! warning "Warning"
+    Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
+
+**Syntax**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+Alternative syntax:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**Example**
+
+Creating a table on multiple servers. After the replica's metadata in ZooKeeper is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+Another way:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}

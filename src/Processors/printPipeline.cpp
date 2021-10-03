@@ -103,7 +103,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
 
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
-    out << "  { node [shape = box]\n";
+    out << "  { node [shape = rect]\n";
 
     /// Nodes // TODO quoting and escaping
     size_t next_step = 0;

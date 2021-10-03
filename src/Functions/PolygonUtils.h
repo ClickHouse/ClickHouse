@@ -1,13 +1,14 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Defines.h>
 #include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
-#include <ext/range.h>
+#include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
@@ -40,6 +41,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -304,6 +306,13 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     y_scale = 1 / cell_height;
     x_shift = -min_corner.x();
     y_shift = -min_corner.y();
+
+    if (!(isFinite(x_scale)
+        && isFinite(y_scale)
+        && isFinite(x_shift)
+        && isFinite(y_shift)
+        && isFinite(grid_size)))
+        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
 }
 
 template <typename CoordinateType>
@@ -358,7 +367,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (has_empty_bound)
         return false;
 
-    if (std::isnan(x) || std::isnan(y))
+    if (!isFinite(x) || !isFinite(y))
         return false;
 
     CoordinateType float_row = (y + y_shift) * y_scale;
@@ -413,7 +422,7 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
     Point first = get_vector(outer[0], outer[1]);
     Point prev = first;
 
-    for (auto i : ext::range(1, outer.size() - 1))
+    for (auto i : collections::range(1, outer.size() - 1))
     {
         Point cur = get_vector(outer[i], outer[i + 1]);
         if (vec_product(prev, cur) < 0)
@@ -434,7 +443,7 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
     std::vector<HalfPlane> half_planes;
     const auto & outer = intersection.outer();
 
-    for (auto i : ext::range(0, outer.size() - 1))
+    for (auto i : collections::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
         /// If section (x1, y1), (x2, y2) is on box edge, then either x1 = x2 = one of box_x or y1 = y2 = one of box_y
@@ -572,7 +581,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & x_data = x.getData();
     const auto & y_data = y.getData();
 
-    for (auto i : ext::range(0, size))
+    for (auto i : collections::range(0, size))
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
 
     return result;

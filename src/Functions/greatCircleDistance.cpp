@@ -8,7 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <cmath>
 
 
@@ -246,10 +246,11 @@ private:
     size_t getNumberOfArguments() const override { return 4; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))

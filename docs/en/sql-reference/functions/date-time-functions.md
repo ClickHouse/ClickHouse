@@ -27,17 +27,17 @@ SELECT
 
 Returns the timezone of the server.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timeZone()
 ```
 
-Alias: `timezone`. 
+Alias: `timezone`.
 
 **Returned value**
 
--   Timezone. 
+-   Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -45,7 +45,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 Converts time or date and time to the specified time zone. The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 toTimezone(value, timezone)
@@ -53,14 +53,14 @@ toTimezone(value, timezone)
 
 Alias: `toTimezone`.
 
-**Arguments** 
+**Arguments**
 
 -   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Date and time. 
+-   Date and time.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -80,6 +80,7 @@ SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
+
 Result:
 
 ```text
@@ -102,21 +103,21 @@ int32samoa: 1546300800
 
 Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timeZoneOf(value)
 ```
 
-Alias: `timezoneOf`. 
+Alias: `timezoneOf`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Timezone name. 
+-   Timezone name.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -149,11 +150,11 @@ Alias: `timezoneOffset`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Offset from UTC in seconds. 
+-   Offset from UTC in seconds.
 
 Type: [Int32](../../sql-reference/data-types/int-uint.md).
 
@@ -599,7 +600,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).  
+-   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -704,7 +705,7 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -805,7 +806,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).   
+-   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
@@ -963,7 +964,7 @@ formatDateTime(Time, Format\[, Timezone\])
 
 **Returned value(s)**
 
-Returnes time and date values according to the determined format.
+Returns time and date values according to the determined format.
 
 **Replacement fields**
 Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
@@ -1010,6 +1011,45 @@ Result:
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
+```
+
+## dateName {#dataname}
+
+Returns specified part of date.
+
+**Syntax**
+
+``` sql
+dateName(date_part, date)
+```
+
+**Arguments**
+
+-   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
+-   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The specified part of date.
+
+Type: [String](../../sql-reference/data-types/string.md#string)
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
+```
+
+Result:
+
+```text
+┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
+│ 2021                         │ April                         │ 14                          │
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
 ```
 
 ## FROM\_UNIXTIME {#fromunixfime}

@@ -13,8 +13,8 @@ struct NameLike
     static constexpr auto name = "like";
 };
 
-using LikeImpl = MatchImpl</*SQL LIKE */ true, /*revert*/false>;
-using FunctionLike = FunctionsStringSearch<LikeImpl, NameLike>;
+using LikeImpl = MatchImpl<NameLike, /*SQL LIKE */ true, /*revert*/false>;
+using FunctionLike = FunctionsStringSearch<LikeImpl>;
 
 }
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
@@ -8,7 +10,7 @@
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h> // Y_IGNORE
-#include <common/types.h>
+#include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
 
@@ -19,7 +21,7 @@ namespace DB
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>
+class ReadBufferFromHDFS : public SeekableReadBuffer
 {
 struct ReadBufferFromHDFSImpl;
 

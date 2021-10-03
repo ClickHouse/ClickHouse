@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB

@@ -2,7 +2,7 @@
 #include <iomanip>
 
 #include <Core/Field.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Common/Stopwatch.h>
 #include <IO/ReadHelpers.h>

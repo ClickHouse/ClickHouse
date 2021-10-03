@@ -49,7 +49,7 @@ void SourceWithProgress::setProcessListElement(QueryStatus * elem)
 
 void SourceWithProgress::work()
 {
-    if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+    if (!limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode))
     {
         cancel();
     }

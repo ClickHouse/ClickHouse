@@ -4,8 +4,6 @@
 #include <Common/config.h>
 #endif
 
-#if USE_AWS_S3 || USE_HDFS
-
 #include <IO/ReadBufferFromFile.h>
 #include <Disks/IDiskRemote.h>
 #include <utility>
@@ -19,7 +17,7 @@ template <typename T>
 class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
-    ReadIndirectBufferFromRemoteFS(IDiskRemote::Metadata metadata_);
+    explicit ReadIndirectBufferFromRemoteFS(RemoteMetadata metadata_);
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -30,10 +28,12 @@ public:
     virtual std::unique_ptr<T> createReadBuffer(const String & path) = 0;
 
 protected:
-    IDiskRemote::Metadata metadata;
+    RemoteMetadata metadata;
 
 private:
     std::unique_ptr<T> initialize();
+
+    bool nextAndShiftPosition();
 
     bool nextImpl() override;
 
@@ -45,5 +45,3 @@ private:
 };
 
 }
-
-#endif

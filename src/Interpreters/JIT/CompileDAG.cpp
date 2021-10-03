@@ -7,7 +7,7 @@
 #include <llvm/IR/IRBuilder.h>
 
 #include <Common/SipHash.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/Native.h>
 #include <IO/WriteBufferFromString.h>

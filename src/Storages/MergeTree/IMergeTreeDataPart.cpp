@@ -14,8 +14,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
-#include <common/JSON.h>
-#include <common/logger_useful.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <base/JSON.h>
+#include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
@@ -55,7 +56,8 @@ namespace ErrorCodes
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
-    return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
+    size_t file_size = disk->getFileSize(path);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)
@@ -66,6 +68,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
+
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
@@ -77,6 +80,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
         serialization->deserializeBinary(min_val, *file);
         Field max_val;
         serialization->deserializeBinary(max_val, *file);
+
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = POSITIVE_INFINITY;
+        if (max_val.isNull())
+            max_val = POSITIVE_INFINITY;
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -132,14 +141,19 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
-        column.column->getExtremes(min_value, max_value);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value);
+        else
+            column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, min_value);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, max_value);
+            hyperrectangle[i].left
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
+            hyperrectangle[i].right
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
     }
 
@@ -274,6 +288,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
+
+    minmax_idx = std::make_shared<MinMaxIndex>();
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -297,6 +313,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
+
+    minmax_idx = std::make_shared<MinMaxIndex>();
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -347,9 +365,9 @@ IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized)
     {
-        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos];
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
         return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
     }
     else
@@ -358,9 +376,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx->initialized)
     {
-        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos];
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
 
         /// The case of DateTime
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
@@ -429,9 +447,14 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
 
             if (parent_part)
-                projectionRemove(parent_part->getFullRelativePath(), keep_s3_on_delete);
+            {
+                std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+                if (!keep_shared_data.has_value())
+                    return;
+                projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
+            }
             else
-                remove(keep_s3_on_delete);
+                remove();
 
             if (state == State::DeleteOnDestroy)
             {
@@ -462,39 +485,16 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
-String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
-{
-    switch (state)
-    {
-        case State::Temporary:
-            return "Temporary";
-        case State::PreCommitted:
-            return "PreCommitted";
-        case State::Committed:
-            return "Committed";
-        case State::Outdated:
-            return "Outdated";
-        case State::Deleting:
-            return "Deleting";
-        case State::DeleteOnDestroy:
-            return "DeleteOnDestroy";
-    }
-
-    __builtin_unreachable();
-}
-
-String IMergeTreeDataPart::stateString() const
-{
-    return stateToString(state);
-}
-
 void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
 {
     if (!checkState(affordable_states))
     {
         String states_str;
         for (auto affordable_state : affordable_states)
-            states_str += stateToString(affordable_state) + " ";
+        {
+            states_str += stateString(affordable_state);
+            states_str += ' ';
+        }
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
@@ -791,7 +791,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
         const auto & date_lut = DateLUT::instance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
-        minmax_idx = MinMaxIndex(min_date, max_date);
+        minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
     }
     else
     {
@@ -803,9 +803,9 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         {
             if (parent_part)
                 // projection parts don't have minmax_idx, and it's always initialized
-                minmax_idx.initialized = true;
+                minmax_idx->initialized = true;
             else
-                minmax_idx.load(storage, volume->getDisk(), path);
+                minmax_idx->load(storage, volume->getDisk(), path);
         }
         if (parent_part)
             return;
@@ -1096,9 +1096,30 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
-
-void IMergeTreeDataPart::remove(bool keep_s3) const
+std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
+    /// NOTE: It's needed for zero-copy replication
+    if (force_keep_shared_data)
+        return true;
+
+    /// TODO Unlocking in try-catch and ignoring exception look ugly
+    try
+    {
+        return !storage.unlockSharedData(*this);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "There is a problem with deleting part " + name + " from filesystem");
+    }
+    return {};
+}
+
+void IMergeTreeDataPart::remove() const
+{
+    std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+    if (!keep_shared_data.has_value())
+        return;
+
     if (!isStoredOnDisk())
         return;
 
@@ -1108,7 +1129,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (isProjectionPart())
     {
         LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), keep_s3);
+        projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
         return;
     }
 
@@ -1134,7 +1155,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
         catch (...)
         {
@@ -1161,7 +1182,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
-        projection_part->projectionRemove(to, keep_s3);
+        projection_part->projectionRemove(to, *keep_shared_data);
         projection_directories.emplace(p_name + ".proj");
     }
 
@@ -1169,7 +1190,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+        disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
     }
     else
     {
@@ -1184,17 +1205,17 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
             for (const auto & [file, _] : checksums.files)
             {
                 if (projection_directories.find(file) == projection_directories.end())
-                    disk->removeSharedFile(fs::path(to) / file, keep_s3);
+                    disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
             }
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, keep_s3);
+                disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
 
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, *keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, *keep_shared_data);
 
             disk->removeDirectory(to);
         }
@@ -1204,13 +1225,13 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
     }
 }
 
 
-void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3) const
+void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
 {
     String to = parent_to + "/" + relative_path;
     auto disk = volume->getDisk();
@@ -1222,7 +1243,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_s3);
+        disk->removeSharedRecursive(to + "/", keep_shared_data);
     }
     else
     {
@@ -1235,17 +1256,17 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_shared_data);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_shared_data);
+            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
+            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
 
-            disk->removeSharedRecursive(to, keep_s3);
+            disk->removeSharedRecursive(to, keep_shared_data);
         }
         catch (...)
         {
@@ -1253,7 +1274,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(to + "/", keep_s3);
+            disk->removeSharedRecursive(to + "/", keep_shared_data);
          }
      }
  }
@@ -1284,6 +1305,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 {
     /// Do not allow underscores in the prefix because they are used as separators.
     assert(prefix.find_first_of('_') == String::npos);
+    assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
+                                       DetachedPartInfo::DETACH_REASONS.end(),
+                                       prefix) != DetachedPartInfo::DETACH_REASONS.end());
     return "detached/" + getRelativePathForPrefix(prefix);
 }
 
@@ -1475,16 +1499,11 @@ SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndType
 
 String IMergeTreeDataPart::getUniqueId() const
 {
-    String id;
-
     auto disk = volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
-
+    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
 }
 

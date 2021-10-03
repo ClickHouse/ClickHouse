@@ -4,7 +4,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/StatusInfo.h>
-#include <boost/algorithm/string/replace.hpp>
+#include <regex>
 
 namespace
 {
@@ -24,9 +24,13 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
     writeOutLine(wb, std::forward<TArgs>(args)...);
 }
 
-void replaceInvalidChars(std::string & metric_name)
+/// Returns false if name is not valid
+bool replaceInvalidChars(std::string & metric_name)
 {
-    std::replace(metric_name.begin(), metric_name.end(), '.', '_');
+    /// dirty solution
+    metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:]"), "_");
+    metric_name = std::regex_replace(metric_name, std::regex("^[^a-zA-Z]*"), "");
+    return !metric_name.empty();
 }
 
 }
@@ -57,7 +61,8 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
 
-            replaceInvalidChars(metric_name);
+            if (!replaceInvalidChars(metric_name))
+                continue;
             std::string key{profile_events_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);
@@ -75,7 +80,8 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(i))};
             std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(i))};
 
-            replaceInvalidChars(metric_name);
+            if (!replaceInvalidChars(metric_name))
+                continue;
             std::string key{current_metrics_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);
@@ -91,7 +97,8 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         {
             std::string key{asynchronous_metrics_prefix + name_value.first};
 
-            replaceInvalidChars(key);
+            if (!replaceInvalidChars(key))
+                continue;
             auto value = name_value.second;
 
             // TODO: add HELP section? asynchronous_metrics contains only key and value
@@ -108,7 +115,8 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
             std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
 
-            replaceInvalidChars(metric_name);
+            if (!replaceInvalidChars(metric_name))
+                continue;
             std::string key{current_status_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);

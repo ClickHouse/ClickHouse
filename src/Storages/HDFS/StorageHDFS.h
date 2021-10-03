@@ -8,8 +8,8 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <common/logger_useful.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/logger_useful.h>
+#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -17,9 +17,9 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public ext::shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
+class StorageHDFS final : public shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageHDFS>;
+    friend struct shared_ptr_helper<StorageHDFS>;
 public:
     String getName() const override { return "HDFS"; }
 
@@ -32,7 +32,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+
+    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
 

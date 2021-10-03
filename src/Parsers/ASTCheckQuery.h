@@ -9,7 +9,6 @@ namespace DB
 
 struct ASTCheckQuery : public ASTQueryWithTableAndOutput
 {
-
     ASTPtr partition;
 
     /** Get the text that identifies this element. */

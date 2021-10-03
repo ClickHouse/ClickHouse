@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, no-unbundled, no-fasttest
 
 #
 # Load all possible .parquet files found in submodules.
@@ -55,7 +56,10 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
     COLUMNS=$(cat "$COLUMNS_FILE") || continue
 
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
-    ${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory"
+    $CLICKHOUSE_CLIENT --multiquery <<EOF
+SET allow_experimental_map_type = 1;
+CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;
+EOF
 
     # Some files contain unsupported data structures, exception is ok.
     cat "$DATA_DIR"/"$NAME" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_load FORMAT Parquet" 2>&1 | sed 's/Exception/Ex---tion/'

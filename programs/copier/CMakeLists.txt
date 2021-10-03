@@ -11,7 +11,6 @@ set (CLICKHOUSE_COPIER_LINK
                 clickhouse_functions
                 clickhouse_table_functions
                 clickhouse_aggregate_functions
-                clickhouse_dictionaries
                 string_utils
 
         PUBLIC

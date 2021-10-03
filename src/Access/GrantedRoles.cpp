@@ -3,7 +3,6 @@
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
-
 namespace DB
 {
 void GrantedRoles::grant(const UUID & role_)
@@ -80,7 +79,7 @@ std::vector<UUID> GrantedRoles::findGranted(const boost::container::flat_set<UUI
 {
     std::vector<UUID> res;
     res.reserve(ids.size());
-    boost::range::set_difference(ids, roles, std::back_inserter(res));
+    boost::range::set_intersection(ids, roles, std::back_inserter(res));
     return res;
 }
 
@@ -111,7 +110,7 @@ std::vector<UUID> GrantedRoles::findGrantedWithAdminOption(const boost::containe
 {
     std::vector<UUID> res;
     res.reserve(ids.size());
-    boost::range::set_difference(ids, roles_with_admin_option, std::back_inserter(res));
+    boost::range::set_intersection(ids, roles_with_admin_option, std::back_inserter(res));
     return res;
 }
 
