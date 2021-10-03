@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -115,9 +114,8 @@ private:
         return apply<false, false>(a, b, 1);
     }
 
-    template <typename T, typename U>
-    static std::enable_if_t<is_decimal<T> && is_decimal<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
+    template <is_decimal T, is_decimal U>
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
@@ -137,9 +135,8 @@ private:
         return shift;
     }
 
-    template <typename T, typename U>
-    static std::enable_if_t<is_decimal<T> && !is_decimal<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr &)
+    template <is_decimal T, typename U>
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
@@ -148,9 +145,8 @@ private:
         return shift;
     }
 
-    template <typename T, typename U>
-    static std::enable_if_t<!is_decimal<T> && is_decimal<U>, Shift>
-    getScales(const DataTypePtr &, const DataTypePtr & right_type)
+    template <typename T, is_decimal U>
+    static Shift getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);

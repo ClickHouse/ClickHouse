@@ -16,7 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -575,15 +575,12 @@ public:
         Scale scale_arg = getScaleArg(arguments);
 
         ColumnPtr res;
-        auto call = [&](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using DataType = typename Types::LeftType;
 
-            if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
+        auto call = [&]<class T>(TypePair<void, T>)
+        {
+            if constexpr (dt::is_number<T> || dt::is_decimal_like<T>)
             {
-                using FieldType = typename DataType::FieldType;
-                res = Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
+                res = Dispatcher<FieldType<T>, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
                 return true;
             }
             return false;
@@ -598,11 +595,10 @@ public:
                 throw Exception("Cannot set floating point rounding mode", ErrorCodes::CANNOT_SET_ROUNDING_MODE);
 #endif
 
-        if (!callOnIndexAndDataType<void>(column.type->getTypeId(), call))
-        {
-            throw Exception("Illegal column " + column.name + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
+        if (!dispatchOverDataType(column.type->getTypeId(), std::move(call)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                column.name, getName());
 
         return res;
     }
@@ -614,7 +610,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
     }
 };
 

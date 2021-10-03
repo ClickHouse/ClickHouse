@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -145,20 +145,23 @@ private:
         const ColumnWithTypeAndName & col = arguments[0];
         ColumnPtr res;
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&col, &res]<class Type>(TypePair<void, Type>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using Type = typename Types::RightType;
-            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
-            using ColVecType = ColumnVectorOrDecimal<Type>;
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>,
+                Float64, Type>;
 
-            const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
+            const auto col_vec = checkAndGetColumn<ColumnVectorOrDecimal<Type>>(col.column.get());
+
+            res = execute<Type, ReturnType>(col_vec);
+            return res != nullptr;
         };
 
-        if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
-            throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+        constexpr Dispatch d { .ints = true, .floats = true, .decimals = true };
+
+        if (!dispatchOverType<d>(col.type->getTypeId(), std::move(call)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                col.column->getName(), getName());
 
         return res;
     }

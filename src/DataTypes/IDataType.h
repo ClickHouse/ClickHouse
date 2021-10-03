@@ -292,6 +292,14 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 };
 
+template <class T> using FieldType = typename T::FieldType;
+template <class T> using ColumnType = typename T::ColumnType;
+
+namespace dt
+{
+template <class T>
+concept has_arithmetic_field = is_arithmetic_v<FieldType<T>>;
+}
 
 /// Some sugar to check data type of IDataType
 struct WhichDataType
@@ -492,32 +500,4 @@ inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
-
-template <typename DataType> constexpr bool IsDataTypeDecimal = false;
-template <typename DataType> constexpr bool IsDataTypeNumber = false;
-template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
-
-template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
-
-template <is_decimal T>
-class DataTypeDecimal;
-
-template <typename T>
-class DataTypeNumber;
-
-class DataTypeDate;
-class DataTypeDate32;
-class DataTypeDateTime;
-class DataTypeDateTime64;
-
-template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
-template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
-
-template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
-
-template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
-template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
-
 }

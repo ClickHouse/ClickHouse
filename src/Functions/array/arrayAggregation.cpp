@@ -1,11 +1,12 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include <base/defines.h>
+#include <common/defines.h>
 
 
 namespace DB
@@ -91,25 +92,22 @@ struct ArrayAggregateImpl
     {
         DataTypePtr result;
 
-        auto call = [&](const auto & types)
+        auto call = [&]<class DataType>(TypePair<void, DataType>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using DataType = typename Types::LeftType;
-
             if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
             {
                 result = std::make_shared<DataTypeFloat64>();
 
                 return true;
             }
-            else if constexpr (IsDataTypeNumber<DataType>)
+            else if constexpr (dt::is_number<DataType>)
             {
                 using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 result = std::make_shared<DataTypeNumber<NumberReturnType>>();
 
                 return true;
             }
-            else if constexpr (IsDataTypeDecimal<DataType> && !IsDataTypeDateOrDateTime<DataType>)
+            else if constexpr (dt::is_decimal_like<DataType> && !dt::is_date_or_datetime<DataType>)
             {
                 using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 UInt32 scale = getDecimalScale(*expression_return);
@@ -121,7 +119,7 @@ struct ArrayAggregateImpl
             return false;
         };
 
-        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
+        if (!dispatchOverDataType(expression_return->getTypeId(), std::move(call)))
         {
             throw Exception(
                 "array aggregation function cannot be performed on type " + expression_return->getName(),

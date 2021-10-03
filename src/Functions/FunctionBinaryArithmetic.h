@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <base/wide_integer_to_string.h>
+#include <common/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -35,8 +35,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/TypeList.h>
-#include <base/map.h>
+#include <common/TypeList.h>
+#include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -97,7 +97,7 @@ template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
 template <typename DataType> constexpr bool IsIntegralOrExtended = IsIntegral<DataType> || IsExtended<DataType>;
 template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
     IsIntegralOrExtended<DataType> ||
-    IsDataTypeDecimal<DataType>;
+    dt::is_decimal_like<DataType>;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
@@ -130,21 +130,21 @@ public:
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
         /// Decimal cases
-        Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
-        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+        Case<!allow_decimal && (dt::is_decimal_like<LeftDataType> || dt::is_decimal_like<RightDataType>), InvalidType>,
+        Case<dt::is_decimal_like<LeftDataType> &&  dt::is_decimal_like<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<dt::is_decimal_like<LeftDataType> &&  dt::is_decimal_like<RightDataType>, RightDataType>,
+        Case<dt::is_decimal_like<LeftDataType> &&  IsIntegralOrExtended<RightDataType>, LeftDataType>,
+        Case<dt::is_decimal_like<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
 
         /// e.g Decimal * Float64 = Float64
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<LeftDataType> && IsFloatingPoint<RightDataType>,
             RightDataType>,
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<RightDataType> && IsFloatingPoint<LeftDataType>,
             LeftDataType>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
-        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
+        Case<dt::is_decimal_like<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<dt::is_decimal_like<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
 
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
@@ -636,7 +636,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first",
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
@@ -652,64 +652,6 @@ class FunctionBinaryArithmetic : public IFunction
                 function_name = is_plus ? "addDays" : "subtractDays";
             else
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
-        }
-
-        return FunctionFactory::instance().get(function_name, context);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
-    {
-        if (!isTuple(type0) || !isTuple(type1))
-            return {};
-
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        /// We construct another function (example: tuplePlus) and call it.
-
-        if constexpr (!is_plus && !is_minus && !is_multiply)
-            return {};
-
-        std::string function_name;
-        if (is_plus)
-        {
-            function_name = "tuplePlus";
-        }
-        else if (is_minus)
-        {
-            function_name = "tupleMinus";
-        }
-        else
-        {
-            function_name = "dotProduct";
-        }
-
-        return FunctionFactory::instance().get(function_name, context);
-    }
-
-    static FunctionOverloadResolverPtr
-    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
-    {
-        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
-            return {};
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        /// We construct another function (example: tupleMultiplyByNumber) and call it.
-
-        if constexpr (!is_multiply && !is_division)
-            return {};
-
-        if (isNumber(type0) && is_division)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        std::string function_name;
-        if (is_multiply)
-        {
-            function_name = "tupleMultiplyByNumber";
-        }
-        else
-        {
-            function_name = "tupleDivideByNumber";
         }
 
         return FunctionFactory::instance().get(function_name, context);
@@ -855,20 +797,6 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
-    {
-        ColumnsWithTypeAndName new_arguments = arguments;
-
-        /// Number argument must be second.
-        if (isNumber(arguments[0].type))
-            std::swap(new_arguments[0], new_arguments[1]);
-
-        auto function = function_builder->build(new_arguments);
-
-        return function->execute(new_arguments, result_type, input_rows_count);
-    }
-
     template <typename T, typename ResultDataType>
     static auto helperGetOrConvert(const auto & col_const, const auto & col)
     {
@@ -899,9 +827,9 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * const col_left, const auto * const col_right,
         size_t col_left_size) const
     {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
+        using T0 = FieldType<LeftDataType>;
+        using T1 = FieldType<RightDataType>;
+        using ResultType = FieldType<ResultDataType>;
 
         using NativeResultType = NativeType<ResultType>;
         using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
@@ -911,7 +839,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         static constexpr const bool left_is_decimal = is_decimal<T0>;
         static constexpr const bool right_is_decimal = is_decimal<T1>;
-        static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
+        static constexpr const bool result_is_decimal = dt::is_decimal_like<ResultDataType>;
 
         typename ColVecResult::MutablePtr col_res = nullptr;
 
@@ -927,7 +855,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultType scale_a = [&]
         {
-            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
+            if constexpr (dt::is_decimal_like<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
             {
@@ -1086,88 +1014,53 @@ public:
             return function->getResultType();
         }
 
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
-        {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
-
-            /// Number argument must be second.
-            if (isNumber(new_arguments[0].type))
-                std::swap(new_arguments[0], new_arguments[1]);
-
-            auto function = function_builder->build(new_arguments);
-            return function->getResultType();
-        }
-
         DataTypePtr type_res;
 
-        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(),
+            [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr ((std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeString, LeftDataType>) ||
-                (std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, RightDataType>))
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                              std::is_same_v<DataTypeFixedString, RightDataType>)
+                if constexpr (dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
                 {
                     if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                         return false;
-                    else
+                    else if (left.getN() == right.getN())
                     {
-                        if (left.getN() == right.getN())
-                        {
-                            type_res = std::make_shared<LeftDataType>(left.getN());
-                            return true;
-                        }
+                        type_res = std::make_shared<Left>(left.getN());
+                        return true;
                     }
                 }
 
-                if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
+                if constexpr (!Op<Left, Right>::allow_string_integer)
                     return false;
-                else if constexpr (!IsIntegral<RightDataType>)
+                else if constexpr (!IsIntegral<Right>)
                     return false;
-                else if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType>)
-                    type_res = std::make_shared<LeftDataType>(left.getN());
+                else if constexpr (dt::is_fixed_string<Left>)
+                    type_res = std::make_shared<Left>(left.getN());
                 else
                     type_res = std::make_shared<DataTypeString>();
                 return true;
             }
             else
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using ResultDataType = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    if constexpr (dt::is_decimal_like<Left> && dt::is_decimal_like<Right>)
                     {
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
-                    else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
-                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<LeftDataType>,
-                            LeftDataType, RightDataType>>();
-                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
-                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
-                    else if constexpr (IsDataTypeDecimal<RightDataType>)
-                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                    else if constexpr ((dt::is_decimal_like<Left> && IsFloatingPoint<Right>) ||
+                        (dt::is_decimal_like<Right> && IsFloatingPoint<Left>))
+                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<Left>,
+                            Left, Right>>();
+                    else if constexpr (dt::is_decimal_like<Left>)
+                        type_res = std::make_shared<Left>(left.getPrecision(), left.getScale());
+                    else if constexpr (dt::is_decimal_like<Right>)
+                        type_res = std::make_shared<Right>(right.getPrecision(), right.getScale());
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
                     {
                         // Special case for DateTime: binary OPS should reuse timezone
@@ -1175,9 +1068,9 @@ public:
                         // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
 
                         const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeDateTime>)
+                        if constexpr (std::is_same_v<Right, DataTypeDateTime>)
                             tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
+                        if constexpr (std::is_same_v<Left, DataTypeDateTime>)
                             tz = &left;
                         type_res = std::make_shared<ResultDataType>(*tz);
                     }
@@ -1284,22 +1177,19 @@ public:
         return nullptr;
     }
 
-
-    template <typename LeftColumnType, typename A, typename B>
-    ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
+    template <typename LeftColumnType, class Left, class Right>
+    ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const Left &, const Right &) const
     {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-
         const auto * const col_left_raw = arguments[0].column.get();
         const auto * const col_right_raw = arguments[1].column.get();
-        using T1 = typename RightDataType::FieldType;
 
-        using ColVecT1 = ColumnVector<T1>;
-        const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
-        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
+        using RightField = FieldType<Right>;
+        using ColVecRight = ColumnVector<RightField>;
 
-        using OpImpl = StringIntegerOperationImpl<T1, Op<LeftDataType, T1>>;
+        const ColVecRight * const col_right = checkAndGetColumn<ColVecRight>(col_right_raw);
+        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecRight>(col_right_raw);
+
+        using OpImpl = StringIntegerOperationImpl<RightField, Op<Left, RightField>>;
 
         const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
 
@@ -1312,7 +1202,7 @@ public:
         const typename LeftColumnType::Chars & in_vec = col_left->getChars();
 
         typename LeftColumnType::MutablePtr col_res;
-        if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+        if constexpr (dt::is_fixed_string<Left>)
             col_res = LeftColumnType::create(col_left->getN());
         else
             col_res = LeftColumnType::create();
@@ -1321,8 +1211,8 @@ public:
 
         if (col_left_const && col_right_const)
         {
-            const T1 value = col_right_const->template getValue<T1>();
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            const RightField value = col_right_const->template getValue<RightField>();
+            if constexpr (dt::is_fixed_string<Left>)
             {
                 OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), &value, out_vec, 1);
             }
@@ -1336,7 +1226,7 @@ public:
         }
         else if (!col_left_const && !col_right_const && col_right)
         {
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            if constexpr (dt::is_fixed_string<Left>)
             {
                 OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
             }
@@ -1350,7 +1240,7 @@ public:
         }
         else if (col_left_const && col_right)
         {
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            if constexpr (dt::is_fixed_string<Left>)
             {
                 OpImpl::template processFixedString<OpCase::LeftConstant>(
                     in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_right->size());
@@ -1365,8 +1255,8 @@ public:
         }
         else if (col_right_const)
         {
-            const T1 value = col_right_const->template getValue<T1>();
-            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            const RightField value = col_right_const->template getValue<RightField>();
+            if constexpr (dt::is_fixed_string<Left>)
             {
                 OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
             }
@@ -1384,97 +1274,98 @@ public:
         return col_res;
     }
 
-    template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
+    template <class Left, class Right>
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName &, const Left &, const Right &) const
+        requires std::is_same_v<InvalidType, typename BinaryOperationTraits<Op, Left, Right>::ResultDataType>
     {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-        using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+        return nullptr;
+    }
 
-        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
-            return nullptr;
-        else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
-             // and that would produce the compile error.
+    template <class Left, class Right>
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const Left & left, const Right & right) const
+        requires (!std::is_same_v<InvalidType, typename BinaryOperationTraits<Op, Left, Right>::ResultDataType>)
+    {
+        using Result = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
+
+        using LeftField = FieldType<Left>;
+        using RightField = FieldType<Right>;
+        using ResultField = FieldType<Result>;
+
+        using ColVecLeft = ColumnVectorOrDecimal<LeftField>;
+        using ColVecRight = ColumnVectorOrDecimal<RightField>;
+        using ColVecResult = ColumnVectorOrDecimal<ResultField>;
+
+        const auto * const col_left_raw = arguments[0].column.get();
+        const auto * const col_right_raw = arguments[1].column.get();
+
+        const size_t col_left_size = col_left_raw->size();
+
+        const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecLeft>(col_left_raw);
+        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecRight>(col_right_raw);
+
+        const ColVecLeft * const col_left = checkAndGetColumn<ColVecLeft>(col_left_raw);
+        const ColVecRight * const col_right = checkAndGetColumn<ColVecRight>(col_right_raw);
+
+        if constexpr (dt::is_decimal_like<Left> || dt::is_decimal_like<Right>)
         {
-            using T0 = typename LeftDataType::FieldType;
-            using T1 = typename RightDataType::FieldType;
-            using ResultType = typename ResultDataType::FieldType;
-            using ColVecT0 = ColumnVectorOrDecimal<T0>;
-            using ColVecT1 = ColumnVectorOrDecimal<T1>;
-            using ColVecResult = ColumnVectorOrDecimal<ResultType>;
+            return executeNumericWithDecimal<Left, Right, Result>(
+                left, right,
+                col_left_const, col_right_const,
+                col_left, col_right,
+                col_left_size);
+        }
+        else
+        {
+            using OpConcrete = Op<LeftField, RightField>;
+            using OpImpl = BinaryOperationImpl<LeftField, RightField, OpConcrete, ResultField>;
 
-            const auto * const col_left_raw = arguments[0].column.get();
-            const auto * const col_right_raw = arguments[1].column.get();
-
-            const size_t col_left_size = col_left_raw->size();
-
-            const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
-            const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
-
-            const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
-            const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
-
-            if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
+            /// non-vector result
+            if (col_left_const && col_right_const)
             {
-                return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
-                    left, right,
-                    col_left_const, col_right_const,
-                    col_left, col_right,
-                    col_left_size);
+                const auto res = OpImpl::process(
+                    col_left_const->template getValue<LeftField>(),
+                    col_right_const->template getValue<RightField>());
+
+                return Result().createColumnConst(col_left_const->size(), toField(res));
             }
-            else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
-                 // ColVecResult for Decimals which would lead to a compile error.
+
+            typename ColVecResult::MutablePtr col_res = ColVecResult::create();
+
+            auto & vec_res = col_res->getData();
+            vec_res.resize(col_left_size);
+
+            if (col_left && col_right)
             {
-                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
-
-                /// non-vector result
-                if (col_left_const && col_right_const)
-                {
-                    const auto res = OpImpl::process(
-                        col_left_const->template getValue<T0>(),
-                        col_right_const->template getValue<T1>());
-
-                    return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
-                }
-
-                typename ColVecResult::MutablePtr col_res = ColVecResult::create();
-
-                auto & vec_res = col_res->getData();
-                vec_res.resize(col_left_size);
-
-                if (col_left && col_right)
-                {
-                    OpImpl::template process<OpCase::Vector>(
-                        col_left->getData().data(),
-                        col_right->getData().data(),
-                        vec_res.data(),
-                        vec_res.size());
-                }
-                else if (col_left_const && col_right)
-                {
-                    const T0 value = col_left_const->template getValue<T0>();
-
-                    OpImpl::template process<OpCase::LeftConstant>(
-                        &value,
-                        col_right->getData().data(),
-                        vec_res.data(),
-                        vec_res.size());
-                }
-                else if (col_left && col_right_const)
-                {
-                    const T1 value = col_right_const->template getValue<T1>();
-
-                    OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getData().data(),
-                        &value,
-                        vec_res.data(),
-                        vec_res.size());
-                }
-                else
-                    return nullptr;
-
-                return col_res;
+                OpImpl::template process<OpCase::Vector>(
+                    col_left->getData().data(),
+                    col_right->getData().data(),
+                    vec_res.data(),
+                    vec_res.size());
             }
+            else if (col_left_const && col_right)
+            {
+                const LeftField value = col_left_const->template getValue<LeftField>();
+
+                OpImpl::template process<OpCase::LeftConstant>(
+                    &value,
+                    col_right->getData().data(),
+                    vec_res.data(),
+                    vec_res.size());
+            }
+            else if (col_left && col_right_const)
+            {
+                const RightField value = col_right_const->template getValue<RightField>();
+
+                OpImpl::template process<OpCase::RightConstant>(
+                    col_left->getData().data(),
+                    &value,
+                    vec_res.data(),
+                    vec_res.size());
+            }
+            else
+                return nullptr;
+
+            return col_res;
         }
     }
 
@@ -1499,36 +1390,18 @@ public:
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
         }
 
-        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder
-            = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
-        {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
-        }
-
-        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder
-            = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
-        {
-            return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
-        }
-
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
         const auto * const left_generic = left_argument.type.get();
         const auto * const right_generic = right_argument.type.get();
         ColumnPtr res;
 
-        const bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
+        const bool valid = castBothTypes(left_generic, right_generic,
+            [&]<class Left, class Right>(const Left & left, const Right & right)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr ((std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeString, LeftDataType>) ||
-                          (std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, RightDataType>))
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
             {
-                if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                              std::is_same_v<DataTypeFixedString, RightDataType>)
+                if constexpr (dt::is_fixed_string<Left> && dt::is_fixed_string<Right>)
                 {
                     if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
                         return false;
@@ -1536,15 +1409,13 @@ public:
                         return (res = executeFixedString(arguments)) != nullptr;
                 }
 
-                if constexpr (!Op<LeftDataType, RightDataType>::allow_string_integer)
+                if constexpr (!Op<Left, Right>::allow_string_integer)
                     return false;
-                else if constexpr (!IsIntegral<RightDataType>)
+                else if constexpr (!IsIntegral<Right>)
                     return false;
-                else if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType>)
-                {
+                else if constexpr (dt::is_fixed_string<Left>)
                     return (res = executeStringInteger<ColumnFixedString>(arguments, left, right)) != nullptr;
-                }
-                else if constexpr (std::is_same_v<DataTypeString, LeftDataType>)
+                else if constexpr (dt::is_string<Left>)
                     return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
             }
             else
@@ -1571,17 +1442,19 @@ public:
         if (2 != arguments.size())
             return false;
 
-        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        return castBothTypes(arguments[0].get(), arguments[1].get(),
+            [&]<class Left, class Right>(const Left&, const Right&)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, LeftDataType> || std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (dt::is_string_or_fixed_string<Left> || dt::is_string_or_fixed_string<Right>)
                 return false;
             else
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                return !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable;
+                using ResultDataType = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
+                using OpSpec = Op<typename Left::FieldType, typename Right::FieldType>;
+
+                return !std::is_same_v<ResultDataType, InvalidType>
+                    && !dt::is_decimal_like<ResultDataType>
+                    && OpSpec::compilable;
             }
         });
     }
@@ -1591,15 +1464,20 @@ public:
         assert(2 == types.size() && 2 == values.size());
 
         llvm::Value * result = nullptr;
-        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
+
+        castBothTypes(types[0].get(), types[1].get(), [&]<class Left, class Right>(const Left&, const Right&)
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType> && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (!dt::is_string_or_fixed_string<Left> && !dt::is_string_or_fixed_string<Right>)
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                using ResultDataType = typename BinaryOperationTraits<Op, Left, Right>::ResultDataType;
+                using OpSpec = Op<typename Left::FieldType, typename Right::FieldType>;
+
+                constexpr bool valid =
+                    !std::is_same_v<ResultDataType, InvalidType>
+                    && !dt::is_decimal_like<ResultDataType>
+                    && OpSpec::compilable;
+
+                if constexpr (valid)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto type = std::make_shared<ResultDataType>();

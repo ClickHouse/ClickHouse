@@ -29,7 +29,7 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <type_traits>
 
@@ -648,14 +648,10 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        DataTypePtr result;
-
-        if constexpr (IsDataTypeDecimal<DataType>)
-            result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
+        if constexpr (dt::is_decimal_like<DataType>)
+            return std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
-            result = std::make_shared<DataType>();
-
-        return result;
+            return std::make_shared<DataType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

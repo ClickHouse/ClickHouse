@@ -44,4 +44,8 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 
+namespace dt
+{
+template <class T> concept is_uuid = std::is_same_v<T, DataTypeUUID>;
+}
 }

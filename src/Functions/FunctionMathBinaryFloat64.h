@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/callOnTypeIndex.h>
+#include <Core/dispatchOverTypes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -172,42 +172,43 @@ private:
         const ColumnWithTypeAndName & col_right = arguments[1];
         ColumnPtr res;
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&]<class Left, class Right>(TypePair<Left, Right>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftType = typename Types::LeftType;
-            using RightType = typename Types::RightType;
-            using ColVecLeft = ColumnVector<LeftType>;
+            using ColVecLeft = ColumnVector<Left>;
 
-            const IColumn * left_arg = col_left.column.get();
-            const IColumn * right_arg = col_right.column.get();
+            const IColumn * const left_arg = col_left.column.get();
+            const IColumn * const right_arg = col_right.column.get();
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if ((res = executeTyped<Left, Right>(left_arg_typed, right_arg)))
                     return true;
 
-                throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second argument of function {}",
+                    right_arg->getName(), getName());
             }
+
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if ((res = executeTyped<Left, Right>(left_arg_typed, right_arg)))
                     return true;
 
-                throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second argument of function {}",
+                    right_arg->getName(), getName());
             }
 
             return false;
         };
 
-        TypeIndex left_index = col_left.type->getTypeId();
-        TypeIndex right_index = col_right.type->getTypeId();
+        const TypeIndex left_index = col_left.type->getTypeId();
+        const TypeIndex right_index = col_right.type->getTypeId();
 
-        if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
-            throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+        if (!dispatchOverTypes<Dispatch{ .ints = true, .floats = true }>(left_index, right_index, std::move(call)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                col_left.column->getName(), getName());
 
         return res;
     }

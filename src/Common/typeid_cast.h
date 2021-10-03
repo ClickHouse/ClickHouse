@@ -3,12 +3,10 @@
 #include <type_traits>
 #include <typeinfo>
 #include <typeindex>
-#include <memory>
-#include <string>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Common/Exception.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB
@@ -25,7 +23,7 @@ namespace DB
   * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>
-std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
+To typeid_cast(From & from) requires(std::is_reference_v<To>)
 {
     try
     {
@@ -37,17 +35,19 @@ std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
         throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::LOGICAL_ERROR);
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+        "Bad cast from {} to {}",
+        demangle(typeid(from).name()), demangle(typeid(To).name()));
 }
 
-
 template <typename To, typename From>
-std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
+To typeid_cast(From * from) requires(std::is_pointer_v<To>)
 {
+    using Unpointered = std::remove_pointer_t<To>;
+
     try
     {
-        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
+        if ((typeid(From) == typeid(Unpointered)) || (from && typeid(*from) == typeid(Unpointered)))
             return static_cast<To>(from);
         else
             return nullptr;
@@ -58,14 +58,15 @@ std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
     }
 }
 
-
 template <typename To, typename From>
-std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
+To typeid_cast(const std::shared_ptr<From> & from) requires(is_shared_ptr_v<To>)
 {
+    using Elem = typename To::element_type;
+
     try
     {
-        if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
-            return std::static_pointer_cast<typename To::element_type>(from);
+        if ((typeid(From) == typeid(Elem)) || (from && typeid(*from) == typeid(Elem)))
+            return std::static_pointer_cast<Elem>(from);
         else
             return nullptr;
     }

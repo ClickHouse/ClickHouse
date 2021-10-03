@@ -671,25 +671,25 @@ private:
 
     ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
     {
-        TypeIndex left_number = col_left.type->getTypeId();
-        TypeIndex right_number = col_right.type->getTypeId();
+        const TypeIndex left_number = col_left.type->getTypeId();
+        const TypeIndex right_number = col_right.type->getTypeId();
+
         ColumnPtr res;
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&]<class Left, class Right>(TypePair<Left, Right>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftDataType = typename Types::LeftType;
-            using RightDataType = typename Types::RightType;
-
             if (check_decimal_overflow)
-                return (res = DecimalComparison<LeftDataType, RightDataType, Op, true>::apply(col_left, col_right)) != nullptr;
+                return (res = DecimalComparison<Left, Right, Op, true>::apply(col_left, col_right)) != nullptr;
             else
-                return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
+                return (res = DecimalComparison<Left, Right, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
-            throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
+        constexpr Dispatch d = {.ints = true, .decimals = true, .datetimes = true };
+
+        if (!dispatchOverTypes<d>(left_number, right_number, std::move(call)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Wrong call for {} with {} and {}",
+                getName(), col_left.type->getName(), col_right.type->getName());
 
         return res;
     }

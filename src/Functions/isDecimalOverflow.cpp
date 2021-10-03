@@ -18,11 +18,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
-
-/// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
-/// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
+/// Returns 1 if Decimal value has more digits then its Precision allows, 0 otherwise.
+/// Precision could be set as second argument or omitted.
+/// If omitted, function uses Decimal precision of the first argument.
 class FunctionIsDecimalOverflow : public IFunction
 {
 public:
@@ -61,6 +59,34 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+private:
+    template <is_decimal T>
+    static constexpr bool outOfDigits(const T& decimal, UInt32 precision)
+    {
+        using NativeT = typename T::NativeType;
+
+        if (precision > DecimalUtils::max_precision<T>)
+            return false;
+
+        const NativeT pow10 = intExp10OfSize<NativeT>(precision);
+
+        if (decimal.value < 0)
+            return decimal.value <= -pow10;
+        return decimal.value >= pow10;
+    }
+
+    template <typename T>
+    static void execute(const ColumnDecimal<T> & col, ColumnUInt8 & result_column, size_t rows_count, UInt32 precision)
+    {
+        const auto & src_data = col.getData();
+        auto & dst_data = result_column.getData();
+        dst_data.resize(rows_count);
+
+        for (size_t i = 0; i < rows_count; ++i)
+            dst_data[i] = outOfDigits<T>(src_data[i], precision);
+    }
+
+public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
@@ -86,10 +112,8 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool //-V657
+        auto call = [&]<class Type>(TypePair<void, Type>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using Type = typename Types::RightType;
             using ColVecType = ColumnDecimal<Type>;
 
             if (const ColumnConst * const_column = checkAndGetColumnConst<ColVecType>(src_column.column.get()))
@@ -109,42 +133,14 @@ public:
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
-        if (!callOnBasicType<void, false, false, true, false>(dec_type_idx, call))
+
+        if (!dispatchOverType<Dispatch{ .decimals = true }>(dec_type_idx, std::move(call)))
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
         return result_column;
     }
-
-private:
-    template <typename T>
-    static void execute(const ColumnDecimal<T> & col, ColumnUInt8 & result_column, size_t rows_count, UInt32 precision)
-    {
-        const auto & src_data = col.getData();
-        auto & dst_data = result_column.getData();
-        dst_data.resize(rows_count);
-
-        for (size_t i = 0; i < rows_count; ++i)
-            dst_data[i] = outOfDigits<T>(src_data[i], precision);
-    }
-
-    template <is_decimal T>
-    static bool outOfDigits(T dec, UInt32 precision)
-    {
-        using NativeT = typename T::NativeType;
-
-        if (precision > DecimalUtils::max_precision<T>)
-            return false;
-
-        NativeT pow10 = intExp10OfSize<NativeT>(precision);
-
-        if (dec.value < 0)
-            return dec.value <= -pow10;
-        return dec.value >= pow10;
-    }
 };
-
-}
 
 void registerFunctionIsDecimalOverflow(FunctionFactory & factory)
 {

@@ -49,4 +49,15 @@ using DataTypeInt128 = DataTypeNumber<Int128>;
 using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
 
+namespace dt
+{
+namespace detail
+{
+template <class T> constexpr bool is_number = false;
+template <class T> constexpr bool is_number<DataTypeNumber<T>> = true;
+}
+
+template <class T>
+concept is_number = detail::is_number<T>;
+}
 }

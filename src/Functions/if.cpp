@@ -1070,13 +1070,9 @@ public:
                 + ". Must be ColumnUInt8 or ColumnConstUInt8.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&]<class Left, class Right>(TypePair<Left, Right>)
         {
-            using Types = std::decay_t<decltype(types)>;
-            using T0 = typename Types::LeftType;
-            using T1 = typename Types::RightType;
-
-            res = executeTyped<T0, T1>(cond_col, arguments, result_type, input_rows_count);
+            res = executeTyped<Left, Right>(cond_col, arguments, result_type, input_rows_count);
             return res != nullptr;
         };
 
@@ -1089,7 +1085,9 @@ public:
         if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
             right_id = right_array->getNestedType()->getTypeId();
 
-        if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
+        constexpr Dispatch d { .ints = true, .floats = true, .decimals = true };
+
+        if (!(dispatchOverTypes<d>(left_id, right_id, std::move(call))
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))
             || (res = executeGenericArray(cond_col, arguments, result_type))

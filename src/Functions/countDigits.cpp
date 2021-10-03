@@ -49,37 +49,6 @@ public:
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        const auto & src_column = arguments[0];
-        if (!src_column.column)
-            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        auto result_column = ColumnUInt8::create();
-
-        auto call = [&](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using Type = typename Types::RightType;
-            using ColVecType = ColumnVectorOrDecimal<Type>;
-
-            if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
-            {
-                execute<Type>(*col_vec, *result_column, input_rows_count);
-                return true;
-            }
-
-            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        };
-
-        TypeIndex dec_type_idx = src_column.type->getTypeId();
-        if (!callOnBasicType<void, true, false, true, false>(dec_type_idx, call))
-            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
-
-        return result_column;
-    }
-
 private:
     template <typename T, typename ColVecType>
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
@@ -137,6 +106,39 @@ private:
             ++res;
         }
         return res;
+    }
+
+public:
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto & src_column = arguments[0];
+        if (!src_column.column)
+            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        auto result_column = ColumnUInt8::create();
+
+        auto call = [&]<class T>(TypePair<void, T>)
+        {
+            using ColVecType = ColumnVectorOrDecimal<T>;
+
+            if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
+            {
+                execute<T>(*col_vec, *result_column, input_rows_count);
+                return true;
+            }
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal column while executing function {}", getName());
+        };
+
+        TypeIndex dec_type_idx = src_column.type->getTypeId();
+
+        if (!dispatchOverType<Dispatch{ .ints = true, .decimals = true }>(dec_type_idx, std::move(call)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Wrong call for {} with {}",
+                getName(), src_column.type->getName());
+
+        return result_column;
     }
 };
 
