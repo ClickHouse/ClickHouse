@@ -15,7 +15,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <Common/Stopwatch.h>
 

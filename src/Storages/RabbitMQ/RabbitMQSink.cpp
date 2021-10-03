@@ -2,7 +2,7 @@
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Formats/FormatFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

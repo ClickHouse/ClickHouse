@@ -65,9 +65,9 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <common/range.h>
-#include <common/scope_guard.h>
-#include <common/scope_guard_safe.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
+#include <base/scope_guard_safe.h>
 
 #include <algorithm>
 #include <ctime>
@@ -282,7 +282,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this,
+        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
+        getContext()->getSettingsRef().background_pool_size)
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -2834,7 +2836,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     }
     else
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
