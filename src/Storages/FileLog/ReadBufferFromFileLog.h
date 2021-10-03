@@ -4,7 +4,7 @@
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <fstream>
 #include <mutex>

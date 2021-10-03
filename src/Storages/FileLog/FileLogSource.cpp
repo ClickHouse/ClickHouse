@@ -7,7 +7,7 @@
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Common/Stopwatch.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
