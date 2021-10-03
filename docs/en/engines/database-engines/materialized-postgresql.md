@@ -117,7 +117,7 @@ A solution to this is to manage replication slots yourself and define a permanen
 
 **Example (from [@bchrobot](https://github.com/bchrobot))** 
 
-1. Configure replication slot in PostgreSQL:
+1. Configure replication slot in PostgreSQL. Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then replication slot should not be used.
 
 ```yaml
 apiVersion: "acid.zalan.do/v1"
@@ -140,8 +140,8 @@ spec:
 2. Wait for replication slot to be ready, then begin a transaction and export the transaction snapshot identifier:
 
 ```sql
-begin;
-select pg_export_snapshot();
+BEGIN;
+SELECT pg_export_snapshot();
 ```
 
 3. In ClickHouse create database:
