@@ -101,8 +101,6 @@ String PostgreSQLReplicationHandler::probablyDoubleQuoteWithSchema(const String 
 
     if (auto pos = table_name.find('.'); schema_as_a_part_of_table_name && pos != std::string::npos)
     {
-        schema_as_a_part_of_table_name = true;
-
         auto schema  = table_name.substr(0, pos);
         auto table = table_name.substr(pos + 1);
         return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
