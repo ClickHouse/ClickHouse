@@ -89,17 +89,26 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
         /** O_DIRECT
-          * The O_DIRECT flag may impose alignment restrictions on the length and address of user-space buffers and the file offset of I/Os.
-          * In Linux alignment restrictions vary by filesystem and kernel version and might be absent entirely.
-          * However there is currently no filesystem-independent interface for an application to discover these restrictions
-          * for a given file or filesystem. Some filesystems provide their own interfaces for doing so, for example the
-          * XFS_IOC_DIOINFO operation in xfsctl(3).
           *
-          * Under Linux 2.4, transfer sizes, and the alignment of the user buffer and the file offset must all be
-          * multiples of the logical block size of the filesystem. Since Linux 2.6.0, alignment to the logical block size
-          * of the underlying storage (typically 512 bytes) suffices.
+          * The O_DIRECT flag may impose alignment restrictions on the length
+          * and address of user-space buffers and the file offset of I/Os.
           *
-          * - man 2 open
+          * In Linux alignment restrictions vary by filesystem and kernel
+          * version and might be absent entirely, but usually aligment is
+          * st_blksize (stat(2)) / BLKSSZGET (ioctl(2)).
+          *
+          * But there is precise filesystem-independent method for an
+          * application to discover these restrictions for a given file or
+          * filesystem. Some filesystems provide their own interfaces for doing
+          * so, for example the XFS_IOC_DIOINFO operation in xfsctl(3).
+          *
+          * From open(2):
+          *
+          *     Under Linux 2.4, transfer sizes, and the alignment of the user
+          *     buffer and the file offset must all be multiples of the logical
+          *     block size of the filesystem. Since Linux 2.6.0, alignment to the
+          *     logical block size of the underlying storage (typically 512 bytes)
+          *     suffices.
           */
         constexpr size_t min_alignment = DEFAULT_AIO_FILE_BLOCK_SIZE;
 
