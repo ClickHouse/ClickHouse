@@ -15,33 +15,18 @@
 #    define ch_has_feature __has_feature
 #endif
 
-#if defined(_MSC_VER)
-#   if !defined(likely)
-#      define likely(x)   (x)
-#   endif
-#   if !defined(unlikely)
-#      define unlikely(x) (x)
-#   endif
-#else
-#   if !defined(likely)
-#       define likely(x)   (__builtin_expect(!!(x), 1))
-#   endif
-#   if !defined(unlikely)
-#       define unlikely(x) (__builtin_expect(!!(x), 0))
-#   endif
+#if !defined(likely)
+#    define likely(x)   (__builtin_expect(!!(x), 1))
+#endif
+#if !defined(unlikely)
+#    define unlikely(x) (__builtin_expect(!!(x), 0))
 #endif
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
-#if defined(_MSC_VER)
-#    define ALWAYS_INLINE __forceinline
-#    define NO_INLINE static __declspec(noinline)
-#    define MAY_ALIAS
-#else
-#    define ALWAYS_INLINE __attribute__((__always_inline__))
-#    define NO_INLINE __attribute__((__noinline__))
-#    define MAY_ALIAS __attribute__((__may_alias__))
-#endif
+#define ALWAYS_INLINE __attribute__((__always_inline__))
+#define NO_INLINE __attribute__((__noinline__))
+#define MAY_ALIAS __attribute__((__may_alias__))
 
 #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
 #    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
