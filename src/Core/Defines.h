@@ -110,8 +110,6 @@
 
 #define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
 
-// more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
-
 /// Marks that extra information is sent to a shard. It could be any magic numbers.
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
