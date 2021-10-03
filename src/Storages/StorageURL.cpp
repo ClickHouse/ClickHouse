@@ -119,7 +119,7 @@ namespace
                             std::make_unique<ReadWriteBufferFromHTTP>(
                                 request_uri,
                                 method,
-                                std::move(callback),
+                                callback,
                                 timeouts,
                                 context->getSettingsRef().max_http_get_redirects,
                                 Poco::Net::HTTPBasicCredentials{},
