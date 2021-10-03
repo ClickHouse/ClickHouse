@@ -16,6 +16,7 @@
 #include <Core/PostgreSQL/Utils.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -64,7 +65,7 @@ std::set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<void()> & recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
+static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
     bool is_array = false;

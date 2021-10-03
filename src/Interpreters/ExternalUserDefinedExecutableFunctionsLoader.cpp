@@ -24,6 +24,7 @@ ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunct
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
     enablePeriodicUpdates(true);
+    enableAlwaysLoadEverything(true);
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::getUserDefinedFunction(const std::string & user_defined_function_name) const

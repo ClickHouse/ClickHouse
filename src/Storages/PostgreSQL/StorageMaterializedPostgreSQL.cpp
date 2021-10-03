@@ -1,7 +1,7 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>

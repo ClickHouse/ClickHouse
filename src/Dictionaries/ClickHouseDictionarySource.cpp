@@ -11,7 +11,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"

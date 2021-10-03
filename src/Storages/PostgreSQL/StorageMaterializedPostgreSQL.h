@@ -17,7 +17,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <memory>
 
 
