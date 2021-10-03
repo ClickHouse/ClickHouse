@@ -23,9 +23,6 @@
 #endif
 
 
-#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
-#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
-
 namespace DB
 {
 /** Perform HTTP POST request and provide response to read.
