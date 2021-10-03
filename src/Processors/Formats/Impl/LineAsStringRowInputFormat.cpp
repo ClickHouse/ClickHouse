@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
 #include <Formats/JSONEachRowUtils.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
