@@ -54,7 +54,7 @@ def test_url_with_globs_and_failover(started_cluster):
 
     result = node1.query(
         "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{0|1|2|3}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data")
-    assert result == "1\n2\n3\n"
+    assert result == "1\n2\n3\n" or result == "4\n5\n6\n"
 
 
 def test_url_with_redirect_not_allowed(started_cluster):
