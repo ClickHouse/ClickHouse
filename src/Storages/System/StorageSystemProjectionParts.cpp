@@ -11,7 +11,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 namespace DB
 {

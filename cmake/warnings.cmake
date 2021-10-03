@@ -195,7 +195,7 @@ elseif (COMPILER_GCC)
         # (anyway there are builds with clang, that will warn)
         add_cxx_compile_options(-Wno-sequence-point)
         # XXX: gcc10 false positive with this warning in MergeTreePartition.cpp
-        #     inlined from 'void writeHexByteLowercase(UInt8, void*)' at ../src/Common/hex.h:39:11,
+        #     inlined from 'void writeHexByteLowercase(UInt8, void*)' at ../src/base/hex.h:39:11,
         #     inlined from 'DB::String DB::MergeTreePartition::getID(const DB::Block&) const' at ../src/Storages/MergeTree/MergeTreePartition.cpp:85:30:
         #     ../contrib/libc-headers/x86_64-linux-gnu/bits/string_fortified.h:34:33: error: writing 2 bytes into a region of size 0 [-Werror=stringop-overflow=]
         #     34 |   return __builtin___memcpy_chk (__dest, __src, __len, __bos0 (__dest));

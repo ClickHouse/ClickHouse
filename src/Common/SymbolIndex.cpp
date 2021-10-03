@@ -1,7 +1,7 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include <algorithm>
 #include <optional>

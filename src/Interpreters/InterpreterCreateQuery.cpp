@@ -8,7 +8,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/renameat2.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>

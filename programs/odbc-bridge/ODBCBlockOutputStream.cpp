@@ -1,6 +1,6 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <base/logger_useful.h>
 #include <Core/Field.h>
 #include <base/LocalDate.h>

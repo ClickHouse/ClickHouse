@@ -4,7 +4,7 @@
 #if defined(__linux__)
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 

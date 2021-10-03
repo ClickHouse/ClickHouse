@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <utility>
 #include <base/range.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
