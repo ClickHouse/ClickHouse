@@ -34,7 +34,7 @@
         }
     ],
     "tests_config": {
-        "Functional stateless tests flaky check": {
+        "Functional stateless tests flaky check (address)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
