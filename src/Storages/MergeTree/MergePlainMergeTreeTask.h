@@ -33,6 +33,7 @@ public:
         for (auto & item : merge_mutate_entry->future_part->parts)
             priority += item->getBytesOnDisk();
     }
+    ~MergePlainMergeTreeTask() override;
 
     bool executeStep() override;
     void onCompleted() override;

@@ -25,6 +25,16 @@ void MergePlainMergeTreeTask::onCompleted()
 }
 
 
+MergePlainMergeTreeTask::~MergePlainMergeTreeTask()
+{
+    /// Free task under with proper MemoryTracker.
+    MemoryTrackerThreadSwitcherPtr switcher;
+    if (merge_list_entry)
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker);
+
+    merge_task.reset();
+}
+
 bool MergePlainMergeTreeTask::executeStep()
 {
     /// Make out memory tracker a parent of current thread memory tracker

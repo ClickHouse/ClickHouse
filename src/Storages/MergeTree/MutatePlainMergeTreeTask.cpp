@@ -47,6 +47,15 @@ void MutatePlainMergeTreeTask::prepare()
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
             time(nullptr), storage.getContext(), merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
+MutatePlainMergeTreeTask::~MutatePlainMergeTreeTask()
+{
+    /// Free task under with proper MemoryTracker.
+    MemoryTrackerThreadSwitcherPtr switcher;
+    if (merge_list_entry)
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker);
+
+    mutate_task.reset();
+}
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
