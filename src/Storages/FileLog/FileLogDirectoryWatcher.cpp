@@ -39,16 +39,36 @@ const std::string & FileLogDirectoryWatcher::getPath() const
 void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     EventInfo info{ev.event, "onItemAdded"};
-    events[ev.item.path()].emplace_back(info);
+    std::string event_path = ev.item.path();
+
+    if (auto it = events.find(event_path); it != events.end())
+    {
+        it->second.emplace_back(info);
+    }
+    else
+    {
+        events.emplace(event_path, std::vector<EventInfo>{info});
+    }
 }
 
 
 void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     EventInfo info{ev.event, "onItemRemoved"};
-    events[ev.item.path()].emplace_back(info);
+    std::string event_path = ev.item.path();
+
+    if (auto it = events.find(event_path); it != events.end())
+    {
+        it->second.emplace_back(info);
+    }
+    else
+    {
+        events.emplace(event_path, std::vector<EventInfo>{info});
+    }
 }
 
 /// Optimize for MODIFY event, during a streamToViews period, since the log files
@@ -60,26 +80,55 @@ void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::Direct
 void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     auto event_path = ev.item.path();
-    /// Already have MODIFY event for this file
-    if (auto it = events.find(event_path); it != events.end() && it->second.back().type == ev.event)
-        return;
     EventInfo info{ev.event, "onItemModified"};
-    events[event_path].emplace_back(info);
+    /// Already have MODIFY event for this file
+    if (auto it = events.find(event_path); it != events.end())
+    {
+        if (it->second.back().type == ev.event)
+            return;
+        else
+            it->second.emplace_back(info);
+    }
+    else
+    {
+        events.emplace(event_path, std::vector<EventInfo>{info});
+    }
 }
 
 void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     EventInfo info{ev.event, "onItemMovedFrom"};
-    events[ev.item.path()].emplace_back(info);
+    std::string event_path = ev.item.path();
+
+    if (auto it = events.find(event_path); it != events.end())
+    {
+        it->second.emplace_back(info);
+    }
+    else
+    {
+        events.emplace(event_path, std::vector<EventInfo>{info});
+    }
 }
 
 void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     EventInfo info{ev.event, "onItemMovedTo"};
-    events[ev.item.path()].emplace_back(info);
+    std::string event_path = ev.item.path();
+
+    if (auto it = events.find(event_path); it != events.end())
+    {
+        it->second.emplace_back(info);
+    }
+    else
+    {
+        events.emplace(event_path, std::vector<EventInfo>{info});
+    }
 }
 
 void FileLogDirectoryWatcher::onError(const Poco::Exception & e)
