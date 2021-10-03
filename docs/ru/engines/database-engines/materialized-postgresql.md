@@ -88,11 +88,11 @@ SELECT * FROM postgresql_db.postgres_table;
 ```
 ## Примечания {#notes}
 
-### Сбой слота логической репликации {logical-replication-slot-failover}
+### Сбой слота логической репликации {#logical-replication-slot-failover}
 
 Слоты логической репликации, которые есть на основном сервере, не доступны на резервных репликах.
 Поэтому в случае сбоя новый основной сервер (который раньше был резевным) не будет знать о слотах репликации, которые были созданы на вышедшем из строя основном сервере. Это приведет к нарушению репликации из PostgreSQL.
-Решением этой проблемы может стать ручное управление слотами репликации и определение постоянного слота репликации (об этом можно прочитать [здесь](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Этот слот нужно назначить с помощью настройки `materialized_postgresql_replication_slot`, и он должен быть экспортирован в параметре `EXPORT SNAPSHOT`. Идентификатор снэпшота нужно передать в настройке `materialized_postgresql_snapshot`.
+Решением этой проблемы может стать ручное управление слотами репликации и определение постоянного слота репликации (об этом можно прочитать [здесь](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Этот слот нужно назначить с помощью настройки [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot), и он должен быть экспортирован в параметре `EXPORT SNAPSHOT`. Идентификатор снэпшота нужно передать в настройке [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot).
 
 **Пример (от [@bchrobot](https://github.com/bchrobot))** 
 
@@ -134,7 +134,7 @@ SETTINGS
   materialized_postgresql_tables_list = 'table1,table2,table3';
 ```
 
-4. Когда БД в ClickHouse создастся, завершите транзакцию в PostgreSQL. Убедитесь, что репликация продолжается после сбоя:
+4. Когда начнет выполняться репликация БД в ClickHouse, прервите транзакцию в PostgreSQL. Убедитесь, что репликация продолжается после сбоя:
 
 ```bash
 kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
