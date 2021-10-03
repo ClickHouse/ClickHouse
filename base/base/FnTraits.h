@@ -1,8 +1,6 @@
 #pragma once
 
-#include <tuple>
-#include <concepts>
-#include <type_traits>
+#include "TL.h"
 
 namespace detail
 {
@@ -16,8 +14,7 @@ struct FnTraits<R(A...)>
     static constexpr bool value = std::is_invocable_r_v<R, F, A...>;
 
     using Ret = R;
-    using Args = std::tuple<A...>;
-    using DecayedArgs = std::tuple<typename std::decay<A>::type...>;
+    using Args = TL<A...>;
 };
 
 template <class R, class ...A>
