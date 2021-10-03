@@ -3,7 +3,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB
 {

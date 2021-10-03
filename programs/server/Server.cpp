@@ -14,14 +14,14 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard_safe.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/ErrorHandlers.h>
-#include <common/getMemoryAmount.h>
-#include <common/errnoToString.h>
-#include <common/coverage.h>
+#include <base/scope_guard_safe.h>
+#include <base/defines.h>
+#include <base/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <base/ErrorHandlers.h>
+#include <base/getMemoryAmount.h>
+#include <base/errnoToString.h>
+#include <base/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -30,7 +30,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -343,7 +343,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 4096));
 
     return address;
 }
@@ -848,7 +848,10 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-            global_context->setExternalModelsConfig(config);
+
+            global_context->loadOrReloadDictionaries(*config);
+            global_context->loadOrReloadModels(*config);
+            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -1471,22 +1474,44 @@ if (ThreadFuzzer::instance().isEffective())
         /// try to load dictionaries immediately, throw on error and die
         try
         {
-            global_context->loadDictionaries(config());
+            global_context->loadOrReloadDictionaries(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load embedded dictionaries immediately, throw on error and die
+        try
+        {
+            global_context->tryCreateEmbeddedDictionaries(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
+            throw;
+        }
+
+        /// try to load models immediately, throw on error and die
+        try
+        {
+            global_context->loadOrReloadModels(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 
         /// try to load user defined executable functions, throw on error and die
         try
         {
-            global_context->loadUserDefinedExecutableFunctions(config());
+            global_context->loadOrReloadUserDefinedExecutableFunctions(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
+            tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 

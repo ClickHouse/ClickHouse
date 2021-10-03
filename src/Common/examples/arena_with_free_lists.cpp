@@ -12,10 +12,10 @@
 #include <memory>
 #include <array>
 #include <sys/resource.h>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
-#include <common/StringRef.h>
-#include <common/arraySize.h>
+#include <base/StringRef.h>
+#include <base/arraySize.h>
 #include <Common/Arena.h>
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>

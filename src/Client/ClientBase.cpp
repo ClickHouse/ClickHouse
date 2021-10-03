@@ -4,11 +4,11 @@
 #include <iomanip>
 #include <filesystem>
 
-#include <common/argsToConfig.h>
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LineReader.h>
-#include <common/scope_guard_safe.h>
+#include <base/argsToConfig.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LineReader.h>
+#include <base/scope_guard_safe.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

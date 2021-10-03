@@ -29,9 +29,9 @@
 #include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <common/StringRef.h>
-#include <common/DateLUT.h>
-#include <common/bit_cast.h>
+#include <base/StringRef.h>
+#include <base/DateLUT.h>
+#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <memory>

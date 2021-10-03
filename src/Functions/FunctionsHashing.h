@@ -45,8 +45,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <common/range.h>
-#include <common/bit_cast.h>
+#include <base/range.h>
+#include <base/bit_cast.h>
 
 
 namespace DB
