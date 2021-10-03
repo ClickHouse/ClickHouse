@@ -13,6 +13,7 @@
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
+#include <base/TypePair.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -225,10 +226,8 @@ ColumnPtr IPAddressDictionary::getColumn(
 
     auto size = key_columns.front()->size();
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
@@ -271,7 +270,7 @@ ColumnPtr IPAddressDictionary::getColumn(
         result = std::move(column);
     };
 
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    callOnDictionaryAttributeType(attribute.type, std::move(type_call));
 
     return result;
 }
@@ -550,15 +549,10 @@ void IPAddressDictionary::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        auto type_call = [&](const auto & dictionary_attribute_type)
+        callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
-
             addAttributeSize<AttributeType>(attribute);
-        };
-
-        callOnDictionaryAttributeType(attribute.type, type_call);
+        });
     }
 }
 
@@ -581,15 +575,10 @@ IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(cons
 {
     Attribute attr{type, {}, {}, {}};
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    callOnDictionaryAttributeType(type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-
         createAttributeImpl<AttributeType>(attr, null_value);
-    };
-
-    callOnDictionaryAttributeType(type, type_call);
+    });
 
     return attr;
 }
@@ -752,11 +741,8 @@ void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T v
 
 void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field & value)
 {
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.get<String>();
@@ -767,9 +753,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         {
             setAttributeValueImpl<AttributeType>(attribute, value.get<AttributeType>());
         }
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 }
 
 const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const std::string & attribute_name) const

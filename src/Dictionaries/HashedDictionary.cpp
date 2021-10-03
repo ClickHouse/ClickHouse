@@ -1,6 +1,7 @@
 #include "HashedDictionary.h"
 
 #include <Core/Defines.h>
+#include <base/TypePair.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -85,10 +86,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    auto type_call = [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
@@ -152,7 +151,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
         result = std::move(column);
     };
 
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    callOnDictionaryAttributeType(attribute.type, std::move(type_call));
 
     if (is_attribute_nullable)
         result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
@@ -344,10 +343,8 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 
     for (const auto & dictionary_attribute : dict_struct.attributes)
     {
-        auto type_call = [&, this](const auto & dictionary_attribute_type)
+        auto type_call = [&, this]<class AttributeType>(Id<AttributeType>)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
@@ -678,17 +675,13 @@ void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t
 
     auto & attribute = attributes[attribute_index];
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
         auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
         std::forward<GetContainerFunc>(get_container_func)(attribute_container);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>

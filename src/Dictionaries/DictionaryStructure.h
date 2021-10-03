@@ -12,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <base/EnumReflection.h>
+#include <base/TypePair.h>
 #include <Core/TypeId.h>
 
 #if defined(__GNUC__)
@@ -69,27 +70,24 @@ struct DictionaryAttribute final
     const bool is_nullable;
 };
 
-template <AttributeUnderlyingType type>
-struct DictionaryAttributeType
-{
-    /// Converts @c type to it underlying type e.g. AttributeUnderlyingType::UInt8 -> UInt8
-    using AttributeType = ReverseTypeId<
-        static_cast<TypeIndex>(
-            static_cast<TypeIndexUnderlying>(type))>;
-};
-
 template <typename F>
 constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
     static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
     {
-        if (type == other)
-        {
-            func(DictionaryAttributeType<other>{});
-            return true;
-        }
+        if (type != other)
+            return false;
 
-        return false;
+        /// Integral constant -> AttributeUnderlyingType -> TypeIndex -> real type
+        using Type = ReverseTypeId<
+            static_cast<TypeIndex>(
+                static_cast<TypeIndexUnderlying>(
+                    static_cast<AttributeUnderlyingType>(
+                        other)))>;
+
+        func(Id<Type>{});
+
+        return true;
     });
 };
 

@@ -7,6 +7,7 @@
 
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
+#include <base/TypePair.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/LRUHashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -239,10 +240,8 @@ private:
             }
             else
             {
-                auto type_call = [&](const auto & dictionary_attribute_type)
+                auto type_call = [&]<class AttributeType>(Id<AttributeType>)
                 {
-                    using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                    using AttributeType = typename Type::AttributeType;
                     using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
                     using ColumnType = typename ColumnProvider::ColumnType;
                     using ValueType = DictionaryValueType<AttributeType>;
@@ -506,17 +505,13 @@ private:
         }
         else
         {
-            auto type_call = [&](const auto & dictionary_attribute_type)
+            callOnDictionaryAttributeType(attribute_type, [&]<class AttributeType>(Id<AttributeType>)
             {
-                using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                using AttributeType = typename Type::AttributeType;
                 using ValueType = DictionaryValueType<AttributeType>;
 
                 auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
                 std::forward<GetContainerFunc>(func)(container);
-            };
-
-            callOnDictionaryAttributeType(attribute_type, type_call);
+            });
         }
     }
 
@@ -622,10 +617,8 @@ private:
         {
             auto attribute_type = dictionary_attribute.underlying_type;
 
-            auto type_call = [&](const auto & dictionary_attribute_type)
+            callOnDictionaryAttributeType(attribute_type, [&]<class AttributeType>(Id<AttributeType>)
             {
-                using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                using AttributeType = typename Type::AttributeType;
                 using ValueType = DictionaryValueType<AttributeType>;
 
                 attributes.emplace_back();
@@ -637,9 +630,7 @@ private:
                     last_attribute.attribute_container = ContainerType<Field>();
                 else
                     last_attribute.attribute_container = ContainerType<ValueType>();
-            };
-
-            callOnDictionaryAttributeType(attribute_type, type_call);
+            });
         }
     }
 

@@ -2,6 +2,7 @@
 
 #include <numeric>
 #include <cmath>
+#include <base/TypePair.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -70,10 +71,8 @@ ColumnPtr IPolygonDictionary::getColumn(
     }
     else
     {
-        auto type_call = [&](const auto & dictionary_attribute_type)
+        auto type_call = [&]<class AttributeType>(Id<AttributeType>)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
             using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
             using ColumnType = typename ColumnProvider::ColumnType;
@@ -113,7 +112,7 @@ ColumnPtr IPolygonDictionary::getColumn(
             }
         };
 
-        callOnDictionaryAttributeType(attribute.underlying_type, type_call);
+        callOnDictionaryAttributeType(attribute.underlying_type, std::move(type_call));
     }
 
     return result;

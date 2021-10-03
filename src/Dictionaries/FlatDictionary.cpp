@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <base/TypePair.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -76,10 +77,8 @@ ColumnPtr FlatDictionary::getColumn(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    auto type_call = [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
@@ -377,10 +376,8 @@ void FlatDictionary::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        auto type_call = [&](const auto & dictionary_attribute_type)
+        callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
             const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
@@ -400,9 +397,7 @@ void FlatDictionary::calculateBytesAllocated()
 
             if constexpr (std::is_same_v<ValueType, StringRef>)
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-        };
-
-        callOnDictionaryAttributeType(attribute.type, type_call);
+        });
     }
 
     if (update_field_loaded_block)
@@ -414,19 +409,15 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
     auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
     Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}, {}};
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
         if constexpr (std::is_same_v<ValueType, StringRef>)
             attribute.string_arena = std::make_unique<Arena>();
 
         attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
-    };
-
-    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
+    });
 
     return attribute;
 }
@@ -509,28 +500,21 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, UInt64
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, const Field & value)
 {
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
         resize<ValueType>(attribute, key);
 
-        if (attribute.is_nullable_set)
+        if (attribute.is_nullable_set && value.isNull())
         {
-            if (value.isNull())
-            {
-                attribute.is_nullable_set->insert(key);
-                loaded_keys[key] = true;
-                return;
-            }
+            attribute.is_nullable_set->insert(key);
+            loaded_keys[key] = true;
+            return;
         }
 
         setAttributeValueImpl<AttributeType>(attribute, key, value.get<AttributeType>());
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 }
 
 Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size) const

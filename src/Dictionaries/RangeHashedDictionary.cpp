@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
+#include <base/TypePair.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -126,10 +127,8 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
@@ -238,10 +237,8 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Colum
     auto & out = result->getData();
     size_t keys_found = 0;
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    auto type_call = [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
         const auto & collection = std::get<CollectionType<ValueType>>(attribute.maps);
@@ -378,10 +375,8 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        auto type_call = [&](const auto & dictionary_attribute_type)
+        callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
         {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
             const auto & collection = std::get<CollectionType<ValueType>>(attribute.maps);
@@ -390,9 +385,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
             if constexpr (std::is_same_v<ValueType, StringRef>)
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-        };
-
-        callOnDictionaryAttributeType(attribute.type, type_call);
+        });
     }
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
@@ -404,19 +397,15 @@ typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictio
 {
     Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}, {}};
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
         if constexpr (std::is_same_v<AttributeType, String>)
             attribute.string_arena = std::make_unique<Arena>();
 
         attribute.maps = CollectionType<ValueType>();
-    };
-
-    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
+    });
 
     return attribute;
 }
@@ -547,15 +536,10 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValueImpl(Attribute
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & attribute, KeyType key, const Range & range, const Field & value)
 {
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-
         setAttributeValueImpl<AttributeType>(attribute, key, range, value);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -567,16 +551,11 @@ void RangeHashedDictionary<dictionary_key_type>::getKeysAndDates(
 {
     const auto & attribute = attributes.front();
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    callOnDictionaryAttributeType(attribute.type, [&]<class AttributeType>(Id<AttributeType>)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-
         getKeysAndDates<ValueType>(attribute, keys, start_dates, end_dates);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
+    });
 }
 
 template <DictionaryKeyType dictionary_key_type>
