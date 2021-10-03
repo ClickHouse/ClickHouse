@@ -3724,3 +3724,36 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## pool_size {#pool_size}
+
+Defines the pool size for the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No size restrictions.
+
+Default value: `0`.
+
+## max_command_execution_time {#max_command_execution_time}
+
+Maximum execution time for processing a script of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine. Specified in seconds. 
+
+Possible values:
+
+-   Positive integer.
+-   0 — No time restrictions.
+
+Default value: `0`.
+
+## command_termination_timeout {#command_termination_timeout}
+
+After a script of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine is executed, the engine has `command_termination_timeout` seconds to shutdown, before ClickHouse throws an exception. Specified in seconds. 
+
+Possible values:
+
+-   Positive integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+-   0 — No time restrictions.
+
+Default value: `0`.
