@@ -21,10 +21,6 @@ ENGINE = ExecutablePool(script, format, process1[, process2, ...])
 - format - [Format](../../../interfaces/formats.md) of data, passed to the executed script. [String](../../../sql-reference/data-types/string.md).
 - process(n) - One or more queries, which results are passed to the executed script. [String](../../../sql-reference/data-types/string.md).
 
-## Virtual columns {#virtual-columns} 
-
-List and virtual columns with description, if they exist.
-
 ## Usage Example {#usage-example}
 
 Consider the script `input_process.sh`, that should be executed:
