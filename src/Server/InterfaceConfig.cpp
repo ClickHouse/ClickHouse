@@ -3,7 +3,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Interpreters/Context.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 

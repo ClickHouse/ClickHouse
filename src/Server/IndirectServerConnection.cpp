@@ -2,7 +2,7 @@
 #include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 #include <Server/HTTP/HTTPServerRequest.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Logger.h>
 

@@ -3,7 +3,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/IServer.h>
 #include <Server/PostgreSQLHandlerFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Net/TCPServer.h>
 

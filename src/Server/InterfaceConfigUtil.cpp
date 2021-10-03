@@ -7,7 +7,7 @@
 #include <Server/PostgreSQLInterfaceConfig.h>
 #include <Server/PrometheusInterfaceConfig.h>
 #include <Server/KeeperTCPInterfaceConfig.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>

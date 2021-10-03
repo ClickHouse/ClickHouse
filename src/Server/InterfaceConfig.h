@@ -6,7 +6,7 @@
 #endif
 
 #include <Core/Settings.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <chrono>
 #include <map>
