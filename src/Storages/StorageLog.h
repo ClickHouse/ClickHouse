@@ -2,7 +2,7 @@
 
 #include <map>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
@@ -23,6 +23,7 @@ class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
+    ~StorageLog() override;
     String getName() const override { return "Log"; }
 
     Pipe read(

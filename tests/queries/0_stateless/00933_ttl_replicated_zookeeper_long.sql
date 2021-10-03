@@ -1,3 +1,5 @@
+-- Tags: long, replica
+
 DROP TABLE IF EXISTS ttl_repl1;
 DROP TABLE IF EXISTS ttl_repl2;
 

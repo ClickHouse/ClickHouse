@@ -46,7 +46,7 @@ def test_reload_zookeeper(start_cluster):
 
     ## remove zoo2, zoo3 from configs
     new_config = """
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo1</host>
@@ -54,7 +54,7 @@ def test_reload_zookeeper(start_cluster):
         </node>
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
-</yandex >
+</clickhouse>
 """
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
@@ -79,7 +79,7 @@ def test_reload_zookeeper(start_cluster):
 
     ## set config to zoo2, server will be normal
     new_config = """
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo2</host>
@@ -87,7 +87,7 @@ def test_reload_zookeeper(start_cluster):
         </node>
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
-</yandex>
+</clickhouse>
 """
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")

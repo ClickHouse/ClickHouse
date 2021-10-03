@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include "s2_fwd.h"
 
@@ -41,7 +41,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
