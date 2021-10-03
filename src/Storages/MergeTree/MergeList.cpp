@@ -16,6 +16,8 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
+        background_thread_memory_tracker->logPeakMemoryUsage();
+
         /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
         /// which does not have any limits and sampling settings configured.
         /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
@@ -39,7 +41,10 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
     // Unplug memory_tracker from current background processing pool thread
 
     if (background_thread_memory_tracker)
+    {
+        background_thread_memory_tracker->logPeakMemoryUsage();
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+    }
 }
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
