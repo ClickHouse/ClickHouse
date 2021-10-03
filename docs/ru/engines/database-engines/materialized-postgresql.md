@@ -92,7 +92,7 @@ SELECT * FROM postgresql_db.postgres_table;
 
 Слоты логической репликации, которые есть на основном сервере, не доступны на резервных репликах.
 Поэтому в случае сбоя новый основной сервер (который раньше был резевным) не будет знать о слотах репликации, которые были созданы на вышедшем из строя основном сервере. Это приведет к нарушению репликации из PostgreSQL.
-Решением этой проблемы может стать ручное управление слотами репликации и определение постоянного слота репликации (об этом можно прочитать [здесь](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Этот слот нужно назначить с помощью настройки [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot), и он должен быть экспортирован в параметре `EXPORT SNAPSHOT`. Идентификатор снэпшота нужно передать в настройке [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot).
+Решением этой проблемы может стать ручное управление слотами репликации и определение постоянного слота репликации (об этом можно прочитать [здесь](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Этот слот нужно передать с помощью настройки [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot), и он должен быть экспортирован в параметре `EXPORT SNAPSHOT`. Идентификатор снэпшота нужно передать в настройке [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot).
 
 **Пример (от [@bchrobot](https://github.com/bchrobot))** 
 
