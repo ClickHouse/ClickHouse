@@ -73,6 +73,8 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
+
+    memory_tracker.setDescription("MergeList");
 }
 
 MergeInfo MergeListElement::getInfo() const
