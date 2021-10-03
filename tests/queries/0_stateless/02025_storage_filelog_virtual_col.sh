@@ -55,7 +55,7 @@ ${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order 
 truncate ${user_files_path}/logs/a.txt --size 0
 
 # exception happend
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;" 2>&1 | grep -q "Code: 626" && echo 'OK' || echo 'FAIL'
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;" 2>&1 | grep -q "Code: 33" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 

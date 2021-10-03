@@ -18,7 +18,7 @@ public:
         std::string callback;
     };
 
-    using Events = std::unordered_map<std::string, EventInfo>;
+    using Events = std::unordered_map<std::string, std::vector<EventInfo>>;
 
     struct Error
     {
