@@ -115,9 +115,11 @@ Logical Replication Slots which exist on the primary are not available on standb
 So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
 A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot) setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot) setting.
 
+Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
+
 **Example (from [@bchrobot](https://github.com/bchrobot))** 
 
-1. Configure replication slot in PostgreSQL. Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then replication slot should not be used.
+1. Configure replication slot in PostgreSQL.
 
 ```yaml
 apiVersion: "acid.zalan.do/v1"
