@@ -30,7 +30,8 @@ WITH A as (SELECT rowNumberInAllBlocks() R,addDays(toDate('2021-05-18'), R) TVV 
 SELECT
     joinGet('DATE_INFO_DICT',  'SHAMSI',   toDate(A.TVV) ) TV1,
     substr(TV1, 3,  8) || ' : ' || toString(1) TV_CHAR_1
-from A LEFT JOIN B USING (R);
+from A LEFT JOIN B USING (R)
+ORDER BY TV1;
 
 --query run success in 215ms
 
@@ -41,7 +42,8 @@ WITH A as (SELECT rowNumberInAllBlocks() R,addDays(toDate('2021-05-18'), R) TVV 
 SELECT
     joinGetOrNull('DATE_INFO_DICT',    'SHAMSI',   toDate(A.TVV) ) TV1,
     substr(TV1, 3,  8) || ' : ' || toString(1) TV_CHAR_1
-from A LEFT JOIN B USING (R);
+from A LEFT JOIN B USING (R)
+ORDER BY TV1;
 
 --query not run success !!!!
 
