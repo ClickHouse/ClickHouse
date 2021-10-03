@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <base/sort.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <base/TypeName.h>
 
 #include <cmath>
 
@@ -85,7 +85,7 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
