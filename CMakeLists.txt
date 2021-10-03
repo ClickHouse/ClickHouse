@@ -176,6 +176,9 @@ if (COMPILER_CLANG)
     endif()
 endif ()
 
+# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
+# because there are two different branches of clang: clang and AppleClang.
+# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
 if (HAS_RESERVED_IDENTIFIER)
     add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
