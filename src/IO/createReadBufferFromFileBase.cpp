@@ -11,7 +11,6 @@ namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
     extern const Event CreatedReadBufferDirectIO;
-    extern const Event CreatedReadBufferDirectIOFailed;
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
 }
@@ -52,42 +51,17 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
     }
 
-    auto create = [&](size_t buffer_size, int actual_flags)
-    {
-        std::unique_ptr<ReadBufferFromFileBase> res;
-
-        if (settings.local_fs_method == ReadMethod::read)
-        {
-            res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment);
-        }
-        else if (settings.local_fs_method == ReadMethod::pread || settings.local_fs_method == ReadMethod::mmap)
-        {
-            res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment);
-        }
-        else if (settings.local_fs_method == ReadMethod::pread_fake_async)
-        {
-            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
-            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
-        }
-        else if (settings.local_fs_method == ReadMethod::pread_threadpool)
-        {
-            static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
-            res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
-
-        return res;
-    };
-
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
+
+    size_t buffer_size = settings.local_fs_buffer_size;
 
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
+        flags |= O_DIRECT;
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
+
         /** O_DIRECT
           *
           * The O_DIRECT flag may impose alignment restrictions on the length
@@ -119,8 +93,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (alignment % min_alignment)
             alignment = align_up(alignment);
 
-        size_t buffer_size = settings.local_fs_buffer_size;
-
         if (buffer_size % min_alignment)
         {
             existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned size.
@@ -131,24 +103,40 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
         }
-
-        /// Attempt to open a file with O_DIRECT
-        try
-        {
-            std::unique_ptr<ReadBufferFromFileBase> res = create(buffer_size, flags | O_DIRECT);
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
-            return res;
-        }
-        catch (const ErrnoException &)
-        {
-            /// Fallback to cached IO if O_DIRECT is not supported.
-            ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIOFailed);
-        }
     }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+#else
+    ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
 #endif
 
-    ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return create(settings.local_fs_buffer_size, flags);
+    std::unique_ptr<ReadBufferFromFileBase> res;
+    if (settings.local_fs_method == ReadMethod::read)
+    {
+        res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
+    }
+    else if (settings.local_fs_method == ReadMethod::pread || settings.local_fs_method == ReadMethod::mmap)
+    {
+        res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, flags, existing_memory, alignment);
+    }
+    else if (settings.local_fs_method == ReadMethod::pread_fake_async)
+    {
+        static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
+        res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+            reader, settings.priority, filename, buffer_size, flags, existing_memory, alignment);
+    }
+    else if (settings.local_fs_method == ReadMethod::pread_threadpool)
+    {
+        static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
+        res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+            reader, settings.priority, filename, buffer_size, flags, existing_memory, alignment);
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
+
+    return res;
 }
 
 }
