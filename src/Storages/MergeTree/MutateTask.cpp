@@ -985,6 +985,7 @@ private:
         ctx->mutating_pipeline.reset();
 
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        ctx->out.reset();
     }
 
     enum class State
