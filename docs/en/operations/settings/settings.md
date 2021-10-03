@@ -1944,6 +1944,21 @@ Possible values:
 
 Default value: `0`.
 
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+   
+Default value: `1`.
+
+See also:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds

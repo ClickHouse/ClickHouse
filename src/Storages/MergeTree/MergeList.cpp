@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 
 
