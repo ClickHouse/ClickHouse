@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
