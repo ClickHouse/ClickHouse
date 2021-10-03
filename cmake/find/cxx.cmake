@@ -50,8 +50,6 @@ endif ()
 if (NOT HAVE_LIBCXX AND NOT MISSING_INTERNAL_LIBCXX_LIBRARY)
     set (LIBCXX_LIBRARY cxx)
     set (LIBCXXABI_LIBRARY cxxabi)
-    add_subdirectory(contrib/libcxxabi-cmake)
-    add_subdirectory(contrib/libcxx-cmake)
 
     # Exception handling library is embedded into libcxxabi.
 
