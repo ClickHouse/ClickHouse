@@ -276,29 +276,37 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         {
             case '+':
             {
-                if (has_sign || has_number)
+                if (has_sign)
                 {
+                    if (has_number)
+                        return ReturnType(true);
+
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 has_sign = true;
                 break;
             }
             case '-':
             {
-                if (has_sign || has_number)
+                if (has_sign)
                 {
+                    if (has_number)
+                        return ReturnType(true);
+
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
