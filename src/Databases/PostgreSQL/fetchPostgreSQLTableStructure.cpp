@@ -29,14 +29,14 @@ namespace ErrorCodes
 
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
+std::set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
     Names schemas;
     boost::split(schemas, postgres_schema, [](char c){ return c == ','; });
     for (String & key : schemas)
         boost::trim(key);
 
-    std::unordered_set<std::string> tables;
+    std::set<std::string> tables;
     if (schemas.size() <= 1)
     {
         std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
@@ -294,7 +294,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connec
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema)
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema)
 {
     pqxx::ReadTransaction tx(connection);
     auto result = fetchPostgreSQLTablesList(tx, postgres_schema);
@@ -319,13 +319,13 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         bool with_primary_key, bool with_replica_identity_index);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::nontransaction & tx, const String & postgres_schema);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::nontransaction & tx, const String & postgres_schema);
 
 }
 

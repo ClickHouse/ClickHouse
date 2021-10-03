@@ -39,7 +39,7 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    NameSet fetchRequiredTables();
+    std::set<String> fetchRequiredTables();
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
@@ -61,7 +61,7 @@ private:
 
     void createPublicationIfNeeded(pqxx::nontransaction & tx);
 
-    NameSet fetchTablesFromPublication(pqxx::work & tx);
+    std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
     void dropPublication(pqxx::nontransaction & ntx);
 
@@ -110,10 +110,6 @@ private:
     /// max_block_size for replication stream.
     const size_t max_block_size;
 
-    /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
-    /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
-    mutable bool schema_as_a_part_of_table_name = false;
-
     /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
     /// This setting allows to reloas table in the background.
     bool allow_automatic_update = false;
@@ -126,7 +122,9 @@ private:
 
     String schema_list;
 
-    bool schema_can_be_in_tables_list;
+    /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
+    /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
+    mutable bool schema_as_a_part_of_table_name = false;
 
     bool user_managed_slot = true;
     String user_provided_snapshot;
