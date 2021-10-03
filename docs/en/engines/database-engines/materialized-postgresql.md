@@ -109,11 +109,11 @@ SELECT * FROM postgresql_db.postgres_table;
 
 ## Notes {#notes}
 
-### Failover of the logical replication slot {logical-replication-slot-failover}
+### Failover of the logical replication slot {#logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.
 So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
-A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.
+A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot) setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot) setting.
 
 **Example (from [@bchrobot](https://github.com/bchrobot))** 
 
