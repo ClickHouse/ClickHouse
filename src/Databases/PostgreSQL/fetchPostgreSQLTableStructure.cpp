@@ -14,8 +14,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <base/FnTraits.h>
 
 
