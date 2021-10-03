@@ -11,17 +11,16 @@
 namespace DB
 {
 
-Block AsynchronousMetricLogElement::createBlock()
+NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
 {
-    ColumnsWithTypeAndName columns;
-
-    columns.emplace_back(std::make_shared<DataTypeDate>(),          "event_date");
-    columns.emplace_back(std::make_shared<DataTypeDateTime>(),      "event_time");
-    columns.emplace_back(std::make_shared<DataTypeDateTime64>(6),   "event_time_microseconds");
-    columns.emplace_back(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "name");
-    columns.emplace_back(std::make_shared<DataTypeFloat64>(),       "value");
-
-    return Block(columns);
+    return
+    {
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"value", std::make_shared<DataTypeFloat64>(),}
+    };
 }
 
 

@@ -10,4 +10,4 @@ toc_title: JDBC驱动
     -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
     -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/jdbc/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/jdbc/) <!--hide-->

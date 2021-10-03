@@ -254,19 +254,19 @@ def table_map_select_key_with_value_string(self, type, data, output):
     RQ_SRS_018_ClickHouse_Map_DataType_Value_Integer("1.0")
 )
 @Examples("type data output", [
-    ("Map(Int8, Int8)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{1:127,2:0,3:-128}}', Name("Int8")),
-    ("Map(Int8, UInt8)", "('2020-01-01', map(1,0,2,255))", '{"d":"2020-01-01","m":{1:0,2:255}}', Name("UInt8")),
-    ("Map(Int8, Int16)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{1:32767,2:0,3:-32768}}', Name("Int16")),
-    ("Map(Int8, UInt16)", "('2020-01-01', map(1,0,2,65535))", '{"d":"2020-01-01","m":{1:0,2:65535}}', Name("UInt16")),
-    ("Map(Int8, Int32)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{1:2147483647,2:0,3:-2147483648}}', Name("Int32")),
-    ("Map(Int8, UInt32)", "('2020-01-01', map(1,0,2,4294967295))", '{"d":"2020-01-01","m":{1:0,2:4294967295}}', Name("UInt32")),
+    ("Map(Int8, Int8)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{"1":127,"2":0,"3":-128}}', Name("Int8")),
+    ("Map(Int8, UInt8)", "('2020-01-01', map(1,0,2,255))", '{"d":"2020-01-01","m":{"1":0,"2":255}}', Name("UInt8")),
+    ("Map(Int8, Int16)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{"1":32767,"2":0,"3":-32768}}', Name("Int16")),
+    ("Map(Int8, UInt16)", "('2020-01-01', map(1,0,2,65535))", '{"d":"2020-01-01","m":{"1":0,"2":65535}}', Name("UInt16")),
+    ("Map(Int8, Int32)", "('2020-01-01', map(1,127,2,0,3,-128))", '{"d":"2020-01-01","m":{"1":2147483647,"2":0,"3":-2147483648}}', Name("Int32")),
+    ("Map(Int8, UInt32)", "('2020-01-01', map(1,0,2,4294967295))", '{"d":"2020-01-01","m":{"1":0,"2":4294967295}}', Name("UInt32")),
     ("Map(Int8, Int64)", "('2020-01-01', map(1,9223372036854775807,2,0,3,-9223372036854775808))", '{"d":"2020-01-01","m":{1:"9223372036854775807",2:"0",3:"-9223372036854775808"}}', Name("Int64")),
     ("Map(Int8, UInt64)", "('2020-01-01', map(1,0,2,18446744073709551615))", '{"d":"2020-01-01","m":{1:"0",2:"18446744073709551615"}}', Name("UInt64")),
     ("Map(Int8, Int128)", "('2020-01-01', map(1,170141183460469231731687303715884105727,2,0,3,-170141183460469231731687303715884105728))", '{"d":"2020-01-01","m":{1:"170141183460469231731687303715884105727",2:"0",3:"-170141183460469231731687303715884105728"}}', Name("Int128")),
     ("Map(Int8, Int256)", "('2020-01-01', map(1,57896044618658097711785492504343953926634992332820282019728792003956564819967,2,0,3,-57896044618658097711785492504343953926634992332820282019728792003956564819968))", '{"d":"2020-01-01","m":{1:"57896044618658097711785492504343953926634992332820282019728792003956564819967",2:"0",3:"-57896044618658097711785492504343953926634992332820282019728792003956564819968"}}', Name("Int256")),
     ("Map(Int8, UInt256)", "('2020-01-01', map(1,0,2,115792089237316195423570985008687907853269984665640564039457584007913129639935))", '{"d":"2020-01-01","m":{1:"0",2:"115792089237316195423570985008687907853269984665640564039457584007913129639935"}}', Name("UInt256")),
-    ("Map(Int8, Nullable(Int8))", "('2020-01-01', map(1,toNullable(1)))", '{"d":"2020-01-01","m":{1:1}}', Name("toNullable")),
-    ("Map(Int8, Nullable(Int8))", "('2020-01-01', map(1,toNullable(NULL)))", '{"d":"2020-01-01","m":{1:null}}', Name("toNullable(NULL)")),
+    ("Map(Int8, Nullable(Int8))", "('2020-01-01', map(1,toNullable(1)))", '{"d":"2020-01-01","m":{"1":1}}', Name("toNullable")),
+    ("Map(Int8, Nullable(Int8))", "('2020-01-01', map(1,toNullable(NULL)))", '{"d":"2020-01-01","m":{"1":null}}', Name("toNullable(NULL)")),
 ])
 def table_map_with_value_integer(self, type, data, output):
     """Check what values we can insert into map type column with value integer.
@@ -281,8 +281,8 @@ def table_map_with_value_integer(self, type, data, output):
     ("Map(String, Array(Int8))", "('2020-01-01', map('key',[]))", '{"d":"2020-01-01","m":{"key":[]}}', Name("empty array")),
     ("Map(String, Array(Int8))", "('2020-01-01', map('key',[1,2,3]))", '{"d":"2020-01-01","m":{"key":[1,2,3]}}', Name("non-empty array of ints")),
     ("Map(String, Array(String))", "('2020-01-01', map('key',['1','2','3']))", '{"d":"2020-01-01","m":{"key":["1","2","3"]}}', Name("non-empty array of strings")),
-    ("Map(String, Array(Map(Int8, Int8)))", "('2020-01-01', map('key',[map(1,2),map(2,3)]))", '{"d":"2020-01-01","m":{"key":[{1:2},{2:3}]}}', Name("non-empty array of maps")),
-    ("Map(String, Array(Map(Int8, Array(Map(Int8, Array(Int8))))))", "('2020-01-01', map('key',[map(1,[map(1,[1])]),map(2,[map(2,[3])])]))", '{"d":"2020-01-01","m":{"key":[{1:[{1:[1]}]},{2:[{2:[3]}]}]}}', Name("non-empty array of maps of array of maps")),
+    ("Map(String, Array(Map(Int8, Int8)))", "('2020-01-01', map('key',[map(1,2),map(2,3)]))", '{"d":"2020-01-01","m":{"key":[{"1":2},{"2":3}]}}', Name("non-empty array of maps")),
+    ("Map(String, Array(Map(Int8, Array(Map(Int8, Array(Int8))))))", "('2020-01-01', map('key',[map(1,[map(1,[1])]),map(2,[map(2,[3])])]))", '{"d":"2020-01-01","m":{"key":[{"1":[{"1":[1]}]},{"2":[{"2":[3]}]}]}}', Name("non-empty array of maps of array of maps")),
 ])
 def table_map_with_value_array(self, type, data, output):
     """Check what values we can insert into map type column with value Array.
@@ -294,12 +294,12 @@ def table_map_with_value_array(self, type, data, output):
     RQ_SRS_018_ClickHouse_Map_DataType_Key_Integer("1.0")
 )
 @Examples("type data output", [
-    ("Map(Int8, Int8)", "('2020-01-01', map(127,1,0,1,-128,1))", '{"d":"2020-01-01","m":{127:1,0:1,-128:1}}', Name("Int8")),
-    ("Map(UInt8, Int8)", "('2020-01-01', map(0,1,255,1))", '{"d":"2020-01-01","m":{0:1,255:1}}', Name("UInt8")),
-    ("Map(Int16, Int8)", "('2020-01-01', map(127,1,0,1,-128,1))", '{"d":"2020-01-01","m":{32767:1,0:1,-32768:1}}', Name("Int16")),
-    ("Map(UInt16, Int8)", "('2020-01-01', map(0,1,65535,1))", '{"d":"2020-01-01","m":{0:1,65535:1}}', Name("UInt16")),
-    ("Map(Int32, Int8)", "('2020-01-01', map(2147483647,1,0,1,-2147483648,1))", '{"d":"2020-01-01","m":{2147483647:1,0:1,-2147483648:1}}', Name("Int32")),
-    ("Map(UInt32, Int8)", "('2020-01-01', map(0,1,4294967295,1))", '{"d":"2020-01-01","m":{0:1,4294967295:1}}', Name("UInt32")),
+    ("Map(Int8, Int8)", "('2020-01-01', map(127,1,0,1,-128,1))", '{"d":"2020-01-01","m":{"127":1,"0":1,"-128":1}}', Name("Int8")),
+    ("Map(UInt8, Int8)", "('2020-01-01', map(0,1,255,1))", '{"d":"2020-01-01","m":{"0":1,"255":1}}', Name("UInt8")),
+    ("Map(Int16, Int8)", "('2020-01-01', map(127,1,0,1,-128,1))", '{"d":"2020-01-01","m":{"32767":1,"0":1,"-32768":1}}', Name("Int16")),
+    ("Map(UInt16, Int8)", "('2020-01-01', map(0,1,65535,1))", '{"d":"2020-01-01","m":{"0":1,"65535":1}}', Name("UInt16")),
+    ("Map(Int32, Int8)", "('2020-01-01', map(2147483647,1,0,1,-2147483648,1))", '{"d":"2020-01-01","m":{"2147483647":1,"0":1,"-2147483648":1}}', Name("Int32")),
+    ("Map(UInt32, Int8)", "('2020-01-01', map(0,1,4294967295,1))", '{"d":"2020-01-01","m":{"0":1,"4294967295":1}}', Name("UInt32")),
     ("Map(Int64, Int8)", "('2020-01-01', map(9223372036854775807,1,0,1,-9223372036854775808,1))", '{"d":"2020-01-01","m":{"9223372036854775807":1,"0":1,"-9223372036854775808":1}}', Name("Int64")),
     ("Map(UInt64, Int8)", "('2020-01-01', map(0,1,18446744073709551615,1))", '{"d":"2020-01-01","m":{"0":1,"18446744073709551615":1}}', Name("UInt64")),
     ("Map(Int128, Int8)", "('2020-01-01', map(170141183460469231731687303715884105727,1,0,1,-170141183460469231731687303715884105728,1))", '{"d":"2020-01-01","m":{170141183460469231731687303715884105727:1,0:1,"-170141183460469231731687303715884105728":1}}', Name("Int128")),
@@ -716,7 +716,7 @@ def cast_tuple_of_two_arrays_to_map(self, tuple, type, exitcode, message):
 )
 @Examples("tuple type exitcode message check_insert", [
     ("(([1, 2, 3], ['Ready', 'Steady', 'Go']))", "Map(UInt8, String)",
-        0, '{"m":{1:"Ready",2:"Steady",3:"Go"}}', False,  Name("int -> int")),
+        0, '{"m":{"1":"Ready","2":"Steady","3":"Go"}}', False,  Name("int -> int")),
     ("(([1, 2, 3], ['Ready', 'Steady', 'Go']))", "Map(String, String)",
         0, '{"m":{"1":"Ready","2":"Steady","3":"Go"}}', False, Name("int -> string")),
     ("((['1', '2', '3'], ['Ready', 'Steady', 'Go']))", "Map(UInt8, String)",
@@ -728,7 +728,7 @@ def cast_tuple_of_two_arrays_to_map(self, tuple, type, exitcode, message):
     ("(([[1]],['hello']))", "Map(String, String)",
          53, 'DB::Exception: Type mismatch in IN or VALUES section', True, Name("array -> string")),
     ("(([(1,2),(3,4)]))", "Map(UInt8, UInt8)",
-         0, '{"m":{1:2,3:4}}', False, Name("array of two tuples")),
+         0, '{"m":{"1":2,"3":4}}', False, Name("array of two tuples")),
     ("(([1, 2], ['Ready', 'Steady', 'Go']))", "Map(UInt8, String)",
         53, "DB::Exception: CAST AS Map can only be performed from tuple of arrays with equal sizes", True,
         Name("unequal array sizes")),
@@ -767,7 +767,7 @@ def cast_array_of_two_tuples_to_map(self, tuple, type, exitcode, message):
     RQ_SRS_018_ClickHouse_Map_DataType_Conversion_From_ArrayOfTuplesToMap_Invalid("1.0")
 )
 @Examples("tuple type exitcode message check_insert", [
-    ("(([(1,2),(3,4)]))", "Map(UInt8, UInt8)", 0, '{"m":{1:2,3:4}}', False,
+    ("(([(1,2),(3,4)]))", "Map(UInt8, UInt8)", 0, '{"m":{"1":2,"3":4}}', False,
         Name("array of two tuples")),
     ("(([(1,2),(3)]))", "Map(UInt8, UInt8)", 130,
         "DB::Exception: There is no supertype for types Tuple(UInt8, UInt8), UInt8 because some of them are Tuple and some of them are not", True,
@@ -1187,9 +1187,6 @@ def performance(self, len=10, rows=6000000):
 )
 def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
-
-    with Given("I allow experimental map type"):
-        allow_experimental_map_type()
 
     for scenario in loads(current_module(), Scenario):
         scenario()

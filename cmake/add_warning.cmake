@@ -27,3 +27,22 @@ endmacro ()
 macro (no_warning flag)
     add_warning(no-${flag})
 endmacro ()
+
+
+# The same but only for specified target.
+macro (target_add_warning target flag)
+    string (REPLACE "-" "_" underscored_flag ${flag})
+    string (REPLACE "+" "x" underscored_flag ${underscored_flag})
+
+    check_cxx_compiler_flag("-W${flag}" SUPPORTS_CXXFLAG_${underscored_flag})
+
+    if (SUPPORTS_CXXFLAG_${underscored_flag})
+        target_compile_options (${target} PRIVATE "-W${flag}")
+    else ()
+        message (WARNING "Flag -W${flag} is unsupported")
+    endif ()
+endmacro ()
+
+macro (target_no_warning target flag)
+    target_add_warning(${target} no-${flag})
+endmacro ()

@@ -25,12 +25,21 @@ public:
         auto res = std::make_shared<ASTColumnsApplyTransformer>(*this);
         if (parameters)
             res->parameters = parameters->clone();
+        if (lambda)
+            res->lambda = lambda->clone();
         return res;
     }
     void transform(ASTs & nodes) const override;
+
+    // Case 1  APPLY (quantile(0.9))
     String func_name;
-    String column_name_prefix;
     ASTPtr parameters;
+
+    // Case 2 APPLY (x -> quantile(0.9)(x))
+    ASTPtr lambda;
+    String lambda_arg;
+
+    String column_name_prefix;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

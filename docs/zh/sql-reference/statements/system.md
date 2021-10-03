@@ -95,7 +95,7 @@ SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
 重置已编译的表达式缓存。用于ClickHouse开发和性能测试。
-当 `query/user/profile` 启用配置项 [compile](../../operations/settings/settings.md#compile)时，编译的表达式缓存开启。
+当 `query/user/profile` 启用配置项 [compile-expressions](../../operations/settings/settings.md#compile-expressions)时，编译的表达式缓存开启。
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
@@ -209,7 +209,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 
-停止后台获取 `ReplicatedMergeTree`系列引擎表中插入的数据块。 
+停止后台获取 `ReplicatedMergeTree`系列引擎表中插入的数据块。
 不管表引擎类型如何或表/数据库是否存，都返回 `OK.`。
 
 ``` sql
@@ -218,7 +218,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 
 ### START FETCHES {#query_language-system-start-fetches}
 
-启动后台获取 `ReplicatedMergeTree`系列引擎表中插入的数据块。 
+启动后台获取 `ReplicatedMergeTree`系列引擎表中插入的数据块。
 不管表引擎类型如何或表/数据库是否存，都返回 `OK.`。
 
 ``` sql
@@ -227,7 +227,7 @@ SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 
 ### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
 
-停止通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。 
+停止通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。
 
 ``` sql
 SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
@@ -235,7 +235,7 @@ SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 
 ### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
 
-启动通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。 
+启动通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。
 
 ``` sql
 SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
@@ -280,4 +280,4 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 重置所有 `ReplicatedMergeTree`表的ZooKeeper会话状态。该操作会以Zookeeper为参照，对比当前状态，有需要的情况下将任务添加到ZooKeeper队列。
 
-[原始文档](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/query_language/system/) <!--hide-->

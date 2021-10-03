@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
+    extern const int ABORTED;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -108,12 +109,11 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    if (auto * mv = dynamic_cast<StorageMaterializedView *>(tryGetTable(table_name, local_context).get()))
-    {
-        /// Remove the inner table (if any) to avoid deadlock
-        /// (due to attempt to execute DROP from the worker thread)
-        mv->dropInnerTable(no_delay, local_context);
-    }
+    auto storage = tryGetTable(table_name, local_context);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    if (storage)
+        storage->dropInnerTableIfAny(no_delay, local_context);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
@@ -210,7 +210,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     std::unique_lock<std::mutex> other_db_lock;
     if (inside_database)
         db_lock = std::unique_lock{mutex};
-    else  if (this < &other_db)
+    else if (this < &other_db)
     {
         db_lock = std::unique_lock{mutex};
         other_db_lock = std::unique_lock{other_db.mutex};
@@ -403,7 +403,7 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 }
 
 DatabaseTablesIteratorPtr
-DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name)
+DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
 {
     auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
@@ -416,26 +416,47 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool force_restore, bool /*force_attach*/)
 {
+    if (!force_restore)
+        return;
+
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
-    if (has_force_restore_data_flag)
-        fs::remove_all(path_to_table_symlinks);
-
-    DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
-
-    if (has_force_restore_data_flag)
+    for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
     {
-        NameToPathMap table_names;
+        if (!fs::is_symlink(table_path))
         {
-            std::lock_guard lock{mutex};
-            table_names = table_name_to_path;
+            throw Exception(ErrorCodes::ABORTED,
+                "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
         }
 
-        fs::create_directories(path_to_table_symlinks);
-        for (const auto & table : table_names)
-            tryCreateSymlink(table.first, table.second, true);
+        fs::remove(table_path);
     }
+}
+
+void DatabaseAtomic::loadStoredObjects(
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+{
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseOrdinary::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+}
+
+void DatabaseAtomic::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseOrdinary::startupTables(thread_pool, force_restore, force_attach);
+
+    if (!force_restore)
+        return;
+
+    NameToPathMap table_names;
+    {
+        std::lock_guard lock{mutex};
+        table_names = table_name_to_path;
+    }
+
+    fs::create_directories(path_to_table_symlinks);
+    for (const auto & table : table_names)
+        tryCreateSymlink(table.first, table.second, true);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
@@ -556,4 +577,3 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
 }
 
 }
-

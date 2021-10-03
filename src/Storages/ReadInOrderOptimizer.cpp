@@ -6,8 +6,6 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/TableJoin.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -32,9 +30,12 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     /// They may have aliases and come to description as is.
     /// We can mismatch them with order key columns at stage of fetching columns.
     forbidden_columns = syntax_result->getArrayJoinSourceNameSet();
+
+    // array join result columns cannot be used in alias expansion.
+    array_join_result_to_source = syntax_result->array_join_result_to_source;
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, UInt64 limit) const
 {
     Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     if (!metadata_snapshot->hasSortingKey())
@@ -133,7 +134,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
         if (context->getSettingsRef().optimize_respect_aliases && aliased_columns.contains(required_sort_description[i].column_name))
         {
             auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
-            replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), forbidden_columns, context);
+            replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), array_join_result_to_source, context);
 
             auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, metadata_snapshot->getColumns().getAll());
             const auto expression_analyzer = ExpressionAnalyzer(column_expr, syntax_analyzer_result, context).getActions(true);
@@ -152,7 +153,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
 
     if (order_key_prefix_descr.empty())
         return {};
-    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction);
+
+    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction, limit);
 }
 
 }

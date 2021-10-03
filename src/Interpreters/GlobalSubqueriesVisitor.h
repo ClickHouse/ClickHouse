@@ -8,6 +8,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -15,7 +16,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -62,7 +64,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -74,8 +76,15 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTIdentifier>())
+            else if (ast->as<ASTTableIdentifier>())
+            {
+                subquery_or_table_name = ast;
                 is_table = true;
+            }
+            else if (ast->as<ASTSubquery>())
+            {
+                subquery_or_table_name = ast;
+            }
 
             if (!subquery_or_table_name)
                 throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
@@ -122,11 +131,11 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createTableIdentifier("", external_table_name);
+            auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
             if (set_alias)
             {
                 String alias = subquery_or_table_name->tryGetAlias();
-                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
+                if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
                 database_and_table_name->setAlias(alias);
@@ -150,14 +159,9 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                PullingPipelineExecutor executor(io.pipeline);
-
-                table_out->writePrefix();
-                Block block;
-                while (executor.pull(block))
-                    table_out->write(block);
-
-                table_out->writeSuffix();
+                io.pipeline.complete(std::move(table_out));
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
             }
             else
             {
@@ -192,17 +196,24 @@ private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if (func.name == "globalIn" || func.name == "globalNotIn")
+        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
+             && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
+            || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
             ASTPtr & ast = func.arguments->children[1];
 
-            /// Literal can use regular IN
-            if (ast->as<ASTLiteral>())
+            /// Literal or function can use regular IN.
+            /// NOTE: We don't support passing table functions to IN.
+            if (ast->as<ASTLiteral>() || ast->as<ASTFunction>())
             {
                 if (func.name == "globalIn")
                     func.name = "in";
-                else
+                else if (func.name == "globalNotIn")
                     func.name = "notIn";
+                else if (func.name == "globalNullIn")
+                    func.name = "nullIn";
+                else if (func.name == "globalNotNullIn")
+                    func.name = "notNullIn";
                 return;
             }
 
@@ -214,7 +225,9 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
+                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;

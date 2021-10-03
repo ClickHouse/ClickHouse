@@ -11,7 +11,8 @@ funcs = [
     ('nullIf(1,', '\\N'),
 ]
 
-Examples_list =  [tuple(list(func)+list(data_type)+[Name(f'{func[0]} - {data_type[0]}')]) for func in funcs for data_type in data_types]
+Examples_list =  [tuple(list(func)+list(data_type)+[Name(f'{func[0]}) - {data_type[0]}')]) for func in funcs for data_type in data_types]
+Examples_list_dec =  [tuple(list(func)+[Name(f'{func[0]}) - Decimal256')]) for func in funcs]
 
 @TestOutline(Scenario)
 @Examples('func expected_result int_type min max', Examples_list)
@@ -56,7 +57,7 @@ def null_int_table(self, func, expected_result, int_type, min, max, node=None):
             """)
 
 @TestOutline(Scenario)
-@Examples('func expected_result', funcs)
+@Examples('func expected_result', Examples_list_dec)
 def null_dec_inline(self, func, expected_result, node=None):
     """Check null function with Decimal256 using inline tests.
     """
@@ -76,7 +77,7 @@ def null_dec_inline(self, func, expected_result, node=None):
             """)
 
 @TestOutline(Scenario)
-@Examples('func expected_result', funcs)
+@Examples('func expected_result', Examples_list_dec)
 def null_dec_table(self, func, expected_result, node=None):
     """Check null function with Decimal256 using table tests.
     """

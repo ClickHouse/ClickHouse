@@ -3,7 +3,7 @@
 #include <map>
 #include <shared_mutex>
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
@@ -16,11 +16,11 @@ namespace DB
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
+class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, public IStorage
 {
     friend class StripeLogSource;
-    friend class StripeLogBlockOutputStream;
-    friend struct ext::shared_ptr_helper<StorageStripeLog>;
+    friend class StripeLogSink;
+    friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
     String getName() const override { return "StripeLog"; }
@@ -34,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 

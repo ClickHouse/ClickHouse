@@ -5,10 +5,10 @@
 
 #include <mysqlxx/PoolWithFailover.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MultiEnum.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <map>
 #include <vector>
@@ -17,7 +17,7 @@
 namespace DB
 {
 
-std::map<String, NamesAndTypesList> fetchTablesColumnsList(
+std::map<String, ColumnsDescription> fetchTablesColumnsList(
         mysqlxx::PoolWithFailover & pool,
         const String & database_name,
         const std::vector<String> & tables_name,

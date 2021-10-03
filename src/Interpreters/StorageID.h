@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 class ASTQueryWithTableAndOutput;
-class ASTIdentifier;
+class ASTTableIdentifier;
 class Context;
 
 // TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
@@ -42,7 +42,7 @@ struct StorageID
     }
 
     StorageID(const ASTQueryWithTableAndOutput & query);
-    StorageID(const ASTIdentifier & table_identifier_node);
+    StorageID(const ASTTableIdentifier & table_identifier_node);
     StorageID(const ASTPtr & node);
 
     String getDatabaseName() const;

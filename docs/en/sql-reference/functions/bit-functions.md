@@ -267,7 +267,7 @@ bitHammingDistance(int1, int2)
 
 **Returned value**
 
--   The Hamming distance. 
+-   The Hamming distance.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 

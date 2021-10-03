@@ -83,11 +83,13 @@ public:
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
-    void removeFileIfExists(const String & path) override;
+    void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
     void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedFileIfExists(const String & path, bool keep_in_remote_fs) override;
 
     void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
@@ -117,6 +119,10 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    String getUniqueId(const String & path) const override;
+
+    bool checkUniqueId(const String & id) const override = 0;
+
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
@@ -142,33 +148,41 @@ private:
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
-/// Remote FS (S3, HDFS) metadata file layout:
-/// Number of FS objects, Total size of all FS objects.
-/// Each FS object represents path where object located in FS and size of object.
 
-struct IDiskRemote::Metadata
+/// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
+struct RemoteMetadata
+{
+    using PathAndSize = std::pair<String, size_t>;
+
+    /// Remote FS objects paths and their sizes.
+    std::vector<PathAndSize> remote_fs_objects;
+
+    /// URI
+    const String & remote_fs_root_path;
+
+    /// Relative path to metadata file on local FS.
+    const String metadata_file_path;
+
+    RemoteMetadata(const String & remote_fs_root_path_, const String & metadata_file_path_)
+        : remote_fs_root_path(remote_fs_root_path_), metadata_file_path(metadata_file_path_) {}
+};
+
+/// Remote FS (S3, HDFS) metadata file layout:
+/// FS objects, their number and total size of all FS objects.
+/// Each FS object represents a file path in remote FS and its size.
+
+struct IDiskRemote::Metadata : RemoteMetadata
 {
     /// Metadata file version.
     static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
-    using PathAndSize = std::pair<String, size_t>;
-
-    /// Remote FS (S3, HDFS) root path.
-    const String & remote_fs_root_path;
-
     /// Disk path.
     const String & disk_path;
 
-    /// Relative path to metadata file on local FS.
-    String metadata_file_path;
-
     /// Total size of all remote FS (S3, HDFS) objects.
     size_t total_size = 0;
-
-    /// Remote FS (S3, HDFS) objects paths and their sizes.
-    std::vector<PathAndSize> remote_fs_objects;
 
     /// Number of references (hardlinks) to this metadata file.
     UInt32 ref_count = 0;
@@ -193,6 +207,7 @@ struct IDiskRemote::Metadata
 class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
+    RemoteDiskDirectoryIterator() {}
     RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
 
     void next() override { ++iter; }

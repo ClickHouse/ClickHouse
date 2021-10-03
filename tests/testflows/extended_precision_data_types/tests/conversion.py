@@ -176,9 +176,21 @@ def to_decimal256(self, node=None):
     if node is None:
         node = self.context.node
 
-    for value in [1,min,max]:
-        output = node.query(f"SELECT toDecimal256(\'{value}\',0)").output
-        assert output == str(value), error()
+    with When(f"I check toDecimal256 with 0 scale with 1, {max}, and {min}"):
+
+        for value in [1,min,max]:
+            output = node.query(f"SELECT toDecimal256(\'{value}\',0)").output
+            assert output == str(value), error()
+
+    for scale in range(1,76):
+
+        with When(f"I check toDecimal256 with {scale} scale with its max"):
+            output = node.query(f"SELECT toDecimal256(\'{10**(76-scale)-1}\',{scale})").output
+            assert float(output) == float(10**(76-scale)-1), error()
+
+        with And(f"I check toDecimal256 with {scale} scale with its min"):
+            output = node.query(f"SELECT toDecimal256(\'{-10**(76-scale)+1}\',{scale})").output
+            assert float(output) == float(-10**(76-scale)+1), error()
 
 @TestScenario
 @Requirements(

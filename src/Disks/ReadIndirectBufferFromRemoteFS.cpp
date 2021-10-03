@@ -1,8 +1,8 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
 
-#if USE_AWS_S3 || USE_HDFS
 #include <IO/ReadBufferFromS3.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Disks/ReadIndirectBufferFromWebServer.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 template<typename T>
 ReadIndirectBufferFromRemoteFS<T>::ReadIndirectBufferFromRemoteFS(
-    IDiskRemote::Metadata metadata_)
+    RemoteMetadata metadata_)
     : metadata(std::move(metadata_))
 {
 }
@@ -90,11 +90,11 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
         current_buf = initialize();
 
     /// If current buffer has remaining data - use it.
-    if (current_buf && current_buf->next())
+    if (current_buf)
     {
-        working_buffer = current_buf->buffer();
-        absolute_position += working_buffer.size();
-        return true;
+        bool result = nextAndShiftPosition();
+        if (result)
+            return true;
     }
 
     /// If there is no available buffers - nothing to read.
@@ -105,12 +105,25 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
     const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
 
     current_buf = createReadBuffer(path);
-    current_buf->next();
 
-    working_buffer = current_buf->buffer();
-    absolute_position += working_buffer.size();
+    return nextAndShiftPosition();
+}
 
-    return true;
+template <typename T>
+bool ReadIndirectBufferFromRemoteFS<T>::nextAndShiftPosition()
+{
+    /// Transfer current position and working_buffer to actual ReadBuffer
+    swap(*current_buf);
+    /// Position and working_buffer will be updated in next() call
+    auto result = current_buf->next();
+    /// and assigned to current buffer.
+    swap(*current_buf);
+
+    /// absolute position is shifted by a data size that was read in next() call above.
+    if (result)
+        absolute_position += working_buffer.size();
+
+    return result;
 }
 
 
@@ -124,6 +137,7 @@ template
 class ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>;
 #endif
 
-}
+template
+class ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>;
 
-#endif
+}

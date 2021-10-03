@@ -1,6 +1,6 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
@@ -466,13 +466,19 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (!allowed || !hasMorePolledMessages())
         return false;
 
-    // XXX: very fishy place with const casting.
-    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
-    BufferBase::set(new_position, current->get_payload().get_size(), 0);
-    allowed = false;
+    const auto * message_data = current->get_payload().get_data();
+    size_t message_size = current->get_payload().get_size();
 
+    allowed = false;
     ++current;
 
+    /// If message is empty, return end of stream.
+    if (message_data == nullptr)
+        return false;
+
+    /// const_cast is needed, because ReadBuffer works with non-const char *.
+    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(message_data));
+    BufferBase::set(new_position, message_size, 0);
     return true;
 }
 

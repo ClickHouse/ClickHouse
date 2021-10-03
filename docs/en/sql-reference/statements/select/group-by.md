@@ -49,14 +49,14 @@ If you pass several keys to `GROUP BY`, the result will give you all the combina
 
 `WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
 
-The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression. 
+The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression.
 
 In the subtotals rows the values of already "grouped" key expressions are set to `0` or empty line.
 
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**    
+**Example**
 
 Consider the table t:
 
@@ -115,7 +115,7 @@ In the subtotals rows the values of all "grouped" key expressions are set to `0`
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**      
+**Example**
 
 Consider the table t:
 
@@ -138,13 +138,13 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
 
-- `GROUP BY year, month, day`   
-- `GROUP BY year, month` 
+- `GROUP BY year, month, day`
+- `GROUP BY year, month`
 - `GROUP BY year, day`
-- `GROUP BY year` 
-- `GROUP BY month, day` 
-- `GROUP BY month` 
-- `GROUP BY day` 
+- `GROUP BY year`
+- `GROUP BY month, day`
+- `GROUP BY month`
+- `GROUP BY day`
 - and totals.
 
 Columns, excluded from `GROUP BY`, are filled with zeros.
@@ -257,7 +257,7 @@ Aggregation is one of the most important features of a column-oriented DBMS, and
 
 ### GROUP BY Optimization Depending on Table Sorting Key {#aggregation-in-order}
 
-The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution. 
+The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution.
 
 ### GROUP BY in External Memory {#select-group-by-in-external-memory}
 

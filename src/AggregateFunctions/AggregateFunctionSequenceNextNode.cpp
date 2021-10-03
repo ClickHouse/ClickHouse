@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <ext/range.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -31,10 +31,10 @@ namespace
 
 template <typename T>
 inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
-    const DataTypePtr data_type, const DataTypes & argument_types, SequenceDirection direction, SequenceBase base)
+    const DataTypePtr data_type, const DataTypes & argument_types, const Array & parameters, SequenceDirection direction, SequenceBase base)
 {
     return std::make_shared<SequenceNextNodeImpl<T, NodeString<max_events_size>>>(
-        data_type, argument_types, base, direction, min_required_args);
+        data_type, argument_types, parameters, base, direction, min_required_args);
 }
 
 AggregateFunctionPtr
@@ -98,7 +98,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
                 + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    for (const auto i : ext::range(min_required_args, argument_types.size()))
+    for (const auto i : collections::range(min_required_args, argument_types.size()))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
@@ -116,17 +116,17 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
     WhichDataType timestamp_type(argument_types[0].get());
     if (timestamp_type.idx == TypeIndex::UInt8)
-        return createAggregateFunctionSequenceNodeImpl<UInt8>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt8>(data_type, argument_types, parameters, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt16)
-        return createAggregateFunctionSequenceNodeImpl<UInt16>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt16>(data_type, argument_types, parameters, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt32)
-        return createAggregateFunctionSequenceNodeImpl<UInt32>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt32>(data_type, argument_types, parameters, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt64)
-        return createAggregateFunctionSequenceNodeImpl<UInt64>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt64>(data_type, argument_types, parameters, direction, base);
     if (timestamp_type.isDate())
-        return createAggregateFunctionSequenceNodeImpl<DataTypeDate::FieldType>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<DataTypeDate::FieldType>(data_type, argument_types, parameters, direction, base);
     if (timestamp_type.isDateTime())
-        return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, parameters, direction, base);
 
     throw Exception{"Illegal type " + argument_types.front().get()->getName()
             + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",

@@ -150,7 +150,7 @@ def test_reload_after_loading(started_cluster):
     time.sleep(1)  # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/dictionaries/executable.xml', '82', '83')
     replace_in_file_in_container('/etc/clickhouse-server/dictionaries/file.txt', '102', '103')
-    time.sleep(7)
+    time.sleep(10)
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "103\n"
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "83\n"
 

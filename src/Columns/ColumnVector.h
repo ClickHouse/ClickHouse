@@ -4,9 +4,11 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
+#include <Core/TypeId.h>
+#include <Core/TypeName.h>
 
 
 namespace DB
@@ -102,7 +104,7 @@ template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!IsDecimalNumber<T>);
+    static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
@@ -239,6 +241,7 @@ public:
         return data[n];
     }
 
+
     void get(size_t n, Field & res) const override
     {
         res = (*this)[n];
@@ -283,6 +286,8 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 

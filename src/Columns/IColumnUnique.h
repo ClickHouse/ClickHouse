@@ -24,6 +24,7 @@ public:
 
     virtual bool nestedColumnIsNullable() const = 0;
     virtual void nestedToNullable() = 0;
+    virtual void nestedRemoveNullable() = 0;
 
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
@@ -81,7 +82,7 @@ public:
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
      *
-     * The most common example uses https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/ columns.
+     * The most common example uses https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality/ columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
@@ -136,6 +137,11 @@ public:
     ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
     {
         throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void expand(const IColumn::Filter &, bool) override
+    {
+        throw Exception("Method expand is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     ColumnPtr permute(const IColumn::Permutation &, size_t) const override

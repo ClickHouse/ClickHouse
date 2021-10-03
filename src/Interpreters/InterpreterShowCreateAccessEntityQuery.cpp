@@ -20,11 +20,11 @@
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Columns/ColumnString.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -80,6 +80,13 @@ namespace
             else
                 query->grantees = user.grantees.toASTWithNames(*manager);
             query->grantees->use_keyword_any = true;
+        }
+
+        if (!user.default_database.empty())
+        {
+            auto ast = std::make_shared<ASTDatabaseOrNone>();
+            ast->database_name = user.default_database;
+            query->default_database = ast;
         }
 
         return query;
@@ -151,7 +158,7 @@ namespace
             ASTCreateQuotaQuery::Limits create_query_limits;
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
                 create_query_limits.max[resource_type] = limits.max[resource_type];
             query->all_limits.push_back(create_query_limits);
         }
@@ -181,7 +188,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto type : ext::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : collections::range(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[static_cast<size_t>(type)];
             if (!condition.empty())
@@ -234,12 +241,12 @@ InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(c
 BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
 
-BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
+QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 {
     /// Build a create queries.
     ASTs create_queries = getCreateQueries();
@@ -263,7 +270,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return std::make_shared<OneBlockInputStream>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}});
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
 }
 
 

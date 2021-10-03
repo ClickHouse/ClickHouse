@@ -15,7 +15,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -26,7 +25,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
@@ -37,7 +36,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -106,7 +105,6 @@ Pipe StorageS3Cluster::read(
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
-    connections.reserve(cluster->getShardCount());
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -115,19 +113,27 @@ Pipe StorageS3Cluster::read(
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & node : replicas)
         {
-            connections.emplace_back(std::make_shared<Connection>(
+            auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
                 node.user, node.password, node.cluster, node.cluster_secret,
                 "S3ClusterInititiator",
                 node.compression,
                 node.secure
-            ));
+            );
+
 
             /// For unknown reason global context is passed to IStorage::read() method
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), queryToString(query_info.query), header, context,
-                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
+                connection,
+                queryToString(query_info.query),
+                header,
+                context,
+                /*throttler=*/nullptr,
+                scalars,
+                Tables(),
+                processed_stage,
+                callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

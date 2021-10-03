@@ -38,9 +38,9 @@ def test_cluster(request):
 def test_replicated_alters(test_cluster):
     instance = test_cluster.instances['ch2']
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge_for_alter ON CLUSTER cluster")
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER cluster")
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER cluster")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge_for_alter ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER cluster SYNC")
 
     # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
     firewall_drops_rules = test_cluster.pm_random_drops.pop_rules()
@@ -90,10 +90,10 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
         ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE merge_for_alter ON CLUSTER cluster")
+    test_cluster.ddl_check_query(instance, "DROP TABLE merge_for_alter ON CLUSTER cluster SYNC")
 
     # Enable random ZK packet drops
     test_cluster.pm_random_drops.push_rules(firewall_drops_rules)
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster")
-    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster")
+    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster SYNC")

@@ -72,7 +72,10 @@ do
 
     if [ "$DO_CHOWN" = "1" ]; then
         # ensure proper directories permissions
-        chown -R "$USER:$GROUP" "$dir"
+        # but skip it for if directory already has proper premissions, cause recursive chown may be slow
+        if [ "$(stat -c %u "$dir")" != "$USER" ] || [ "$(stat -c %g "$dir")" != "$GROUP" ]; then
+            chown -R "$USER:$GROUP" "$dir"
+        fi
     elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
         echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
         exit 1
@@ -84,7 +87,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <yandex>
-      <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
+      <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
       <users>
         <!-- Remove default user -->
         <default remove="remove">
@@ -161,6 +164,10 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
+    # Watchdog is launched by default, but does not send SIGINT to the main process,
+    # so the container can't be finished by ctrl+c
+    CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
+    export CLICKHOUSE_WATCHDOG_ENABLE
     exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
