@@ -67,6 +67,7 @@ public:
 private:
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    UInt64 prev_untracked_memory_limit = 0;
 };
 
 using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;

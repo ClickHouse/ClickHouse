@@ -33,6 +33,9 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(memory_tracker_ptr);
     }
+
+    prev_untracked_memory_limit = current_thread->untracked_memory_limit;
+    current_thread->untracked_memory_limit = 1;
 }
 
 
@@ -45,6 +48,8 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
         background_thread_memory_tracker->logPeakMemoryUsage();
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
     }
+
+    current_thread->untracked_memory_limit = prev_untracked_memory_limit;
 }
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
@@ -74,7 +79,8 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    memory_tracker.setDescription("MergeList");
+    memory_tracker.setDescription("Mutate/Merge");
+    memory_tracker.setProfilerStep(1);
 }
 
 MergeInfo MergeListElement::getInfo() const
