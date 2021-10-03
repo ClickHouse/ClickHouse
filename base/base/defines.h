@@ -119,6 +119,11 @@
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
 
+#if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
+#   define ASAN_UNPOISON_MEMORY_REGION(a, b)
+#   define ASAN_POISON_MEMORY_REGION(a, b)
+#endif
+
 /// A template function for suppressing warnings about unused variables or function results.
 template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]])
