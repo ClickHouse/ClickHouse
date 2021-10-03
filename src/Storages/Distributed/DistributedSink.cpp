@@ -3,6 +3,8 @@
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 
@@ -87,26 +89,40 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 }
 
 
+static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
+{
+    auto query = std::make_shared<ASTInsertQuery>();
+    query->table_id = StorageID(database, table);
+    auto columns = std::make_shared<ASTExpressionList>();
+    query->columns = columns;
+    query->children.push_back(columns);
+    for (const auto & column_name : column_names)
+        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+    return query;
+}
+
+
 DistributedSink::DistributedSink(
     ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
-    StorageID main_table_)
+    StorageID main_table_,
+    const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(query_ast_)
-    , query_string(queryToString(query_ast_))
+    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
+    , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
+    , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
@@ -127,26 +143,24 @@ void DistributedSink::consume(Chunk chunk)
 
     auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (!allow_materialized)
-    {
-        /* They are added by the AddingDefaultBlockOutputStream, and we will get
-         * different number of columns eventually */
-        for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
-        {
-            if (ordinary_block.has(col.name))
-            {
-                ordinary_block.erase(col.name);
-                LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
-                    storage.getStorageID().getNameForLogs(), col.name);
-            }
-        }
-    }
-
     if (insert_sync)
         writeSync(ordinary_block);
     else
         writeAsync(ordinary_block);
 }
+
+
+Block DistributedSink::removeSuperfluousColumns(Block block) const
+{
+    for (size_t i = block.columns(); i;)
+    {
+        --i;
+        if (!columns_to_send.contains(block.getByPosition(i).name))
+            block.erase(i);
+    }
+    return block;
+}
+
 
 void DistributedSink::writeAsync(const Block & block)
 {
@@ -402,6 +416,8 @@ void DistributedSink::writeSync(const Block & block)
 {
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
+    Block block_to_send = removeSuperfluousColumns(block);
+
     size_t start = 0;
     size_t end = shards_info.size();
 
@@ -414,7 +430,7 @@ void DistributedSink::writeSync(const Block & block)
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block, start, end);
+        initWritingJobs(block_to_send, start, end);
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
         size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
@@ -459,7 +475,7 @@ void DistributedSink::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
     }
     catch (...)
     {
@@ -584,12 +600,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
+    Block block_to_send = removeSuperfluousColumns(block);
 
     if (shard_info.hasInternalReplication())
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
-            writeToLocal(block, shard_info.getLocalNodeCount());
+            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
         else
         {
             const auto & path = shard_info.insertPathForInternalReplication(
@@ -597,13 +614,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block, {path});
+            writeToShard(block_to_send, {path});
         }
     }
     else
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
-            writeToLocal(block, shard_info.getLocalNodeCount());
+            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
@@ -611,7 +628,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
-            writeToShard(block, dir_names);
+            writeToShard(block_to_send, dir_names);
     }
 }
 
