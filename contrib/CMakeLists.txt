@@ -356,6 +356,12 @@ endif()
 # instead of controlling it via CMAKE_FOLDER.
 
 function (ensure_target_rooted_in _target _folder)
+    # Skip INTERFACE library targets, since FOLDER property is not available for them.
+    get_target_property (_target_type "${_target}" TYPE)
+    if (_target_type STREQUAL "INTERFACE_LIBRARY")
+        return ()
+    endif ()
+
     # Read the original FOLDER property value, if any.
     get_target_property (_folder_prop "${_target}" FOLDER)
 
