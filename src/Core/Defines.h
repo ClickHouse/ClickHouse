@@ -62,8 +62,6 @@
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
-#define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
-
 /// Actually, there may be multiple acquisitions of different locks for a given table within one query.
 /// Check with IStorage class for the list of possible locks
 #define DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC 120
