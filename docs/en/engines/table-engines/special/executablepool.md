@@ -41,13 +41,15 @@ The data is passed to the script via the query:
 
 ``` sql
 CREATE TABLE result_table (value String) ENGINE = ExecutablePool('input_process.sh', 'TabSeparated', (SELECT 1), (SELECT 2), (SELECT 3));
-SELECT * from result_table;
+SELECT * FROM result_table;
 ```
 
 Result:
 
 ```text
-Key 3\nKey 2\nKey 1\n
+Key 3
+Key 2
+Key 1
 ```
 
 **See Also**
