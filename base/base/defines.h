@@ -31,6 +31,8 @@
 #   endif
 #endif
 
+// more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
+
 #if defined(_MSC_VER)
 #    define ALWAYS_INLINE __forceinline
 #    define NO_INLINE static __declspec(noinline)
