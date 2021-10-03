@@ -2,11 +2,12 @@
     "build_config": [
         {
             "compiler": "clang-13",
-            "build-type": "debug",
+            "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
+            "alien_pkgs": true,
             "tidy": "disable",
             "with_coverage": false
         },
@@ -22,16 +23,6 @@
         }
     ],
     "special_build_config": [
-        {
-            "compiler": "clang-13",
-            "build-type": "",
-            "sanitizer": "",
-            "package-type": "binary",
-            "bundled": "bundled",
-            "splitted": "splitted",
-            "tidy": "disable",
-            "with_coverage": false
-        }
     ],
     "tests_config": {
         "Functional stateless tests flaky check (address)": {
