@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -243,8 +244,11 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
                 bool negate = name == "negate";
+                bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
+                // do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
+                bool literal_need_parens = literal && !is_tuple;
                 // negate always requires parentheses, otherwise -(-1) will be printed as --1
-                bool negate_need_parens = negate && (literal || (function && function->name == "negate"));
+                bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
                 // We don't need parentheses around a single literal.
                 bool need_parens = !literal && frame.need_parens && !negate_need_parens;
 
