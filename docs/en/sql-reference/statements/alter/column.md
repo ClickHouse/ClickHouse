@@ -204,7 +204,7 @@ Syntax:
 ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
 ```
 
-**Example:**
+**Example with the creation of new column:**
 
 ```sql
 DROP TABLE IF EXISTS tmp;
