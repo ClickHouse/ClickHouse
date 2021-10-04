@@ -129,8 +129,8 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
         }
         case capnp::DynamicValue::Type::TEXT:
         {
-            auto data = String(column->getDataAt(row_num));
-            return capnp::DynamicValue::Reader(capnp::Text::Reader(data.data(), data.size()));
+            auto data = column->getDataAt(row_num);
+            return capnp::DynamicValue::Reader(capnp::Text::Reader(data.data, data.size));
         }
         case capnp::DynamicValue::Type::STRUCT:
         {
@@ -220,7 +220,7 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
         auto field_builder = initStructFieldBuilder(columns[i], row_num, struct_builder, field);
         auto value = convertToDynamicValue(columns[i], column_types[i], row_num, field_builder, format_settings.capn_proto.enum_comparing_mode);
         if (value)
-            struct_builder.set(field, std::move(*value));
+            struct_builder.set(field, *value);
     }
 
     capnp::writeMessage(*output_stream, message);

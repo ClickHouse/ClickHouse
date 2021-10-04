@@ -45,6 +45,7 @@ set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/serialize-packed.c++"
 
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema.c++"
+    "${CAPNPROTO_SOURCE_DIR}/capnp/stream.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-loader.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/dynamic.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/stringify.c++"
