@@ -74,6 +74,7 @@ private:
 
     IExecutableTask::TaskResultCallback task_result_callback;
 
+    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 
