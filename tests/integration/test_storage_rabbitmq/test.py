@@ -159,6 +159,48 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
+# The same as test_rabbitmq_json_without_delimiter.
+def test_rabbitmq_json_without_delimiter_2(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{}:5672',
+                     rabbitmq_exchange_name = 'json',
+                     rabbitmq_format = 'JSONEachRow'
+        '''.format(rabbitmq_cluster.rabbitmq_host))
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = ''
+    for i in range(25):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+
+    all_messages = [messages]
+    for message in all_messages:
+        channel.basic_publish(exchange='json', routing_key='', body=message)
+
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    all_messages = [messages]
+    for message in all_messages:
+        channel.basic_publish(exchange='json', routing_key='', body=message)
+
+    connection.close()
+    time.sleep(1)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
+    rabbitmq_check_result(result, True)
+
+
 def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
