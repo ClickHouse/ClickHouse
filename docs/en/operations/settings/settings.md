@@ -3749,3 +3749,39 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statement. When you want to use column numbers instead of titles in these clauses, set `enable_positional_arguments = 1`.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, tree Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 30, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Result:
+
+```text
+┌─one─┬─two─┬─tree─┐
+│  30 │  10 │   20 │
+│  10 │  20 │   30 │
+│  20 │  30 │   10 │
+└─────┴─────┴──────┘
+
+```
