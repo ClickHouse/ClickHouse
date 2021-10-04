@@ -135,18 +135,6 @@ Block NativeBlockInputStream::readImpl()
         rows = index_block_it->num_rows;
     }
 
-    /// Serialization
-    SerializationInfoPtr serialization_info;
-    if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-    {
-        auto serialization_kinds = SerializationInfo::readKindsBinary(istr);
-        serialization_info = std::make_shared<SerializationInfo>(rows, serialization_kinds);
-    }
-    else
-    {
-        serialization_info = std::make_shared<SerializationInfo>();
-    }
-
     for (size_t i = 0; i < columns; ++i)
     {
         if (use_index)
@@ -165,6 +153,25 @@ Block NativeBlockInputStream::readImpl()
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
 
+        SerializationPtr serialization;
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        {
+            serialization = column.type->getSerialization(column.name, [&](const String & /*name*/)
+            {
+                UInt8 kind_num;
+                readBinary(kind_num, istr);
+                auto kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
+                if (!kind)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind " + std::to_string(kind_num));
+
+                return *kind;
+            });
+        }
+        else
+        {
+            serialization = column.type->getDefaultSerialization();
+        }
+
         if (use_index)
         {
             /// Index allows to do more checks.
@@ -175,7 +182,6 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        auto serialization = column.type->getSerialization(column.name, *serialization_info);
         ColumnPtr read_column = column.type->createColumn(*serialization);
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];

@@ -10,7 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnSparse.h>
 
 namespace DB
@@ -86,14 +86,6 @@ void NativeBlockOutputStream::write(const Block & block)
         writeVarUInt(rows, *index_ostr);
     }
 
-
-    /// Serialization
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-    {
-        auto serialization_kinds = SerializationInfo::getKinds(block);
-        SerializationInfo::writeKindsBinary(serialization_kinds, ostr);
-    }
-
     for (size_t i = 0; i < columns; ++i)
     {
         /// For the index.
@@ -129,15 +121,27 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
+        /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        if (client_revision < DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            serialization = column.type->getDefaultSerialization();
-            column.column = recursiveRemoveSparse(column.column);
+            serialization = column.type->getSerialization(column.name, [&](const String & name)
+            {
+                auto split = Nested::splitName(name);
+                ISerialization::Kind kind;
+                if (!split.second.empty() && column.type->tryGetSubcolumnType(split.second))
+                    kind = ISerialization::getKind(*column.type->getSubcolumn(split.second, *column.column));
+                else
+                    kind = ISerialization::getKind(*column.column);
+
+                writeBinary(static_cast<UInt8>(kind), ostr);
+                return kind;
+            });
         }
         else
         {
-            serialization = column.type->getSerialization(*column.column);
+            serialization = column.type->getDefaultSerialization();
+            column.column = recursiveRemoveSparse(column.column);
         }
 
         /// Data

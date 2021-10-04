@@ -98,6 +98,7 @@ public:
             SparseElements,
             SparseOffsets,
         };
+
         Type type;
 
         /// Index of tuple element, starting at 1 or name.

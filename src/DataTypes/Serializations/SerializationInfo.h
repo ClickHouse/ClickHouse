@@ -19,10 +19,7 @@ namespace DB
 class SerializationInfo
 {
 public:
-    using NameToKind = std::unordered_map<String, ISerialization::Kind>;
-
     SerializationInfo() = default;
-    SerializationInfo(size_t number_of_rows_, const NameToKind & kinds);
 
     static constexpr auto version = 1;
     size_t getNumberOfDefaultRows(const String & column_name) const;
@@ -33,10 +30,6 @@ public:
 
     void readText(ReadBuffer & in);
     void writeText(WriteBuffer & out) const;
-
-    static NameToKind getKinds(const Block & block);
-    static NameToKind readKindsBinary(ReadBuffer & in);
-    static void writeKindsBinary(const NameToKind & kinds, WriteBuffer & out);
 
 private:
     void fromJSON(const String & json_str);

@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
+#include <common/EnumReflection.h>
 
 
 namespace DB
@@ -49,30 +50,11 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 
 String ISerialization::Substream::toString() const
 {
-    switch (type)
-    {
-        case ArrayElements:
-            return "ArrayElements";
-        case ArraySizes:
-            return "ArraySizes";
-        case NullableElements:
-            return "NullableElements";
-        case NullMap:
-            return "NullMap";
-        case TupleElement:
-            return "TupleElement(" + tuple_element_name + ", "
-                + std::to_string(escape_tuple_delimiter) + ")";
-        case DictionaryKeys:
-            return "DictionaryKeys";
-        case DictionaryIndexes:
-            return "DictionaryIndexes";
-        case SparseElements:
-            return "SparseElements";
-        case SparseOffsets:
-            return "SparseOffsets";
-    }
+    if (type == TupleElement)
+        return fmt::format("TupleElement({}, escape_tuple_delimiter = {})",
+            tuple_element_name, escape_tuple_delimiter ? "true" : "false");
 
-    __builtin_unreachable();
+    return String(magic_enum::enum_name(type));
 }
 
 String ISerialization::SubstreamPath::toString() const

@@ -102,13 +102,6 @@ SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo
     return std::move(info);
 }
 
-SerializationInfo::SerializationInfo(size_t number_of_rows_, const NameToKind & kinds)
-    : number_of_rows(number_of_rows_)
-{
-    for (const auto & [name, kind] : kinds)
-        columns[name].kind = kind;
-}
-
 ISerialization::Kind SerializationInfo::getKind(const String & column_name) const
 {
     auto it = columns.find(column_name);
@@ -201,54 +194,6 @@ void SerializationInfo::readText(ReadBuffer & in)
 void SerializationInfo::writeText(WriteBuffer & out) const
 {
     writeString(toJSON(), out);
-}
-
-SerializationInfo::NameToKind SerializationInfo::getKinds(const Block & block)
-{
-    NameToKind kinds;
-    for (const auto & elem : block)
-    {
-        kinds[elem.name] = ISerialization::getKind(*elem.column);
-        for (const auto & subcolumn_name : elem.type->getSubcolumnNames())
-        {
-            auto full_name = Nested::concatenateName(elem.name, subcolumn_name);
-            auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
-            kinds[full_name] = ISerialization::getKind(*subcolumn);
-        }
-    }
-
-    return kinds;
-}
-
-SerializationInfo::NameToKind SerializationInfo::readKindsBinary(ReadBuffer & in)
-{
-    size_t size = 0;
-    readVarUInt(size, in);
-
-    NameToKind kinds;
-    kinds.reserve(size);
-    for (size_t i = 0; i < size; ++i)
-    {
-        String name;
-        UInt8 kind;
-
-        readBinary(name, in);
-        readBinary(kind, in);
-        if (!kinds.emplace(name, static_cast<ISerialization::Kind>(kind)).second)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicated name '{}' found in serialization kinds", name);
-    }
-
-    return kinds;
-}
-
-void SerializationInfo::writeKindsBinary(const NameToKind & kinds, WriteBuffer & out)
-{
-    writeVarUInt(kinds.size(), out);
-    for (const auto & [name, kind] : kinds)
-    {
-        writeBinary(name, out);
-        writeBinary(static_cast<UInt8>(kind), out);
-    }
 }
 
 }
