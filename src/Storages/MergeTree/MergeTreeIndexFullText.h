@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ITokenExtractor.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -9,31 +10,6 @@
 
 namespace DB
 {
-
-/// Interface for string parsers.
-struct ITokenExtractor
-{
-    virtual ~ITokenExtractor() = default;
-
-    /// Fast inplace implementation for regular use.
-    /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
-    /// Returns false if parsing is finished, otherwise returns true.
-    virtual bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
-
-    /// Optimized version that can assume at least 15 padding bytes after data + len (as our Columns provide).
-    virtual bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const
-    {
-        return nextInField(data, len, pos, token_start, token_len);
-    }
-
-    /// Special implementation for creating bloom filter for LIKE function.
-    /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
-    virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
-
-    virtual bool supportLike() const = 0;
-};
-
-using TokenExtractorPtr = const ITokenExtractor *;
 
 struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 {
@@ -169,35 +145,6 @@ private:
     /// Sets from syntax analyzer.
     PreparedSets prepared_sets;
 };
-
-
-/// Parser extracting all ngrams from string.
-struct NgramTokenExtractor final : public ITokenExtractor
-{
-    NgramTokenExtractor(size_t n_) : n(n_) {}
-
-    static String getName() { return "ngrambf_v1"; }
-
-    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-
-    size_t n;
-};
-
-/// Parser extracting tokens (sequences of numbers and ascii letters).
-struct SplitTokenExtractor final : public ITokenExtractor
-{
-    static String getName() { return "tokenbf_v1"; }
-
-    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
-    bool nextLike(const String & str, size_t * pos, String & token) const override;
-
-    bool supportLike() const override { return true; }
-};
-
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex
 {
