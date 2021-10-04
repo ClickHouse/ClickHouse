@@ -71,7 +71,13 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
     future_mutated_part->updatePath(storage, reserved_space.get());
     future_mutated_part->type = source_part->getType();
 
-    merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_mutated_part);
+    const Settings & settings = storage.getContext()->getSettingsRef();
+    merge_mutate_entry = storage.getContext()->getMergeList().insert(
+        storage.getStorageID(),
+        future_mutated_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
