@@ -59,7 +59,7 @@ Chunk IRowInputFormat::generate()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
-
+    
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 

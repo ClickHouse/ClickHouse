@@ -4,7 +4,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <common/map.h>
-
+#include <Functions/match.cpp>
+#include <Functions/extractAllGroups.h>
+#include <Functions/extractAllGroupsVertical.cpp>
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
@@ -66,7 +68,7 @@ ColumnPtr RegexpTreeDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr & ) const
+    const ColumnPtr & default_values_column) const
 {
     validateKeyType(key_types);
     
@@ -78,36 +80,49 @@ ColumnPtr RegexpTreeDictionary::getColumn(
     
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
-    
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-        
+
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
+
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
         
         if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
-            
-            getItemsImpl<ValueType>(
-		attribute_index,
-                attribute,
-                key_columns,
-                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); });
+            const auto first_column = key_columns.front();
+            const auto rows = first_column->size();
+
+            size_t keys_found = 0;
+
+            std::vector<StringRef> user_agents;
+            for(size_t i = 0; i < rows; i++)
+            {
+                user_agents.push_back(first_column->getDataAt(i));
+            }
+
+            String s;
+            for (UInt64 index : roots)
+            {
+                RegexpTreeNode root = nodes.find(index)->second;
+		getItemsImpl(root, s, true, attribute_index, rows, user_agents, [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); }, keys_found, default_value_extractor);
+                s.clear();
+            }
+            query_count.fetch_add(rows, std::memory_order_relaxed);
+            found_count.fetch_add(keys_found, std::memory_order_relaxed);
         }
         else
         {
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected all attributes columns to be Strings");
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected all attributes columns to be Strings.");
         }
-        
         result = std::move(column);
     };
     
     callOnDictionaryAttributeType(attribute.type, type_call);
-    
     return result;
 }
 
@@ -138,7 +153,7 @@ ColumnUInt8::Ptr RegexpTreeDictionary::hasKeys(const Columns & key_columns, cons
 
 RegexpTreeDictionary::Attribute RegexpTreeDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)  
 {
-    Attribute attribute{dictionary_attribute.underlying_type, {}, {}, {}};
+    Attribute attribute{dictionary_attribute.underlying_type, {}, {}};
     
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
@@ -177,8 +192,8 @@ void RegexpTreeDictionary::createAttributes()
     }
 }
 
-template <typename ValueSetter>
-void func(
+template <typename ValueSetter, typename DefaultValueExtractor>
+void RegexpTreeDictionary::getItemsImpl(
 	RegexpTreeNode node,
 	String regexp_,
 	bool isLast,
@@ -186,13 +201,14 @@ void func(
 	size_t rows,
 	std::vector<StringRef> user_agents,
 	ValueSetter && set_value,
-	size_t keys_found)
+	size_t keys_found,
+	DefaultValueExtractor & default_value_extractor) const
 {
     bool isRegexp = false;
     regexp_+=node.regexp;
-    String attribute = node.attributes[attribute_index];
+    String attribute = node.attributes[attribute_index - 3];
     String final_attribute;
-    
+
     if(startsWith(attribute, "(") && endsWith(attribute, ")"))
     {
         isRegexp = true;
@@ -202,65 +218,70 @@ void func(
         final_attribute = attribute;
     }
     
-    int n = node.children.size();
-    while(n > 0)
+    size_t n = 0;
+    while(n < node.children.size() )
     {
         isLast = false;
-        RegexpTreeNode child = node.children[n - 1];
-        func(child, regexp_, true, attribute_index, rows, user_agents, set_value, keys_found);
-        --n;
+        RegexpTreeNode child = nodes.find(node.children[n]->parent)->second;
+        getItemsImpl(child, regexp_, true, attribute_index, rows, user_agents, set_value, keys_found, default_value_extractor);
+        ++n;
     }
-    
     if(isLast)
     {
+	bool isSet = false;
         for (const auto i : collections::range(0, rows))
         {
-	// Here I want to use match and extractAllGroupsVertical function that can be used by user, but I didn't find where did they come from, so I just left them here for now.
-            if(match(user_agents[i], regexp_) == 1)
+	    std::vector<ColumnWithTypeAndName> match_arguments;
+
+	    auto external_type = std::make_shared<DataTypeString>();
+	    auto result_type = std::make_shared<DataTypeNumber<UInt8>>();
+
+	    auto external_column_1 = external_type->createColumn();
+	    external_column_1->insert(user_agents[i].toString());
+	    match_arguments.push_back({std::move(external_column_1), std::move(external_type), "user_agent_column"});
+
+	    auto external_column_2 = external_type->createColumn();
+	    external_column_2->insert(regexp_);
+	    match_arguments.push_back({std::move(external_column_2), std::move(external_type), "regexp_column"});
+
+	    ColumnPtr match = FunctionMatch().executeImpl(match_arguments, std::move(result_type), rows);
+	    size_t isMatched = match->get64(0);
+            if(isMatched == 1)
             {
-                if(isRegexp)
+                if(!isRegexp)
                 {
-                    final_attribute = std::regex_replace(attribute, "\\1", extractAllGroupsVertical(user_agents[i], node.regexp)[0][0]);
+		    std::vector<ColumnWithTypeAndName> arguments;
+
+		    auto internal_type = std::make_shared<DataTypeString>();
+ 
+		    auto internal_column_1 = internal_type->createColumn();
+		    internal_column_1->insert(user_agents[i].toString());
+		    arguments.push_back({std::move(internal_column_1), std::move(internal_type), "user_agent_column"});
+
+                    auto internal_column_2 = internal_type->createColumn();
+                    internal_column_2->insert(node.regexp);
+                    arguments.push_back({std::move(internal_column_2), std::move(internal_type), "node_regexp_column"});
+		    
+		    ContextPtr context;
+		    ColumnPtr result = FunctionExtractAllGroups<VerticalImpl>(context).executeImpl(arguments, std::move(internal_type), 4);
+		    auto res = result->getDataAt(0).toString();
+		    std::regex re("\\1");
+                    final_attribute = std::regex_replace(attribute, re, res);
                 }
                 set_value(i, final_attribute);
                 ++keys_found;
+		isSet = true;
                 break;
             }
         }
+	if(!isSet)
+            set_value(0,default_value_extractor[0]);
+
     }
     for(size_t i = 0; i < node.regexp.size(); ++i)
     {
 	regexp_.pop_back();
     }
-}
-
-template <typename AttributeType, typename ValueSetter >
-void RegexpTreeDictionary::getItemsImpl(
-    const size_t attribute_index,
-    const Attribute &,
-    const Columns & key_columns,
-    ValueSetter && set_value) const
-{
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
-    
-    //const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
-    
-    size_t keys_found = 0;
-    std::vector<StringRef> user_agents;
-    for(const auto i : collections::range(0, rows))
-    {
-        user_agents.push_back(first_column->getDataAt(i));
-    }
-
-    String s;
-    for (RegexpTreeNode root : roots)
-    {
-        func(root, s, true, attribute_index, rows, user_agents, set_value, keys_found);
-        s.clear();
-    }
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed); 
 }
 
 void RegexpTreeDictionary::calculateBytesAllocated()
@@ -297,20 +318,20 @@ void RegexpTreeDictionary::calculateBytesAllocated()
 
 void RegexpTreeDictionary::setNodeValue(UInt64 id, UInt64 parent_id, String regexp, std::vector<String> attributes)
 {
-    std::vector<RegexpTreeNode> children;
-    
+    std::vector<RegexpTreeNode *> children;
     if(parent_id == 0)
     {
         RegexpTreeNode node(regexp, attributes, children);
         nodes.emplace(id, node);
-	roots.push_back(node);
+        roots.push_back(id);
     }
     else
     {
         RegexpTreeNode parent = nodes.find(parent_id)->second;
-        RegexpTreeNode node(regexp, attributes, &parent, children);
-        parent.children.push_back(node);
-        nodes.emplace(id, node);
+	RegexpTreeNode *node_ptr = new RegexpTreeNode(regexp, attributes, id, children);
+        (nodes.find(parent_id)->second).children.push_back(node_ptr);
+	    
+        nodes.emplace(id, *node_ptr);
     }
 }
 
@@ -323,35 +344,45 @@ void RegexpTreeDictionary::loadData()
     while (executor.pull(block))
     {
         const auto rows = block.rows();
-	const ColumnPtr id_column_ptr = block.safeGetByPosition(0).column;
-        const ColumnPtr parent_id_column_ptr = block.safeGetByPosition(1).column;
-        const ColumnPtr regexp_column_ptr = block.safeGetByPosition(2).column;
-        const auto attribute_column_ptrs = collections::map<Columns>(
-            collections::range(3, dict_struct.attributes.size()),
-            [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });        
+	const ColumnPtr regexp_column_ptr = block.safeGetByPosition(0).column;
+	const ColumnPtr id_column_ptr = block.safeGetByPosition(1).column;
+        const ColumnPtr parent_id_column_ptr = block.safeGetByPosition(2).column;
+        
+	std::vector<const ColumnPtr> attribute_column_ptrs;
+	for (size_t i = 3; i <= dict_struct.attributes.size(); i++)
+	{
+	    attribute_column_ptrs.push_back(block.safeGetByPosition(i).column);
+	}         
        
         for (const auto row : collections::range(0, rows))
         {
-            const auto & id = (*id_column_ptr)[row].get<UInt64>();
-	    const auto & parent_id = (*parent_id_column_ptr)[row].get<UInt64>();
-	    const auto & regexp = (*regexp_column_ptr)[row].get<String>();
+            const auto & id = (*id_column_ptr).get64(row);
+	    const auto & parent_id = (*parent_id_column_ptr).get64(row);
+	    const auto & regexp = (*regexp_column_ptr).getDataAt(row).toString();
 	    std::vector<String> attrs;
-            
-            for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+            for (size_t attribute_index  = 0; attribute_index <= dict_struct.attributes.size() - 3; attribute_index++)
             {
-                const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+                const auto & attribute_column = *(attribute_column_ptrs[attribute_index]);
                 const auto & attribute = attribute_column[row].get<String>();
                 attrs.push_back(attribute);
             }
 
             setNodeValue(id, parent_id, regexp, attrs);
+	    loaded_keys[row] = true;
         }
     }
 }
 
-Pipe RegexpTreeDictionary::read(const Names & /*column_names*/, size_t /*max_block_size*/) const
+Pipe RegexpTreeDictionary::read(const Names & column_names, size_t max_block_size) const
 {
-    return Pipe();
+    PaddedPODArray<StringRef> keys;
+    keys.reserve(loaded_keys.size());
+    for (size_t key_index = 0; key_index < loaded_keys.size(); ++key_index)
+        if (loaded_keys[key_index])
+            keys.push_back(" ");
+
+    return Pipe(std::make_shared<DictionarySource>(
+	DictionarySourceData(shared_from_this(), keys, column_names), max_block_size));
 }
 
 void registerDictionaryRegexpTree(DictionaryFactory & factory)
@@ -364,8 +395,6 @@ void registerDictionaryRegexpTree(DictionaryFactory & factory)
                             ContextPtr /* global_context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
-	//if (dict_struct.key)
-            //throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'regexptree'");
         
 	if (dict_struct.range_min || dict_struct.range_max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

@@ -122,12 +122,8 @@ void registerFormats()
     registerInputFormatProcessorRawBLOB(factory);
     registerOutputFormatProcessorRawBLOB(factory);
 
-<<<<<<< HEAD
     registerInputFormatProcessorYAML(factory);
 
-#if !defined(ARCADIA_BUILD)
-=======
->>>>>>> 0476022d71e9ce57da016139bf2b9d848eb19579
     registerInputFormatProcessorORC(factory);
     registerOutputFormatProcessorORC(factory);
     registerInputFormatProcessorParquet(factory);

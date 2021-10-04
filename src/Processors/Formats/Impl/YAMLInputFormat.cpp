@@ -68,7 +68,7 @@ YAMLInputFormat::YAMLInputFormat(
     , format_settings(format_settings_)
 {
     String s;
-    attrs = parseHeader(s, in);
+    attrs = parseHeader(s, *in);
     num_columns = attrs.size() + 3;
 
     current_id = 1;
@@ -109,11 +109,16 @@ std::pair<String, String> parseString(String & s, ReadBuffer & in)
     return std::pair<String, String>(key, value);
 }
 
-void YAMLInputFormat::saveData(MutableColumns & columns, int id, int parent_id, String regexp, std::map<String, String> dataFromYAML)
+void YAMLInputFormat::saveData(
+	MutableColumns & columns,
+	int id,
+	int parent_id,
+	String regexp,
+	std::map<String, String> dataFromYAML)
 {
-    columns[0]->insert(id);
-    columns[1]->insert(parent_id);
-    columns[2]->insert(regexp);
+    columns[0]->insert(regexp);
+    columns[1]->insert(UInt64(id));
+    columns[2]->insert(UInt64(parent_id));
     for(size_t i = 0; i < attrs.size(); ++i)
     {
         auto it = dataFromYAML.find(attrs[i]);
@@ -130,14 +135,14 @@ void YAMLInputFormat::saveData(MutableColumns & columns, int id, int parent_id, 
 
 bool YAMLInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if(in.eof())
+    if(in->eof())
     {
 	return false;
     }
     String s;
-    int diff = skipWhitespaceIfAnyAndGetDiff(spaces, in);
+    int diff = skipWhitespaceIfAnyAndGetDiff(spaces, *in);
     spaces+=diff;
-    std::pair<String, String> keyAndValue = parseString(s, in);
+    std::pair<String, String> keyAndValue = parseString(s, *in);
     if(spaces == 0 && diff == 0)
     {
         if(keyAndValue.first == "match")
@@ -150,7 +155,7 @@ bool YAMLInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected match or set, your string is {}, value is {}, spaces are {}, diff is {}", keyAndValue.first, keyAndValue.second, spaces, diff);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected match or set, your string is {}", keyAndValue.first);
         }
     }
     else if(diff == 1)
@@ -211,10 +216,10 @@ bool YAMLInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected match:, your string is {}, value is {}, spaces is {}, diff is {}", keyAndValue.first, keyAndValue.second, spaces, diff);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected match:, your string is {}", keyAndValue.first);
         }
     }
-    if(in.eof())
+    if(in->eof())
     {
         saveData(columns, current_id, parents[spaces], name, data);
     }

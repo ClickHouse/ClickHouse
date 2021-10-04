@@ -19,31 +19,39 @@
 namespace DB
 {
 
-namespace
+namespace 
 {
     // Tree structure used in loading
     struct RegexpTreeNode
     {
         String regexp;
         std::vector<String> attributes;
-        RegexpTreeNode* parent;
-        std::vector<RegexpTreeNode> children;
+        UInt64 parent;
+        std::vector<RegexpTreeNode*> children;
         
-        RegexpTreeNode(String regexp_, std::vector<String> attributes_, std::vector<RegexpTreeNode> children_)
+        RegexpTreeNode(String regexp_, std::vector<String> attributes_, std::vector<RegexpTreeNode*> children_)
             : regexp(regexp_)
             , attributes(attributes_)
-            , parent(nullptr)
+            , parent(0)
             , children(children_)
         {
         }
         
-        RegexpTreeNode(String regexp_, std::vector<String> attributes_, RegexpTreeNode* parent_, std::vector<RegexpTreeNode> children_)
+        RegexpTreeNode(String regexp_, std::vector<String> attributes_, UInt64 parent_, std::vector<RegexpTreeNode*> children_)
             : regexp(regexp_)
             , attributes(attributes_)
             , parent(parent_)
             , children(children_)
         {
         }
+
+	RegexpTreeNode (const RegexpTreeNode& other)
+	    : regexp(other.regexp)
+	    , attributes(other.attributes)
+            , parent(other.parent)
+            , children(other.children)
+	{
+	}
     };
 }
 
@@ -108,7 +116,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr &) const override;
+        const ColumnPtr & default_value_extractor) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
     
@@ -123,7 +131,6 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> is_nullable_set;
 	
 	std::variant<
             ContainerType<UInt8>,
@@ -157,8 +164,8 @@ private:
     
     Attribute createAttribute(const DictionaryAttribute & attribute);    
    
-    template <typename ValueSetter>
-    void func(
+    template <typename ValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
 	RegexpTreeNode node, 
 	String regexp_,
 	bool isLast,
@@ -166,14 +173,8 @@ private:
 	size_t rows,
 	std::vector<StringRef> user_agents,
 	ValueSetter && set_value,
-	size_t kes_found) const;
- 
-    template <typename AttributeType,typename ValueSetter>
-    void getItemsImpl(
-	const size_t attribuye_index,
-        const Attribute & ,
-        const Columns & key_columns,
-        ValueSetter && set_value) const;
+	size_t kes_found,
+	DefaultValueExtractor & default_value_extractor) const;
 
     void setNodeValue(UInt64 id, UInt64 parent_id, String regexp, std::vector<String> attributes);
 
@@ -185,7 +186,7 @@ private:
     std::vector<Attribute> attributes;
     std::vector<bool> loaded_keys;
     std::map<UInt64, RegexpTreeNode> nodes;
-    std::vector<RegexpTreeNode> roots;
+    std::vector<UInt64> roots;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
