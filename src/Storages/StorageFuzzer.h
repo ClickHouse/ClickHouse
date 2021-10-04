@@ -1,16 +1,9 @@
 #pragma once
 
 #include <common/shared_ptr_helper.h>
+#include <Storages/IStorage.h>
 
 #include <DataTypes/DataTypeString.h>
-
-#include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
-#include <DataStreams/NullBlockOutputStream.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
-
 
 namespace DB
 {

@@ -1,10 +1,22 @@
 #include <Storages/StorageFuzzer.h>
 
+#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Columns/ColumnString.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
+
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/QueryFuzzer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+
 #include <Storages/StorageFactory.h>
 
 namespace DB
@@ -13,7 +25,8 @@ namespace DB
 class FuzzerSink : public SinkToStorage
 {
 public:
-    explicit FuzzerSink(const Block & header) : SinkToStorage(header)
+    explicit FuzzerSink(const Block & header, ContextPtr context_)
+        : SinkToStorage(header), context(Context::createCopy(context_))
     {
         log = &Poco::Logger::get("FuzzerSink");
     }
@@ -26,6 +39,8 @@ public:
 private:
     void fuzzAndExecuteQuery(StringRef query);
 
+    ContextMutablePtr context;
+
     Poco::Logger * log{nullptr};
 
     QueryFuzzer fuzzer;
@@ -34,7 +49,7 @@ private:
 
 void FuzzerSink::fuzzAndExecuteQuery(StringRef query)
 {
-    LOG_INFO(log, "Starting to fuzz {}", query.data);
+    LOG_INFO(log, "Fuzzing {}", query.data);
 
     ASTPtr orig_ast;
 
@@ -45,8 +60,17 @@ void FuzzerSink::fuzzAndExecuteQuery(StringRef query)
     }
     catch (...)
     {
+        /// We got the query from query log, and most likely we
+        /// have enabled setting to limit the length of a query.
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
     }
+
+    /// The same logic as in fuzzer built-in Client.cpp:
+    /// We don't want to fuzz create, insert and drop queries
+    if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>() || orig_ast->as<ASTDropQuery>())
+        return;
+
 
     for (size_t i = 0; i < 100; ++i)
     {
@@ -55,7 +79,15 @@ void FuzzerSink::fuzzAndExecuteQuery(StringRef query)
         WriteBufferFromOwnString dump_before_fuzz;
         orig_ast->dumpTree(dump_before_fuzz);
 
-        LOG_INFO(log, "Fuzzed {}", dump_before_fuzz.str());
+        LOG_INFO(log, "Got query {}, will try to execute", orig_ast->formatForErrorMessage());
+
+        auto io = InterpreterFactory::get(orig_ast, context)->execute();
+
+        PullingPipelineExecutor executor(io.pipeline);
+        Block res;
+        while (!res && executor.pull(res));
+
+        LOG_INFO(log, "Successfully executed");
     }
 }
 
@@ -75,9 +107,9 @@ void FuzzerSink::consume(Chunk chunk)
 }
 
 
-SinkToStoragePtr StorageFuzzer::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+SinkToStoragePtr StorageFuzzer::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<FuzzerSink>(metadata_snapshot->getSampleBlock());
+    return std::make_shared<FuzzerSink>(metadata_snapshot->getSampleBlock(), context);
 }
 
 
