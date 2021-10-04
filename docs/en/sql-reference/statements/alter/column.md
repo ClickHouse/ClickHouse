@@ -204,6 +204,26 @@ Syntax:
 ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
 ```
 
+**Example:**
+
+```sql
+DROP TABLE IF EXISTS tmp;
+SET mutations_sync = 2;
+CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 20;
+ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+SELECT groupArray(x), groupArray(s) FROM tmp;
+```
+
+**Result:**
+
+```sql
+┌─groupArray(x)───────────────────────────────────────┬─groupArray(s)───────────────────────────────────────────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19] │ ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19'] │
+└─────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
 **See Also**
 
 - [MATERIALIZED](../../statements/create/table.md#materialized).
