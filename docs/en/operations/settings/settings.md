@@ -3727,7 +3727,7 @@ Exception: Total regexp lengths too large.
 
 ## pool_size {#pool_size}
 
-Defines the pool size for the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine.
+Defines the pool size for the [Executable/ExecutablePool](../../engines/table-engines/special/executable.md) table engines.
 
 Possible values:
 
@@ -3738,7 +3738,7 @@ Default value: `0`.
 
 ## max_command_execution_time {#max_command_execution_time}
 
-Maximum execution time for processing a script of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine. Specified in seconds. 
+Maximum execution time for processing a script of the [Executable/ExecutablePool](../../engines/table-engines/special/executable.md) table engines. Specified in seconds. 
 
 Possible values:
 
@@ -3749,7 +3749,7 @@ Default value: `0`.
 
 ## command_termination_timeout {#command_termination_timeout}
 
-After a script of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine is executed, the engine has `command_termination_timeout` seconds to shutdown, before ClickHouse throws an exception. Specified in seconds. 
+After a script of the [Executable/ExecutablePool](../../engines/table-engines/special/executable.md) table engine is executed, the engine has `command_termination_timeout` seconds to shutdown, before ClickHouse throws an exception. Specified in seconds. 
 
 Possible values:
 
@@ -3760,7 +3760,7 @@ Default value: `0`.
 
 ## send_chunk_header {#send_chunk_header}
 
-Defines the number of lines, ended with '\n', which are sent before sending chunk to process of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine. 
+Defines the number of lines, ended with '\n', which are sent before sending chunk to process of the [Executable/ExecutablePool](../../engines/table-engines/special/executable.md) table engines. 
 
 Possible values:
 
