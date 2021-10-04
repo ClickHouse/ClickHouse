@@ -14,7 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -525,6 +525,16 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    }
+
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    {
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        // TODO(nemkov): this is a precaution and should never happen, remove if there are no failed tests on CI/CD.
+        if (!ast_create_query.storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTCreateQuery lacks engine clause, but a comment is present.");
+
+        ast_create_query.storage->set(ast_create_query.storage->comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;

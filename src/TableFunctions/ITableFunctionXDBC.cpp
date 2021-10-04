@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
