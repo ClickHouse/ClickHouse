@@ -705,6 +705,12 @@ bool StorageFileLog::updateFileInfos()
     if (error.has_error)
         LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
+/// These file infos should always have same size(one for one) before update and after update
+#ifndef NDEBUG
+    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+#endif
+
     auto events = directory_watch->getEventsAndReset();
 
     for (const auto & [event_path, event_infos] : events)
@@ -794,24 +800,33 @@ bool StorageFileLog::updateFileInfos()
     /// Remove file infos with REMOVE status
     for (const auto & file_name : file_infos.file_names)
     {
-        if (auto it = file_infos.context_by_name.find(file_name);
-            it != file_infos.context_by_name.end() && it->second.status == FileStatus::REMOVED)
+        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
         {
-            /// Erase meta_by_inode first, otherwise it become invalid
-            file_infos.meta_by_inode.erase(it->second.inode);
-            file_infos.context_by_name.erase(it);
+            if (it->second.status == FileStatus::REMOVED)
+            {
+                file_infos.context_by_name.erase(it);
 
-            if (std::filesystem::exists(getFullMetaPath(file_name)))
-                std::filesystem::remove(getFullMetaPath(file_name));
-        }
-        else
-        {
-            valid_files.push_back(file_name);
+                /// We need to check that this ionde does not hold by other file(mv),
+                /// otherwise, we can not destroy it.
+                auto inode = it->second.inode;
+                /// If it's now hold by other file, than the file_name should has
+                /// been changed during updating file_infos
+                if (auto meta = file_infos.meta_by_inode.find(inode);
+                    meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+                    file_infos.meta_by_inode.erase(meta);
+
+                if (std::filesystem::exists(getFullMetaPath(file_name)))
+                    std::filesystem::remove(getFullMetaPath(file_name));
+            }
+            else
+            {
+                valid_files.push_back(file_name);
+            }
         }
     }
     file_infos.file_names.swap(valid_files);
 
-    /// These file infos should always have same size(one for one)
+/// These file infos should always have same size(one for one)
 #ifndef NDEBUG
     assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
