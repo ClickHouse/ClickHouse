@@ -144,7 +144,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY` and `LIMIT BY` clauses support positional arguments. For example, ORDER BY 1,2 will be sorting rows on the table on the first and then the second column.
+The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses support positional arguments. For example, `ORDER BY 1,2` will be sorting rows on the table on the first and then the second column.
 
 ## Implementation Details {#implementation-details}
 

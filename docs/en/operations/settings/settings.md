@@ -3752,7 +3752,7 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statement. When you want to use column numbers instead of titles in these clauses, set `enable_positional_arguments = 1`.
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of titles in these clauses, set `enable_positional_arguments = 1`.
 
 Possible values:
 
@@ -3768,7 +3768,7 @@ Query:
 ```sql
 CREATE TABLE positional_arguments(one Int, two Int, tree Int) ENGINE=Memory();
 
-INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 30, 10), (30, 10, 20);
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
 
 SET enable_positional_arguments = 1;
 
@@ -3780,8 +3780,8 @@ Result:
 ```text
 ┌─one─┬─two─┬─tree─┐
 │  30 │  10 │   20 │
+│  20 │  20 │   10 │
 │  10 │  20 │   30 │
-│  20 │  30 │   10 │
 └─────┴─────┴──────┘
 
 ```
