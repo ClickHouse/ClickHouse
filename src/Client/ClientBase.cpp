@@ -4,11 +4,11 @@
 #include <iomanip>
 #include <filesystem>
 
-#include <common/argsToConfig.h>
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LineReader.h>
-#include <common/scope_guard_safe.h>
+#include <base/argsToConfig.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LineReader.h>
+#include <base/scope_guard_safe.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -67,12 +67,55 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 }
 
 namespace DB
 {
+
+
+std::atomic_flag exit_on_signal = ATOMIC_FLAG_INIT;
+
+class QueryInterruptHandler : private boost::noncopyable
+{
+public:
+    QueryInterruptHandler() { exit_on_signal.clear(); }
+
+    ~QueryInterruptHandler() { exit_on_signal.test_and_set(); }
+
+    static bool cancelled() { return exit_on_signal.test(); }
+};
+
+/// This signal handler is set only for sigint.
+void interruptSignalHandler(int signum)
+{
+    if (exit_on_signal.test_and_set())
+        _exit(signum);
+}
+
+void ClientBase::setupSignalHandler()
+{
+     exit_on_signal.test_and_set();
+
+     struct sigaction new_act;
+     memset(&new_act, 0, sizeof(new_act));
+
+     new_act.sa_handler = interruptSignalHandler;
+     new_act.sa_flags = 0;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&new_act.sa_mask);
+#else
+     if (sigemptyset(&new_act.sa_mask))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+#endif
+
+     if (sigaction(SIGINT, &new_act, nullptr))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+}
+
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
@@ -454,8 +497,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    InterruptListener interrupt_listener;
     bool cancelled = false;
+    QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -477,18 +520,17 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
             {
                 auto cancel_query = [&] {
                     connection->sendCancel();
-                    cancelled = true;
                     if (is_interactive)
                     {
                         progress_indication.clearProgressOutput();
                         std::cout << "Cancelling query." << std::endl;
-                    }
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+                    }
+                    cancelled = true;
                 };
 
-                if (interrupt_listener.check())
+                /// handler received sigint
+                if (query_interrupt_handler.cancelled())
                 {
                     cancel_query();
                 }

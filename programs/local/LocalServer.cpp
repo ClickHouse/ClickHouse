@@ -13,8 +13,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/scope_guard_safe.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -34,7 +34,7 @@
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
-#include <common/ErrorHandlers.h>
+#include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -44,7 +44,7 @@
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
-#include <common/argsToConfig.h>
+#include <base/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
 #include <filesystem>
@@ -414,17 +414,13 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+    setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
     is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
-    std::optional<InterruptListener> interrupt_listener;
-    if (is_interactive)
-    {
-        interrupt_listener.emplace();
-    }
-    else
+    if (!is_interactive)
     {
         /// We will terminate process on error
         static KillingErrorHandler error_handler;

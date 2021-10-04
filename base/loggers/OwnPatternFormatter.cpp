@@ -8,8 +8,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/CurrentThread.h>
-#include <common/getThreadId.h>
-#include <common/terminalColors.h>
+#include <base/getThreadId.h>
+#include <base/terminalColors.h>
 #include "Loggers.h"
 
 
