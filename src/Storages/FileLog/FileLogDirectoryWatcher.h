@@ -45,7 +45,7 @@ protected:
 
 private:
     const std::string path;
-    std::shared_ptr<Poco::DirectoryWatcher> dw;
+    std::unique_ptr<Poco::DirectoryWatcher> dw;
 
     Poco::Logger * log;
 
