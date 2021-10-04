@@ -323,7 +323,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '9':
             {
                 has_number = true;
-                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_ext_integral<T>)
+                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !ExtIntegral<T>)
                 {
                     /// Perform relativelly slow overflow check only when
                     /// number of decimal digits so far is close to the max for given type.
@@ -392,7 +392,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (is_decimal<T>)
+    if constexpr (DecimalT>)
     {
         readIntText<check_overflow>(x.value, buf);
     }
@@ -928,7 +928,7 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 }
 
 template <typename T>
-inline std::enable_if_t<is_ext_integral<T>, void>
+inline std::enable_if_t<ExtIntegral<T>, void>
 readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)

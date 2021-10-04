@@ -1,7 +1,8 @@
 #pragma once
 
 #include <type_traits>
-
+#include <base/Traits.h>
+#include <base/Switch.h>
 #include <Core/Types.h>
 
 
@@ -73,8 +74,8 @@ template <> struct Construct<true, true, 8> { using Type = Float64; };
 template <typename A, typename B> struct ResultOfAdditionMultiplication
 {
     using Type = typename Construct<
-        is_signed_v<A> || is_signed_v<B>,
-        std::is_floating_point_v<A> || std::is_floating_point_v<B>,
+        Signed<A> || Signed<B>,
+        Float<A> || Float<B>,
         nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
@@ -82,7 +83,7 @@ template <typename A, typename B> struct ResultOfSubtraction
 {
     using Type = typename Construct<
         true,
-        std::is_floating_point_v<A> || std::is_floating_point_v<B>,
+        Float<A> || Float<B>,
         nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
@@ -98,7 +99,7 @@ template <typename A, typename B> struct ResultOfFloatingPointDivision
 template <typename A, typename B> struct ResultOfIntegerDivision
 {
     using Type = typename Construct<
-        is_signed_v<A> || is_signed_v<B>,
+        Signed<A> || Signed<B>,
         false,
         sizeof(A)>::Type;
 };
@@ -108,33 +109,33 @@ template <typename A, typename B> struct ResultOfIntegerDivision
   */
 template <typename A, typename B> struct ResultOfModulo
 {
-    static constexpr bool result_is_signed = is_signed_v<A>;
+    static constexpr bool result_is_signed = Signed<A>;
     /// If modulo of division can yield negative number, we need larger type to accommodate it.
     /// Example: toInt32(-199) % toUInt8(200) will return -199 that does not fit in Int8, only in Int16.
     static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B)) : sizeof(B);
     using Type0 = typename Construct<result_is_signed, false, size_of_result>::Type;
-    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
+    using Type = std::conditional_t<Float<A> || Float<B>, Float64, Type0>;
 };
 
 template <typename A, typename B> struct ResultOfModuloLegacy
 {
-    using Type0 = typename Construct<is_signed_v<A> || is_signed_v<B>, false, sizeof(B)>::Type;
-    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
+    using Type0 = typename Construct<Signed<A> || Signed<B>, false, sizeof(B)>::Type;
+    using Type = std::conditional_t<Float<A> || Float<B>, Float64, Type0>;
 };
 
 template <typename A> struct ResultOfNegate
 {
     using Type = typename Construct<
         true,
-        std::is_floating_point_v<A>,
-        is_signed_v<A> ? sizeof(A) : nextSize(sizeof(A))>::Type;
+        Float<A>,
+        Signed<A> ? sizeof(A) : nextSize(sizeof(A))>::Type;
 };
 
 template <typename A> struct ResultOfAbs
 {
     using Type = typename Construct<
         false,
-        std::is_floating_point_v<A>,
+        Float<A>,
         sizeof(A)>::Type;
 };
 
@@ -143,15 +144,15 @@ template <typename A> struct ResultOfAbs
 template <typename A, typename B> struct ResultOfBit
 {
     using Type = typename Construct<
-        is_signed_v<A> || is_signed_v<B>,
+        Signed<A> || Signed<B>,
         false,
-        std::is_floating_point_v<A> || std::is_floating_point_v<B> ? 8 : max(sizeof(A), sizeof(B))>::Type;
+        Float<A> || Float<B> ? 8 : max(sizeof(A), sizeof(B))>::Type;
 };
 
 template <typename A> struct ResultOfBitNot
 {
     using Type = typename Construct<
-        is_signed_v<A>,
+        Signed<A>,
         false,
         sizeof(A)>::Type;
 };
@@ -171,38 +172,36 @@ template <typename A> struct ResultOfBitNot
 template <typename A, typename B>
 struct ResultOfIf
 {
-    static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
-    static constexpr bool has_integer = is_integer<A> || is_integer<B>;
-    static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
-    static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
-    static constexpr bool has_big_int = is_ext_integral<A> || is_ext_integral<B>;
+    static constexpr bool has_float = Float<A> || Float<B>;
+    static constexpr bool has_integer = Integral<A> || Integral<B>;
+    static constexpr bool has_signed = Signed<A> || Signed<B>;
+    static constexpr bool has_unsigned = Unsigned<A> || Unsigned<B>;
+    static constexpr bool has_big_int = ExtIntegral<A> || ExtIntegral<B>;
 
-    static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
-    static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_unsigned_integer = max(Signed<A> ? 0 : sizeof(A), Signed<B> ? 0 : sizeof(B));
+    static constexpr size_t max_size_of_signed_integer = max(Signed<A> ? sizeof(A) : 0, Signed<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_integer = max(Integral<A> ? sizeof(A) : 0, Integral<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_float = max(Float<A> ? sizeof(A) : 0, Float<B> ? sizeof(B) : 0);
 
     using ConstructedType = typename Construct<has_signed, has_float,
         ((has_float && has_integer && max_size_of_integer >= max_size_of_float)
             || (has_signed && has_unsigned && max_size_of_unsigned_integer >= max_size_of_signed_integer))
-                ? max(sizeof(A), sizeof(B)) * 2
-                : max(sizeof(A), sizeof(B))>::Type;
+                ? MaxSize<A, B> * 2
+                : MaxSize<A, B>>::Type;
 
-    using Type =
-        std::conditional_t<std::is_same_v<A, B>, A,
-        std::conditional_t<is_decimal<A> && is_decimal<B>,
-            std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
-        std::conditional_t<!is_decimal<A> && !is_decimal<B>,
-            ConstructedType, Error>>>;
+    using Type = Switch<Error,
+        Case<std::is_same_v<A, B>, A>,
+        Case<Decimal<A> && Decimal<B>, MaxSizeType<A, B>>,
+        Case<!Decimal<A> && !Decimal<B>, ConstructedType>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
 {
     using Type = typename Construct<
-        is_signed_v<A>,
+        Signed<A>,
         false,
-        std::is_floating_point_v<A> ? 8 : sizeof(A)>::Type;
+        Float<A> ? 8 : sizeof(A)>::Type;
 };
 
 
@@ -210,9 +209,9 @@ template <typename A> struct ToInteger
 // NOTE: This case is applied for 64-bit integers only (for backward compatibility), but could be used for any-bit integers
 template <typename A, typename B>
 constexpr bool LeastGreatestSpecialCase =
-    std::is_integral_v<A> && std::is_integral_v<B>
+    Integral<A> && Integral<B>
     && (8 == sizeof(A) && sizeof(A) == sizeof(B))
-    && (is_signed_v<A> ^ is_signed_v<B>);
+    && (Signed<A> ^ Signed<B>);
 
 template <typename A, typename B>
 using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>,

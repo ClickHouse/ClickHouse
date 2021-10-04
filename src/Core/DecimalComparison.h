@@ -46,14 +46,14 @@ template <> struct ConstructDecInt<32> { using Type = Int256; };
 template <typename T, typename U>
 struct DecCompareInt
 {
-    using Type = typename ConstructDecInt<(!is_decimal<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+    using Type = typename ConstructDecInt<(!Decimal<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
     using TypeA = Type;
     using TypeB = Type;
 };
 
 ///
 template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
-    bool _actual = is_decimal<A> || is_decimal<B>>
+    bool _actual = Decimal<A> || Decimal<B>>
 class DecimalComparison
 {
 public:
@@ -114,7 +114,7 @@ private:
         return apply<false, false>(a, b, 1);
     }
 
-    template <is_decimal T, is_decimal U>
+    template <Decimal T, Decimal U>
     static Shift getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
@@ -135,7 +135,7 @@ private:
         return shift;
     }
 
-    template <is_decimal T, typename U>
+    template <Decimal T, typename U>
     static Shift getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
@@ -145,7 +145,7 @@ private:
         return shift;
     }
 
-    template <typename T, is_decimal U>
+    template <typename T, Decimal U>
     static Shift getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
@@ -218,13 +218,13 @@ private:
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
-        if constexpr (is_decimal<A>)
+        if constexpr (Decimal<A>)
             x = a.value;
         else
             x = a;
 
         CompareInt y;
-        if constexpr (is_decimal<B>)
+        if constexpr (Decimal<B>)
             y = b.value;
         else
             y = b;

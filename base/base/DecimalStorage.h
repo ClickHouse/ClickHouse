@@ -1,5 +1,6 @@
 #pragma once
-#include "extended_types.h"
+
+#include "Types.h"
 #include "IsAny.h"
 
 namespace DB
@@ -11,6 +12,16 @@ using Decimal32 = DecimalStorage<Int32>;
 using Decimal64 = DecimalStorage<Int64>;
 using Decimal128 = DecimalStorage<Int128>;
 using Decimal256 = DecimalStorage<Int256>;
+
+/**
+ * Most common use case: operate on a decimal-like object (decimal functions etc.), so Decimal is most general.
+ * Sometimes we need to check for DateTime64 separately, so DecimalStrict allows to check only for Decimal32...256.
+ * Finally, we may want to check for decimals which underlying object is language-native (e.g. for vectorization
+ * purposes), so DecimalNotExtIntegral is the right concept.
+ */
+
+template <class T>
+concept DecimalNotExtIntegral = is_any<T, Decimal32, Decimal64>;
 
 template <class T>
 concept DecimalStrict = is_any<T, Decimal32, Decimal64, Decimal128, Decimal256>;
@@ -62,17 +73,17 @@ struct DecimalStorage
             return static_cast<U>(value);
     }
 
-    constexpr const DecimalStorage<T> & operator+=(const T & x) { value += x; return *this; }
-    constexpr const DecimalStorage<T> & operator-=(const T & x) { value -= x; return *this; }
-    constexpr const DecimalStorage<T> & operator*=(const T & x) { value *= x; return *this; }
-    constexpr const DecimalStorage<T> & operator/=(const T & x) { value /= x; return *this; }
-    constexpr const DecimalStorage<T> & operator%=(const T & x) { value %= x; return *this; }
+    constexpr const DecimalStorage & operator+=(const T & x) { value += x; return *this; }
+    constexpr const DecimalStorage & operator-=(const T & x) { value -= x; return *this; }
+    constexpr const DecimalStorage & operator*=(const T & x) { value *= x; return *this; }
+    constexpr const DecimalStorage & operator/=(const T & x) { value /= x; return *this; }
+    constexpr const DecimalStorage & operator%=(const T & x) { value %= x; return *this; }
 
-    template <class U> const DecimalStorage<T> & operator+=(const DecimalStorage<U> & x) { value += x.value; return *this; }
-    template <class U> const DecimalStorage<T> & operator-=(const DecimalStorage<U> & x) { value -= x.value; return *this; }
-    template <class U> const DecimalStorage<T> & operator*=(const DecimalStorage<U> & x) { value *= x.value; return *this; }
-    template <class U> const DecimalStorage<T> & operator/=(const DecimalStorage<U> & x) { value /= x.value; return *this; }
-    template <class U> const DecimalStorage<T> & operator%=(const DecimalStorage<U> & x) { value %= x.value; return *this; }
+    template <class U> constexpr const DecimalStorage & operator+=(const DecimalStorage<U> & x) { value += x.value; return *this; }
+    template <class U> constexpr const DecimalStorage & operator-=(const DecimalStorage<U> & x) { value -= x.value; return *this; }
+    template <class U> constexpr const DecimalStorage & operator*=(const DecimalStorage<U> & x) { value *= x.value; return *this; }
+    template <class U> constexpr const DecimalStorage & operator/=(const DecimalStorage<U> & x) { value /= x.value; return *this; }
+    template <class U> constexpr const DecimalStorage & operator%=(const DecimalStorage<U> & x) { value %= x.value; return *this; }
 
     /// This is to avoid UB for sumWithOverflow()
     [[clang::no_sanitize("undefined")]] void addOverflow(const T & x) { value += x; }

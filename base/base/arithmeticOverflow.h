@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/extended_types.h>
-#include <base/defines.h>
+#include "Traits.h"
+#include "defines.h"
 
 
 namespace common
@@ -149,7 +149,7 @@ namespace common
     inline bool mulOverflow(T x, U y, R & res)
     {
         // not built in type, wide integer
-        if constexpr (is_ext_integral<T>  || is_ext_integral<R> || is_ext_integral<U>)
+        if constexpr (ExtIntegral<T> || ExtIntegral<R> || ExtIntegral<U>)
         {
             res = mulIgnoreOverflow<R>(x, y);
             return false;

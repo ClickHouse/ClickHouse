@@ -70,7 +70,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!is_decimal<Value> || !returns_float);
+    static_assert(!DecimalValue> || !returns_float);
 
     QuantileLevels<Float64> levels;
 

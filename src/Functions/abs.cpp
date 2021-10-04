@@ -9,21 +9,21 @@ namespace DB
 template <typename A>
 struct AbsImpl
 {
-    using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
+    using ResultType = std::conditional_t<Decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (is_decimal<A>)
+        if constexpr (Decimal<A>)
             return a < A(0) ? A(-a) : a;
-        else if constexpr (is_ext_integral<A> && is_signed_v<A>)
+        else if constexpr (ExtIntegral<A> && Signed<A>)
             return (a < 0) ? -a : a;
-        else if constexpr (is_integer<A> && is_signed_v<A>)
+        else if constexpr (Integral<A> && Signed<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);
-        else if constexpr (is_integer<A> && is_unsigned_v<A>)
+        else if constexpr (Integral<A> && Unsigned<A>)
             return static_cast<ResultType>(a);
-        else if constexpr (std::is_floating_point_v<A>)
+        else if constexpr (Float<A>)
             return static_cast<ResultType>(std::abs(a));
     }
 

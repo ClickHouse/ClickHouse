@@ -1137,7 +1137,7 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
 }
 
 template <typename T>
-inline std::enable_if_t<is_ext_integral<T>, void>
+inline std::enable_if_t<ExtIntegral<T>, void>
 writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)

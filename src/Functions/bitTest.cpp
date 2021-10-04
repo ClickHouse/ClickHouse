@@ -23,7 +23,7 @@ struct BitTestImpl
     template <typename Result = ResultType>
     NO_SANITIZE_UNDEFINED static inline Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_ext_integral<A> || is_ext_integral<B>)
+        if constexpr (ExtIntegral<A> || ExtIntegral<B>)
             throw Exception("bitTest is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else
             return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;

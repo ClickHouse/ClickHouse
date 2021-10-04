@@ -44,9 +44,9 @@ class DataTypeFixedString;
 namespace dt
 {
 template <class T>
-concept is_string = std::is_same_v<T, DataTypeString>;
+concept String = std::is_same_v<T, DataTypeString>;
 
 template <class T>
-concept is_string_or_fixed_string = is_string<T> || std::is_same_v<T, DataTypeFixedString>;
+concept StringOrFixedString = String<T> || std::is_same_v<T, DataTypeFixedString>;
 }
 }

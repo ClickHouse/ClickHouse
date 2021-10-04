@@ -226,11 +226,11 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
-    if constexpr (std::is_floating_point_v<To>)
+    if constexpr (Float<To>)
     {
         result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
     }
-    else if constexpr (is_integer<To> && (sizeof(To) >= sizeof(DecimalNativeType)))
+    else if constexpr (Integral<To> && (sizeof(To) >= sizeof(DecimalNativeType)))
     {
         DecimalNativeType whole = getWholePart(decimal, scale);
 
@@ -247,9 +247,9 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 
         result = static_cast<To>(whole);
     }
-    else if constexpr (is_integer<To>)
+    else if constexpr (Integral<To>)
     {
-        using CastTo = std::conditional_t<(is_ext_integral<DecimalNativeType> && std::is_same_v<To, UInt8>), uint8_t, To>;
+        using CastTo = std::conditional_t<(ExtIntegral<DecimalNativeType> && std::is_same_v<To, UInt8>), uint8_t, To>;
 
         const DecimalNativeType whole = getWholePart(decimal, scale);
 

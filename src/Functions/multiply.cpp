@@ -16,7 +16,7 @@ struct MultiplyImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
-        if constexpr (is_ext_integral<A> || is_ext_integral<B>)
+        if constexpr (ExtIntegral<A> || ExtIntegral<B>)
         {
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;

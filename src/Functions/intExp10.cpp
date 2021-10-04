@@ -22,7 +22,7 @@ struct IntExp10Impl
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
-        if constexpr (is_ext_integral<A> || std::is_same_v<A, Decimal256>)
+        if constexpr (ExtIntegral<A> || std::is_same_v<A, Decimal256>)
             throw DB::Exception("IntExp10 is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return intExp10(a);

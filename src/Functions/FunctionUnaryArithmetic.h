@@ -139,7 +139,7 @@ public:
 
         bool valid = castType(arguments[0].get(), [&]<class DataType>(const DataType & type)
         {
-            if constexpr (dt::is_fixed_string<DataType>)
+            if constexpr (dt::FixedString<DataType>)
             {
                 if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
                     return false;
@@ -149,7 +149,7 @@ public:
             {
                 using T0 = FieldType<DataType>;
 
-                if constexpr (dt::is_decimal_like<DataType> && !is_sign_function)
+                if constexpr (dt::Decimal<DataType> && !is_sign_function)
                 {
                     if constexpr (!allow_decimal)
                         return false;
@@ -177,7 +177,7 @@ public:
         ColumnPtr result_column;
         bool valid = castType(arguments[0].type.get(), [&]<class DataType>(const DataType & type)
         {
-            if constexpr (dt::is_fixed_string<DataType>)
+            if constexpr (dt::FixedString<DataType>)
             {
                 if constexpr (allow_fixed_string)
                 {
@@ -192,7 +192,7 @@ public:
                     }
                 }
             }
-            else if constexpr (dt::is_decimal_like<DataType>)
+            else if constexpr (dt::Decimal<DataType>)
             {
                 using T0 = typename DataType::FieldType;
                 if constexpr (allow_decimal)
@@ -250,10 +250,10 @@ public:
 
         return castType(arguments[0].get(), [&]<class DataType>(const DataType&)
         {
-            if constexpr (dt::is_fixed_string<DataType>)
+            if constexpr (dt::FixedString<DataType>)
                 return false;
             else
-                return !dt::is_decimal_like<DataType> && Op<FieldType<DataType>>::compilable;
+                return !dt::Decimal<DataType> && Op<FieldType<DataType>>::compilable;
         });
     }
 
@@ -265,14 +265,14 @@ public:
 
         castType(types[0].get(), [&]<class T>(const T &)
         {
-            if constexpr (dt::is_fixed_string<T>)
+            if constexpr (dt::FixedString<T>)
                 return false;
             else
             {
                 using TField = FieldType<T>;
                 using Res = typename Op<TField>::ResultType;
 
-                if constexpr (!std::is_same_v<Res, InvalidType> && !dt::is_decimal_like<T> && Op<TField>::compilable)
+                if constexpr (!std::is_same_v<Res, InvalidType> && !dt::Decimal<T> && Op<TField>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<Res>>());

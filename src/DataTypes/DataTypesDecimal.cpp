@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-template <is_decimal T>
+template <Decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
     if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
@@ -32,14 +32,14 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
     return false;
 }
 
-template <is_decimal T>
+template <Decimal T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     using PromotedType = DataTypeDecimal<Decimal128>;
     return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
-template <is_decimal T>
+template <Decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
@@ -53,7 +53,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     return x;
 }
 
-template <is_decimal T>
+template <Decimal T>
 SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
@@ -61,11 +61,11 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 
 namespace
 {
-    constexpr std::string_view exactly_two_args =
-        "Decimal data type family must have exactly two arguments: precision and scale";
+constexpr std::string_view exactly_two_args =
+    "Decimal data type family must have exactly two arguments: precision and scale";
 
-    constexpr std::string_view two_number_args =
-        "Decimal data type family must have two numbers as its arguments";
+constexpr std::string_view two_number_args =
+    "Decimal data type family must have two numbers as its arguments";
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

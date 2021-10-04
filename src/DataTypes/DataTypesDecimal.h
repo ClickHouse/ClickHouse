@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/arithmeticOverflow.h>
-#include <base/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -24,7 +23,7 @@ namespace ErrorCodes
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <is_decimal T>
+template <Decimal T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
 {
     using Base = DataTypeDecimalBase<T>;
@@ -56,21 +55,10 @@ class DataTypeDateTime64;
 
 namespace dt
 {
-namespace detail
-{
-    template <class T> inline constexpr bool is_decimal = false;
-    template <class T> inline constexpr bool is_decimal<DataTypeDecimal<T>> = true;
-}
+template <class T> concept DecimalStrict = is_any<T,
+    DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
 
-template <class T> concept is_decimal = detail::is_decimal<T>;
-
-/// Most template code treats DateTime64 as Decimal (so we could perform decimal operations on it), but
-/// explicit semantics is better (so we can differentiate between DataTypeDecimals and DataTypeDateTime64.
-template <class T>
-concept is_decimal_like = is_decimal<T> || std::is_same_v<T, DataTypeDateTime64>;
-
-template <class T>
-concept is_decimal_like_or_number = is_decimal_like<T> || is_number<T>;
+template <class T> concept Decimal = DecimalStrict<T> || std::is_same_v<T, DataTypeDateTime64>;
 }
 
 template <typename T>
@@ -105,7 +93,7 @@ inline UInt32 getDecimalPrecision(const IDataType & data_type)
     return 0;
 }
 
-inline UInt32 getDecimalScale(const dt::is_decimal_like auto & data_type)
+inline UInt32 getDecimalScale(const dt::Decimal auto & data_type)
 {
     return data_type.getScale();
 }
@@ -179,7 +167,7 @@ inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldTy
 
     constexpr bool throw_exception = std::is_void_v<Ret>;
 
-    if constexpr (is_floating_point<FromField>)
+    if constexpr (Float<FromField>)
     {
         if (!std::isfinite(value))
         {
@@ -212,7 +200,7 @@ inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldTy
         else
             return true;
     }
-    else if constexpr (is_ext_integral<FromField>)
+    else if constexpr (ExtIntegral<FromField>)
         return convertDecimals<DataTypeDecimal256, To, Ret>(static_cast<Int256>(value), 0, scale, result);
     else if constexpr (std::is_same_v<FromField, UInt64>)
         return convertDecimals<DataTypeDecimal128, To, Ret>(static_cast<Int128>(value), 0, scale, result);
@@ -221,7 +209,7 @@ inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldTy
 }
 }
 
-template <dt::is_decimal_like From, dt::is_decimal_like To>
+template <dt::Decimal From, dt::Decimal To>
 inline FieldType<To> convertDecimals(const FieldType<From> & value, UInt32 scale_from, UInt32 scale_to)
 {
     FieldType<To> result;
@@ -229,13 +217,13 @@ inline FieldType<To> convertDecimals(const FieldType<From> & value, UInt32 scale
     return result;
 }
 
-template <dt::is_decimal_like From, dt::is_decimal_like To>
+template <dt::Decimal From, dt::Decimal To>
 inline bool tryConvertDecimals(const FieldType<From> & value, UInt32 scale_from, UInt32 scale_to, FieldType<To> & result)
 {
     return detail::convertDecimals<From, To, bool>(value, scale_from, scale_to, result);
 }
 
-template <dt::is_decimal_like From, dt::is_number To>
+template <dt::Decimal From, dt::Arithmetic To>
 inline FieldType<To> convertFromDecimal(const FieldType<From> & value, UInt32 scale)
 {
     FieldType<To> result;
@@ -243,13 +231,13 @@ inline FieldType<To> convertFromDecimal(const FieldType<From> & value, UInt32 sc
     return result;
 }
 
-template <dt::is_decimal_like From, dt::has_arithmetic_field To>
+template <dt::Decimal From, dt::HasArithmeticField To>
 inline bool tryConvertFromDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
     return detail::convertFromDecimal<From, To, bool>(value, scale, result);
 }
 
-template <dt::has_arithmetic_field From, dt::is_decimal_like To>
+template <dt::HasArithmeticField From, dt::Decimal To>
 inline FieldType<To> convertToDecimal(const FieldType<From> & value, UInt32 scale)
 {
     FieldType<To> result;
@@ -257,7 +245,7 @@ inline FieldType<To> convertToDecimal(const FieldType<From> & value, UInt32 scal
     return result;
 }
 
-template <dt::has_arithmetic_field From, dt::is_decimal_like To>
+template <dt::HasArithmeticField From, dt::Decimal To>
 inline bool tryConvertToDecimal(const FieldType<From> & value, UInt32 scale, FieldType<To> & result)
 {
     return detail::convertToDecimal<From, To, bool>(value, scale, result);
@@ -271,10 +259,10 @@ inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
 
 }
 
-template <DB::dt::is_decimal_like T>
+template <DB::dt::Decimal T>
 struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {
-    auto format(const T & p, auto & ctx) -> decltype(ctx.out())
+    constexpr auto format(const T & p, auto & ctx) -> decltype(ctx.out())
     {
         return format_to(ctx.out(), "Decimal({}, {})", p.getPrecision(), p.getScale());
     }

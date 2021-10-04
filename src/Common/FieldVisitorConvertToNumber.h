@@ -113,10 +113,10 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <is_ext_integral U>
+    template <ExtIntegral U>
     T operator() (const U & x) const
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (Decimal<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);

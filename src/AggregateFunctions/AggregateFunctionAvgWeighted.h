@@ -8,7 +8,7 @@ namespace DB
 struct Settings;
 
 template <typename T>
-using AvgWeightedFieldType = std::conditional_t<is_decimal<T>,
+using AvgWeightedFieldType = std::conditional_t<DecimalT>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     std::conditional_t<DecimalOrExtendedInt<T>,
         Float64, // no way to do UInt128 * UInt128, better cast to Float64

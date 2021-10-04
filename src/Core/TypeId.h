@@ -54,7 +54,7 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
-template <is_decimal T> class DataTypeDecimal;
+template <Decimal T> class DataTypeDecimal;
 struct Array;
 
 #define RD_TYPEID_MAP(_A, _B) \

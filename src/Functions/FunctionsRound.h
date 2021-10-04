@@ -315,7 +315,7 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
-    static_assert(!is_decimal<T>);
+    static_assert(!Decimal<T>);
 
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
@@ -578,7 +578,7 @@ public:
 
         auto call = [&]<class T>(TypePair<void, T>)
         {
-            if constexpr (dt::is_number<T> || dt::is_decimal_like<T>)
+            if constexpr (dt::Arithmetic<T> || dt::Decimal<T>)
             {
                 res = Dispatcher<FieldType<T>, rounding_mode, tie_breaking_mode>::apply(column.column.get(), scale_arg);
                 return true;

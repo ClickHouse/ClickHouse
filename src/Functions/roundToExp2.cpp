@@ -42,7 +42,7 @@ roundDownToPowerOfTwo(T x)
 }
 
 template <typename T>
-inline std::enable_if_t<is_ext_integral<T>, T>
+inline std::enable_if_t<ExtIntegral<T>, T>
 roundDownToPowerOfTwo(T)
 {
     throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);

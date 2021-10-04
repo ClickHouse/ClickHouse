@@ -60,7 +60,7 @@ public:
     }
 
 private:
-    template <is_decimal T>
+    template <Decimal T>
     static constexpr bool outOfDigits(const T& decimal, UInt32 precision)
     {
         using NativeT = typename T::NativeType;

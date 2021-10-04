@@ -266,7 +266,7 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (is_decimal<DictionaryAttributeType>)
+        else if constexpr (DecimalDictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);

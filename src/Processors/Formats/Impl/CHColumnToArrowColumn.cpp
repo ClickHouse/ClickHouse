@@ -2,7 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
-#include <common/IsArcadiaBuild.h>
+#include <common/BuildType.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -487,7 +487,7 @@ namespace DB
         {
             auto fill_decimal = [&]<class To>(TypePair<void, To>)
             {
-                if constexpr (dt::is_decimal<To> && !std::is_same_v<To, DataTypeDecimal256>)
+                if constexpr (dt::DecimalStrict<To> && !std::is_same_v<To, DataTypeDecimal256>)
                 {
                     fillArrowArrayWithDecimalColumnData<To, Int128, arrow::Decimal128, arrow::Decimal128Builder>(
                         column, null_bytemap, array_builder, format_name, start, end);
@@ -565,7 +565,7 @@ namespace DB
 
             auto create_arrow_type = [&]<class To>(TypePair<void, To>)
             {
-                if constexpr (dt::is_decimal<To>)
+                if constexpr (dt::DecimalStrict<To>)
                 {
                     const auto & decimal_type = assert_cast<const To *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());

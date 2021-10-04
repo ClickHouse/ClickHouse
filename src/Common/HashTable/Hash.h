@@ -172,7 +172,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
 template <typename T>
 inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
 {
-    if constexpr (is_ext_integral<T> && sizeof(T) == 16)
+    if constexpr (ExtIntegral<T> && sizeof(T) == 16)
     {
         /// TODO This is classical antipattern.
         return intHash64(
@@ -185,7 +185,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key.toUnderType()) ^
             static_cast<UInt64>(key.toUnderType() >> 64));
     }
-    else if constexpr (is_ext_integral<T> && sizeof(T) == 32)
+    else if constexpr (ExtIntegral<T> && sizeof(T) == 32)
     {
         return intHash64(
             static_cast<UInt64>(key) ^
@@ -403,11 +403,11 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        if constexpr (is_ext_integral<T> && sizeof(T) == 16)
+        if constexpr (ExtIntegral<T> && sizeof(T) == 16)
         {
             return intHash32<salt>(key.items[0] ^ key.items[1]);
         }
-        else if constexpr (is_ext_integral<T> && sizeof(T) == 32)
+        else if constexpr (ExtIntegral<T> && sizeof(T) == 32)
         {
             return intHash32<salt>(key.items[0] ^ key.items[1] ^ key.items[2] ^ key.items[3]);
         }

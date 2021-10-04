@@ -31,7 +31,7 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(Signed<A> && Signed<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
@@ -41,7 +41,7 @@ inline bool divisionLeadsToFPE(A a, B b)
     if (unlikely(b == 0))
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(Signed<A> && Signed<B> && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
     return false;
@@ -52,13 +52,13 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_ext_integral<A> && std::is_floating_point_v<B>)
+    if constexpr (ExtIntegral<A> && Float<B>)
         return static_cast<B>(a) / b;
-    else if constexpr (is_ext_integral<B> && std::is_floating_point_v<A>)
+    else if constexpr (ExtIntegral<B> && Float<A>)
         return a / static_cast<A>(b);
-    else if constexpr (is_ext_integral<A> && is_ext_integral<B>)
+    else if constexpr (ExtIntegral<A> && ExtIntegral<B>)
         return static_cast<A>(a / b);
-    else if constexpr (!is_ext_integral<A> && is_ext_integral<B>)
+    else if constexpr (!ExtIntegral<A> && ExtIntegral<B>)
         return static_cast<A>(B(a) / b);
     else
         return a / b;
@@ -77,12 +77,12 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        using CastA = std::conditional_t<is_ext_integral<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
-        using CastB = std::conditional_t<is_ext_integral<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+        using CastA = std::conditional_t<ExtIntegral<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+        using CastB = std::conditional_t<ExtIntegral<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
 
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        if constexpr (is_integer<A> && is_integer<B> && (is_signed_v<A> || is_signed_v<B>))
+        if constexpr (Integral<A> && Integral<B> && (Signed<A> || Signed<B>))
         {
             using SignedCastA = make_signed_t<CastA>;
             using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
@@ -151,7 +151,7 @@ struct ModuloImpl
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_ext_integral<IntegerAType> || is_ext_integral<IntegerBType>)
+            if constexpr (ExtIntegral<IntegerAType> || ExtIntegral<IntegerBType>)
             {
                 using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
                 using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
@@ -159,7 +159,7 @@ struct ModuloImpl
                 CastA int_a(a);
                 CastB int_b(b);
 
-                if constexpr (is_ext_integral<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                if constexpr (ExtIntegral<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
                     return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
                 else
                     return static_cast<Result>(int_a % static_cast<CastA>(int_b));

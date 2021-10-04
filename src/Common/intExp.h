@@ -3,20 +3,10 @@
 #include <cstdint>
 #include <limits>
 
-#include <base/extended_types.h>
-
-// Also defined in Core/Defines.h
-#if !defined(NO_SANITIZE_UNDEFINED)
-#if defined(__clang__)
-    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
-#else
-    #define NO_SANITIZE_UNDEFINED
-#endif
-#endif
-
+#include <base/Types.h>
 
 /// On overflow, the function returns unspecified value.
-inline NO_SANITIZE_UNDEFINED uint64_t intExp2(int x)
+[[clang::no_sanitize("undefined")]] constexpr uint64_t intExp2(int x)
 {
     return 1ULL << x;
 }

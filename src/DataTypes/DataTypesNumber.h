@@ -67,6 +67,9 @@ template <class T>
 concept Integral = NativeIntegral<T> || ExtIntegral<T>;
 
 template <class T>
+concept NativeArithmetic = Float<T> || NativeIntegral<T>;
+
+template <class T>
 concept Arithmetic = Float<T> || Integral<T>;
 }
 }

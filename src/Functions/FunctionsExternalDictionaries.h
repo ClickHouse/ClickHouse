@@ -648,7 +648,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        if constexpr (dt::is_decimal_like<DataType>)
+        if constexpr (dt::Decimal<DataType>)
             return std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
             return std::make_shared<DataType>();

@@ -30,7 +30,7 @@ class DataTypeDateTime64;
 namespace dt
 {
 template <class T>
-concept is_date_or_datetime =
+concept DateOrDateTime =
     std::is_same_v<T, DataTypeDate>
     || std::is_same_v<T, DataTypeDate32>
     || std::is_same_v<T, DataTypeDateTime>

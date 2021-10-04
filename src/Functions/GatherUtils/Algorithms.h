@@ -44,7 +44,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 
         if constexpr (is_over_big_int<T> || is_over_big_int<U>)
         {
-            if constexpr (is_decimal<T>)
+            if constexpr (DecimalT>)
                 dst = static_cast<NativeU>(src.value);
             else
                 dst = static_cast<NativeU>(src);
@@ -99,7 +99,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (DecimalT>)
         {
             DecimalField field(T(slice.data[i]), 0); /// TODO: Decimal scale
             sink.elements.insert(field);
@@ -558,9 +558,9 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                         size_t second_ind [[maybe_unused]])
 {
     /// TODO: Decimal scale
-    if constexpr (is_decimal<T> && is_decimal<U>)
+    if constexpr (DecimalT> && DecimalU>)
         return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
-    else if constexpr (is_decimal<T> || is_decimal<U>)
+    else if constexpr (DecimalT> || DecimalU>)
         return false;
     else
         return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
@@ -588,7 +588,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t first_ind [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
-    if constexpr (is_decimal<T>)
+    if constexpr (DecimalT>)
         return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);

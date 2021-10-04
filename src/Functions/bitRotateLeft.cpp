@@ -22,7 +22,7 @@ struct BitRotateLeftImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_ext_integral<A> || is_ext_integral<B>)
+        if constexpr (ExtIntegral<A> || ExtIntegral<B>)
             throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return (static_cast<Result>(a) << static_cast<Result>(b))

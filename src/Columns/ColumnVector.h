@@ -104,7 +104,7 @@ template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!is_decimal<T>);
+    static_assert(!Decimal<T>);
 
 private:
     using Self = ColumnVector;

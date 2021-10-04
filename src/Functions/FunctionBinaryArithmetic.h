@@ -77,8 +77,7 @@ using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits:
     InvalidType, DataTypeNumber<T>>;
 
 template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
-    dt::is_integral_with_ext<DataType> ||
-    dt::is_decimal_like<DataType>;
+    dt::Integral<DataType> || dt::Decimal<DataType>;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
@@ -107,21 +106,21 @@ public:
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
         /// Decimal cases
-        Case<!allow_decimal && (dt::is_decimal_like<LeftDataType> || dt::is_decimal_like<RightDataType>), InvalidType>,
-        Case<dt::is_decimal_like<LeftDataType> && dt::is_decimal_like<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
-        Case<dt::is_decimal_like<LeftDataType> && dt::is_decimal_like<RightDataType>, RightDataType>,
-        Case<dt::is_decimal_like<LeftDataType> && dt::is_integral_with_ext<RightDataType>, LeftDataType>,
-        Case<dt::is_decimal_like<RightDataType> && dt::is_integral_with_ext<LeftDataType>, RightDataType>,
+        Case<!allow_decimal && (dt::Decimal<LeftDataType> || dt::Decimal<RightDataType>), InvalidType>,
+        Case<dt::Decimal<LeftDataType> && dt::Decimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<dt::Decimal<LeftDataType> && dt::Decimal<RightDataType>, RightDataType>,
+        Case<dt::Decimal<LeftDataType> && dt::Integral<RightDataType>, LeftDataType>,
+        Case<dt::Decimal<RightDataType> && dt::Integral<LeftDataType>, RightDataType>,
 
         /// e.g Decimal * Float64 = Float64
-        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<LeftDataType> && dt::is_float<RightDataType>,
+        Case<IsOperation<Operation>::multiply && dt::Decimal<LeftDataType> && dt::Float<RightDataType>,
             RightDataType>,
-        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<RightDataType> && dt::is_float<LeftDataType>,
+        Case<IsOperation<Operation>::multiply && dt::Decimal<RightDataType> && dt::Float<LeftDataType>,
             LeftDataType>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<dt::is_decimal_like<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
-        Case<dt::is_decimal_like<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
+        Case<dt::Decimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<dt::Decimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
 
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
@@ -130,14 +129,14 @@ public:
         /// Date + Integral -> Date
         /// Integral + Date -> Date
         Case<IsOperation<Operation>::plus, Switch<
-            Case<dt::is_integral<RightDataType>, LeftDataType>,
-            Case<dt::is_integral<LeftDataType>, RightDataType>>>,
+            Case<dt::Integral<RightDataType>, LeftDataType>,
+            Case<dt::Integral<LeftDataType>, RightDataType>>>,
 
         /// Date - Date     -> Int32
         /// Date - Integral -> Date
         Case<IsOperation<Operation>::minus, Switch<
             Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
-            Case<IsDateOrDateTime<LeftDataType> && dt::is_integral<RightDataType>, LeftDataType>>>,
+            Case<IsDateOrDateTime<LeftDataType> && dt::Integral<RightDataType>, LeftDataType>>>,
 
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
@@ -147,8 +146,8 @@ public:
         /// Date % Int32 -> Int32
         /// Date % Float -> Float64
         Case<IsOperation<Operation>::modulo, Switch<
-            Case<IsDateOrDateTime<LeftDataType> && dt::is_integral<RightDataType>, RightDataType>,
-            Case<IsDateOrDateTime<LeftDataType> && dt::is_float<RightDataType>, DataTypeFloat64>>>>;
+            Case<IsDateOrDateTime<LeftDataType> && dt::Integral<RightDataType>, RightDataType>,
+            Case<IsDateOrDateTime<LeftDataType> && dt::Float<RightDataType>, DataTypeFloat64>>>>;
 };
 }
 
@@ -350,8 +349,8 @@ public:
     static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
         NativeResultType scale_a, NativeResultType scale_b)
     {
-        if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
-        if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
+        if constexpr (op_case == OpCase::LeftConstant) static_assert(!Decimaldecltype(a)>);
+        if constexpr (op_case == OpCase::RightConstant) static_assert(!Decimaldecltype(b)>);
 
         size_t size;
 
@@ -421,7 +420,7 @@ public:
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
     static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b)
-        requires(!is_decimal<A> && !is_decimal<B>)
+        requires(!DecimalA> && !DecimalB>)
     {
         if constexpr (is_division && is_decimal_b)
             return applyScaledDiv<is_decimal_a>(a, b, scale_a);
@@ -780,9 +779,9 @@ class FunctionBinaryArithmetic : public IFunction
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = NativeType<ResultType>;
 
-        if constexpr (dt::is_float<ResultDataType> && is_decimal<T>)
+        if constexpr (dt::is_float<ResultDataType> && DecimalT>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
-        else if constexpr (is_decimal<T>)
+        else if constexpr (DecimalT>)
             return col_const->template getValue<T>().value;
         else
             return col_const->template getValue<T>();
@@ -814,9 +813,9 @@ class FunctionBinaryArithmetic : public IFunction
 
         using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
-        static constexpr const bool left_is_decimal = is_decimal<T0>;
-        static constexpr const bool right_is_decimal = is_decimal<T1>;
-        static constexpr const bool result_is_decimal = dt::is_decimal_like<ResultDataType>;
+        static constexpr const bool left_is_decimal = DecimalT0>;
+        static constexpr const bool right_is_decimal = DecimalT1>;
+        static constexpr const bool result_is_decimal = dt::Decimal<ResultDataType>;
 
         typename ColVecResult::MutablePtr col_res = nullptr;
 
@@ -832,7 +831,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultType scale_a = [&]
         {
-            if constexpr (dt::is_decimal_like<RightDataType> && is_division)
+            if constexpr (dt::Decimal<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
             {
@@ -1025,18 +1024,18 @@ public:
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    if constexpr (dt::is_decimal_like<Left> && dt::is_decimal_like<Right>)
+                    if constexpr (dt::Decimal<Left> && dt::Decimal<Right>)
                     {
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
-                    else if constexpr ((dt::is_decimal_like<Left> && dt::is_float<Right>) ||
-                        (dt::is_decimal_like<Right> && dt::is_float<Left>))
+                    else if constexpr ((dt::Decimal<Left> && dt::is_float<Right>) ||
+                        (dt::Decimal<Right> && dt::is_float<Left>))
                         type_res = std::make_shared<std::conditional_t<dt::is_float<Left>,
                             Left, Right>>();
-                    else if constexpr (dt::is_decimal_like<Left>)
+                    else if constexpr (dt::Decimal<Left>)
                         type_res = std::make_shared<Left>(left.getPrecision(), left.getScale());
-                    else if constexpr (dt::is_decimal_like<Right>)
+                    else if constexpr (dt::Decimal<Right>)
                         type_res = std::make_shared<Right>(right.getPrecision(), right.getScale());
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
                     {
@@ -1283,7 +1282,7 @@ public:
         const ColVecLeft * const col_left = checkAndGetColumn<ColVecLeft>(col_left_raw);
         const ColVecRight * const col_right = checkAndGetColumn<ColVecRight>(col_right_raw);
 
-        if constexpr (dt::is_decimal_like<Left> || dt::is_decimal_like<Right>)
+        if constexpr (dt::Decimal<Left> || dt::Decimal<Right>)
         {
             return executeNumericWithDecimal<Left, Right, Result>(
                 left, right,
@@ -1430,7 +1429,7 @@ public:
                 using OpSpec = Op<typename Left::FieldType, typename Right::FieldType>;
 
                 return !std::is_same_v<ResultDataType, InvalidType>
-                    && !dt::is_decimal_like<ResultDataType>
+                    && !dt::Decimal<ResultDataType>
                     && OpSpec::compilable;
             }
         });
@@ -1451,7 +1450,7 @@ public:
 
                 constexpr bool valid =
                     !std::is_same_v<ResultDataType, InvalidType>
-                    && !dt::is_decimal_like<ResultDataType>
+                    && !dt::Decimal<ResultDataType>
                     && OpSpec::compilable;
 
                 if constexpr (valid)

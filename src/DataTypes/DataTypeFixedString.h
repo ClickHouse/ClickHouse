@@ -68,6 +68,6 @@ public:
 
 namespace dt
 {
-template <class T> concept is_fixed_string = std::is_same_v<T, DataTypeFixedString>;
+template <class T> concept FixedString = std::is_same_v<T, DataTypeFixedString>;
 }
 }

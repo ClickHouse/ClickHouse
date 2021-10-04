@@ -44,6 +44,7 @@
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 
@@ -123,17 +124,14 @@ struct ConvertImpl
     using ColVecFrom = typename FromDataType::ColumnType;
     using ColVecTo = typename ToDataType::ColumnType;
 
-    static constexpr bool from_is_decimal_like = dt::is_decimal_like<FromDataType>;
-    static constexpr bool to_is_decimal_like = dt::is_decimal_like<ToDataType>;
+    static constexpr bool from_is_decimal = dt::Decimal<FromDataType>;
+    static constexpr bool to_is_decimal = dt::Decimal<ToDataType>;
 
-    static constexpr bool from_is_number = dt::is_number<FromDataType>;
-    static constexpr bool to_is_number = dt::is_number<ToDataType>;
-
-    static constexpr bool from_is_decimal_like_or_number = dt::is_decimal_like_or_number<FromDataType>;
-    static constexpr bool to_is_decimal_like_or_number = dt::is_decimal_like_or_number<ToDataType>;
+    static constexpr bool from_is_arithmetic = dt::Arithmetic<FromDataType>;
+    static constexpr bool to_is_arithmetic = dt::Arithmetic<ToDataType>;
 
     template <typename Additions = void *>
-    static ColumnPtr NO_SANITIZE_UNDEFINED execute(
+    [[clang::no_sanitize("undefined")]] static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr & result_type,
         size_t input_rows_count,
@@ -155,18 +153,18 @@ struct ConvertImpl
         }
 
         if constexpr (
-            (from_is_decimal_like && !to_is_decimal_like_or_number)
-            || (to_is_decimal_like && !from_is_decimal_like_or_number))
-            {
-                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
-                    ErrorCodes::ILLEGAL_COLUMN);
-            }
+            (from_is_decimal && !to_is_arithmetic)
+            || (to_is_decimal && !from_is_arithmetic))
+        {
+            throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
 
-            if constexpr (to_is_decimal_like)
+            if constexpr (to_is_decimal)
             {
                 UInt32 scale;
 
@@ -201,18 +199,18 @@ struct ConvertImpl
                 }
                 else
                 {
-                    if constexpr (from_is_decimal_like || to_is_decimal_like)
+                    if constexpr (from_is_decimal || to_is_decimal)
                     {
                         if constexpr (accurate_or_null_convert_strategy)
                         {
                             ToFieldType result;
                             bool convert_result = false;
 
-                            if constexpr (from_is_decimal_like && to_is_decimal_like)
+                            if constexpr (from_is_decimal && to_is_decimal)
                                 convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
-                            else if constexpr (from_is_decimal_like && to_is_number)
+                            else if constexpr (from_is_decimal && to_is_arithmetic)
                                 convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
-                            else if constexpr (from_is_number && to_is_decimal_like)
+                            else if constexpr (from_is_arithmetic && to_is_decimal)
                                 convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
 
                             if (convert_result)
@@ -225,11 +223,11 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (from_is_decimal_like && to_is_decimal_like)
+                            if constexpr (from_is_decimal && to_is_decimal)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                            else if constexpr (from_is_decimal_like && to_is_number)
+                            else if constexpr (from_is_decimal && to_is_arithmetic)
                                 vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                            else if constexpr (from_is_number && to_is_decimal_like)
+                            else if constexpr (from_is_arithmetic && to_is_decimal)
                                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                             else
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -1098,7 +1096,7 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (dt::is_decimal_like<ToDataType>)
+        if constexpr (dt::Decimal<ToDataType>)
         {
             UInt32 scale = additions;
             if constexpr (to_datetime64)
@@ -1188,7 +1186,7 @@ struct ConvertThroughParsing
                         readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (dt::is_decimal_like<ToDataType>)
+                    else if constexpr (dt::Decimal<ToDataType>)
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
@@ -1233,7 +1231,7 @@ struct ConvertThroughParsing
                         parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (dt::is_decimal_like<ToDataType>)
+                    else if constexpr (dt::Decimal<ToDataType>)
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
@@ -1675,7 +1673,7 @@ private:
 
         auto call = [&]<class To, class From, class Tag>(TypePair<To, From>, Tag)
         {
-            if constexpr (dt::is_decimal_like<To>)
+            if constexpr (dt::Decimal<To>)
             {
                 if constexpr (std::is_same_v<To, DataTypeDateTime64>)
                 {
@@ -1703,15 +1701,15 @@ private:
                 result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count, dt64->getScale());
             }
-            else if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal_like_or_number<To>)
+            else if constexpr (dt::Decimal_or_number<From> && dt::Decimal_or_number<To>)
             {
                 using FromField = typename From::FieldType;
                 using ToField = typename To::FieldType;
 
                 constexpr bool bad_from =
-                    is_decimal<FromField> || is_floating_point<FromField> || is_ext_integral<FromField> || is_signed_v<FromField>;
+                    DecimalFromField> || is_floating_point<FromField> || ExtIntegral<FromField> || is_signed_v<FromField>;
                 constexpr bool bad_to =
-                    is_decimal<ToField> || is_floating_point<ToField> || is_ext_integral<ToField> || is_signed_v<ToField>;
+                    DecimalToField> || is_floating_point<ToField> || ExtIntegral<ToField> || is_signed_v<ToField>;
 
                 constexpr bool bad_left = bad_from && std::is_same_v<To, DataTypeUUID>;
                 constexpr bool bad_right = bad_to && std::is_same_v<From, DataTypeUUID>;
@@ -1797,7 +1795,7 @@ class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr bool to_decimal = dt::is_decimal<ToDataType>;
+    static constexpr bool to_decimal = dt::DecimalStrict<ToDataType>;
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
@@ -2627,7 +2625,7 @@ private:
         };
     }
 
-    template <dt::is_decimal_like ToDataType>
+    template <dt::Decimal ToDataType>
     WrapperType createDecimalWrapper(
         const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
     {
@@ -2656,7 +2654,7 @@ private:
             bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(type_index,
                 [&]<class To, class From>(TypePair<To, From>)
             {
-                if constexpr (dt::is_decimal_like_or_number<From> && dt::is_decimal<To>)
+                if constexpr (dt::Arithmetic<From> && dt::DecimalTo>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
@@ -3292,7 +3290,7 @@ private:
                 ret = createEnumWrapper(from_type, checkAndGetDataType<To>(to_type.get()));
                 return true;
             }
-            else if constexpr (dt::is_decimal_like<To>)
+            else if constexpr (dt::Decimal<To>)
             {
                 ret = createDecimalWrapper(
                     from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);

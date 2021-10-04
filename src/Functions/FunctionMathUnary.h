@@ -95,7 +95,7 @@ private:
 
                 Impl::execute(src_remaining, dst_remaining);
 
-                if constexpr (is_ext_integral<T> || std::is_same_v<T, Decimal256>)
+                if constexpr (ExtIntegral<T> || std::is_same_v<T, Decimal256>)
                     for (size_t i = 0; i < rows_remaining; i++)
                         dst_data[rows_size + i] = dst_remaining[i];
                 else
@@ -147,7 +147,7 @@ private:
 
         auto call = [&col, &res]<class Type>(TypePair<void, Type>)
         {
-            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>,
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !Float<Type>,
                 Float64, Type>;
 
             const auto col_vec = checkAndGetColumn<ColumnVectorOrDecimal<Type>>(col.column.get());

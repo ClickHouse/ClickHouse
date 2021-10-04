@@ -46,6 +46,6 @@ public:
 
 namespace dt
 {
-template <class T> concept is_uuid = std::is_same_v<T, DataTypeUUID>;
+template <class T> concept UUID = std::is_same_v<T, DataTypeUUID>;
 }
 }

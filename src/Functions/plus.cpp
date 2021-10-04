@@ -17,7 +17,7 @@ struct PlusImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
-        if constexpr (is_ext_integral<A> || is_ext_integral<B>)
+        if constexpr (ExtIntegral<A> || ExtIntegral<B>)
         {
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;

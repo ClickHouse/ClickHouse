@@ -35,7 +35,7 @@ public:
         return x.getValue() != T(0);
     }
 
-    template <is_ext_integral T>
+    template <ExtIntegral T>
     bool operator() (T & x) const
     {
         x += rhs.reinterpret<T>();

@@ -104,9 +104,7 @@ struct AggregateFunctionSumData
     {
         const auto * end = ptr + count;
 
-        if constexpr (
-            (is_integer<T> && !is_ext_integral<T>)
-            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+        if constexpr (NativeIntegral<T> || DecimalNotExtIntegral<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -366,7 +364,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (!is_decimal<T>)
+        if constexpr (!DecimalT>)
             return std::make_shared<DataTypeNumber<TResult>>();
         else
         {
@@ -380,7 +378,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        if constexpr (is_ext_integral<T>)
+        if constexpr (ExtIntegral<T>)
             this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
         else
             this->data(place).add(column.getData()[row_num]);
@@ -521,7 +519,7 @@ private:
 
     static constexpr auto & castColumnToResult(IColumn & to)
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (DecimalT>)
             return assert_cast<ColumnDecimal<TResult> &>(to);
         else
             return assert_cast<ColumnVector<TResult> &>(to);

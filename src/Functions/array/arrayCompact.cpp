@@ -39,7 +39,7 @@ struct ArrayCompactImpl
         const typename ColVecType::Container & src_values = src_values_column->getData();
 
         typename ColVecType::MutablePtr res_values_column;
-        if constexpr (is_decimal<T>)
+        if constexpr (DecimalT>)
             res_values_column = ColVecType::create(src_values.size(), src_values.getScale());
         else
             res_values_column = ColVecType::create(src_values.size());

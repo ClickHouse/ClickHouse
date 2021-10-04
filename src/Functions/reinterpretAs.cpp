@@ -158,7 +158,7 @@ public:
 private:
     template <typename T>
     static constexpr auto CanBeReinterpretedAsNumeric =
-        dt::is_decimal_like<T> ||
+        dt::Decimal<T> ||
         dt::is_number<T> ||
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
@@ -183,7 +183,7 @@ private:
 
         using ColumnType = typename Type::ColumnType;
 
-        if constexpr (dt::is_decimal_like<Type>)
+        if constexpr (dt::Decimal<Type>)
             return ColumnType::create(column_size, type.getScale());
         else
             return ColumnType::create(column_size);

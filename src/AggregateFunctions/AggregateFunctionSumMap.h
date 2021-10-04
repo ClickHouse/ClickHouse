@@ -190,7 +190,7 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (is_decimal<T>)
+                if constexpr (DecimalT>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
@@ -217,7 +217,7 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (is_decimal<T>)
+                    if constexpr (DecimalT>)
                     {
                         UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
@@ -280,7 +280,7 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 values_serializations[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (is_decimal<T>)
+            if constexpr (DecimalT>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;

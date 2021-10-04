@@ -298,7 +298,7 @@ template <class T> using ColumnType = typename T::ColumnType;
 namespace dt
 {
 template <class T>
-concept has_arithmetic_field = is_arithmetic_v<FieldType<T>>;
+concept HasArithmeticField = Arithmetic<FieldType<T>>;
 }
 
 /// Some sugar to check data type of IDataType

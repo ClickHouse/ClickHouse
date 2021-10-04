@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <base/strong_typedef.h>
-#include <base/Decimal.h>
+#include <base/DecimalStorage.h>
 #include <base/defines.h>
 
 
@@ -90,12 +90,6 @@ enum class TypeIndex
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-
-
-using UInt128 = ::UInt128;
-using UInt256 = ::UInt256;
-using Int128 = ::Int128;
-using Int256 = ::Int256;
 
 STRONG_TYPEDEF(UInt128, UUID)
 
