@@ -72,17 +72,16 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-template <typename Column>
-size_t getLimitForPermutation(const Column & column, const IColumn::Permutation & perm, size_t limit)
+size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
 {
     if (limit == 0)
-        limit = column.size();
+        limit = column_size;
     else
-        limit = std::min(column.size(), limit);
+        limit = std::min(column_size, limit);
 
-    if (perm.size() < limit)
+    if (perm_size < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of permutation ({}) is less than required ({})", perm.size(), limit);
+            "Size of permutation ({}) is less than required ({})", perm_size, limit);
 
     return limit;
 }
@@ -90,7 +89,7 @@ size_t getLimitForPermutation(const Column & column, const IColumn::Permutation 
 template <typename Column>
 ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, size_t limit)
 {
-    limit = getLimitForPermutation(column, perm, limit);
+    limit = getLimitForPermutation(column.size(), perm.size(), limit);
     return column.indexImpl(perm, limit);
 }
 
