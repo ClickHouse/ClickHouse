@@ -979,7 +979,7 @@ def test_user_managed_slots(started_cluster):
     drop_postgres_table(cursor, table_name)
     drop_materialized_db()
     drop_replication_slot(replication_connection, slot_name)
-    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute('DROP TABLE IF EXISTS test_table')
 
 
 def test_add_new_table_to_replication(started_cluster):
@@ -1133,7 +1133,7 @@ def test_predefined_connection_configuration(started_cluster):
     instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
     check_tables_are_synchronized("test_table");
     drop_materialized_db()
-    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute('DROP TABLE IF EXISTS test_table')
 
 
 if __name__ == '__main__':
