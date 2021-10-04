@@ -11,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include <h3api.h>
 
@@ -56,10 +56,12 @@ public:
         const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
         const auto & data = column->getData();
 
-        auto dst = ColumnArray::create(ColumnUInt8::create());
-        auto & dst_data = reinterpret_cast<ColumnUInt8 &>(dst->getData());
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto result_column_data = ColumnUInt8::create();
+        auto & result_data = result_column_data->getData();
+
+        auto result_column_offsets = ColumnArray::ColumnOffsets::create();
+        auto & result_offsets = result_column_offsets->getData();
+        result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
         std::vector<int> faces;
@@ -69,6 +71,7 @@ public:
             int max_faces = maxFaceCount(data[row]);
 
             faces.resize(max_faces);
+
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
@@ -78,13 +81,15 @@ public:
                 if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    dst_data.insert(faces[i]);
+                    result_data.emplace_back(faces[i]);
                 }
             }
-            dst_offsets[row] = current_offset;
+
+            result_offsets[row] = current_offset;
             faces.clear();
         }
-        return dst;
+
+        return ColumnArray::create(std::move(result_column_data), std::move(result_column_offsets));
     }
 };
 

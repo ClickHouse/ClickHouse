@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
