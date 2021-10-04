@@ -18,15 +18,6 @@ RUN apt-get update \
         libc++-dev \
         libc++abi-dev \
         libboost-all-dev \
-        libboost-program-options-dev \
-        libboost-system-dev \
-        libboost-filesystem-dev \
-        libboost-thread-dev \
-        libboost-iostreams-dev \
-        libboost-regex-dev \
-        libboost-context-dev \
-        libboost-coroutine-dev \
-        libboost-graph-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \
