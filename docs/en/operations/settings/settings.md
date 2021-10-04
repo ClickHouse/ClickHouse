@@ -3766,7 +3766,7 @@ Default value: `0`.
 Query:
 
 ```sql
-CREATE TABLE positional_arguments(one Int, two Int, tree Int) ENGINE=Memory();
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
 
@@ -3778,7 +3778,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 Result:
 
 ```text
-┌─one─┬─two─┬─tree─┐
+┌─one─┬─two─┬─three─┐
 │  30 │  10 │   20 │
 │  20 │  20 │   10 │
 │  10 │  20 │   30 │
