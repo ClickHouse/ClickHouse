@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <common/wide_integer_to_string.h>
+#include <base/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -36,7 +36,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/TypeList.h>
-#include <common/map.h>
+#include <base/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -636,7 +636,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first.",
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
@@ -652,6 +652,64 @@ class FunctionBinaryArithmetic : public IFunction
                 function_name = is_plus ? "addDays" : "subtractDays";
             else
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        if (!isTuple(type0) || !isTuple(type1))
+            return {};
+
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        /// We construct another function (example: tuplePlus) and call it.
+
+        if constexpr (!is_plus && !is_minus && !is_multiply)
+            return {};
+
+        std::string function_name;
+        if (is_plus)
+        {
+            function_name = "tuplePlus";
+        }
+        else if (is_minus)
+        {
+            function_name = "tupleMinus";
+        }
+        else
+        {
+            function_name = "dotProduct";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+            return {};
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        /// We construct another function (example: tupleMultiplyByNumber) and call it.
+
+        if constexpr (!is_multiply && !is_division)
+            return {};
+
+        if (isNumber(type0) && is_division)
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        std::string function_name;
+        if (is_multiply)
+        {
+            function_name = "tupleMultiplyByNumber";
+        }
+        else
+        {
+            function_name = "tupleDivideByNumber";
         }
 
         return FunctionFactory::instance().get(function_name, context);
@@ -791,6 +849,20 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// Change interval argument type to its representation
         new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+        auto function = function_builder->build(new_arguments);
+
+        return function->execute(new_arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    {
+        ColumnsWithTypeAndName new_arguments = arguments;
+
+        /// Number argument must be second.
+        if (isNumber(arguments[0].type))
+            std::swap(new_arguments[0], new_arguments[1]);
 
         auto function = function_builder->build(new_arguments);
 
@@ -1009,6 +1081,34 @@ public:
 
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Number argument must be second.
+            if (isNumber(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
 
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
@@ -1397,6 +1497,20 @@ public:
             = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        if (auto function_builder
+            = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        if (auto function_builder
+            = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
         const auto & left_argument = arguments[0];

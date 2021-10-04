@@ -10,7 +10,7 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace ProfileEvents
 {

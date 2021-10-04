@@ -1921,11 +1921,25 @@ class ClickHouseInstance:
         return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-              ignore_error=False):
-        logging.debug(f"Executing query {sql} on {self.name}")
-        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
-                                 database=database, ignore_error=ignore_error)
+    def query(self, sql,
+              stdin=None,
+              timeout=None,
+              settings=None,
+              user=None,
+              password=None,
+              database=None,
+              ignore_error=False,
+              query_id=None):
+        logging.debug("Executing query %s on %s", sql, self.name)
+        return self.client.query(sql,
+                                 stdin=stdin,
+                                 timeout=timeout,
+                                 settings=settings,
+                                 user=user,
+                                 password=password,
+                                 database=database,
+                                 ignore_error=ignore_error,
+                                 query_id=query_id)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
@@ -2022,11 +2036,12 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
+            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+
             sleep_time = 0.1
             num_steps = int(stop_wait_sec / sleep_time)
             stopped = False
             for step in range(num_steps):
-                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
                 time.sleep(sleep_time)
                 ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
                 if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
@@ -2322,6 +2337,11 @@ class ClickHouseInstance:
 
         shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
         shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
+
+        # For old images, keep 'yandex' as root element name.
+        if self.image.startswith('yandex/'):
+            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.main_config_name)))
+            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.users_config_name)))
 
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config

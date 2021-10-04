@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Security Announcements
-Security fixes will be announced by posting them in the [security changelog](https://clickhouse.tech/docs/en/whats-new/security-changelog/)
+Security fixes will be announced by posting them in the [security changelog](https://clickhouse.com/docs/en/whats-new/security-changelog/)
 
 ## Scope and Supported Versions
 
