@@ -3753,7 +3753,17 @@ After a script of the [ExecutablePool](../../engines/table-engines/special/execu
 
 Possible values:
 
--   Positive integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+-   Positive integer.
 -   0 — No time restrictions.
+
+Default value: `0`.
+
+## send_chunk_header {#send_chunk_header}
+
+Defines the number of lines, ended with '\n', which are sent before sending chunk to process of the [ExecutablePool](../../engines/table-engines/special/executablepool.md) table engine. 
+
+Possible values:
+
+-   Positive integer or zero.
 
 Default value: `0`.
