@@ -160,7 +160,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
 
 
 # The same as test_rabbitmq_json_without_delimiter.
-def test_rabbitmq_json_without_delimiter_2(rabbitmq_cluster):
+def test_rabbitmq_macros(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
