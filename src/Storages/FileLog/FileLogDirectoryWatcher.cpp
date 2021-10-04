@@ -3,7 +3,7 @@
 #include <Poco/DirectoryWatcher.h>
 
 FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_)
-    : path(path_), dw(std::make_shared<Poco::DirectoryWatcher>(path)), log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
+    : path(path_), dw(std::make_unique<Poco::DirectoryWatcher>(path)), log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
 {
     /// DW_ITEM_MOVED_FROM and DW_ITEM_MOVED_TO events will only be reported on Linux.
     /// On other platforms, a file rename or move operation will be reported via a
