@@ -81,8 +81,8 @@ StorageFileLog::StorageFileLog(
         loadFiles();
 
 #ifndef NDEBUG
-		assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-		assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 #endif
 
         if (path_is_directory)
@@ -806,7 +806,7 @@ bool StorageFileLog::updateFileInfos()
             {
                 file_infos.context_by_name.erase(it);
 
-                /// We need to check that this ionde does not hold by other file(mv),
+                /// We need to check that this inode does not hold by other file(mv),
                 /// otherwise, we can not destroy it.
                 auto inode = it->second.inode;
                 /// If it's now hold by other file, than the file_name should has
