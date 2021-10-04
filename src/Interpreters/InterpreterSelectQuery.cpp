@@ -76,14 +76,14 @@
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <common/map.h>
-#include <common/scope_guard_safe.h>
+#include <base/map.h>
+#include <base/scope_guard_safe.h>
 #include <memory>
 
 

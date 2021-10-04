@@ -5,8 +5,8 @@
 #include <tuple>
 #include <vector>
 #include <array>
-#include <common/types.h>
-#include <common/DayNum.h>
+#include <base/types.h>
+#include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
