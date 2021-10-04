@@ -10,19 +10,13 @@ namespace detail
 template <class T, T Begin, T... Is>
 constexpr bool static_for(auto && f, std::integer_sequence<decltype(Begin), Is...>)
 {
-    return (
-        std::forward<decltype(f)>(f)(
-            Constant<Begin + Is>())
-        || ...);
+    return (f(Constant<Begin + Is>()) || ...);
 }
 
 template <CTArray Container, size_t ...I>
 constexpr bool static_for(auto && f, std::index_sequence<I...>)
 {
-    return (
-        std::forward<decltype(f)>(f)(
-            Constant<Container[I]>())
-        || ...);
+    return (f(Constant<Container[I]>()) || ...);
 }
 }
 

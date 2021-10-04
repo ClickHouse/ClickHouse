@@ -36,6 +36,7 @@ constexpr CTArray<T, N + U> operator||(const CTArray<T, N> & arr, const CTArray<
 }
 
 constexpr auto MakeCTArray(auto arg, auto ...args)
+    requires(std::is_same_v<decltype(arg), decltype(args)> && ...)
 {
     return CTArray<decltype(arg), sizeof...(args) + 1>({arg, args...});
 }
