@@ -15,9 +15,9 @@ executable(script_line, format, structure[, query])
 
 **Arguments**
 
-- `script_line` — An execution line for a script. Can include not only script name, but also arguments, passed to the script. [String](../../../sql-reference/data-types/string.md).
-- `format` — [Format](../../../interfaces/formats.md) of data, passed to the executed script. [String](../../../sql-reference/data-types/string.md).
-- `structure` — Defines columns and their types, as in [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. [String](../../../sql-reference/data-types/string.md).
+- `script_line` — An execution line for a script. Can include not only script name, but also arguments, passed to the script. [String](../../sql-reference/data-types/string.md).
+- `format` — [Format](../../interfaces/formats.md) of data, passed to the executed script. [String](../../sql-reference/data-types/string.md).
+- `structure` — Defines columns and their types, as in [CREATE TABLE](../../sql-reference/statements/create/table.md) query. [String](../../sql-reference/data-types/string.md).
 - `query` — A query, which results are passed to the executed script. Optional parameter. [String](../../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -72,5 +72,5 @@ Key 1
 
 **See Also**
 
--   [Executable](../../engines/table-engines/executable.md) table engine
--   [Executable](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-executable) dictionary
+-   [Executable](../../engines/table-engines/special/executable.md) table engine
+-   [Executable](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-executable) dictionary
