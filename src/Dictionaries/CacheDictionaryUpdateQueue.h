@@ -2,18 +2,21 @@
 
 #include <atomic>
 #include <mutex>
-#include <shared_mutex>
 #include <utility>
 #include <vector>
 #include <functional>
 
+#include <base/logger_useful.h>
+
+#include <Poco/Semaphore.h>
+
 #include <Common/ThreadPool.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
+
 
 namespace CurrentMetrics
 {
@@ -74,6 +77,8 @@ private:
     template <DictionaryKeyType>
     friend class CacheDictionaryUpdateQueue;
 
+    std::mutex lock;
+    std::condition_variable is_update_finished;
     std::atomic<bool> is_done{false};
     std::exception_ptr current_exception{nullptr};
 
@@ -147,23 +152,29 @@ public:
     */
     void waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const;
 
+    /// Get current update queue size
+    size_t getSize() const;
+
 private:
     void updateThreadFunction();
 
-    using UpdateQueue = ConcurrentBoundedQueue<CacheDictionaryUpdateUnitPtr<dictionary_key_type>>;
+    using UpdateQueue = std::queue<CacheDictionaryUpdateUnitPtr<dictionary_key_type>>;
 
     String dictionary_name_for_logs;
 
     CacheDictionaryUpdateQueueConfiguration configuration;
     UpdateFunction update_func;
 
-    UpdateQueue update_queue;
+    UpdateQueue queue;
+
+    Poco::Semaphore empty_count;
     ThreadPool update_pool;
 
-    mutable std::mutex update_mutex;
-    mutable std::condition_variable is_update_finished;
+    mutable std::mutex queue_mutex;
+    mutable std::condition_variable queue_cond;
+    std::atomic<bool> finished {false};
 
-    std::atomic<bool> finished{false};
+    Poco::Logger * log;
 };
 
 extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
