@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Common/Stopwatch.h>
 

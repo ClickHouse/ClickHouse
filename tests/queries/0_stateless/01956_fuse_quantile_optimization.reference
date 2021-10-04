@@ -68,6 +68,13 @@ SELECT
     quantileBFloat16(0.4)(d + 1)
 FROM datetime
 2016-04-02 17:23:12	2016-04-02 17:23:12	2016-04-02 17:23:12
+quantileBFloat16Weighted:
+SELECT
+    quantilesBFloat16Weighted(0.2, 0.3)(d, 1)[1],
+    quantilesBFloat16Weighted(0.2, 0.3)(d, 1)[2],
+    quantileBFloat16Weighted(0.2)(d, 2)
+FROM datetime
+2016-04-02 17:23:12	2016-04-02 17:23:12	2016-04-02 17:23:12
 SELECT
     quantiles(0.2, 0.3, 0.2)(d)[1] AS k,
     quantiles(0.2, 0.3, 0.2)(d)[2]

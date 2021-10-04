@@ -14,7 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -103,8 +103,14 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+template <class Queue>
 class MergeTreeBackgroundExecutor;
-using MergeTreeBackgroundExecutorPtr = std::shared_ptr<MergeTreeBackgroundExecutor>;
+class MergeMutateRuntimeQueue;
+class OrdinaryRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
@@ -283,7 +289,7 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
 
@@ -549,19 +555,20 @@ public:
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
-
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -847,9 +854,10 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutors();
 
-    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
-    MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
-    MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
+    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

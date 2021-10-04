@@ -9,7 +9,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -429,11 +429,13 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    if (finished)
-        return false;
-
     if (!is_execution_initialized)
+    {
         initializeExecution(1);
+
+        if (yield_flag && *yield_flag)
+            return true;
+    }
 
     executeStepImpl(0, 1, yield_flag);
 

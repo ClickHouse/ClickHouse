@@ -5,8 +5,8 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
+#include <base/CachedFn.h>
+#include <base/demangle.h>
 
 #include <cstring>
 #include <filesystem>
@@ -21,7 +21,7 @@
 #    include <libunwind.h>
 #endif
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     error.exceptions(std::ios::failbit);
@@ -41,8 +41,6 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
                 error << " Access: write.";
             else
                 error << " Access: read.";
-#else
-            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -197,7 +195,9 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
-void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(
+    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
+    size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
@@ -256,7 +256,6 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
     {
         frames[i].virtual_addr = frame_pointers[i];
     }
-    UNUSED(offset);
 #endif
 }
 
@@ -322,7 +321,7 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    bool fatal,
+    [[maybe_unused]] bool fatal,
     const StackTrace::FramePointers & frame_pointers,
     size_t offset,
     size_t size,
@@ -386,7 +385,6 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    UNUSED(fatal);
     std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
@@ -431,9 +429,9 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
-static SimpleCache<decltype(toStringImpl), &toStringImpl> & cacheInstance()
+static CachedFn<&toStringImpl> & cacheInstance()
 {
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> cache;
+    static CachedFn<&toStringImpl> cache;
     return cache;
 }
 
