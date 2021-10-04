@@ -32,7 +32,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 

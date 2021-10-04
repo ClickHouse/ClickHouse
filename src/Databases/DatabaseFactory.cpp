@@ -78,8 +78,11 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
-        return impl;
+        // Attach database metadata
+        if (impl && create.storage && create.storage->comment)
+            impl->setDatabaseComment(create.storage->comment->as<ASTLiteral>()->value.safeGet<String>());
 
+        return impl;
     }
     catch (...)
     {

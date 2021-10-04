@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000

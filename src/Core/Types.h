@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <common/strong_typedef.h>
-#include <common/Decimal.h>
-#include <common/defines.h>
+#include <base/strong_typedef.h>
+#include <base/Decimal.h>
+#include <base/defines.h>
 
 
 namespace DB
