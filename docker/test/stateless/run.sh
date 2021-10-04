@@ -126,21 +126,21 @@ clickhouse-client -q "
 " | pigz > /test_output/part-log.tsv.gz &
 
 
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
-do
-    clickhouse-client -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
-done
+# # Also export trace log in flamegraph-friendly format.
+# for trace_type in CPU Memory Real
+# do
+#     clickhouse-client -q "
+#             select
+#                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
+#                 count(*) AS samples
+#             from system.trace_log
+#             where trace_type = '$trace_type'
+#             group by trace
+#             order by samples desc
+#             settings allow_introspection_functions = 1
+#             format TabSeparated" \
+#         | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+# done
 
 wait ||:
 
@@ -150,8 +150,8 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
-tar -chf /test_output/zookeeper_log_dump.tar /var/lib/clickhouse/data/system/zookeeper_log ||:
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
+# tar -chf /test_output/zookeeper_log_dump.tar /var/lib/clickhouse/data/system/zookeeper_log ||:
+# tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
