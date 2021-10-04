@@ -3,7 +3,7 @@
 #include <memory>
 #include <functional>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB

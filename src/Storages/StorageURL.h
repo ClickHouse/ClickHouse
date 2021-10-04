@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
