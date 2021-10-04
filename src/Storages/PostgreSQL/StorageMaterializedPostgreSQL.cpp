@@ -1,7 +1,7 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -143,7 +143,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "", table_id.table_name);
+    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "temporary", table_id.table_name);
 }
 
 
