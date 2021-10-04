@@ -109,3 +109,4 @@ Key 1
 -   [pool_size](../../../operations/settings/settings.md#pool_size) setting
 -   [max_command_execution_time](../../../operations/settings/settings.md#max_command_execution_time) setting
 -   [command_termination_timeout](../../../operations/settings/settings.md#command_termination_timeout) setting
+-   [send_chunk_header](../../../operations/settings/settings.md#send_chunk_header) setting
