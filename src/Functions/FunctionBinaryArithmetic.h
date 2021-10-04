@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <common/wide_integer_to_string.h>
+#include <base/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -35,8 +35,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <common/TypeList.h>
-#include <common/map.h>
+#include <base/TL.h>
+#include <base/Switch.h>
+#include <base/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -69,51 +70,27 @@ namespace traits_
 {
 struct InvalidType; /// Used to indicate undefined operation
 
-template <bool V, typename T> struct Case : std::bool_constant<V> { using type = T; };
-
-/// Switch<Case<C0, T0>, ...> -- select the first Ti for which Ci is true, InvalidType if none.
-template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
+template <class... T> using Switch = ::Switch<InvalidType, T...>;
 
 template <class T>
 using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>,
     InvalidType, DataTypeNumber<T>>;
 
-template <typename DataType> constexpr bool IsIntegral = false;
-template <> inline constexpr bool IsIntegral<DataTypeUInt8> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt16> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt32> = true;
-template <> inline constexpr bool IsIntegral<DataTypeUInt64> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt8> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
-template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
-
-template <typename DataType> constexpr bool IsExtended = false;
-template <> inline constexpr bool IsExtended<DataTypeUInt128> = true;
-template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
-template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
-template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
-
-template <typename DataType> constexpr bool IsIntegralOrExtended = IsIntegral<DataType> || IsExtended<DataType>;
 template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
-    IsIntegralOrExtended<DataType> ||
+    dt::is_integral_with_ext<DataType> ||
     dt::is_decimal_like<DataType>;
-
-template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
-template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal64>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal32>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
-template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal256, DataTypeDecimal128> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal256, DataTypeDecimal64> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal256, DataTypeDecimal32> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal128, DataTypeDecimal32> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal128, DataTypeDecimal64> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal64,  DataTypeDecimal32> = true;
 
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct BinaryOperationTraits
@@ -131,15 +108,15 @@ public:
     using ResultDataType = Switch<
         /// Decimal cases
         Case<!allow_decimal && (dt::is_decimal_like<LeftDataType> || dt::is_decimal_like<RightDataType>), InvalidType>,
-        Case<dt::is_decimal_like<LeftDataType> &&  dt::is_decimal_like<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
-        Case<dt::is_decimal_like<LeftDataType> &&  dt::is_decimal_like<RightDataType>, RightDataType>,
-        Case<dt::is_decimal_like<LeftDataType> &&  IsIntegralOrExtended<RightDataType>, LeftDataType>,
-        Case<dt::is_decimal_like<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+        Case<dt::is_decimal_like<LeftDataType> && dt::is_decimal_like<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<dt::is_decimal_like<LeftDataType> && dt::is_decimal_like<RightDataType>, RightDataType>,
+        Case<dt::is_decimal_like<LeftDataType> && dt::is_integral_with_ext<RightDataType>, LeftDataType>,
+        Case<dt::is_decimal_like<RightDataType> && dt::is_integral_with_ext<LeftDataType>, RightDataType>,
 
         /// e.g Decimal * Float64 = Float64
-        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<LeftDataType> && IsFloatingPoint<RightDataType>,
+        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<LeftDataType> && dt::is_float<RightDataType>,
             RightDataType>,
-        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<RightDataType> && IsFloatingPoint<LeftDataType>,
+        Case<IsOperation<Operation>::multiply && dt::is_decimal_like<RightDataType> && dt::is_float<LeftDataType>,
             LeftDataType>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
@@ -153,14 +130,14 @@ public:
         /// Date + Integral -> Date
         /// Integral + Date -> Date
         Case<IsOperation<Operation>::plus, Switch<
-            Case<IsIntegral<RightDataType>, LeftDataType>,
-            Case<IsIntegral<LeftDataType>, RightDataType>>>,
+            Case<dt::is_integral<RightDataType>, LeftDataType>,
+            Case<dt::is_integral<LeftDataType>, RightDataType>>>,
 
         /// Date - Date     -> Int32
         /// Date - Integral -> Date
         Case<IsOperation<Operation>::minus, Switch<
             Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
-            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
+            Case<IsDateOrDateTime<LeftDataType> && dt::is_integral<RightDataType>, LeftDataType>>>,
 
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
@@ -170,8 +147,8 @@ public:
         /// Date % Int32 -> Int32
         /// Date % Float -> Float64
         Case<IsOperation<Operation>::modulo, Switch<
-            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
-            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
+            Case<IsDateOrDateTime<LeftDataType> && dt::is_integral<RightDataType>, RightDataType>,
+            Case<IsDateOrDateTime<LeftDataType> && dt::is_float<RightDataType>, DataTypeFloat64>>>>;
 };
 }
 
@@ -803,7 +780,7 @@ class FunctionBinaryArithmetic : public IFunction
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = NativeType<ResultType>;
 
-        if constexpr (IsFloatingPoint<ResultDataType> && is_decimal<T>)
+        if constexpr (dt::is_float<ResultDataType> && is_decimal<T>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
         else if constexpr (is_decimal<T>)
             return col_const->template getValue<T>().value;
@@ -845,9 +822,9 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultDataType type = [&]
         {
-            if constexpr (left_is_decimal && IsFloatingPoint<RightDataType>)
+            if constexpr (left_is_decimal && dt::is_float<RightDataType>)
                 return RightDataType();
-            else if constexpr (right_is_decimal && IsFloatingPoint<LeftDataType>)
+            else if constexpr (right_is_decimal && dt::is_float<LeftDataType>)
                 return LeftDataType();
             else
                 return decimalResultType<is_multiply, is_division>(left, right);
@@ -1034,7 +1011,7 @@ public:
 
                 if constexpr (!Op<Left, Right>::allow_string_integer)
                     return false;
-                else if constexpr (!IsIntegral<Right>)
+                else if constexpr (!dt::is_integral<Right>)
                     return false;
                 else if constexpr (dt::is_fixed_string<Left>)
                     type_res = std::make_shared<Left>(left.getN());
@@ -1053,9 +1030,9 @@ public:
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
-                    else if constexpr ((dt::is_decimal_like<Left> && IsFloatingPoint<Right>) ||
-                        (dt::is_decimal_like<Right> && IsFloatingPoint<Left>))
-                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<Left>,
+                    else if constexpr ((dt::is_decimal_like<Left> && dt::is_float<Right>) ||
+                        (dt::is_decimal_like<Right> && dt::is_float<Left>))
+                        type_res = std::make_shared<std::conditional_t<dt::is_float<Left>,
                             Left, Right>>();
                     else if constexpr (dt::is_decimal_like<Left>)
                         type_res = std::make_shared<Left>(left.getPrecision(), left.getScale());
@@ -1411,7 +1388,7 @@ public:
 
                 if constexpr (!Op<Left, Right>::allow_string_integer)
                     return false;
-                else if constexpr (!IsIntegral<Right>)
+                else if constexpr (!dt::is_integral<Right>)
                     return false;
                 else if constexpr (dt::is_fixed_string<Left>)
                     return (res = executeStringInteger<ColumnFixedString>(arguments, left, right)) != nullptr;

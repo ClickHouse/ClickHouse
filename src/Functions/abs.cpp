@@ -17,7 +17,7 @@ struct AbsImpl
     {
         if constexpr (is_decimal<A>)
             return a < A(0) ? A(-a) : a;
-        else if constexpr (is_big_int_v<A> && is_signed_v<A>)
+        else if constexpr (is_ext_integral<A> && is_signed_v<A>)
             return (a < 0) ? -a : a;
         else if constexpr (is_integer<A> && is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);

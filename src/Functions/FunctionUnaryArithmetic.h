@@ -11,6 +11,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
+#include <base/TL.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -83,35 +84,43 @@ class FunctionUnaryArithmetic : public IFunction
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
+    ContextPtr context;
+
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        return castTypeToEither<
-            DataTypeUInt8,
-            DataTypeUInt16,
-            DataTypeUInt32,
-            DataTypeUInt64,
-            DataTypeUInt128,
-            DataTypeUInt256,
-            DataTypeInt8,
-            DataTypeInt16,
-            DataTypeInt32,
-            DataTypeInt64,
-            DataTypeInt128,
-            DataTypeInt256,
-            DataTypeFloat32,
-            DataTypeFloat64,
-            DataTypeDecimal32,
-            DataTypeDecimal64,
-            DataTypeDecimal128,
-            DataTypeDecimal256,
-            DataTypeFixedString
-        >(type, std::forward<F>(f));
+        using Ints = TLMap<DataTypeNumber, TLIntegralWithExtended>;
+        using Decimals = TLMap<DataTypeDecimal, TLDecimals>;
+
+        using Types = TLAppend<
+            DataTypeFixedString,
+            TLConcat<Ints, Decimals>>;
+
+        return castTypeToEither<Types>(type, std::forward<F>(f));
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    {
+        if (!isTuple(type))
+            return {};
+
+        /// Special case when the function is negate, argument is tuple.
+        /// We construct another function (example: tupleNegate) and call it.
+
+        if constexpr (!IsUnaryOperation<Op>::negate)
+            return {};
+
+        return FunctionFactory::instance().get("tupleNegate", context);
     }
 
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
+
+    explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -130,7 +139,7 @@ public:
 
         bool valid = castType(arguments[0].get(), [&]<class DataType>(const DataType & type)
         {
-            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+            if constexpr (dt::is_fixed_string<DataType>)
             {
                 if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
                     return false;
@@ -157,14 +166,18 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnPtr result_column;
-        bool valid = castType(arguments[0].type.get(), [&](const auto & type)
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
         {
-            using DataType = std::decay_t<decltype(type)>;
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
 
-            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+        ColumnPtr result_column;
+        bool valid = castType(arguments[0].type.get(), [&]<class DataType>(const DataType & type)
+        {
+            if constexpr (dt::is_fixed_string<DataType>)
             {
                 if constexpr (allow_fixed_string)
                 {
@@ -235,12 +248,12 @@ public:
         if (1 != arguments.size())
             return false;
 
-        return castType(arguments[0].get(), [&]<class T>(const T&)
+        return castType(arguments[0].get(), [&]<class DataType>(const DataType&)
         {
-            if constexpr (std::is_same_v<DataTypeFixedString, T>)
+            if constexpr (dt::is_fixed_string<DataType>)
                 return false;
             else
-                return !dt::is_decimal_like<T> && Op<FieldType<T>>::compilable;
+                return !dt::is_decimal_like<DataType> && Op<FieldType<DataType>>::compilable;
         });
     }
 
@@ -252,7 +265,7 @@ public:
 
         castType(types[0].get(), [&]<class T>(const T &)
         {
-            if constexpr (std::is_same_v<DataTypeFixedString, T>)
+            if constexpr (dt::is_fixed_string<T>)
                 return false;
             else
             {

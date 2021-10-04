@@ -9,8 +9,6 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/callOnTypeIndex.h>
-
 
 namespace DB
 {

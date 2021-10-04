@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <Core/dispatchOverTypes.h>
-#include <common/EnumReflection.h>
-#include <common/TypeName.h>
+#include <base/EnumReflection.h>
+#include <base/TypeName.h>
 
 using namespace DB;
 

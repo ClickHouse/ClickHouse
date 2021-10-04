@@ -35,7 +35,7 @@ public:
         return x.getValue() != T(0);
     }
 
-    template <typename T, typename = std::enable_if_t<is_big_int_v<T>> >
+    template <is_ext_integral T>
     bool operator() (T & x) const
     {
         x += rhs.reinterpret<T>();

@@ -4,9 +4,9 @@
 #include <typeinfo>
 #include <typeindex>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Common/Exception.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
 
 namespace DB
@@ -44,10 +44,11 @@ template <typename To, typename From>
 To typeid_cast(From * from) requires(std::is_pointer_v<To>)
 {
     using Unpointered = std::remove_pointer_t<To>;
+    const std::type_info& to_info = typeid(Unpointered);
 
     try
     {
-        if ((typeid(From) == typeid(Unpointered)) || (from && typeid(*from) == typeid(Unpointered)))
+        if ((typeid(From) == to_info) || (from && typeid(*from) == to_info))
             return static_cast<To>(from);
         else
             return nullptr;

@@ -52,13 +52,13 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_ext_integral<A> && std::is_floating_point_v<B>)
         return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+    else if constexpr (is_ext_integral<B> && std::is_floating_point_v<A>)
         return a / static_cast<A>(b);
-    else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
+    else if constexpr (is_ext_integral<A> && is_ext_integral<B>)
         return static_cast<A>(a / b);
-    else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
+    else if constexpr (!is_ext_integral<A> && is_ext_integral<B>)
         return static_cast<A>(B(a) / b);
     else
         return a / b;
@@ -77,8 +77,8 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
-        using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+        using CastA = std::conditional_t<is_ext_integral<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+        using CastB = std::conditional_t<is_ext_integral<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
 
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
@@ -151,7 +151,7 @@ struct ModuloImpl
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            if constexpr (is_ext_integral<IntegerAType> || is_ext_integral<IntegerBType>)
             {
                 using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
                 using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
@@ -159,7 +159,7 @@ struct ModuloImpl
                 CastA int_a(a);
                 CastB int_b(b);
 
-                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                if constexpr (is_ext_integral<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
                     return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
                 else
                     return static_cast<Result>(int_a % static_cast<CastA>(int_b));

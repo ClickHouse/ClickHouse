@@ -113,7 +113,7 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
+    template <is_ext_integral U>
     T operator() (const U & x) const
     {
         if constexpr (is_decimal<T>)

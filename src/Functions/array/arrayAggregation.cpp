@@ -6,7 +6,8 @@
 #include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include <common/defines.h>
+#include <base/defines.h>
+#include <base/Switch.h>
 
 
 namespace DB
@@ -67,15 +68,12 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::product>
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
-    using Result =
-        std::conditional_t<std::is_same_v<ArrayElement, Int128>, Int128,
-        std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
-        std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
-        std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
-        std::conditional_t<is_decimal<ArrayElement>, Decimal128,
-        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
-        std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-            UInt64>>>>>>>;
+    using Result = Switch<
+        /* default value */UInt64,
+        Case<is_ext_integral<ArrayElement>, ArrayElement>,
+        Case<is_decimal<ArrayElement>, Decimal128>,
+        Case<is_float<ArrayElement>, Float64>,
+        Case<is_signed_v<ArrayElement>, Int64>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>

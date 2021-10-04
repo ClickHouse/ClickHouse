@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <common/TypePair.h>
-#include <common/static_for.h>
+#include <base/TypePair.h>
+#include <base/static_for.h>
 
 namespace DB
 {

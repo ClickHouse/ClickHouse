@@ -175,7 +175,7 @@ struct ResultOfIf
     static constexpr bool has_integer = is_integer<A> || is_integer<B>;
     static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
     static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
-    static constexpr bool has_big_int = is_big_int_v<A> || is_big_int_v<B>;
+    static constexpr bool has_big_int = is_ext_integral<A> || is_ext_integral<B>;
 
     static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
     static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);

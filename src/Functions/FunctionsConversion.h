@@ -1709,9 +1709,9 @@ private:
                 using ToField = typename To::FieldType;
 
                 constexpr bool bad_from =
-                    is_decimal<FromField> || is_floating_point<FromField> || is_big_int_v<FromField> || is_signed_v<FromField>;
+                    is_decimal<FromField> || is_floating_point<FromField> || is_ext_integral<FromField> || is_signed_v<FromField>;
                 constexpr bool bad_to =
-                    is_decimal<ToField> || is_floating_point<ToField> || is_big_int_v<ToField> || is_signed_v<ToField>;
+                    is_decimal<ToField> || is_floating_point<ToField> || is_ext_integral<ToField> || is_signed_v<ToField>;
 
                 constexpr bool bad_left = bad_from && std::is_same_v<To, DataTypeUUID>;
                 constexpr bool bad_right = bad_to && std::is_same_v<From, DataTypeUUID>;

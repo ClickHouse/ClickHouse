@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
-#include <common/extended_types.h>
+#include <base/arithmeticOverflow.h>
+#include <base/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -212,7 +212,7 @@ inline Ret convertToDecimal(const FieldType<From> & value, UInt32 scale, FieldTy
         else
             return true;
     }
-    else if constexpr (is_big_int_v<FromField>)
+    else if constexpr (is_ext_integral<FromField>)
         return convertDecimals<DataTypeDecimal256, To, Ret>(static_cast<Int256>(value), 0, scale, result);
     else if constexpr (std::is_same_v<FromField, UInt64>)
         return convertDecimals<DataTypeDecimal128, To, Ret>(static_cast<Int128>(value), 0, scale, result);

@@ -105,7 +105,7 @@ struct AggregateFunctionSumData
         const auto * end = ptr + count;
 
         if constexpr (
-            (is_integer<T> && !is_big_int_v<T>)
+            (is_integer<T> && !is_ext_integral<T>)
             || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
@@ -380,7 +380,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        if constexpr (is_big_int_v<T>)
+        if constexpr (is_ext_integral<T>)
             this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
         else
             this->data(place).add(column.getData()[row_num]);

@@ -23,7 +23,7 @@ struct IntExp2Impl
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
-        if constexpr (is_big_int_v<A>)
+        if constexpr (is_ext_integral<A>)
             throw DB::Exception("intExp2 not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return intExp2(a);

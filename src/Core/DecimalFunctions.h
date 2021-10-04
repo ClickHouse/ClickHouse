@@ -249,7 +249,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
     }
     else if constexpr (is_integer<To>)
     {
-        using CastTo = std::conditional_t<(is_big_int_v<DecimalNativeType> && std::is_same_v<To, UInt8>), uint8_t, To>;
+        using CastTo = std::conditional_t<(is_ext_integral<DecimalNativeType> && std::is_same_v<To, UInt8>), uint8_t, To>;
 
         const DecimalNativeType whole = getWholePart(decimal, scale);
 

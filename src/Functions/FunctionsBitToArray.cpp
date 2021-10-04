@@ -268,7 +268,7 @@ public:
         {
             UnsignedType x = static_cast<UnsignedType>(vec_from[row]);
 
-            if constexpr (is_big_int_v<UnsignedType>)
+            if constexpr (is_ext_integral<UnsignedType>)
             {
                 size_t position = 0;
 

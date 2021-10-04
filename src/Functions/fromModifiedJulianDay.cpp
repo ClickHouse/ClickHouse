@@ -138,7 +138,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+        return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
@@ -169,7 +169,7 @@ public:
 
         FunctionBasePtr base;
 
-        const bool built = dispatchOverType<Dispatch { .ints = true }>(from_type->getTypeId(),
+        const bool built = dispatchOverType<Dispatch{ .ints = true }>(from_type->getTypeId(),
             [&]<class T>(TypePair<void, T>)
         {
             using FromDay = FunctionBaseFromModifiedJulianDay<Name, DataTypeNumber<T>, nullOnErrors>;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <base/IsAny.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -51,13 +52,21 @@ using DataTypeInt256 = DataTypeNumber<Int256>;
 
 namespace dt
 {
-namespace detail
-{
-template <class T> constexpr bool is_number = false;
-template <class T> constexpr bool is_number<DataTypeNumber<T>> = true;
-}
+template <class T>
+concept Float = is_any<T, DataTypeFloat32, DataTypeFloat64>;
 
 template <class T>
-concept is_number = detail::is_number<T>;
+concept ExtIntegral = is_any<T, DataTypeInt128, DataTypeUInt8, DataTypeInt256, DataTypeUInt256>;
+
+template <class T>
+concept NativeIntegral = is_any<T,
+    DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+    DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
+
+template <class T>
+concept Integral = NativeIntegral<T> || ExtIntegral<T>;
+
+template <class T>
+concept Arithmetic = Float<T> || Integral<T>;
 }
 }

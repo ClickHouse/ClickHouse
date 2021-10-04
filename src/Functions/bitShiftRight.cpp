@@ -23,9 +23,9 @@ struct BitShiftRightImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_big_int_v<B>)
+        if constexpr (is_ext_integral<B>)
             throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
-        else if constexpr (is_big_int_v<A>)
+        else if constexpr (is_ext_integral<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
             return static_cast<Result>(a) >> static_cast<Result>(b);
@@ -49,7 +49,7 @@ struct BitShiftRightImpl
     /// For String
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
     {
-        if constexpr (is_big_int_v<B>)
+        if constexpr (is_ext_integral<B>)
             throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else
         {
@@ -86,7 +86,7 @@ struct BitShiftRightImpl
     /// For FixedString
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnFixedString::Chars & out_vec)
     {
-        if constexpr (is_big_int_v<B>)
+        if constexpr (is_ext_integral<B>)
             throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else
         {

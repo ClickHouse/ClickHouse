@@ -149,7 +149,7 @@ namespace common
     inline bool mulOverflow(T x, U y, R & res)
     {
         // not built in type, wide integer
-        if constexpr (is_big_int_v<T>  || is_big_int_v<R> || is_big_int_v<U>)
+        if constexpr (is_ext_integral<T>  || is_ext_integral<R> || is_ext_integral<U>)
         {
             res = mulIgnoreOverflow<R>(x, y);
             return false;
