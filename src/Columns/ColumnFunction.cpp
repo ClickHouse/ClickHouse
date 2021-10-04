@@ -93,7 +93,7 @@ void ColumnFunction::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
-    limit = getLimitForPermutation(*this, perm, limit);
+    limit = getLimitForPermutation(size(), perm.size(), limit);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)

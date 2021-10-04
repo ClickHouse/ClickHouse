@@ -93,7 +93,7 @@ ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 
 ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
 {
-    limit = getLimitForPermutation(*this, perm, limit);
+    limit = getLimitForPermutation(size(), perm.size(), limit);
     return ColumnConst::create(data, limit);
 }
 
