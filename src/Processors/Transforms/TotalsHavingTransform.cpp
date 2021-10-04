@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/FilterDescription.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
 #include <DataStreams/finalizeBlock.h>
@@ -209,7 +210,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             }
         }
 
-        num_rows = columns.front()->size();
+        num_rows = columns.empty() ? countBytesInFilter(*filter_description.data) : columns.front()->size();
         chunk.setColumns(std::move(columns), num_rows);
     }
 
