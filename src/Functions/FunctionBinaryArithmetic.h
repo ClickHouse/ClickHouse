@@ -451,62 +451,14 @@ public:
         }
         else if constexpr (is_division && is_decimal_b)
         {
-            if (right_nullmap)
+            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
-                if constexpr (op_case == OpCase::RightConstant)
-                {
-                    if ((*right_nullmap)[0])
-                        return;
-
-                    for (size_t i = 0; i < size; ++i)
-                        c[i] = applyScaledDiv<is_decimal_a>(
-                            undec(a[i]), undec(b), scale_a);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (!(*right_nullmap)[i])
-                            c[i] = applyScaledDiv<is_decimal_a>(
-                                unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]), scale_a);
-                    }
-                }
-            }
-            else
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaledDiv<is_decimal_a>(
-                        unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i), scale_a);
+                return applyScaledDiv<is_decimal_a>(left, right, scale_a);
+            });
             return;
         }
 
-        if (right_nullmap)
-        {
-            if constexpr (op_case == OpCase::RightConstant)
-            {
-                if ((*right_nullmap)[0])
-                    return;
-
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = apply(undec(a[i]), undec(b));
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if (!(*right_nullmap)[i])
-                        c[i] = apply(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
-                }
-            }
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (!(*right_nullmap)[i])
-                    c[i] = apply(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
-            }
-        }
-        else
-            for (size_t i = 0; i < size; ++i)
-                c[i] = apply(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
+        processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [](const auto & left, const auto & right){ return apply(left, right); });
     }
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
@@ -527,6 +479,33 @@ public:
     }
 
 private:
+    template <OpCase op_case, typename ApplyFunc>
+    static inline void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
+    {
+        if (right_nullmap)
+        {
+            if constexpr (op_case == OpCase::RightConstant)
+            {
+                if ((*right_nullmap)[0])
+                    return;
+
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = apply_func(undec(a[i]), undec(b));
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (!(*right_nullmap)[i])
+                        c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                }
+            }
+        }
+        else
+            for (size_t i = 0; i < size; ++i)
+                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
+    }
+
     static constexpr bool is_plus_minus =   IsOperation<Operation>::plus ||
                                             IsOperation<Operation>::minus;
     static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
@@ -1573,26 +1552,28 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (auto function_builder
-            = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder
-            = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder
-            = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
+        return executeImpl2(arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
 
