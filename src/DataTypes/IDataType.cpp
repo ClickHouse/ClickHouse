@@ -166,9 +166,9 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
+SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
-    if (supportsSparseSerialization() && info.getKind(column_name) == ISerialization::Kind::SPARSE)
+    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
     return getDefaultSerialization();
@@ -176,10 +176,17 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
 
 SerializationPtr IDataType::getSerialization(const IColumn & column) const
 {
-    if (column.isSparse())
-        return getSparseSerialization();
+    return getSerialization(ISerialization::getKind(column));
+}
 
-    return getDefaultSerialization();
+SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
+{
+    return getSerialization(column_name, [&info](const auto & name) { return info.getKind(name); });
+}
+
+SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationCallback & callback) const
+{
+    return getSerialization(callback(column_name));
 }
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const

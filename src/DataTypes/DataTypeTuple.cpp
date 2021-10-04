@@ -330,7 +330,7 @@ SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
     return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
 }
 
-SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const SerializationInfo & info) const
+SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const SerializationCallback & callback) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
     bool use_explicit_names = have_explicit_names && serialize_names;
@@ -338,7 +338,7 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
     {
         String elem_name = use_explicit_names ? names[i] : toString(i + 1);
         auto subcolumn_name = Nested::concatenateName(column_name, elem_name);
-        auto serializaion = elems[i]->getSerialization(subcolumn_name, info);
+        auto serializaion = elems[i]->getSerialization(subcolumn_name, callback);
         serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, elem_name);
     }
 

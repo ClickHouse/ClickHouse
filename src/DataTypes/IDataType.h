@@ -97,14 +97,21 @@ public:
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
+    /// Chooses serialziation according to serialization kind.
+    SerializationPtr getSerialization(ISerialization::Kind kind) const;
+
     /// Chooses serialziation according to column content.
-    virtual SerializationPtr getSerialization(const IColumn & column) const;
+    SerializationPtr getSerialization(const IColumn & column) const;
 
     /// Chooses serialization according to collected information about content of columns.
-    virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
+    SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 
     /// Chooses serialization according to settings.
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
+
+    using SerializationCallback = std::function<ISerialization::Kind(const String &)>;
+
+    virtual SerializationPtr getSerialization(const String & column_name, const SerializationCallback & callback) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
