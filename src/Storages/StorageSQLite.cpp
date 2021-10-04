@@ -1,8 +1,8 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
-#include <common/range.h>
-#include <common/logger_useful.h>
+#include <base/range.h>
+#include <base/logger_useful.h>
 #include <DataStreams/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>

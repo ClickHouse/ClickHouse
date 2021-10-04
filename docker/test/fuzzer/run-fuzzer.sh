@@ -139,6 +139,7 @@ continue
     clickhouse-client \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
+        --stacktrace \
         --query-fuzzer-runs=1000 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \

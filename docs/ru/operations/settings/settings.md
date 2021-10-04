@@ -1798,6 +1798,21 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: `0`.
 
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Включает или отключает оптимизацию простого запроса `SELECT count() FROM table` с использованием метаданных MergeTree. Если вы хотите управлять безопасностью на уровне строк, отключите оптимизацию.
+
+Возможные значения:
+
+   - 0 — оптимизация отключена.
+   - 1 — оптимизация включена.
+   
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Тип: секунды
@@ -3340,6 +3355,14 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+Строка с идентификатором слота репликации, созданного пользователем вручную. Эта настройка должна использоваться совместно с [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
+
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
+
+Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql.md). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
@@ -3395,6 +3418,16 @@ SETTINGS index_granularity = 8192 │
 -   Положительное целое число.
 
 Значение по умолчанию: `1000`.
+
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Задает максимальное количество попыток чтения данных во время одного HTTP-запроса.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1024`.
 
 ## log_queries_probability {#log-queries-probability}
 
