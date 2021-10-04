@@ -80,8 +80,8 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     }
 
     memory_tracker.setDescription("Mutate/Merge");
-    memory_tracker.setOrRaiseProfilerLimit(1);
-    memory_tracker.setProfilerStep(1);
+    // memory_tracker.setOrRaiseProfilerLimit(1);
+    // memory_tracker.setProfilerStep(1);
     memory_tracker.setSampleProbability(1.);
 }
 
