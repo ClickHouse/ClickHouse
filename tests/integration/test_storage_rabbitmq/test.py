@@ -18,7 +18,7 @@ from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/rabbitmq.xml'],
+                                main_configs=['configs/rabbitmq.xml', 'configs/macros.xml'],
                                 with_rabbitmq=True)
 
 
