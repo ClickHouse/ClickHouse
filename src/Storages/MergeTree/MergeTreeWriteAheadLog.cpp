@@ -202,7 +202,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
-            part_out.writePrefix();
             part_out.write(block);
 
             for (const auto & projection : metadata_snapshot->getProjections())

@@ -137,7 +137,7 @@ void ColumnGathererStream::gather(Column & column_res)
         column_res.reserve(cur_block_preferred_size);
     }
 
-    size_t cur_size = column_res->size();
+    size_t cur_size = column_res.size();
     next_required_source = -1;
 
     while (row_source_pos < row_sources_end && cur_size < cur_block_preferred_size)

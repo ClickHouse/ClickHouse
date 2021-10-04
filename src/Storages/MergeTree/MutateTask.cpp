@@ -793,7 +793,6 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
-        ctx->out->write(block);
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
@@ -952,7 +951,6 @@ private:
             ctx->compression_codec);
 
         ctx->mutating_stream->readPrefix();
-        ctx->out->writePrefix();
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -1102,7 +1100,6 @@ private:
             );
 
             ctx->mutating_stream->readPrefix();
-            ctx->out->writePrefix();
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);

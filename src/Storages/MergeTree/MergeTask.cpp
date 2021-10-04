@@ -350,8 +350,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_column_names.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
-    ctx->column_part_streams = BlockInputStreams(global_ctx->future_part->parts.size());
-
     ctx->rows_sources_write_buf->next();
     ctx->rows_sources_uncompressed_write_buf->next();
     /// Ensure data has written to disk.
@@ -386,6 +384,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
 
+    Pipes pipes;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
@@ -395,20 +394,22 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         column_part_source->setProgressCallback(
             MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->column_progress));
 
-        QueryPipeline column_part_pipeline(Pipe(std::move(column_part_source)));
-        column_part_pipeline.setNumThreads(1);
-
-        ctx->column_part_streams[part_num] =
-                std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
+        pipes.emplace_back(std::move(column_part_source));
     }
 
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
     ctx->rows_sources_read_buf->seek(0, 0);
-    ctx->column_gathered_stream = std::make_unique<ColumnGathererStream>(column_name, ctx->column_part_streams, *ctx->rows_sources_read_buf);
+    auto transform = std::make_unique<ColumnGathererTransform>(pipe.getHeader(), pipe.numOutputPorts(), *ctx->rows_sources_read_buf);
+    pipe.addTransform(std::move(transform));
+
+    ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
+    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
-        ctx->column_gathered_stream->getHeader(),
+        ctx->executor->getHeader(),
         ctx->compression_codec,
         /// we don't need to recalc indices here
         /// because all of them were already recalculated and written
@@ -424,7 +425,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
     Block block;
-    if (!global_ctx->merges_blocker->isCancelled() && (block = ctx->column_gathered_stream->read()))
+    if (!global_ctx->merges_blocker->isCancelled() && ctx->executor->pull(block))
     {
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
@@ -442,7 +443,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     if (global_ctx->merges_blocker->isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
-    ctx->column_gathered_stream->readSuffix();
+    ctx->executor.reset();
     auto changed_checksums = ctx->column_to->writeSuffixAndGetChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns, ctx->need_sync);
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
 
@@ -452,10 +453,14 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
                         ", but " + toString(global_ctx->rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
     }
 
+    UInt64 rows = 0;
+    UInt64 bytes = 0;
+    ctx->column_parts_pipeline.tryGetResultRowsAndBytes(rows, bytes);
+
     /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
 
     global_ctx->merge_list_element_ptr->columns_written += 1;
-    global_ctx->merge_list_element_ptr->bytes_written_uncompressed += ctx->column_gathered_stream->getProfileInfo().bytes;
+    global_ctx->merge_list_element_ptr->bytes_written_uncompressed += bytes;
     global_ctx->merge_list_element_ptr->progress.store(ctx->progress_before + ctx->column_sizes->columnWeight(column_name), std::memory_order_relaxed);
 
     /// This is the external cycle increment.
