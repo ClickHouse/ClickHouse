@@ -3630,6 +3630,16 @@ Possible values:
 
 Default value: `1000`.
 
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Sets the maximum number of retries during a single HTTP read.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1024`.
+
 ## log_queries_probability {#log-queries-probability}
 
 Allows a user to write to [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), and [query_views_log](../../operations/system-tables/query_views_log.md) system tables only a sample of queries selected randomly with the specified probability. It helps to reduce the load with a large volume of queries in a second.
