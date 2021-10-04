@@ -21,7 +21,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <algorithm>
 
 

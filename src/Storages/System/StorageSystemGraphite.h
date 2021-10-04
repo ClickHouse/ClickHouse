@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 namespace DB
 {

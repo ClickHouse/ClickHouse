@@ -22,7 +22,7 @@ limitations under the License. */
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <DataStreams/copyData.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
