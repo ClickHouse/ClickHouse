@@ -304,19 +304,32 @@ public:
     }
 
 private:
+    template <class Parser>
+    ColumnPtr
+    chooseAndRunJSONParserOne(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        /// Only implementations with prepare() can handle NULL.
+        ///
+        /// (and right now this file is pretty complex already, and adding
+        /// support of Nullable for others will make it even more complex)
+        if (null_presence.has_nullable && !Impl<Parser>::supportNullable())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not support Nullable", Name::name);
+
+        return FunctionJSONHelpers::Executor<Name, Impl, Parser>::run(arguments, result_type, input_rows_count);
+    }
 
     ColumnPtr
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
+            return chooseAndRunJSONParserOne<SimdJSONParser>(arguments, result_type, input_rows_count);
 #endif
 
 #if USE_RAPIDJSON
-        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
+        return chooseAndRunJSONParserOne<RapidJSONParser>(arguments, result_type, input_rows_count);
 #else
-        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
+        return chooseAndRunJSONParserOne<DummyJSONParser>(arguments, result_type, input_rows_count);
 #endif
     }
 
@@ -433,6 +446,7 @@ public:
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -461,6 +475,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -485,6 +500,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -515,6 +531,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view & last_key)
     {
@@ -549,6 +566,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -591,6 +609,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -666,6 +685,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -691,6 +711,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1090,6 +1111,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
+    static bool supportNullable() { return true; }
 
     void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
     {
@@ -1131,6 +1153,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
+    static bool supportNullable() { return true; }
 
     void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
     {
@@ -1182,6 +1205,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1286,6 +1310,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1318,6 +1343,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static bool supportNullable() { return false; }
 
     bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
