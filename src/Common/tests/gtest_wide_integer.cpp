@@ -11,23 +11,23 @@
 #include <base/demangle.h>
 
 
-static_assert(is_signed_v<Int128>);
-static_assert(!is_unsigned_v<Int128>);
+static_assert(Signed<Int128>);
+static_assert(!Unsigned<Int128>);
 static_assert(is_integer<Int128>);
 static_assert(sizeof(Int128) == 16);
 
-static_assert(is_signed_v<Int256>);
-static_assert(!is_unsigned_v<Int256>);
+static_assert(Signed<Int256>);
+static_assert(!Unsigned<Int256>);
 static_assert(is_integer<Int256>);
 static_assert(sizeof(Int256) == 32);
 
-static_assert(!is_signed_v<UInt128>);
-static_assert(is_unsigned_v<UInt128>);
+static_assert(!Signed<UInt128>);
+static_assert(Unsigned<UInt128>);
 static_assert(is_integer<UInt128>);
 static_assert(sizeof(UInt128) == 16);
 
-static_assert(!is_signed_v<UInt256>);
-static_assert(is_unsigned_v<UInt256>);
+static_assert(!Signed<UInt256>);
+static_assert(Unsigned<UInt256>);
 static_assert(is_integer<UInt256>);
 static_assert(sizeof(UInt256) == 32);
 

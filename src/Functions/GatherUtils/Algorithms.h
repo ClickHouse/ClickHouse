@@ -42,7 +42,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
         const auto & src = slice.data[i];
         auto & dst = sink.elements[sink.current_offset];
 
-        if constexpr (is_over_big_int<T> || is_over_big_int<U>)
+        if constexpr (ExtIntegral<T> || ExtIntegral<U> || DecimalExtIntegral<T> || DecimalExtIntegral<U>)
         {
             if constexpr (Decimal<T>)
                 dst = static_cast<NativeU>(src.value);
@@ -558,9 +558,9 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                         size_t second_ind [[maybe_unused]])
 {
     /// TODO: Decimal scale
-    if constexpr (Decimal<T> && DecimalU>)
+    if constexpr (Decimal<T> && Decimal<U>)
         return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
-    else if constexpr (Decimal<T> || DecimalU>)
+    else if constexpr (Decimal<T> || Decimal<U>)
         return false;
     else
         return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);

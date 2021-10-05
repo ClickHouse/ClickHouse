@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/dispatchOverTypes.h>
+#include <base/TypePair.h>
 
 
 namespace DB

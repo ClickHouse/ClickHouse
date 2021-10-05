@@ -12,11 +12,9 @@ class ColumnVector;
 
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
-template <typename T>
-class DataTypeNumberBase : public IDataType
+template <Arithmetic T>
+class DataTypeNumberBase : public IDataType //FIXME class with all public members and public inheritance -> struct
 {
-    static_assert(is_arithmetic_v<T>);
-
 public:
     static constexpr bool is_parametric = false;
     static constexpr auto family_name = TypeName<T>;

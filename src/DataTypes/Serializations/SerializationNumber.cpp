@@ -14,18 +14,18 @@
 namespace DB
 {
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
 
-    if constexpr (is_integer<T> && is_arithmetic_v<T>)
+    if constexpr (Integral<T> && Arithmetic<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
@@ -33,14 +33,14 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     writeJSONNumber(x, ostr, settings);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     bool has_quote = false;
@@ -91,7 +91,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     FieldType x;
@@ -99,7 +99,7 @@ void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & i
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
@@ -107,7 +107,7 @@ void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & 
     writeBinary(x, ostr);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
@@ -115,13 +115,13 @@ void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr)
     field = NearestFieldType<FieldType>(x);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     writeBinary(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
@@ -129,7 +129,7 @@ void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & is
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
@@ -143,7 +143,7 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
 }
 
-template <typename T>
+template <Arithmetic T>
 void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();

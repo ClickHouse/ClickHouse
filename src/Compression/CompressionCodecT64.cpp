@@ -383,10 +383,10 @@ void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 
         reverseTransposeBytes(matrix, col, buf[col]);
 }
 
-template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
+template <typename T, typename MinMaxT = std::conditional_t<Signed<T>, Int64, UInt64>>
 void restoreUpperBits(T * buf, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]], UInt32 tail = 64)
 {
-    if constexpr (is_signed_v<T>)
+    if constexpr (Signed<T>)
     {
         /// Restore some data as negatives and others as positives
         if (sign_bit)
@@ -455,7 +455,7 @@ using Variant = CompressionCodecT64::Variant;
 template <typename T, bool full>
 UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 {
-    using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
+    using MinMaxType = std::conditional_t<Signed<T>, Int64, UInt64>;
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
@@ -510,7 +510,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 template <typename T, bool full>
 void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
-    using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
+    using MinMaxType = std::conditional_t<Signed<T>, Int64, UInt64>;
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
@@ -562,7 +562,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     if (num_bits < 64)
         upper_min = UInt64(min) >> num_bits << num_bits;
 
-    if constexpr (is_signed_v<T>)
+    if constexpr (Signed<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {

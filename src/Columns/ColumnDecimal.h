@@ -61,7 +61,7 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <is_decimal T>
+template <Decimal T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
 private:
@@ -212,10 +212,10 @@ protected:
 
 template <class> class ColumnVector;
 template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
-template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
+template <Decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
 template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
 
-template <is_decimal T>
+template <Decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {

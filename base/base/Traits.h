@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IsAny.h"
-#include "Types.h"
+#include "types.h"
 
 /// A more common use case for concepts is a more general one: when we see an "Integral T", we should assume T can be
 /// one of our extended integral types. If extended types should be prohibited, one can use a "NativeIntegral" concept.

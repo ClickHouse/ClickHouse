@@ -163,7 +163,7 @@ namespace impl_
 enum class OpCase { Vector, LeftConstant, RightConstant };
 
 constexpr const auto & undec(const auto & x) { return x; }
-constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
+constexpr const auto & undec(const Decimal auto & x) { return x.value; }
 
 template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
 struct BinaryOperation
@@ -553,20 +553,20 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using Types = TypeList<
+        using Types = Typelist<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
             DataTypeFixedString, DataTypeString>;
 
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+        using Floats = Typelist<DataTypeFloat32, DataTypeFloat64>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
-            typename TypeListConcat<Types, Floats>::Type,
+            TLConcat<Types, Floats>,
             Types>;
 
-        return castTypeToEitherTL<ValidTypes>(type, std::forward<decltype(f)>(f));
+        return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
     }
 
     template <typename F>
@@ -645,7 +645,7 @@ class FunctionBinaryArithmetic : public IFunction
         if constexpr (!is_plus && !is_minus && !is_multiply)
             return {};
 
-        std::string_view function_name;
+        std::string function_name;
         if constexpr (is_plus)
         {
             function_name = "tuplePlus";
@@ -678,7 +678,7 @@ class FunctionBinaryArithmetic : public IFunction
             throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        std::string_view function_name;
+        std::string function_name;
         if constexpr (is_multiply)
         {
             function_name = "tupleMultiplyByNumber";
@@ -1559,7 +1559,7 @@ public:
                     auto type = std::make_shared<ResultDataType>();
                     auto * lval = nativeCast(b, types[0], values[0], type);
                     auto * rval = nativeCast(b, types[1], values[1], type);
-                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                    result = OpSpec::compile(b, lval, rval, Signed<typename ResultDataType::FieldType>);
                     return true;
                 }
             }

@@ -53,7 +53,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <is_decimal T>
+template <Decimal T>
 class DataTypeDecimalBase : public IDataType
 {
 public:
@@ -114,9 +114,9 @@ public:
     template <typename U>
     bool canStoreWhole(U x) const
     {
-        static_assert(is_signed_v<typename T::NativeType>);
+        static_assert(Signed<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (is_signed_v<U>)
+        if constexpr (Signed<U>)
             return -max.value <= x && x <= max.value;
         else
             return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);

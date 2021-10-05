@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Types.h"
+#include "types.h"
 #include "IsAny.h"
 
 namespace DB
@@ -17,26 +17,20 @@ using Decimal256 = DecimalStorage<Int256>;
  * Most common use case: operate on a decimal-like object (decimal functions etc.), so Decimal is most general.
  * Sometimes we need to check for DateTime64 separately, so DecimalStrict allows to check only for Decimal32...256.
  * Finally, we may want to check for decimals which underlying object is language-native (e.g. for vectorization
- * purposes), so DecimalNotExtIntegral is the right concept.
+ * purposes), so DecimalNativeIntegral is the right concept.
  */
 
 template <class T>
-concept DecimalNotExtIntegral = is_any<T, Decimal32, Decimal64>;
+concept DecimalNativeIntegral = is_any<T, Decimal32, Decimal64>;
 
 template <class T>
-concept DecimalStrict = is_any<T, Decimal32, Decimal64, Decimal128, Decimal256>;
+concept DecimalExtIntegral = is_any<T, Decimal128, Decimal256>;
+
+template <class T>
+concept DecimalStrict = DecimalExtIntegral<T> || DecimalNativeIntegral<T>;
 
 template <class T>
 concept Decimal = DecimalStrict<T> || is_any<T, DateTime64>;
-
-//template <class T>
-//concept is_over_big_int =
-//    std::is_same_v<T, Int128>
-//    || std::is_same_v<T, UInt128>
-//    || std::is_same_v<T, Int256>
-//    || std::is_same_v<T, UInt256>
-//    || std::is_same_v<T, Decimal128>
-//    || std::is_same_v<T, Decimal256>;
 
 template <class T> struct NativeTypeT { using Type = T; };
 template <Decimal T> struct NativeTypeT<T> { using Type = typename T::NativeType; };

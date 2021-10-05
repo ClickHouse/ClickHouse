@@ -59,28 +59,19 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
     return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
 }
 
-namespace
-{
-constexpr std::string_view exactly_two_args =
-    "Decimal data type family must have exactly two arguments: precision and scale";
-
-constexpr std::string_view two_number_args =
-    "Decimal data type family must have two numbers as its arguments";
-}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, exactly_two_args);
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * precision = arguments->children[0]->as<ASTLiteral>();
     const auto * scale = arguments->children[1]->as<ASTLiteral>();
 
-    if (!precision
-        || precision->value.getType() != Field::Types::UInt64
-        || !scale
-        || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, two_number_args);
+    if (!precision || precision->value.getType() != Field::Types::UInt64 ||
+        !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
+        throw Exception("Decimal data type family must have two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision_value = precision->value.get<UInt64>();
     UInt64 scale_value = scale->value.get<UInt64>();
@@ -92,13 +83,13 @@ template <typename T>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, exactly_two_args);
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
-    if (!scale_arg
-        || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, two_number_args);
+    if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
+        throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.get<UInt64>();

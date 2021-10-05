@@ -379,7 +379,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
 {
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+    const bool need_quote = (Integral<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
         || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
@@ -868,7 +868,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
 
 /// Methods for output in binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -884,7 +884,7 @@ inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, b
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
-inline void writeText(is_integer auto x, WriteBuffer & buf)
+inline void writeText(Integral auto x, WriteBuffer & buf)
 {
     if constexpr (std::is_same_v<decltype(x), bool>)
         writeBoolText(x, buf);
@@ -894,9 +894,9 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(Float auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
+inline void writeText(Enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
 inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
@@ -966,7 +966,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeText(DecimalStorage<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -987,7 +987,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -1020,7 +1020,7 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -1053,7 +1053,7 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
@@ -1123,7 +1123,7 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+inline std::enable_if_t<Arithmetic<T> && (sizeof(T) <= 8), void>
 writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     if constexpr (sizeof(x) == 2)

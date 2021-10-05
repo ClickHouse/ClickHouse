@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/StringRef.h>
+#include <base/Traits.h>
 
 #include <type_traits>
 
@@ -206,7 +207,7 @@ struct DefaultHash
     }
 };
 
-template <DB::is_decimal T>
+template <DB::Decimal T>
 struct DefaultHash<T>
 {
     size_t operator() (T key) const

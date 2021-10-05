@@ -299,7 +299,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                     else
                         return ReturnType(false);
                 }
-                if constexpr (is_signed_v<T>)
+                if constexpr (Signed<T>)
                     negative = true;
                 else
                 {
@@ -372,7 +372,7 @@ end:
             return ReturnType(false);
     }
     x = res;
-    if constexpr (is_signed_v<T>)
+    if constexpr (Signed<T>)
     {
         if (negative)
         {
@@ -429,7 +429,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (unlikely(buf.eof()))
         return on_error();
 
-    if (is_signed_v<T> && *buf.position() == '-')
+    if (Signed<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -459,7 +459,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    x = is_signed_v<T> && negative ? -res : res;
+    x = Signed<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -896,7 +896,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
@@ -912,7 +912,7 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+inline std::enable_if_t<Arithmetic<T> && (sizeof(T) <= 8), void>
 readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
@@ -939,7 +939,7 @@ inline void readBinaryBigEndian(ExtIntegral auto & x, ReadBuffer & buf)    /// A
 
 /// Generic methods to read value in text tab-separated format.
 
-inline void readText(is_integer auto & x, ReadBuffer & buf)
+inline void readText(Integral auto & x, ReadBuffer & buf)
 {
     if constexpr (std::is_same_v<decltype(x), bool &>)
         readBoolText(x, buf);
@@ -947,12 +947,12 @@ inline void readText(is_integer auto & x, ReadBuffer & buf)
         readIntText(x, buf);
 }
 
-inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
+inline bool tryReadText(Integral auto & x, ReadBuffer & buf)
 {
     return tryReadIntText(x, buf);
 }
 
-inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(Float auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
@@ -962,7 +962,7 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
@@ -991,7 +991,7 @@ inline void readQuoted(UUID & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -1030,7 +1030,7 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
+inline std::enable_if_t<Arithmetic<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
@@ -1164,7 +1164,7 @@ inline bool tryParse(T & res, const char * data, size_t size)
 template <typename T>
 inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-template <is_integer T>
+template <Integral T>
 inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);

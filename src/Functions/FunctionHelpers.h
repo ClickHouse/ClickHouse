@@ -71,7 +71,7 @@ Field toField(const T & x)
     return Field(NearestFieldType<T>(x));
 }
 
-template <is_decimal T>
+template <Decimal T>
 Field toField(const T & x, UInt32 scale)
 {
     return Field(NearestFieldType<T>(x, scale));

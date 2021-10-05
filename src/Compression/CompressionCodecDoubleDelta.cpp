@@ -278,7 +278,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
     // To simplify and booletproof code, we enforce ValueType to be unsigned too.
-    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    static_assert(Unsigned<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     // We use signed delta type to turn huge unsigned values into smaller signed:
@@ -356,10 +356,9 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
-template <typename ValueType>
+template <Unsigned ValueType>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     const char * source_end = source + source_size;

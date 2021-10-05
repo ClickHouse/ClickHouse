@@ -13,28 +13,28 @@
 namespace DB
 {
 
-template <typename T>
+template <Arithmetic T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
     return NearestFieldType<FieldType>();
 }
 
-template <typename T>
+template <Arithmetic T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
     return ColumnVector<T>::create();
 }
 
-template <typename T>
+template <Arithmetic T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integer<T>;
+    return Integral<T>;
 }
 
-template <typename T>
+template <Arithmetic T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integer<T> && is_unsigned_v<T>;
+    return Integral<T> && Unsigned<T>;
 }
 
 

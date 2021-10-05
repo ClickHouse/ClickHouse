@@ -15,6 +15,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/MaskOperations.h>
+#include <Core/dispatchOverTypes.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
@@ -23,6 +24,7 @@
 #include <Functions/FunctionIfBase.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <base/TypePair.h>
 
 
 namespace DB
@@ -161,12 +163,12 @@ struct NumIfImpl
 };
 
 template <typename A, typename B, typename R>
-struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
+struct NumIfImpl<DecimalStorage<A>, DecimalStorage<B>, DecimalStorage<R>>
 {
-    using ResultType = Decimal<R>;
+    using ResultType = DecimalStorage<R>;
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
-    using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
+    using ArrayA = typename ColumnDecimal<DecimalStorage<A>>::Container;
+    using ArrayB = typename ColumnDecimal<DecimalStorage<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
     using Block = ColumnsWithTypeAndName;
     using ArrayResult = typename ColVecResult::Container;

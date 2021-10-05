@@ -15,6 +15,7 @@
 
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
+#include "base/BuildType.h"
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
 
@@ -395,8 +396,8 @@ private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
-    static constexpr const bool allow_hash = !is_over_big_int<T>;
+    /// Arcadia disallows unordered_set for big ints for some reason
+    static constexpr const bool allow_hash = !IS_ARCADIA_BUILD || (!ExtIntegral<T> && !DecimalExtIntegral<T>);
     using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
 
     ContainerT keys_to_keep;

@@ -11,7 +11,7 @@ namespace
 template <typename T>
 constexpr T abs(T value) noexcept
 {
-    if constexpr (std::is_signed_v<T>)
+    if constexpr (Signed<T>)
     {
         if (value >= 0 || value == std::numeric_limits<T>::min())
             return value;

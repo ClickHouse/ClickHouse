@@ -1303,7 +1303,10 @@ namespace
         template <typename NumberType>
         DecimalType numberToDecimal(NumberType value) const
         {
-            return convertToDecimal<DataTypeNumber<NumberType>, DataTypeDecimal<DecimalType>>(value, scale);
+            if constexpr (std::is_same_v<DecimalType, DateTime64>)
+                return convertToDecimal<DataTypeNumber<NumberType>, DataTypeDateTime64>(value, scale);
+            else
+                return convertToDecimal<DataTypeNumber<NumberType>, DataTypeDecimal<DecimalType>>(value, scale);
         }
 
         template <typename NumberType>

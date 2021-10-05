@@ -11,7 +11,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
-#include <base/TL.h>
+#include <base/Typelists.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -96,7 +96,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeFixedString,
             TLConcat<Ints, Decimals>>;
 
-        return castTypeToEither<Types>(type, std::forward<F>(f));
+        return castTypeToEither(Types{}, type, std::forward<F>(f));
     }
 
     static FunctionOverloadResolverPtr
@@ -276,7 +276,7 @@ public:
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<Res>>());
-                    result = Op<TField>::compile(b, v, is_signed_v<Res>);
+                    result = Op<TField>::compile(b, v, Signed<Res>);
                     return true;
                 }
             }

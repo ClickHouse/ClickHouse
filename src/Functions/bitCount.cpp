@@ -23,7 +23,7 @@ struct BitCountImpl
 
         if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
             return __builtin_popcountll(a);
-        if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || std::is_unsigned_v<A>)
+        if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || Unsigned<A>)
             return __builtin_popcount(a);
         if constexpr (std::is_same_v<A, Int16>)
             return __builtin_popcount(static_cast<UInt16>(a));

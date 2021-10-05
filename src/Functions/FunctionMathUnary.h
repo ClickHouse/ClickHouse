@@ -168,7 +168,7 @@ private:
 };
 
 
-template <typename Name, Fn<Float64(Float64)> Function>
+template <typename Name, Float64(Function)(Float64)>
 struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;

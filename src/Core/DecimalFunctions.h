@@ -234,7 +234,7 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
     {
         DecimalNativeType whole = getWholePart(decimal, scale);
 
-        if constexpr (is_unsigned_v<To>)
+        if constexpr (Unsigned<To>)
         {
             if (whole < 0)
             {

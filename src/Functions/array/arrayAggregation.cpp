@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/dispatchOverTypes.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 #include <base/defines.h>

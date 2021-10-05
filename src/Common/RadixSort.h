@@ -14,7 +14,7 @@
 #include <memory>
 
 #include <base/bit_cast.h>
-#include <base/extended_types.h>
+#include <base/types.h>
 #include <Core/Defines.h>
 
 
@@ -187,8 +187,8 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integer<T>,
-    std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
+    Integral<T>,
+    std::conditional_t<Unsigned<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 
 

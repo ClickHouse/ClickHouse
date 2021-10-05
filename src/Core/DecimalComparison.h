@@ -237,9 +237,9 @@ private:
                 overflow |= (static_cast<A>(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
                 overflow |= (static_cast<B>(y) != b);
-            if constexpr (is_unsigned_v<A>)
+            if constexpr (Unsigned<A>)
                 overflow |= (x < 0);
-            if constexpr (is_unsigned_v<B>)
+            if constexpr (Unsigned<B>)
                 overflow |= (y < 0);
 
             if constexpr (scale_left)

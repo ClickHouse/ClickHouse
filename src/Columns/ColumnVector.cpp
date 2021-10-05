@@ -303,7 +303,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
-    if constexpr (is_arithmetic_v<T>)
+    if constexpr (Arithmetic<T>)
         return bit_cast<UInt64>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
@@ -312,7 +312,7 @@ UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 template <typename T>
 inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
 {
-    if constexpr (is_arithmetic_v<T>)
+    if constexpr (Arithmetic<T>)
         return static_cast<Float64>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>);
@@ -321,7 +321,7 @@ inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
 template <typename T>
 Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 {
-    if constexpr (is_arithmetic_v<T>)
+    if constexpr (Arithmetic<T>)
         return static_cast<Float32>(data[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);

@@ -30,7 +30,7 @@
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
-#include <base/extended_types.h>
+#include <base/types.h>
 
 
 namespace impl
@@ -346,11 +346,9 @@ static inline int digits10(T x)
     return 12 + digits10(x / 1000000000000ULL);
 }
 
-template <typename T>
+template <Unsigned T>
 static inline char * writeUIntText(T x, char * p)
 {
-    static_assert(is_unsigned_v<T>);
-
     int len = digits10(x);
     auto pp = p + len;
     while (x >= 100)

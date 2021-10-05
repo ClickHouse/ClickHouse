@@ -5,7 +5,7 @@
 #include <base/DecomposedFloat.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <base/extended_types.h>
+#include <base/types.h>
 #include <Common/NaNUtils.h>
 
 /** Preceptually-correct number comparisons.
@@ -33,23 +33,23 @@ bool lessOp(A a, B b)
         return false;
 
     /// int vs int
-    if constexpr (is_integer<A> && is_integer<B>)
+    if constexpr (Integral<A> && Integral<B>)
     {
         /// same signedness
-        if constexpr (is_signed_v<A> == is_signed_v<B>)
+        if constexpr (Signed<A> == Signed<B>)
             return a < b;
 
         /// different signedness
 
-        if constexpr (is_signed_v<A> && !is_signed_v<B>)
+        if constexpr (Signed<A> && !Signed<B>)
             return a < 0 || static_cast<make_unsigned_t<A>>(a) < b;
 
-        if constexpr (!is_signed_v<A> && is_signed_v<B>)
+        if constexpr (!Signed<A> && Signed<B>)
             return b >= 0 && a < static_cast<make_unsigned_t<B>>(b);
     }
 
     /// int vs float
-    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
+    if constexpr (Integral<A> && std::is_floating_point_v<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -57,7 +57,7 @@ bool lessOp(A a, B b)
         return DecomposedFloat<B>(b).greater(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
+    if constexpr (std::is_floating_point_v<A> && Integral<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) < static_cast<double>(b);
@@ -65,8 +65,8 @@ bool lessOp(A a, B b)
         return DecomposedFloat<A>(a).less(b);
     }
 
-    static_assert(is_integer<A> || std::is_floating_point_v<A>);
-    static_assert(is_integer<B> || std::is_floating_point_v<B>);
+    static_assert(Integral<A> || std::is_floating_point_v<A>);
+    static_assert(Integral<B> || std::is_floating_point_v<B>);
     __builtin_unreachable();
 }
 
@@ -109,23 +109,23 @@ bool equalsOp(A a, B b)
         return false;
 
     /// int vs int
-    if constexpr (is_integer<A> && is_integer<B>)
+    if constexpr (Integral<A> && Integral<B>)
     {
         /// same signedness
-        if constexpr (is_signed_v<A> == is_signed_v<B>)
+        if constexpr (Signed<A> == Signed<B>)
             return a == b;
 
         /// different signedness
 
-        if constexpr (is_signed_v<A> && !is_signed_v<B>)
+        if constexpr (Signed<A> && !Signed<B>)
             return a >= 0 && static_cast<make_unsigned_t<A>>(a) == b;
 
-        if constexpr (!is_signed_v<A> && is_signed_v<B>)
+        if constexpr (!Signed<A> && Signed<B>)
             return b >= 0 && a == static_cast<make_unsigned_t<B>>(b);
     }
 
     /// int vs float
-    if constexpr (is_integer<A> && std::is_floating_point_v<B>)
+    if constexpr (Integral<A> && std::is_floating_point_v<B>)
     {
         if constexpr (sizeof(A) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);
@@ -133,7 +133,7 @@ bool equalsOp(A a, B b)
         return DecomposedFloat<B>(b).equals(a);
     }
 
-    if constexpr (std::is_floating_point_v<A> && is_integer<B>)
+    if constexpr (std::is_floating_point_v<A> && Integral<B>)
     {
         if constexpr (sizeof(B) <= 4)
             return static_cast<double>(a) == static_cast<double>(b);

@@ -36,6 +36,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Core/dispatchOverTypes.h>
+#include <base/TypePair.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -153,10 +155,9 @@ struct ConvertImpl
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        // FIXME Recheck
         if constexpr (
-            (DecimalStrict<FromDataType> && !to_is_arithmetic)
-            || (DecimalStrict<ToDataType> && !from_is_arithmetic))
+            (DecimalStrict<FromDataType> && !DecimalStrict<ToDataType> && !to_is_arithmetic)
+            || (DecimalStrict<ToDataType> && !DecimalStrict<FromDataType> && !from_is_arithmetic))
         {
             throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -2030,7 +2031,7 @@ struct ToNumberMonotonicity
         /// Integer cases.
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
-        const bool to_is_unsigned = is_unsigned_v<T>;
+        const bool to_is_unsigned = Unsigned<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
@@ -3287,7 +3288,7 @@ private:
                 std::is_same_v<To, DataTypeDate> ||
                 std::is_same_v<To, DataTypeDate32> ||
                 std::is_same_v<To, DataTypeDateTime> ||
-                dt::is_uuid<To>)
+                dt::UUID<To>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<To>(to_type.get()), requested_result_is_nullable);
                 return true;

@@ -41,9 +41,10 @@ struct AggregateFunctionSumAddOverflowImpl
     }
 };
 template <typename DecimalNativeType>
-struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
+struct AggregateFunctionSumAddOverflowImpl<DecimalStorage<DecimalNativeType>>
 {
-    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
+    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(
+        DecimalStorage<DecimalNativeType> & lhs, const DecimalStorage<DecimalNativeType> & rhs)
     {
         lhs.addOverflow(rhs);
     }
@@ -104,7 +105,7 @@ struct AggregateFunctionSumData
     {
         const auto * end = ptr + count;
 
-        if constexpr (NativeIntegral<T> || DecimalNotExtIntegral<T>)
+        if constexpr (NativeIntegral<T> || DecimalNativeIntegral<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I

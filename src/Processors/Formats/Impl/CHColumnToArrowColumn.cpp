@@ -2,7 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
-#include <common/BuildType.h>
+#include <base/BuildType.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>

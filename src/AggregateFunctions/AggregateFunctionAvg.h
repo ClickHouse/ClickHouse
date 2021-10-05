@@ -34,7 +34,11 @@ struct AvgFraction
     [[clang::no_sanitize("undefined")]]
     constexpr Float64 divide([[maybe_unused]] UInt32 num_scale, [[maybe_unused]] UInt32 denom_scale) const
     {
-        if constexpr (Decimal<Numerator> && Decimal<Denominator>)
+        if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
+            ///Special case as Decimal256 / Decimal128 = compile error
+            return DecimalUtils::convertTo<Float64>(
+                numerator / (denominator.template convertTo<Decimal256>()), num_scale);
+        else if constexpr (Decimal<Numerator> && Decimal<Denominator>)
             return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
@@ -87,7 +91,7 @@ public:
     {
         writeBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_unsigned_v<Denominator>)
+        if constexpr (Unsigned<Denominator>)
             writeVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             writeBinary(this->data(place).denominator, buf);
@@ -97,7 +101,7 @@ public:
     {
         readBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_unsigned_v<Denominator>)
+        if constexpr (Unsigned<Denominator>)
             readVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             readBinary(this->data(place).denominator, buf);

@@ -2,7 +2,7 @@
 
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
-#include <base/extended_types.h>
+#include <base/types.h>
 #include <limits>
 #include <type_traits>
 
@@ -35,7 +35,7 @@ struct GCDLCMImpl
 
         using Int = typename NumberTraits::ToInteger<Result>::Type;
 
-        if constexpr (is_signed_v<Result>)
+        if constexpr (Signed<Result>)
         {
             /// gcd() internally uses std::abs()
             Int a_s = static_cast<Int>(a);

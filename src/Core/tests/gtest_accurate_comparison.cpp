@@ -70,7 +70,7 @@ GTEST_TEST(AccurateComparison, Tests)
         << ", " << components.mantissa()
         << ", " << (components.mantissa() << (components.normalized_exponent() - 23))
         << ", " << (1ULL << components.normalized_exponent())
-        << ", " << (components.normalized_exponent() >= static_cast<int16_t>(8 * sizeof(UInt64) - is_signed_v<UInt64>))
+        << ", " << (components.normalized_exponent() >= static_cast<int16_t>(8 * sizeof(UInt64) - Signed<UInt64>))
         << ": " << components.compare(u)
         << "\n";*/
 }

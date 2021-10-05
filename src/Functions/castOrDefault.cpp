@@ -193,7 +193,7 @@ private:
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
 
-        if constexpr (IsDataTypeDecimal<Type>)
+        if constexpr (dt::Decimal<Type>)
             mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
 
         if (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
@@ -208,7 +208,7 @@ private:
         size_t scale = 0;
         std::string time_zone;
 
-        if constexpr (IsDataTypeDecimal<Type>)
+        if constexpr (dt::Decimal<Type>)
         {
             const auto & scale_argument = arguments[additional_argument_index];
 
@@ -238,7 +238,7 @@ private:
 
         if constexpr (std::is_same_v<Type, DataTypeDateTime64>)
             cast_type = std::make_shared<Type>(scale, time_zone);
-        else if constexpr (IsDataTypeDecimal<Type>)
+        else if constexpr (dt::Decimal<Type>)
             cast_type = std::make_shared<Type>(Type::maxPrecision(), scale);
         else if constexpr (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
             cast_type = std::make_shared<Type>(time_zone);
@@ -272,7 +272,7 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
     {
-        size_t additional_arguments_size = IsDataTypeDecimal<Type> + (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>);
+        size_t additional_arguments_size = dt::Decimal<Type> + (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>);
 
         ColumnWithTypeAndName second_argument =
         {

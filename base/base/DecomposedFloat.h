@@ -3,7 +3,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
-#include <base/extended_types.h>
+#include "types.h"
+#include "Traits.h"
 
 
 /// Allows to check the internals of IEEE-754 floating point number.
@@ -117,15 +118,15 @@ struct DecomposedFloat
         }
 
         /// The case of the most negative integer
-        if constexpr (is_signed_v<Int>)
+        if constexpr (Signed<Int>)
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
                 assert(is_negative());
 
-                if (normalized_exponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                if (normalized_exponent() < static_cast<int16_t>(8 * sizeof(Int) - Signed<Int>))
                     return 1;
-                if (normalized_exponent() > static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                if (normalized_exponent() > static_cast<int16_t>(8 * sizeof(Int) - Signed<Int>))
                     return -1;
 
                 if (mantissa() == 0)
@@ -136,7 +137,7 @@ struct DecomposedFloat
         }
 
         /// Too large number: abs(float) > abs(rhs). Also the case with infinities and NaN.
-        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - Signed<Int>))
             return is_negative() ? -1 : 1;
 
         using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
@@ -148,7 +149,7 @@ struct DecomposedFloat
             return is_negative() ? -1 : 1;
 
         /// Larger octave: abs(rhs) > abs(float)
-        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
+        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) - Signed<Int>)
             && uint_rhs >= (static_cast<UInt>(1) << (normalized_exponent() + 1)))
             return is_negative() ? 1 : -1;
 

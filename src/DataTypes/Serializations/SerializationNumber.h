@@ -6,11 +6,9 @@
 namespace DB
 {
 
-template <typename T>
+template <Arithmetic T>
 class SerializationNumber : public SimpleTextSerialization
 {
-    static_assert(is_arithmetic_v<T>);
-
 public:
     using FieldType = T;
     using ColumnType = ColumnVector<T>;

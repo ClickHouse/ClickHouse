@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-#include <base/Types.h>
+#include <base/types.h>
 
 /// On overflow, the function returns unspecified value.
 [[clang::no_sanitize("undefined")]] constexpr uint64_t intExp2(int x)

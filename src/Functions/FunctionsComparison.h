@@ -2,6 +2,8 @@
 
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Core/dispatchOverTypes.h>
+#include <base/TypePair.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>

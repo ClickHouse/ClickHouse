@@ -13,6 +13,7 @@
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
+#include <Core/dispatchOverTypes.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -413,7 +414,7 @@ public:
 };
 
 
-template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+template <Decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class DecimalRoundingImpl
 {
 private:
@@ -489,7 +490,7 @@ struct Dispatcher
     }
 };
 
-template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+template <Decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 struct Dispatcher<T, rounding_mode, tie_breaking_mode>
 {
 public:
