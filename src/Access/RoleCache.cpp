@@ -3,6 +3,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/AccessControlManager.h>
 #include <boost/container/flat_set.hpp>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -11,7 +12,7 @@ namespace
 {
     void collectRoles(EnabledRolesInfo & roles_info,
                       boost::container::flat_set<UUID> & skip_ids,
-                      const std::function<RolePtr(const UUID &)> & get_role_function,
+                      Fn<RolePtr(const UUID &)> auto && get_role_function,
                       const UUID & role_id,
                       bool is_current_role,
                       bool with_admin_option)
@@ -113,7 +114,9 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard & notifi
     /// Collect enabled roles. That includes the current roles, the roles granted to the current roles, and so on.
     auto new_info = std::make_shared<EnabledRolesInfo>();
     boost::container::flat_set<UUID> skip_ids;
+
     auto get_role_function = [this](const UUID & id) { return getRole(id); };
+
     for (const auto & current_role : enabled.params.current_roles)
         collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
 

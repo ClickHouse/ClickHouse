@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <base/DateLUTImpl.h>
+#include <base/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>

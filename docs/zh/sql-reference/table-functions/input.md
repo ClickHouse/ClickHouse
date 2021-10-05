@@ -40,4 +40,4 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/input/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/input/) <!--hide-->

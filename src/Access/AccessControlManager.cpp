@@ -13,7 +13,7 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Poco/ExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>

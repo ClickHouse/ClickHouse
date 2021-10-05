@@ -448,7 +448,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем 10акрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде чем закрыть соединение. Значение по умолчанию: 10 секунд.
 
 **Пример**
 
@@ -954,7 +954,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Настройки логирования информации о зависимых представлениях (materialized, live и т.п.) в запросах принятых с настройкой [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
 
-Запросы сохраняются в таблицу [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы сохраняются в таблицу system.query_views_log. Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 

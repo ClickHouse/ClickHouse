@@ -6,15 +6,16 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
+#include <base/sort.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <base/TypeName.h>
 
 #include <cmath>
 
 
 namespace DB
 {
+
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -85,7 +86,7 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
