@@ -159,6 +159,40 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
+def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'csv',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_row_delimiter = '\\n';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+
+    for message in messages:
+        channel.basic_publish(exchange='csv', routing_key='', body=message)
+
+    connection.close()
+    time.sleep(1)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
+    rabbitmq_check_result(result, True)
+
+
 # The same as test_rabbitmq_json_without_delimiter.
 def test_rabbitmq_macros(rabbitmq_cluster):
     instance.query('''
@@ -188,40 +222,6 @@ def test_rabbitmq_macros(rabbitmq_cluster):
     all_messages = [messages]
     for message in all_messages:
         channel.basic_publish(exchange='json', routing_key='', body=message)
-
-    connection.close()
-    time.sleep(1)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
-        if rabbitmq_check_result(result):
-            break
-
-    rabbitmq_check_result(result, True)
-
-
-def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
-    instance.query('''
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'csv',
-                     rabbitmq_format = 'CSV',
-                     rabbitmq_row_delimiter = '\\n';
-        ''')
-
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    messages = []
-    for i in range(50):
-        messages.append('{i}, {i}'.format(i=i))
-
-    for message in messages:
-        channel.basic_publish(exchange='csv', routing_key='', body=message)
 
     connection.close()
     time.sleep(1)
