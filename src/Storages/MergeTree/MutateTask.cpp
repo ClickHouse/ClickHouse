@@ -766,7 +766,6 @@ private:
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
 
-    Block block;
     size_t block_num = 0;
 
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
