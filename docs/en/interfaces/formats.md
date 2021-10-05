@@ -540,7 +540,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-A particular case when JSON objects are enclosed in array with square brackets.
+**An array of JSON objects**
 
 Query:
 
