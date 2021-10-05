@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function insert1()
 {
-    url="${CLICKHOUSE_URL}&async_insert_mode=1&wait_for_async_insert=0"
+    url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
     while true; do
         ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 1,"a"
@@ -18,7 +18,7 @@ function insert1()
 
 function insert2()
 {
-    url="${CLICKHOUSE_URL}&async_insert_mode=1&wait_for_async_insert=0"
+    url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0"
     while true; do
         ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT JSONEachRow {"id": 5, "s": "e"} {"id": 6, "s": "f"}'
     done

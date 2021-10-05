@@ -62,9 +62,9 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 ## + Функции создания и обновления состояния агрегатной функции по одному кортежу аргументов.
 
-В ClickHouse есть понятие - состояние вычисления агрегатной функции. Состояния агрегатных функций можно записывать в таблицы, складывать, финализировать и т. п. https://clickhouse.yandex/docs/ru/data_types/nested_data_structures/aggregatefunction/
+В ClickHouse есть понятие - состояние вычисления агрегатной функции. Состояния агрегатных функций можно записывать в таблицы, складывать, финализировать и т. п. https://clickhouse.com/docs/ru/data_types/nested_data_structures/aggregatefunction/
 
-Получить состояние агрегатной функции можно с помощью комбинатора State: https://clickhouse.yandex/docs/ru/query_language/agg_functions/combinators/#-state Но хотелось бы добавить ещё более простой способ получения состояния агрегатной функции.
+Получить состояние агрегатной функции можно с помощью комбинатора State: https://clickhouse.com/docs/ru/query_language/agg_functions/combinators/#-state Но хотелось бы добавить ещё более простой способ получения состояния агрегатной функции.
 
 Например:
 
@@ -139,7 +139,7 @@ position с конца строки.
 
 ## Возможность использовать ALIAS столбцы при INSERT.
 
-https://clickhouse.yandex/docs/en/query_language/create/#create-table
+https://clickhouse.com/docs/en/query_language/create/#create-table
 
 `INSERT INTO table (column1, column2, ...)`
 
@@ -177,7 +177,7 @@ world │ 123 │
 
 ## Работоспособность внешних данных на время сессии.
 
-https://clickhouse.yandex/docs/en/operations/table_engines/external_data/
+https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 

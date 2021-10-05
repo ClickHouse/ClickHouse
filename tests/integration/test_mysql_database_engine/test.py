@@ -8,7 +8,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/named_collections.xml'], with_mysql=True)
 
 
 @pytest.fixture(scope="module")
@@ -404,3 +404,23 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
+
+
+def test_predefined_connection_configuration(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL(mysql1)")
+        clickhouse_node.query("INSERT INTO `test_database`.`test_table` select number from numbers(100)")
+        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '100'
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(mysql2)")
+        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(unknown_collection)")
+        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(mysql1, 1)")
+
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL(mysql1, port=3306)")
+        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '100'

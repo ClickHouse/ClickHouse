@@ -65,15 +65,7 @@ protected:
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
-        {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
-
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
+            columns.emplace_back(getColumnFromBlock(src, elem));
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -115,7 +107,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
