@@ -793,6 +793,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
+        ctx->out->write(block);
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
