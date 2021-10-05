@@ -117,7 +117,7 @@ described [here](tests.md#functional-test-locally).
 
 ## Build Check {#build-check}
 
-Builds ClickHouse in various configurations for use in further steps. You have to fix the builds that fail. Build logs often has enough information to fix the error, but you might have to reproduce the failure locally. The `cmake` options can be found in the build log, grepping for `cmake`. Use these options and follow the [general build process](build.md).
+Builds ClickHouse in various configurations for use in further steps. You have to fix the builds that fail. Build logs often has enough information to fix the error, but you might have to reproduce the failure locally. The `cmake` options can be found in the build log, grepping for `cmake`. Use these options and follow the [general build process](../development/build.md).
 
 ### Report Details
 
@@ -127,7 +127,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Bundled**: `bundled` build uses libraries from `contrib` folder, and `unbundled` build uses system libraries.
-- **Splitted** `splitted` is a [split build](build.md#split-build)
+- **Splitted** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
@@ -157,7 +157,7 @@ etc. Look at the report to see which tests fail, then reproduce the failure
 locally as described [here](tests.md#functional-test-locally). Note that you
 have to use the correct build configuration to reproduce -- a test might fail
 under AddressSanitizer but pass in Debug. Download the binary from [CI build
-checks page](build.md#you-dont-have-to-build-clickhouse), or build it locally.
+checks page](../development/build.md#you-dont-have-to-build-clickhouse), or build it locally.
 
 
 ## Functional Stateful Tests
@@ -183,11 +183,11 @@ concurrency-related errors. If it fails:
 
 ## Split Build Smoke Test
 
-Checks that the server build in [split build](build.md#split-build)
+Checks that the server build in [split build](../development/build.md#split-build)
 configuration can start and run simple queries.  If it fails:
 
     * Fix other test errors first;
-    * Build the server in [split build](build.md#split-build) configuration
+    * Build the server in [split build](../development/build.md#split-build) configuration
       locally and check whether it can start and run `select 1`.
 
 

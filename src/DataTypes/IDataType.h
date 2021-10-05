@@ -388,6 +388,12 @@ inline bool isUInt8(const T & data_type)
 }
 
 template <typename T>
+inline bool isUInt64(const T & data_type)
+{
+    return WhichDataType(data_type).isUInt64();
+}
+
+template <typename T>
 inline bool isUnsignedInteger(const T & data_type)
 {
     return WhichDataType(data_type).isUInt();

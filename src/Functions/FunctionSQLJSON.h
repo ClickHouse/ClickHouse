@@ -18,7 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
