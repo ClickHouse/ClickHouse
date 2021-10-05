@@ -5,6 +5,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <DataStreams/materializeBlock.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
