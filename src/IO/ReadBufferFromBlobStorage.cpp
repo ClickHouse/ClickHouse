@@ -103,9 +103,15 @@ std::unique_ptr<ReadBuffer> ReadBufferFromBlobStorage::initialize()
     auto blob_client = blob_container_client.GetBlobClient(path);
     // auto blob_client = blob_container_client.GetBlobClient("cwtwuujiyxiqpylavpoziotxlygiaias");
 
-    std::vector<uint8_t> v(buf_size);
+    auto prop = blob_client.GetProperties();
 
-    blob_client.DownloadTo(v.data(), buf_size);
+    auto proper_buf_size = prop.Value.BlobSize;
+
+    std::cout << "proper_buf_size: " << proper_buf_size << "\n";
+
+    std::vector<uint8_t> v(proper_buf_size);
+
+    blob_client.DownloadTo(v.data(), proper_buf_size);
 
     // std::cout << "v contents (" << v.size() << "): ";
 

@@ -41,7 +41,7 @@ void WriteBufferFromBlobStorage::nextImpl() {
 
     for (size_t i = 0; i < offset(); i++)
     {
-        std::cout << static_cast<int>(*(pos + i)) << " ";
+        std::cout << static_cast<uint8_t>(*(pos + i)) << " ";
     }
 
     std::cout << "\n";
