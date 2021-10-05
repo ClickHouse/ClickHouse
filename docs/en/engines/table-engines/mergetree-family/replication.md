@@ -291,4 +291,4 @@ If the data in ZooKeeper was lost or damaged, you can save data by moving it to 
 -   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
 -   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

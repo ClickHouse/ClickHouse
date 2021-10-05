@@ -30,4 +30,4 @@ toc_title: "\u6982\u8981"
 -   別の列または表からデータを挿入するときに、文字列値を暗黙的にドメイン値に変換できません。
 -   ドメインは、格納された値に制約を追加しません。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/domains/overview) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/domains/overview) <!--hide-->

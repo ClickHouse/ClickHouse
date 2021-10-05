@@ -93,4 +93,4 @@ ClickHouse implements user account management using SQL queries and allows for [
 2.  Lack of ability to modify or delete already inserted data with a high rate and low latency. There are batch deletes and updates available to clean up or modify data, for example, to comply with [GDPR](https://gdpr-info.eu).
 3.  The sparse index makes ClickHouse not so efficient for point queries retrieving single rows by their keys.
 
-[Original article](https://clickhouse.tech/docs/en/introduction/distinctive-features/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/introduction/distinctive-features/) <!--hide-->

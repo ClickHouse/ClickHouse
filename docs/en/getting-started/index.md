@@ -12,4 +12,4 @@ If you are new to ClickHouse and want to get a hands-on feeling of its performan
 -   [Go through detailed tutorial](../getting-started/tutorial.md)
 -   [Experiment with example datasets](../getting-started/example-datasets/ontime.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/) <!--hide-->

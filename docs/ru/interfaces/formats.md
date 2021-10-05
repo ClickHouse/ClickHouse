@@ -364,7 +364,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 ## CSVWithNames {#csvwithnames}
 
-Выводит также заголовок, аналогично `TabSeparatedWithNames`.
+Выводит также заголовок, аналогично [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
