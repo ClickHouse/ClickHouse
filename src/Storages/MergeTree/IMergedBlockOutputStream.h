@@ -15,7 +15,11 @@ public:
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_);
 
+    virtual ~IMergedBlockOutputStream() = default;
+
     using WrittenOffsetColumns = std::set<std::string>;
+
+    virtual void write(const Block & block) = 0;
 
     const MergeTreeIndexGranularity & getIndexGranularity() const
     {

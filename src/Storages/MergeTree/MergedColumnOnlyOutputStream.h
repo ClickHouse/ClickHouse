@@ -24,7 +24,7 @@ public:
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     Block getHeader() const { return header; }
-    void write(const Block & block);
+    void write(const Block & block) override;
     MergeTreeData::DataPart::Checksums
     writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums, bool sync = false);
 

@@ -24,7 +24,7 @@ public:
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
-    void write(const Block & block);
+    void write(const Block & block) override;
 
     /** If the data is not sorted, but we have previously calculated the permutation, that will sort it.
       * This method is used to save RAM, since you do not need to keep two blocks at once - the original one and the sorted one.
