@@ -80,7 +80,6 @@ CachedCompressedReadBuffer::CachedCompressedReadBuffer(
 
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-
     /// Nothing to do if we already at required position
     if (file_pos == offset_in_compressed_file
         && (offset() == offset_in_decompressed_block ||
