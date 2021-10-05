@@ -55,7 +55,7 @@ private:
     {
         using FieldType = AvgFieldType<T>;
 
-        if constexpr (!DecimalT>)
+        if constexpr (!Decimal<T>)
             return std::make_shared<DataTypeNumber<FieldType>>();
         else
         {

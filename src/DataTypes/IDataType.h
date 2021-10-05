@@ -5,6 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
+#include <base/Traits.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -297,8 +298,7 @@ template <class T> using ColumnType = typename T::ColumnType;
 
 namespace dt
 {
-template <class T>
-concept HasArithmeticField = Arithmetic<FieldType<T>>;
+template <class T> concept HasArithmeticField = Arithmetic<FieldType<T>>;
 }
 
 /// Some sugar to check data type of IDataType

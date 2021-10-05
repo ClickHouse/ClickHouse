@@ -266,13 +266,13 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (DecimalDictionaryAttributeType>)
+        else if constexpr (Decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
+        else if constexpr (Arithmetic<DictionaryAttributeType>)
         {
             return ColumnType::create(size);
         }

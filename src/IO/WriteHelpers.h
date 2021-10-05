@@ -1136,9 +1136,7 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
     writePODBinary(x, buf);
 }
 
-template <typename T>
-inline std::enable_if_t<ExtIntegral<T>, void>
-writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryBigEndian(const ExtIntegral auto & x, WriteBuffer & buf) /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {

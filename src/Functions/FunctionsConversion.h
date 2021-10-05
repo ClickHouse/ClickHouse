@@ -131,7 +131,8 @@ struct ConvertImpl
     static constexpr bool to_is_arithmetic = dt::Arithmetic<ToDataType>;
 
     template <typename Additions = void *>
-    [[clang::no_sanitize("undefined")]] static ColumnPtr execute(
+    [[clang::no_sanitize("undefined")]]
+    static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr & result_type,
         size_t input_rows_count,
@@ -152,9 +153,10 @@ struct ConvertImpl
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
+        // FIXME Recheck
         if constexpr (
-            (from_is_decimal && !to_is_arithmetic)
-            || (to_is_decimal && !from_is_arithmetic))
+            (DecimalStrict<FromDataType> && !to_is_arithmetic)
+            || (DecimalStrict<ToDataType> && !from_is_arithmetic))
         {
             throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -169,9 +171,13 @@ struct ConvertImpl
                 UInt32 scale;
 
                 if constexpr (accurate_convert_strategy || accurate_or_null_convert_strategy)
+                {
                     scale = additions.scale;
+                }
                 else
+                {
                     scale = additions;
+                }
 
                 col_to = ColVecTo::create(0, scale);
             }
@@ -193,7 +199,7 @@ struct ConvertImpl
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if constexpr (dt::is_uuid<FromDataType> != dt::is_uuid<ToDataType>)
+                if constexpr (dt::UUID<FromDataType> != dt::UUID<ToDataType>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
                 }
@@ -931,7 +937,7 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 {
     UUID tmp;
     readUUIDText(tmp, rb);
-    x = tmp;
+    x = tmp.toUnderType();
 }
 
 
@@ -983,7 +989,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
     if (!tryReadUUIDText(tmp, rb))
         return false;
 
-    x = tmp;
+    x = tmp.toUnderType();
     return true;
 }
 
@@ -1520,12 +1526,12 @@ public:
 
         if constexpr (to_decimal)
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
@@ -1533,15 +1539,13 @@ public:
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
-            // toDate(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeDate32>
+            // toDate32(value[, timezone : String])
             // toDateTime(value[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeDateTime>
             // toDateTime64(value, scale : Integer[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeDateTime64>)
+            // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
+            || dt::DateOrDateTime<ToDataType>)
         {
-            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1694,25 +1698,23 @@ private:
                 result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count, scale);
             }
-            else if constexpr (dt::is_date_or_datetime<To> && std::is_same_v<From, DataTypeDateTime64>)
+            else if constexpr (dt::DateOrDateTime<To> && std::is_same_v<From, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
 
                 result_column = ConvertImpl<From, To, Name, Tag>::execute(
                     arguments, result_type, input_rows_count, dt64->getScale());
             }
-            else if constexpr (dt::Decimal_or_number<From> && dt::Decimal_or_number<To>)
+            else if constexpr (dt::DecimalOrArithmetic<From> && dt::DecimalOrArithmetic<To>)
             {
                 using FromField = typename From::FieldType;
                 using ToField = typename To::FieldType;
 
-                constexpr bool bad_from =
-                    DecimalFromField> || is_floating_point<FromField> || ExtIntegral<FromField> || is_signed_v<FromField>;
-                constexpr bool bad_to =
-                    DecimalToField> || is_floating_point<ToField> || ExtIntegral<ToField> || is_signed_v<ToField>;
+                constexpr bool bad_from = Decimal<FromField> || Float<FromField> || ExtIntegral<FromField> || Signed<FromField>;
+                constexpr bool bad_to = Decimal<ToField> || Float<ToField> || ExtIntegral<ToField> || Signed<ToField>;
 
-                constexpr bool bad_left = bad_from && std::is_same_v<To, DataTypeUUID>;
-                constexpr bool bad_right = bad_to && std::is_same_v<From, DataTypeUUID>;
+                constexpr bool bad_left = bad_from && dt::UUID<To>;
+                constexpr bool bad_right = bad_to && dt::UUID<From>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr (bad_left || bad_right)
@@ -1768,7 +1770,7 @@ private:
         if (!done)
         {
             /// Generic conversion of any type to String.
-            if constexpr (dt::is_string<ToDataType>)
+            if constexpr (dt::String<ToDataType>)
             {
                 return ConvertImplGenericToString::execute(arguments, result_type);
             }
@@ -1821,11 +1823,11 @@ public:
         if (isDateTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArgumentTypes(*this, arguments,
-                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
+                FunctionArgumentDescriptors{{"string", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}},
                 // optional
                 FunctionArgumentDescriptors{
-                    {"precision", isUInt8, isColumnConst, "const UInt8"},
-                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
+                    {"precision", &isUInt8<IDataType>, isColumnConst, "const UInt8"},
+                    {"timezone", &isStringOrFixedString<IDataType>, isColumnConst, "const String or FixedString"},
                 });
 
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
@@ -1973,7 +1975,7 @@ struct UnknownMonotonicity
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { .is_monotonic = false };
+        return { };
     }
 };
 
@@ -1999,13 +2001,13 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if (std::is_floating_point_v<T>)
-            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true};
+        if constexpr (std::is_floating_point_v<T>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
@@ -2045,7 +2047,7 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (left_in_first_half == right_in_first_half)
                 return { .is_monotonic = true };
@@ -2057,10 +2059,10 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (!to_is_unsigned)
-                return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
@@ -2087,7 +2089,7 @@ struct ToNumberMonotonicity
                 // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
                 const bool is_monotonic = (T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0);
 
-                return { .is_monotonic = is_monotonic};
+                return { .is_monotonic = is_monotonic };
             }
         }
 
@@ -2103,7 +2105,7 @@ struct ToDateMonotonicity
     {
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
-            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else if (
             (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
             || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
@@ -2111,7 +2113,7 @@ struct ToDateMonotonicity
             || !type.isValueRepresentedByNumber())
             return {};
         else
-            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
 
@@ -2122,7 +2124,7 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
-            return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else
             return {};
     }
@@ -2137,7 +2139,7 @@ struct ToStringMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        IFunction::Monotonicity positive = { .is_monotonic = true, .is_positive = true};
+        IFunction::Monotonicity positive{ .is_monotonic = true };
         IFunction::Monotonicity not_monotonic;
 
         const auto * type_ptr = &type;
@@ -2569,14 +2571,18 @@ private:
             bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(from_type_index,
                 [&]<class To, class From>(TypePair<To, From>)
             {
-                if constexpr (dt::is_number<To> && dt::is_number<From>)
+                if constexpr (dt::Arithmetic<To> && dt::Arithmetic<From>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
+                    {
                         result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
+                    }
                     else
+                    {
                         result_column = ConvertImpl<From, To, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                    }
 
                     return true;
                 }
@@ -2654,7 +2660,7 @@ private:
             bool res = dispatchOverDataType<DISPATCH_ALL_DT, ToDataType>(type_index,
                 [&]<class To, class From>(TypePair<To, From>)
             {
-                if constexpr (dt::Arithmetic<From> && dt::DecimalTo>)
+                if constexpr (dt::DecimalOrArithmetic<From> && dt::DecimalStrictOrArithmetic<To>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
@@ -3276,7 +3282,8 @@ private:
 
         auto make_default_wrapper = [&]<class To>(TypePair<void, To>)
         {
-            if constexpr (dt::is_number<To> ||
+            if constexpr (
+                dt::Arithmetic<To> ||
                 std::is_same_v<To, DataTypeDate> ||
                 std::is_same_v<To, DataTypeDate32> ||
                 std::is_same_v<To, DataTypeDateTime> ||

@@ -8,7 +8,7 @@ namespace DB
 template <typename A>
 struct NegateImpl
 {
-    using ResultType = std::conditional_t<DecimalA>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
+    using ResultType = std::conditional_t<Decimal<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
     static constexpr const bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 

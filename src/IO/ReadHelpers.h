@@ -392,7 +392,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (DecimalT>)
+    if constexpr (Decimal<T>)
     {
         readIntText<check_overflow>(x.value, buf);
     }
@@ -927,9 +927,7 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap64(x);
 }
 
-template <typename T>
-inline std::enable_if_t<ExtIntegral<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+inline void readBinaryBigEndian(ExtIntegral auto & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {

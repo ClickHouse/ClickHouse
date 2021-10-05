@@ -68,11 +68,12 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::product>
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
-    using Result = Switch<UInt64,
+    using Result = Switch<
         Case<ExtIntegral<ArrayElement>, ArrayElement>,
         Case<Decimal<ArrayElement>, Decimal128>,
         Case<Float<ArrayElement>, Float64>,
-        Case<Signed<ArrayElement>, Int64>>;
+        Case<Signed<ArrayElement>, Int64>,
+        DefaultCase<UInt64>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -104,7 +105,6 @@ struct ArrayAggregateImpl
 
                 return true;
             }
-            // FIXME double check for date or datetime
             else if constexpr (dt::Decimal<DataType> && !dt::DateOrDateTime<DataType>)
             {
                 using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
@@ -156,7 +156,7 @@ struct ArrayAggregateImpl
             const auto & data = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
 
             typename ColVecResultType::MutablePtr res_column;
-            if constexpr (DecimalElement>)
+            if constexpr (Decimal<Element>)
                 res_column = ColVecResultType::create(offsets.size(), data.getScale());
             else
                 res_column = ColVecResultType::create(offsets.size());
@@ -179,7 +179,7 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::average)
                 {
-                    if constexpr (DecimalElement>)
+                    if constexpr (Decimal<Element>)
                     {
                         res[i] = DecimalUtils::convertTo<ResultType>(x, data.getScale());
                     }
@@ -193,7 +193,7 @@ struct ArrayAggregateImpl
                     size_t array_size = offsets[i] - pos;
                     AggregationType product = x;
 
-                    if constexpr (DecimalElement>)
+                    if constexpr (Decimal<Element>)
                     {
                         using T = decltype(x.value);
                         T x_val = x.value;
@@ -231,7 +231,7 @@ struct ArrayAggregateImpl
         const auto & data = column->getData();
 
         typename ColVecResultType::MutablePtr res_column;
-        if constexpr (DecimalElement>)
+        if constexpr (Decimal<Element>)
             res_column = ColVecResultType::create(offsets.size(), data.getScale());
         else
             res_column = ColVecResultType::create(offsets.size());
@@ -246,7 +246,7 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (offsets[i] == pos)
             {
-                if constexpr (DecimalAggregationType>)
+                if constexpr (Decimal<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
                     res[i] = aggregate_value;
@@ -282,7 +282,7 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
-                    if constexpr (DecimalElement>)
+                    if constexpr (Decimal<Element>)
                     {
                         using AggregateValueDecimalUnderlyingValue = decltype(aggregate_value.value);
                         AggregateValueDecimalUnderlyingValue current_aggregate_value = aggregate_value.value;
@@ -302,7 +302,7 @@ struct ArrayAggregateImpl
 
             if constexpr (aggregate_operation == AggregateOperation::average)
             {
-                if constexpr (DecimalElement>)
+                if constexpr (Decimal<Element>)
                 {
                     aggregate_value = aggregate_value / AggregationType(count);
                     res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, data.getScale());
@@ -312,7 +312,7 @@ struct ArrayAggregateImpl
                     res[i] = static_cast<ResultType>(aggregate_value) / count;
                 }
             }
-            else if constexpr (aggregate_operation == AggregateOperation::product && DecimalElement>)
+            else if constexpr (aggregate_operation == AggregateOperation::product && Decimal<Element>)
             {
                 auto result_scale = data.getScale() * count;
 

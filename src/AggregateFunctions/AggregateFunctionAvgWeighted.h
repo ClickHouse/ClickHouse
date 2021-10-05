@@ -1,22 +1,21 @@
 #pragma once
 
-#include <type_traits>
+#include <base/Switch.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 
 namespace DB
 {
 struct Settings;
 
-template <typename T>
-using AvgWeightedFieldType = std::conditional_t<DecimalT>,
-    std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
-    std::conditional_t<DecimalOrExtendedInt<T>,
-        Float64, // no way to do UInt128 * UInt128, better cast to Float64
-        NearestFieldType<T>>>;
+template <class T>
+using AvgWeightedFieldType = Switch<
+    Case<Decimal<T> && std::is_same_v<T, Decimal256>, Decimal256>,
+    Case<Decimal<T>, Decimal128>,
+    Case<ExtIntegral<T>, Float64>, /// No way to do UInt128 * UInt128, better cast to Float64
+    DefaultCase<NearestFieldType<T>>>;
 
 template <typename T, typename U>
-using MaxFieldType = std::conditional_t<(sizeof(AvgWeightedFieldType<T>) > sizeof(AvgWeightedFieldType<U>)),
-    AvgWeightedFieldType<T>, AvgWeightedFieldType<U>>;
+using MaxFieldType = MaxSizeType<AvgWeightedFieldType<T>, AvgWeightedFieldType<U>>;
 
 template <typename Value, typename Weight>
 class AggregateFunctionAvgWeighted final :

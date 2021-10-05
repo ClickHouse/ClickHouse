@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Common/intExp.h>
+#include <base/TypePair.h>
 
 
 namespace DB
@@ -18,7 +19,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// Returns 1 if Decimal value has more digits then its Precision allows, 0 otherwise.
+namespace
+{
+
+/// Returns 1 if Decimal value has more digits than its Precision allows, 0 otherwise.
 /// Precision could be set as second argument or omitted.
 /// If omitted, function uses Decimal precision of the first argument.
 class FunctionIsDecimalOverflow : public IFunction
@@ -141,6 +145,8 @@ public:
         return result_column;
     }
 };
+
+}
 
 void registerFunctionIsDecimalOverflow(FunctionFactory & factory)
 {

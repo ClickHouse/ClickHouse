@@ -169,15 +169,14 @@ public:
 
         FunctionBasePtr base;
 
-        const bool built = dispatchOverType<Dispatch{ .ints = true }>(from_type->getTypeId(),
-            [&]<class T>(TypePair<void, T>)
+        auto call = [&]<class T>(TypePair<void, T>)
         {
             using FromDay = FunctionBaseFromModifiedJulianDay<Name, DataTypeNumber<T>, nullOnErrors>;
             base = std::make_unique<FromDay>(argument_types, return_type);
             return true;
-        });
+        };
 
-        if (built)
+        if (dispatchOverType<Dispatch{ .ints = true }>(from_type->getTypeId(), std::move(call)))
             return base;
 
         /* When the argument is a NULL constant, the resulting

@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <base/Switch.h>
 
 
 namespace DB
@@ -19,10 +20,12 @@ namespace
 template <typename T>
 struct SumSimple
 {
+    // FIXME Recheck "slow Decimal128"
     /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
-    using ResultType = std::conditional_t<DecimalT>,
-                                        std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
-                                        NearestFieldType<T>>;
+    using ResultType = Switch<
+        Case<Decimal<T> && std::is_same_v<T, Decimal256>, Decimal256>,
+        Case<Decimal<T>, Decimal128>,
+        DefaultCase<NearestFieldType<T>>>;
     using AggregateDataType = AggregateFunctionSumData<ResultType>;
     using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSum>;
 };
@@ -46,7 +49,7 @@ struct SumKahan
 template <typename T> using AggregateFunctionSumSimple = typename SumSimple<T>::Function;
 template <typename T> using AggregateFunctionSumWithOverflow = typename SumSameType<T>::Function;
 template <typename T> using AggregateFunctionSumKahan =
-    std::conditional_t<DecimalT>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
+    std::conditional_t<Decimal<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
 
 
 template <template <typename> class Function>

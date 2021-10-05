@@ -99,7 +99,7 @@ struct ArrayCumSumImpl
             const IColumn::Offsets & offsets = array.getOffsets();
 
             typename ColVecResult::MutablePtr res_nested;
-            if constexpr (DecimalElement>)
+            if constexpr (Decimal<Element>)
             {
                 const typename ColVecType::Container & data =
                     checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
@@ -119,7 +119,7 @@ struct ArrayCumSumImpl
         const IColumn::Offsets & offsets = array.getOffsets();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (DecimalElement>)
+        if constexpr (Decimal<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();

@@ -364,7 +364,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (!DecimalT>)
+        if constexpr (!Decimal<T>)
             return std::make_shared<DataTypeNumber<TResult>>();
         else
         {
@@ -519,7 +519,7 @@ private:
 
     static constexpr auto & castColumnToResult(IColumn & to)
     {
-        if constexpr (DecimalT>)
+        if constexpr (Decimal<T>)
             return assert_cast<ColumnDecimal<TResult> &>(to);
         else
             return assert_cast<ColumnVector<TResult> &>(to);

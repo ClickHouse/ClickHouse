@@ -185,7 +185,7 @@ public:
 private:
     auto getReturnTypeElement() const
     {
-        if constexpr (!DecimalResultT>)
+        if constexpr (!Decimal<ResultT>)
             return std::make_shared<DataTypeNumber<ResultT>>();
         else
         {

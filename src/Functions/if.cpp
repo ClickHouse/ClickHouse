@@ -221,7 +221,7 @@ private:
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
-        if constexpr (DecimalT0> && DecimalT1>)
+        if constexpr (Decimal<T0> && Decimal<T1>)
         {
             UInt32 left_scale = getDecimalScale(*arguments[1].type);
             UInt32 right_scale = getDecimalScale(*arguments[2].type);

@@ -31,8 +31,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(Signed<A> && Signed<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
+    if constexpr (Signed<A> && Signed<B>)
+        if (unlikely(a == std::numeric_limits<A>::min() && b == -1))
+            throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
 template <typename A, typename B>
@@ -41,8 +42,9 @@ inline bool divisionLeadsToFPE(A a, B b)
     if (unlikely(b == 0))
         return true;
 
-    if (unlikely(Signed<A> && Signed<B> && a == std::numeric_limits<A>::min() && b == -1))
-        return true;
+    if constexpr (Signed<A> && Signed<B>)
+        if (unlikely(a == std::numeric_limits<A>::min() && b == -1))
+            return true;
 
     return false;
 }

@@ -189,10 +189,11 @@ struct ResultOfIf
                 ? MaxSize<A, B> * 2
                 : MaxSize<A, B>>::Type;
 
-    using Type = Switch<Error,
+    using Type = Switch<
         Case<std::is_same_v<A, B>, A>,
         Case<Decimal<A> && Decimal<B>, MaxSizeType<A, B>>,
-        Case<!Decimal<A> && !Decimal<B>, ConstructedType>>;
+        Case<!Decimal<A> && !Decimal<B>, ConstructedType>,
+        DefaultCase<Error>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */

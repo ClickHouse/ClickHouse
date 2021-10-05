@@ -41,9 +41,8 @@ roundDownToPowerOfTwo(T x)
     return bit_cast<T>(bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
-template <typename T>
-inline std::enable_if_t<ExtIntegral<T>, T>
-roundDownToPowerOfTwo(T)
+template <ExtIntegral T>
+inline T roundDownToPowerOfTwo(T)
 {
     throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }

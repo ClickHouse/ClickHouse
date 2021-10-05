@@ -59,6 +59,9 @@ template <class T> concept DecimalStrict = is_any<T,
     DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
 
 template <class T> concept Decimal = DecimalStrict<T> || std::is_same_v<T, DataTypeDateTime64>;
+
+template <class T> concept DecimalOrArithmetic = Decimal<T> || Arithmetic<T>;
+template <class T> concept DecimalStrictOrArithmetic = DecimalStrict<T> || Arithmetic<T>;
 }
 
 template <typename T>

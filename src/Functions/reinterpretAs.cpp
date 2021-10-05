@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -159,10 +159,10 @@ private:
     template <typename T>
     static constexpr auto CanBeReinterpretedAsNumeric =
         dt::Decimal<T> ||
-        dt::is_number<T> ||
+        dt::Arithmetic<T> ||
         std::is_same_v<T, DataTypeDate> ||
-        std::is_same_v<T, DataTypeDateTime> ||
-        std::is_same_v<T, DataTypeUUID>;
+        std::is_same_v<T, DataTypeDateTime> || // FIXME No DateTime64
+        dt::UUID<T>;
 
     static bool canBeReinterpretedAsNumeric(const WhichDataType & type)
     {
@@ -170,7 +170,7 @@ private:
             type.isInt() ||
             type.isDate() ||
             type.isDateTime() ||
-            type.isDateTime64() ||
+            type.isDateTime64() || // FIXME And here we have it
             type.isFloat() ||
             type.isUUID() ||
             type.isDecimal();
@@ -215,7 +215,7 @@ public:
         {
             /// Place this check before std::is_same_v<FromType, ToType> because same FixedString
             /// types does not necessary have the same byte size fixed value.
-            if constexpr (dt::is_fixed_string<To>)
+            if constexpr (dt::FixedString<To>)
             {
                 const IColumn & src = *arguments[0].column;
                 MutableColumnPtr dst = result_type->createColumn();
@@ -237,7 +237,7 @@ public:
 
                 return true;
             }
-            else if constexpr (dt::is_string<To>)
+            else if constexpr (dt::String<To>)
             {
                 const IColumn & src = *arguments[0].column;
                 MutableColumnPtr dst = result_type->createColumn();
@@ -254,7 +254,7 @@ public:
                 using ToColumnType = typename To::ColumnType;
                 using ToFieldType = FieldType<To>;
 
-                if constexpr (dt::is_string<From>)
+                if constexpr (dt::String<From>)
                 {
                     const auto * col_from = assert_cast<const ColumnString *>(arguments[0].column.get());
 
@@ -281,7 +281,7 @@ public:
 
                     return true;
                 }
-                else if constexpr (dt::is_fixed_string<From>)
+                else if constexpr (dt::FixedString<From>)
                 {
                     const auto * col_from_fixed = assert_cast<const ColumnFixedString *>(arguments[0].column.get());
 

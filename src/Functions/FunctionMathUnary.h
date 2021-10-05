@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <base/FnTraits.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
@@ -145,15 +146,14 @@ private:
         const ColumnWithTypeAndName & col = arguments[0];
         ColumnPtr res;
 
-        auto call = [&col, &res]<class Type>(TypePair<void, Type>)
+        auto call = [&]<class Type>(TypePair<void, Type>)
         {
             using ReturnType = std::conditional_t<Impl::always_returns_float64 || !Float<Type>,
                 Float64, Type>;
+            using ColVecType = ColumnVectorOrDecimal<Type>;
 
-            const auto col_vec = checkAndGetColumn<ColumnVectorOrDecimal<Type>>(col.column.get());
-
-            res = execute<Type, ReturnType>(col_vec);
-            return res != nullptr;
+            const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
+            return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
         };
 
         constexpr Dispatch d { .ints = true, .floats = true, .decimals = true };
@@ -168,7 +168,7 @@ private:
 };
 
 
-template <typename Name, Float64(Function)(Float64)>
+template <typename Name, Fn<Float64(Float64)> Function>
 struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;

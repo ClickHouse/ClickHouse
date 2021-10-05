@@ -49,7 +49,7 @@ struct StatFuncOneArg
     using Type1 = T;
     using Type2 = T;
     using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
-    using Data = std::conditional_t<DecimalT>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
+    using Data = std::conditional_t<Decimal<T>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
 
     static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 1;
@@ -132,7 +132,7 @@ public:
                 static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
         {
-            if constexpr (DecimalT1>)
+            if constexpr (Decimal<T1>)
             {
                 this->data(place).add(static_cast<ResultType>(
                     static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value));
@@ -163,7 +163,7 @@ public:
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();
 
-        if constexpr (DecimalT1>)
+        if constexpr (Decimal<T1>)
         {
             if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
                 dst.push_back(data.getPopulation(src_scale * 2));

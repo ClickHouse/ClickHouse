@@ -22,16 +22,7 @@ namespace DB
 {
 struct Settings;
 
-template <typename T> constexpr bool DecimalOrExtendedInt =
-    DecimalT>
-    || std::is_same_v<T, Int128>
-    || std::is_same_v<T, Int256>
-    || std::is_same_v<T, UInt128>
-    || std::is_same_v<T, UInt256>;
-
-/**
- * Helper class to encapsulate values conversion for avg and avgWeighted.
- */
+/// Helper class to encapsulate values conversion for avg and avgWeighted.
 template <typename Numerator, typename Denominator>
 struct AvgFraction
 {
@@ -39,50 +30,27 @@ struct AvgFraction
     Denominator denominator{0};
 
     /// Allow division by zero as sometimes we need to return NaN.
-    /// Invoked only is either Numerator or Denominator are Decimal.
-    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
+    /// Invoked only if either Numerator or Denominator are Decimal.
+    [[clang::no_sanitize("undefined")]]
+    constexpr Float64 divide([[maybe_unused]] UInt32 num_scale, [[maybe_unused]] UInt32 denom_scale) const
     {
-        if constexpr (DecimalNumerator> && DecimalDenominator>)
-        {
-            // According to the docs, num(S1) / denom(S2) would have scale S1
-
-            if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
-                ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
-                ///int), but an __int128 instead
-                return DecimalUtils::convertTo<Float64>(
-                    numerator / (denominator.template convertTo<Decimal256>()), num_scale);
-            else
-                return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
-        }
+        if constexpr (Decimal<Numerator> && Decimal<Denominator>)
+            return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
         Float64 num_converted;
 
-        if constexpr (DecimalNumerator>)
+        if constexpr (Decimal<Numerator>)
             num_converted = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
-            num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
+            num_converted = static_cast<Float64>(numerator);
 
-        std::conditional_t<DecimalOrExtendedInt<Denominator>,
-            Float64, Denominator> denom_converted;
-
-        if constexpr (DecimalDenominator>)
-            denom_converted = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
-        else if constexpr (DecimalOrExtendedInt<Denominator>)
-            /// no way to divide Float64 and extended integral type without an explicit cast.
-            denom_converted = static_cast<Float64>(denominator);
-        else
-            denom_converted = denominator; /// can divide on float, no cast required.
-
-        return num_converted / denom_converted;
-    }
-
-    Float64 NO_SANITIZE_UNDEFINED divide() const
-    {
-        if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
-            return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
-        else
-            return static_cast<Float64>(numerator) / denominator;
+        if constexpr (Decimal<Denominator>)
+            return num_converted / DecimalUtils::convertTo<Float64>(denominator, denom_scale);
+        else if constexpr (ExtIntegral<Denominator>)
+            return num_converted / static_cast<Float64>(denominator);
+        else /// Denominator may be an integral type in which case casting to float may lose precision.
+            return num_converted / denominator;
     }
 };
 
@@ -137,11 +105,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if constexpr (DecimalNumerator> || DecimalDenominator>)
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
-                this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
-        else
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
+        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide(num_scale, denom_scale));
     }
 
 
@@ -220,7 +184,7 @@ private:
 };
 
 template <typename T>
-using AvgFieldType = std::conditional_t<DecimalT>,
+using AvgFieldType = std::conditional_t<Decimal<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     NearestFieldType<T>>;
 

@@ -69,8 +69,8 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!DecimalValue> || !returns_float);
+    static constexpr bool returns_float = !std::is_void_v<FloatReturnType>;
+    static_assert(!Decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 

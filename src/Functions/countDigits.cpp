@@ -61,7 +61,7 @@ private:
 
         for (size_t i = 0; i < rows_count; ++i)
         {
-            if constexpr (DecimalT>)
+            if constexpr (Decimal<T>)
                 dst_data[i] = digits<NativeT>(src_data[i].value);
             else
                 dst_data[i] = digits<NativeT>(src_data[i]);
@@ -71,8 +71,8 @@ private:
     template <typename T>
     static UInt32 digits(T value)
     {
-        static_assert(!DecimalT>);
-        using DivT = std::conditional_t<is_signed_v<T>, Int32, UInt32>;
+        static_assert(!Decimal<T>);
+        using DivT = std::conditional_t<Signed<T>, Int32, UInt32>;
 
         UInt32 res = 0;
         T tmp;

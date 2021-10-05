@@ -64,7 +64,7 @@ struct ArrayDifferenceImpl
             {
                 Element curr = src[pos];
 
-                if constexpr (DecimalElement>)
+                if constexpr (Decimal<Element>)
                 {
                     using ResultNativeType = typename Result::NativeType;
 
@@ -104,7 +104,7 @@ struct ArrayDifferenceImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (DecimalElement>)
+        if constexpr (Decimal<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();
