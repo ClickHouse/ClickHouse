@@ -234,13 +234,12 @@ void MergeTreeReaderWide::prefetch(
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_start = deserialize_binary_bulk_state_map.count(name) == 0;
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         if (!prefetched_streams.count(stream_name))
         {
             bool seek_to_mark = !continue_reading;
-            if (ReadBuffer * buf = getStream(seek_to_start, substream_path, streams, name_and_type, from_mark, seek_to_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, cache))
                 buf->prefetch();
 
             prefetched_streams.insert(stream_name);
@@ -265,10 +264,7 @@ void MergeTreeReaderWide::readData(
     {
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            /// If data was already prefetched we don't need to seek to start
-            bool seek_to_start = !was_prefetched;
-            bool seek_to_mark = !was_prefetched && !continue_reading;
-            return getStream(seek_to_start, substream_path, streams, name_and_type, from_mark, seek_to_mark, cache);
+            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, from_mark, /* seek_to_mark = */false, cache);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
