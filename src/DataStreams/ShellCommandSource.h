@@ -13,7 +13,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -97,7 +97,7 @@ public:
             max_block_size = configuration.number_of_rows_to_read;
         }
 
-        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
+        pipeline = QueryPipeline(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
     }
 

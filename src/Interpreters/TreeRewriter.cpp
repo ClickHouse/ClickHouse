@@ -1,6 +1,8 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Common/checkStackSize.h>
+
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -515,6 +517,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
+
+        analyzed_join.addDisjunct();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
     }
@@ -523,15 +527,45 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
-        CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (analyzed_join.keyNamesLeft().empty())
+        if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
         {
-            throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+            for (auto & disjunct : or_func->arguments->children)
+            {
+                analyzed_join.addDisjunct();
+                CollectJoinOnKeysVisitor(data).visit(disjunct);
+            }
+            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+        }
+        else
+        {
+            analyzed_join.addDisjunct();
+            CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
+            assert(analyzed_join.oneDisjunct());
+        }
+
+        if (analyzed_join.getClauses().empty())
+                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
+                                    queryToString(table_join.on_expression));
+
+        for (const auto & onexpr : analyzed_join.getClauses())
+        {
+            if (onexpr.key_names_left.empty())
+                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
+                                    queryToString(table_join.on_expression));
         }
 
         if (is_asof)
+        {
+            if (!analyzed_join.oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
             data.asofToJoinKeys();
+        }
+
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+
     }
 }
 
@@ -864,6 +898,10 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     }
 
     required_source_columns.swap(source_columns);
+    for (const auto & column : required_source_columns)
+    {
+        source_column_names.insert(column.name);
+    }
 }
 
 NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
