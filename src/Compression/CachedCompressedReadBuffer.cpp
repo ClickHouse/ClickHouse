@@ -94,8 +94,6 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
     }
     else
     {
-
-        LOG_INFO(&Poco::Logger::get("DEBUG"), "Adding offset {}", offset());
         /// Remember position in compressed file (will be moved in nextImpl)
         file_pos = offset_in_compressed_file;
         /// We will discard our working_buffer, but have to account rest bytes
