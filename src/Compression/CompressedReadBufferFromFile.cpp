@@ -75,7 +75,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     /// Nothing to do if we already at required position
-    if (file_in.getPosition() - size_compressed == offset_in_compressed_file && /// correct position in compressed file
+    if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
         (offset() == offset_in_decompressed_block /// correct position in buffer or
          || nextimpl_working_buffer_offset == offset_in_decompressed_block)) /// we will move our position to correct one
         return;
