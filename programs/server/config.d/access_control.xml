@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
     <user_directories replace="replace">
         <users_xml>
@@ -10,4 +10,4 @@
             <path>access/</path>
         </local_directory>
     </user_directories>
-</yandex>
+</clickhouse>
