@@ -16,6 +16,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 #include <DataStreams/MongoDBSource.h>
+#include <Parsers/ASTHelpers.h>
 
 namespace DB
 {
@@ -115,9 +116,9 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "collection")
-                configuration.collection = arg_value.safeGet<String>();
+                configuration.collection = safeGetFromASTLiteral<String>(arg_value);
             else if (arg_name == "options")
-                configuration.options = arg_value.safeGet<String>();
+                configuration.options = safeGetFromASTLiteral<String>(arg_value);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."

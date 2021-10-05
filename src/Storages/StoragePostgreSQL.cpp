@@ -39,6 +39,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Parsers/ASTHelpers.h>
 
 
 namespace DB
@@ -399,7 +400,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "on_conflict")
-                configuration.on_conflict = arg_value.safeGet<String>();
+                configuration.on_conflict = safeGetFromASTLiteral<String>(arg_value);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
