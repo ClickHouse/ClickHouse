@@ -38,7 +38,7 @@ FileLogSource::FileLogSource(
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 }
 
-FileLogSource::~FileLogSource()
+void FileLogSource::onFinish()
 {
     auto & file_infos = storage.getFileInfos();
 
@@ -56,7 +56,12 @@ FileLogSource::~FileLogSource()
 Chunk FileLogSource::generate()
 {
     if (!buffer || buffer->noRecords())
+    {
+        /// There is no onFinish for ISource, we call it
+        /// when no records return to close files
+        onFinish();
         return {};
+    }
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
