@@ -1117,8 +1117,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("config-file") && options.count("config"))
         throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
-    query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
-
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
     if (options.count("host") && !options["host"].defaulted())
