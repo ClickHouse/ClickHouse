@@ -28,7 +28,7 @@ public:
 
     bool noRecords() { return !buffer || buffer->noRecords(); }
 
-    virtual ~FileLogSource() override;
+    void onFinish();
 
 protected:
     Chunk generate() override;
