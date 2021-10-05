@@ -65,10 +65,19 @@ def signal_handler(sig, frame):
 def stop_tests():
     global stop_tests_triggered_lock
     global stop_tests_triggered
+    global restarted_tests
 
     with stop_tests_triggered_lock:
         if not stop_tests_triggered.is_set():
             stop_tests_triggered.set()
+
+            # materialize multiprocessing.Manager().list() object before
+            # sending SIGTERM since this object is a proxy, that requires
+            # communicating with manager thread, but after SIGTERM will be
+            # send, this thread will die, and you will get
+            # ConnectionRefusedError error for any access to "restarted_tests"
+            # variable.
+            restarted_tests = [*restarted_tests]
 
             # send signal to all processes in group to avoid hung check triggering
             # (to avoid terminating clickhouse-test itself, the signal should be ignored)
@@ -465,7 +474,7 @@ class TestCase:
             description += "\n{}\n".format(diff)
             return TestResult(self.name, TestStatus.FAIL, FailureReason.RESULT_DIFF, total_time, description)
 
-        if self.testcase_args.test_runs > 1 and total_time > 60 and 'long' not in self.name:
+        if self.testcase_args.test_runs > 1 and total_time > 60 and 'long' not in self.tags:
             # We're in Flaky Check mode, check the run time as well while we're at it.
             return TestResult(self.name, TestStatus.FAIL, FailureReason.TOO_LONG, total_time, description)
 
@@ -609,7 +618,7 @@ class TestCase:
             if skip_reason is not None:
                 return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0., "")
 
-            if args.testname and self.send_test_name_failed(suite, self.case):
+            if args.testname and self.send_test_name_failed(suite.suite, self.case):
                 description = "\nServer does not respond to health check\n"
                 return TestResult(self.name, TestStatus.FAIL, FailureReason.SERVER_DIED, 0., description)
 

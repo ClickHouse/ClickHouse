@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <DataStreams/RemoteQueryExecutor.h>
@@ -163,7 +164,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
-            return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(
+            return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
                 BuildQueryPipelineSettings::fromContext(context))));
         }
@@ -219,7 +220,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
-void ReadFromRemote::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
     for (const auto & shard : shards)

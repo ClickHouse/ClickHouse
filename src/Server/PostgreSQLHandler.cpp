@@ -7,6 +7,7 @@
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
+#include <common/scope_guard.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
