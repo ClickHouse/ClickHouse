@@ -41,7 +41,7 @@ public:
 
     /// Provides information about the authentication type of a specified user.
     Authentication::Type getAuthenticationType(const String & user_name) const;
-    Authentication::Digest getPasswordDoubleSHA1(const String & user_name) const;
+
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
     Authentication::Type getAuthenticationTypeOrLogInFailure(const String & user_name) const;
 
