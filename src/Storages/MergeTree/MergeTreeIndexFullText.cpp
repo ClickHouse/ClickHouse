@@ -504,7 +504,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        token_extractor->stringLikeToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
     else if (function_name == "notLike")
@@ -513,7 +513,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.get<String>();
-        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        token_extractor->stringLikeToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
     else if (function_name == "hasToken")
@@ -558,7 +558,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
 
             bloom_filters.back().emplace_back(params);
             const auto & value = element.get<String>();
-            token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+            token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
         }
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
