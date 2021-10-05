@@ -64,6 +64,7 @@ set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/lexer.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/grammar.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/parser.c++"
+    "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/generics.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/node-translator.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/compiler.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-parser.c++"
