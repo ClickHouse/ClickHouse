@@ -18,6 +18,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTHelpers.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -746,9 +747,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "access_key_id")
-                configuration.access_key_id = arg_value.safeGet<String>();
+                configuration.access_key_id = safeGetFromASTLiteral<String>(arg_value);
             else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value.safeGet<String>();
+                configuration.secret_access_key = safeGetFromASTLiteral<String>(arg_value);
             else
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",

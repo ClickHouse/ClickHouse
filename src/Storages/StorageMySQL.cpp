@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTHelpers.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -251,9 +252,9 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "replace_query")
-                configuration.replace_query = arg_value.safeGet<bool>();
+                configuration.replace_query = safeGetFromASTLiteral<bool>(arg_value);
             else if (arg_name == "on_duplicate_clause")
-                configuration.on_duplicate_clause = arg_value.safeGet<String>();
+                configuration.on_duplicate_clause = safeGetFromASTLiteral<String>(arg_value);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
