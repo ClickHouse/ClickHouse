@@ -5,7 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include <common/defines.h>
+#include <base/defines.h>
 
 
 namespace DB

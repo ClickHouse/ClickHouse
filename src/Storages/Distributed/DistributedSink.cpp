@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
@@ -30,9 +31,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
-#include <common/scope_guard.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <future>
 #include <condition_variable>

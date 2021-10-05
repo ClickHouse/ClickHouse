@@ -12,10 +12,11 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>

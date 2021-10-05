@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include <common/logger_useful.h>
-#include <common/BorrowedObjectPool.h>
+#include <base/logger_useful.h>
+#include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
