@@ -228,6 +228,10 @@ bool isStorageTouchedByMutations(
     else if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows instead of 1", block.rows());
 
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
+
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
 }
