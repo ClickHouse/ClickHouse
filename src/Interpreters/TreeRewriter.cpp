@@ -255,7 +255,7 @@ struct ExistsExpressionData
 {
     using TypeToVisit = ASTFunction;
 
-    void visit(ASTFunction & func, ASTPtr) const
+    static void visit(ASTFunction & func, ASTPtr)
     {
         bool exists_expression = func.name == "exists"
             && func.arguments && func.arguments->children.size() == 1
