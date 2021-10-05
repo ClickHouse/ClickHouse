@@ -25,7 +25,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
     : dictionary_name_for_logs(std::move(dictionary_name_for_logs_))
     , configuration(configuration_)
     , update_func(std::move(update_func_))
-    , empty_count(configuration.max_threads_for_updates, configuration.max_threads_for_updates)
+    , empty_count(configuration.max_update_queue_size, configuration.max_update_queue_size)
     , update_pool(configuration.max_threads_for_updates)
     , log(&Poco::Logger::get("CacheDictionaryUpdateQueue"))
 {
@@ -53,7 +53,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
 {
     if (finished)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
 
     if (!empty_count.tryWait(configuration.update_queue_push_timeout_milliseconds))
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
@@ -81,7 +81,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const
 {
     if (finished)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
 
     std::unique_lock<std::mutex> update_lock(update_unit_ptr->lock);
 
@@ -126,7 +126,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 {
     if (finished.exchange(true))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
 
     {
         std::lock_guard<std::mutex> lock(queue_mutex);
@@ -158,6 +158,8 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
             queue.pop();
         }
 
+        empty_count.set();
+
         try
         {
             /// Update
@@ -175,7 +177,6 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
         }
 
         unit_to_update->is_update_finished.notify_all();
-        empty_count.set();
     }
 }
 

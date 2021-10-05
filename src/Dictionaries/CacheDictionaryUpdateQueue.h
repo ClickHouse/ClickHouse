@@ -152,10 +152,11 @@ public:
     */
     void waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const;
 
-    /// Get current update queue size
-    size_t getSize() const;
 
 private:
+
+    size_t getSize() const;
+
     void updateThreadFunction();
 
     using UpdateQueue = std::queue<CacheDictionaryUpdateUnitPtr<dictionary_key_type>>;
