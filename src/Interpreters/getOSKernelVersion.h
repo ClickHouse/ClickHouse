@@ -1,5 +1,5 @@
-#if defined(OS_LINUX)
 #pragma once
+#if defined(OS_LINUX)
 
 #include <Common/typeid_cast.h>
 
@@ -15,16 +15,6 @@ namespace DB
 */
     
 String getOSKernelVersion();
-
-// String getSysName();
-
-// String getNodeName();
-
-// String getReleaseName();
-
-// String getVersion();
-
-// String getMachineName();
 
 }
 
