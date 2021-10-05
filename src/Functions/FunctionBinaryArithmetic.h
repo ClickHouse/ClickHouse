@@ -35,7 +35,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <base/TL.h>
+#include <base/Typelist.h>
 #include <base/map.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -577,14 +577,14 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using Types = TL<
+        using Types = Typelist<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
             DataTypeFixedString, DataTypeString>;
 
-        using Floats = TL<DataTypeFloat32, DataTypeFloat64>;
+        using Floats = Typelist<DataTypeFloat32, DataTypeFloat64>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
             TLConcat<Types, Floats>,

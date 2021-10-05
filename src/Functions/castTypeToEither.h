@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <base/TL.h>
+#include <base/Typelist.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ static bool castTypeToEither(const T * type, F && f)
 }
 
 template <class ...Args>
-constexpr bool castTypeToEither(TL<Args...>, const auto * type, auto && f)
+constexpr bool castTypeToEither(Typelist<Args...>, const auto * type, auto && f)
 {
     return (
         (typeid_cast<const Args *>(type) != nullptr
