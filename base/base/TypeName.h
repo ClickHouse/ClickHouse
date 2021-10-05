@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Decimal.h"
+#include "DecimalStorage.h"
 #include "UUID.h"
 
 namespace DB
