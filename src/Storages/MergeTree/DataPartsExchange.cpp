@@ -14,7 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <iterator>
 #include <regex>

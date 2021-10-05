@@ -28,7 +28,7 @@
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Processors/Sources/SourceFromInputStream.h>

@@ -194,7 +194,7 @@ def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-se
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<yandex><ldap_servers></ldap_servers></yandex>")
+    root = xmltree.fromstring("<clickhouse><ldap_servers></ldap_servers></clickhouse>")
     xml_servers = root.find("ldap_servers")
     xml_servers.append(xmltree.Comment(text=f"LDAP servers {uid}"))
 
@@ -231,7 +231,7 @@ def create_ldap_users_config_content(*users, config_d_dir="/etc/clickhouse-serve
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<yandex><users></users></yandex>")
+    root = xmltree.fromstring("<clickhouse><users></users></clickhouse>")
     xml_users = root.find("users")
     xml_users.append(xmltree.Comment(text=f"LDAP users {uid}"))
 

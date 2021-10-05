@@ -6,7 +6,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
 

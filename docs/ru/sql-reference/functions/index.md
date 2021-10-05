@@ -58,9 +58,68 @@ str -> str != Referer
 
 Для некоторых функций первый аргумент (лямбда-функция) может отсутствовать. В этом случае подразумевается тождественное отображение.
 
-## Пользовательские функции {#user-defined-functions}
+## Пользовательские функции SQL {#user-defined-functions}
 
-Функции можно создавать с помощью выражения [CREATE FUNCTION](../statements/create/function.md). Для удаления таких функций используется выражение [DROP FUNCTION](../statements/drop.md#drop-function).
+Функции можно создавать из лямбда выражений с помощью [CREATE FUNCTION](../statements/create/function.md). Для удаления таких функций используется выражение [DROP FUNCTION](../statements/drop.md#drop-function).
+
+## Исполняемые пользовательские функции {#executable-user-defined-functions}
+ClickHouse может вызывать внешнюю программу или скрипт для обработки данных. Такие функции описываются в [конфигурационном файле](../../operations/configuration-files.md). Путь к нему должен быть указан в настройке `user_defined_executable_functions_config` в основной конфигурации. В пути можно использовать символ подстановки `*`, тогда будут загружены все файлы, соответствующие шаблону. Пример:
+``` xml
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+```
+Файлы с описанием функций ищутся относительно каталога, заданного в настройке `user_files_path`.
+
+Конфигурация функции содержит следующие настройки:
+
+-   `name` - имя функции.
+-   `command` - исполняемая команда или скрипт.
+-   `argument` - описание аргумента, содержащее его тип во вложенной настройке `type`. Каждый аргумент описывается отдельно.
+-   `format` - [формат](../../interfaces/formats.md) передачи аргументов.
+-   `return_type` - тип возвращаемого значения.
+-   `type` - вариант запуска команды. Если задан вариант `executable`, то запускается одна команда. При указании `executable_pool` создается пул команд.
+-   `max_command_execution_time` - максимальное время в секундах, которое отводится на обработку блока данных. Эта настройка применима только для команд с вариантом запуска `executable_pool`. Необязательная настройка. Значение по умолчанию `10`.
+-   `command_termination_timeout` - максимальное время завершения команды в секундах после закрытия конвейера. Если команда не завершается, то процессу отправляется сигнал `SIGTERM`. Эта настройка применима только для команд с вариантом запуска `executable_pool`. Необязательная настройка. Значение по умолчанию `10`.
+-   `pool_size` - размер пула команд. Необязательная настройка. Значение по умолчанию `16`.
+-   `lifetime` - интервал перезагрузки функций в секундах. Если задан `0`, то функция не перезагружается.
+-   `send_chunk_header` - управляет отправкой количества строк перед отправкой блока данных для обработки. Необязательная настройка. Значение по умолчанию `false`.
+
+Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Обработка должна выполняться в цикле. То есть после обработки группы аргументов команда должна ожидать следующую группу.
+
+**Пример**
+
+XML конфигурация, описывающая функцию `test_function`:
+```
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+        <lifetime>0</lifetime>
+    </function>
+</functions>
+```
+
+Запрос:
+
+``` sql
+SELECT test_function(toUInt64(2), toUInt64(2));
+```
+
+Результат:
+
+``` text
+┌─test_function(toUInt64(2), toUInt64(2))─┐
+│                                       4 │
+└─────────────────────────────────────────┘
+```
 
 ## Обработка ошибок {#obrabotka-oshibok}
 

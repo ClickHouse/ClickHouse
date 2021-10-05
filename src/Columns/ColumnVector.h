@@ -4,7 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Core/TypeId.h>
@@ -30,6 +30,7 @@ struct CompareHelper
 {
     static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
     static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
+    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -76,6 +77,11 @@ struct FloatCompareHelper
         return a > b;
     }
 
+    static constexpr bool equals(T a, T b, int nan_direction_hint)
+    {
+        return compare(a, b, nan_direction_hint) == 0;
+    }
+
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
         const bool isnan_a = std::isnan(a);
@@ -112,6 +118,7 @@ private:
 
     struct less;
     struct greater;
+    struct equals;
 
 public:
     using ValueType = T;
