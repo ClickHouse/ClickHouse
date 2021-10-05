@@ -1577,6 +1577,8 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
 
+    query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
