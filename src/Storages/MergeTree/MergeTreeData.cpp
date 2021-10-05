@@ -62,8 +62,8 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include <common/insertAtEnd.h>
-#include <common/scope_guard_safe.h>
+#include <base/insertAtEnd.h>
+#include <base/scope_guard_safe.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -4882,11 +4882,16 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         part->volume->getDisk()->createDirectories(backup_path);
 
+        String src_part_path = part->getFullRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
         if (auto part_in_memory = asInMemoryPart(part))
-            part_in_memory->flushToDisk(fs::path(backup_path) / relative_data_path, part->relative_path, metadata_snapshot);
-        else
-            localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);
+        {
+            auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
+            part_in_memory->flushToDisk(relative_data_path, flushed_part_path, metadata_snapshot);
+            src_part_path = fs::path(relative_data_path) / flushed_part_path / "";
+        }
+
+        localBackup(part->volume->getDisk(), src_part_path, backup_part_path);
 
         part->volume->getDisk()->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 

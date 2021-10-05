@@ -7,7 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
