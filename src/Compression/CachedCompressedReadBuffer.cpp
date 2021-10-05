@@ -2,7 +2,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
-#include <common/logger_useful.h>
 
 #include <utility>
 
