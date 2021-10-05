@@ -25,8 +25,8 @@
 #    include <Storages/StorageMergeTree.h>
 #    include <Common/quoteString.h>
 #    include <Common/setThreadName.h>
-#    include <common/sleep.h>
-#    include <common/bit_cast.h>
+#    include <base/sleep.h>
+#    include <base/bit_cast.h>
 
 namespace DB
 {

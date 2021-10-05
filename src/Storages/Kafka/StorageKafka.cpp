@@ -36,8 +36,8 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/logger_useful.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Common/MemoryTracker.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>

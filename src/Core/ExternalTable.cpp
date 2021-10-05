@@ -20,7 +20,7 @@
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Formats/FormatFactory.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
