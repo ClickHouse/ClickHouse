@@ -57,4 +57,4 @@ $ clickhouse-client --query "SELECT * from table" --format FormatName > result.t
 
 見る [clickhouse-クライアント](../interfaces/cli.md).
 
-{## [元の記事](https://clickhouse.tech/docs/en/faq/general/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/faq/general/) ##}

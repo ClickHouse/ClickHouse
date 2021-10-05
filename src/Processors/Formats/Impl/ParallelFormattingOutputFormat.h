@@ -4,7 +4,7 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>

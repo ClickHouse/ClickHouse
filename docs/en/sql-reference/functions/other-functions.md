@@ -1201,7 +1201,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Returned value**
 
-1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
+1. Type: [Uint8](https://clickhouse.com/docs/en/data_types/int_uint/#diapazony-uint).
 
 **Example**
 
