@@ -6,6 +6,7 @@
 #include <base/strong_typedef.h>
 #include <base/DecimalStorage.h>
 #include <base/defines.h>
+#include <base/UUID.h>
 
 
 namespace DB
@@ -90,8 +91,6 @@ enum class TypeIndex
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-
-STRONG_TYPEDEF(UInt128, UUID)
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
