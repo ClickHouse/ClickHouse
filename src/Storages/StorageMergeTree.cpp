@@ -966,7 +966,12 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
 {
     auto & future_part = merge_mutate_entry.future_part;
 
-    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
+    const Settings & settings = getContext()->getSettingsRef();
+    auto merge_list_entry = getContext()->getMergeList().insert(
+        getStorageID(), future_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
 
