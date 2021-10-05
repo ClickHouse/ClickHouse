@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.14)
 
 foreach(policy
         CMP0023
@@ -176,6 +176,13 @@ if (COMPILER_CLANG)
     endif()
 endif ()
 
+# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
+# because there are two different branches of clang: clang and AppleClang.
+# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
+if (HAS_RESERVED_IDENTIFIER)
+    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
+endif ()
+
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -186,6 +193,14 @@ if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
+
+if (GLIBC_COMPATIBILITY)
+    # NOTE: we may also want to check glibc version and add -include only for 2.32+
+    # however this is extra complexity, especially for cross compiling.
+    # And anyway it should not break anything for <2.32.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+endif()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
     message (WARNING "CMake version must be greater than 3.9.0 for production builds.")

@@ -155,6 +155,12 @@ def generate_cmake_flags_files() -> None:
         with open(footer_file_name, "r") as footer:
             f.write(footer.read())
 
+        other_languages = ["docs/ja/development/cmake-in-clickhouse.md",
+                           "docs/zh/development/cmake-in-clickhouse.md",
+                           "docs/ru/development/cmake-in-clickhouse.md"]
+
+        for lang in other_languages:
+            os.symlink(output_file_name, os.path.join(root_path, lang))
 
 if __name__ == '__main__':
     generate_cmake_flags_files()

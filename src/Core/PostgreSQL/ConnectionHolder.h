@@ -8,7 +8,7 @@
 
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
-#include <common/BorrowedObjectPool.h>
+#include <base/BorrowedObjectPool.h>
 
 
 namespace postgres

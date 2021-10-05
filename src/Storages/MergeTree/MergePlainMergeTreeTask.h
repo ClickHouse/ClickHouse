@@ -23,18 +23,21 @@ public:
         TableLockHolder table_lock_holder_,
         Callback && task_result_callback_)
         : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
-        , deduplicate_by_columns(deduplicate_by_columns_)
-        , merge_mutate_entry(merge_mutate_entry_)
-        , table_lock_holder(table_lock_holder_)
-        , task_result_callback(task_result_callback_) {}
+        , deduplicate_by_columns(std::move(deduplicate_by_columns_))
+        , merge_mutate_entry(std::move(merge_mutate_entry_))
+        , table_lock_holder(std::move(table_lock_holder_))
+        , task_result_callback(std::forward<Callback>(task_result_callback_))
+    {
+        for (auto & item : merge_mutate_entry->future_part->parts)
+            priority += item->getBytesOnDisk();
+    }
 
     bool executeStep() override;
-
     void onCompleted() override;
-
     StorageID getStorageID() override;
+    UInt64 getPriority() override { return priority; }
 
 private:
 
@@ -58,20 +61,17 @@ private:
     bool deduplicate;
     Names deduplicate_by_columns;
     std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
-
     TableLockHolder table_lock_holder;
-
     FutureMergedMutatedPartPtr future_part{nullptr};
     MergeTreeData::MutableDataPartPtr new_part;
     std::unique_ptr<Stopwatch> stopwatch_ptr{nullptr};
-
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
+    UInt64 priority{0};
+
     std::function<void(const ExecutionStatus &)> write_part_log;
-
     IExecutableTask::TaskResultCallback task_result_callback;
-
     MergeTaskPtr merge_task{nullptr};
 };
 
