@@ -10,7 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
