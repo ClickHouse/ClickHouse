@@ -105,7 +105,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     merged_rows += col->size();
     merged_bytes += col->allocatedBytes();
     res.addColumn(std::move(col));
-    return Status(std::move(res), row_sources_buf.eof());
+    return Status(std::move(res), row_sources_buf.eof() && !source_to_fully_copy);
 }
 
 
