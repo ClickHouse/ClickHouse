@@ -28,7 +28,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>

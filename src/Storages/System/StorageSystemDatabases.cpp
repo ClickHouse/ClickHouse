@@ -17,6 +17,7 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
+        {"comment", std::make_shared<DataTypeString>()}
     };
 }
 
@@ -39,6 +40,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[2]->insert(context->getPath() + database->getDataPath());
         res_columns[3]->insert(database->getMetadataPath());
         res_columns[4]->insert(database->getUUID());
+        res_columns[5]->insert(database->getDatabaseComment());
    }
 }
 

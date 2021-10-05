@@ -52,7 +52,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 }
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
