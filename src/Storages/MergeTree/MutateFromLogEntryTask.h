@@ -21,6 +21,8 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
+    UInt64 getPriority() override { return priority; }
+
 private:
     std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
@@ -29,6 +31,8 @@ private:
     {
         return mutate_task->execute();
     }
+
+    UInt64 priority{0};
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};

@@ -13,6 +13,10 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -64,6 +68,8 @@ private:
     MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }
