@@ -52,7 +52,7 @@ KafkaSource::~KafkaSource()
     storage.pushReadBuffer(buffer);
 }
 
-Chunk KafkaSource::generateImpl()
+void KafkaSource::createBuffer()
 {
     if (!buffer)
     {
@@ -60,12 +60,18 @@ Chunk KafkaSource::generateImpl()
         buffer = storage.popReadBuffer(timeout);
 
         if (!buffer)
-            return {};
+            return;
 
         buffer->subscribe();
 
         broken = true;
     }
+}
+
+Chunk KafkaSource::generateImpl()
+{
+    if (!buffer)
+        createBuffer();
 
     if (!buffer || is_finished)
         return {};
@@ -258,6 +264,17 @@ void KafkaSource::commit()
     buffer->commit();
 
     broken = false;
+}
+
+bool KafkaSource::isStalled() const
+{
+    // if (!buffer)
+    //     LOG_WARNING(log, "isStalled no buffer");
+    // if (buffer->isStalled())
+    //     LOG_WARNING(log, "isStalled buffer is stalled");
+    // else
+    //     LOG_WARNING(log, "isStalled ok");
+    return !buffer || buffer->isStalled();
 }
 
 }

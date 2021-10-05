@@ -30,8 +30,9 @@ public:
 
     Chunk generate() override;
 
+    void createBuffer();
     void commit();
-    bool isStalled() const { return !buffer || buffer->isStalled(); }
+    bool isStalled() const;
 
 private:
     StorageKafka & storage;
