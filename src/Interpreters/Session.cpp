@@ -284,11 +284,6 @@ Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String &
     }
 }
 
-Authentication::Digest Session::getPasswordDoubleSHA1(const String & user_name) const
-{
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getPasswordDoubleSHA1();
-}
-
 void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
 {
     authenticate(BasicCredentials{user_name, password}, address);

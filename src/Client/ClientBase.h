@@ -30,6 +30,8 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+void interruptSignalHandler(int signum);
+
 class ClientBase : public Poco::Util::Application
 {
 
@@ -61,6 +63,7 @@ protected:
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+    static void setupSignalHandler();
 
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
