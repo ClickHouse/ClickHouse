@@ -18,9 +18,9 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <common/logger_useful.h>
-#include <common/getThreadId.h>
-#include <common/range.h>
+#include <base/logger_useful.h>
+#include <base/getThreadId.h>
+#include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>

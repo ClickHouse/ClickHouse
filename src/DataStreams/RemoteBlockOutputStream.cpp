@@ -1,7 +1,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 
 #include <Client/Connection.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
@@ -37,7 +37,7 @@ RemoteInserter::RemoteInserter(
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info);
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false);
 
     while (true)
     {
@@ -75,12 +75,12 @@ void RemoteInserter::write(Block block)
 {
     try
     {
-        connection.sendData(block);
+        connection.sendData(block, /* name */"", /* scalar */false);
     }
     catch (const NetException &)
     {
         /// Try to get more detailed exception from server
-        auto packet_type = connection.checkPacket();
+        auto packet_type = connection.checkPacket(/* timeout_microseconds */0);
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             Packet packet = connection.receivePacket();
@@ -102,7 +102,7 @@ void RemoteInserter::writePrepared(ReadBuffer & buf, size_t size)
 void RemoteInserter::onFinish()
 {
     /// Empty block means end of data.
-    connection.sendData(Block());
+    connection.sendData(Block(), /* name */"", /* scalar */false);
 
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)

@@ -2,7 +2,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
