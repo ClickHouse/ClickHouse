@@ -29,12 +29,25 @@ void WriteBufferFromBlobStorage::allocateBuffer()
 
 void WriteBufferFromBlobStorage::nextImpl() {
     std::cout << "buf_size: " << buf_size << "\n";
-    // std::cout << "WriteBufferFromBlobStorage:nextImpl\n\n\n";
+    std::cout << "offset(): " << offset() << "\n";
 
     if (!offset())
         return;
 
-    Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(position()), offset());
+    auto pos = working_buffer.begin();
+    auto len = offset();
+
+    std::cout << "buffer contents: ";
+
+    for (size_t i = 0; i < offset(); i++)
+    {
+        std::cout << static_cast<int>(*(pos + i)) << " ";
+    }
+
+    std::cout << "\n";
+
+
+    Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos), len);
 
     blob_container_client.UploadBlob(blob_path, tmp_buffer);
 }

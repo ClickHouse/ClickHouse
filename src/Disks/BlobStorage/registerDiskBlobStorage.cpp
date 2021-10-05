@@ -14,6 +14,37 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int PATH_ACCESS_DENIED;
+}
+
+
+void checkWriteAccess(IDisk & disk)
+{
+    auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    file->write("test", 4);
+}
+
+
+void checkReadAccess(IDisk & disk)
+{
+    auto file = disk.readFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE);
+    String buf(4, '0');
+    file->readStrict(buf.data(), 4);
+    std::cout << "buf: ";
+    for (size_t i = 0; i < 4; i++)
+    {
+        std::cout << static_cast<int>(buf[i]) << " ";
+    }
+    std::cout << "\n";
+
+    if (buf != "test")
+        throw Exception("No read access to disk", ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+
 void registerDiskBlobStorage(DiskFactory & factory)
 {
     auto creator = [](
@@ -32,7 +63,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
 
-        std::shared_ptr<IDisk> diskBlobStorage = std::make_shared<DiskBlobStorage>(
+        std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
             name,
             metadata_path,
             endpoint_url,
@@ -40,7 +71,15 @@ void registerDiskBlobStorage(DiskFactory & factory)
             blob_container_client
         );
 
-        return std::make_shared<DiskRestartProxy>(diskBlobStorage);
+        bool initial_check = true;
+
+        if (initial_check)
+        {
+            checkWriteAccess(*blob_storage_disk);
+            checkReadAccess(*blob_storage_disk);
+        }
+
+        return std::make_shared<DiskRestartProxy>(blob_storage_disk);
     };
     factory.registerDiskType("blob_storage", creator);
 }
