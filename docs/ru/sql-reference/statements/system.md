@@ -138,7 +138,7 @@ Cкомпилированные выражения используются ко
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Перечитывает конфигурацию настроек ClickHouse. Используется при хранении конфигурации в zookeeeper.
+Перечитывает конфигурацию настроек ClickHouse. Используется при хранении конфигурации в zookeeper.
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
