@@ -193,6 +193,46 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
+def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'tsv',
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_queue_base = 'tsv',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}\t{i}'.format(i=i))
+
+    for message in messages:
+        channel.basic_publish(exchange='tsv', routing_key='', body=message)
+    connection.close()
+
+    result = ''
+    while True:
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
+        if rabbitmq_check_result(result):
+            break
+
+    rabbitmq_check_result(result, True)
+
+
 # The same as test_rabbitmq_json_without_delimiter.
 def test_rabbitmq_macros(rabbitmq_cluster):
     instance.query('''
@@ -229,46 +269,6 @@ def test_rabbitmq_macros(rabbitmq_cluster):
     result = ''
     while True:
         result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
-        if rabbitmq_check_result(result):
-            break
-
-    rabbitmq_check_result(result, True)
-
-
-def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
-    instance.query('''
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'tsv',
-                     rabbitmq_format = 'TSV',
-                     rabbitmq_queue_base = 'tsv',
-                     rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
-        ''')
-
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    messages = []
-    for i in range(50):
-        messages.append('{i}\t{i}'.format(i=i))
-
-    for message in messages:
-        channel.basic_publish(exchange='tsv', routing_key='', body=message)
-    connection.close()
-
-    result = ''
-    while True:
-        result = instance.query('SELECT * FROM test.view ORDER BY key')
         if rabbitmq_check_result(result):
             break
 
