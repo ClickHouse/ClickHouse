@@ -45,13 +45,19 @@ protected:
 
 private:
     const std::string path;
+
+    /// Note, in order to avoid data race found by fuzzer, put events before dw,
+    /// such that when this class desctruction, dw will be destructed before events.
+    /// The data race is because dw create a seperate thread to monitor file events
+    /// and put into events, then if we destruct events first, the monitor thread still
+    /// running, it may access events during events destruction, leads to data race.
+    Events events;
+
     std::unique_ptr<Poco::DirectoryWatcher> dw;
 
     Poco::Logger * log;
 
     std::mutex mutex;
-
-    Events events;
 
     Error error;
 };
