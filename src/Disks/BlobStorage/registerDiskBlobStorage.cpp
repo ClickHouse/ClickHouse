@@ -36,7 +36,7 @@ void checkReadAccess(IDisk & disk)
     std::cout << "buf: ";
     for (size_t i = 0; i < 4; i++)
     {
-        std::cout << static_cast<int>(buf[i]) << " ";
+        std::cout << static_cast<uint8_t>(buf[i]) << " ";
     }
     std::cout << "\n";
 
