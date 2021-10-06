@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <common/wide_integer_to_string.h>
+#include <base/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -35,8 +35,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/TypeList.h>
-#include <common/map.h>
+#include <base/Typelist.h>
+#include <base/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -577,20 +577,20 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using Types = TypeList<
+        using Types = Typelist<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
             DataTypeFixedString, DataTypeString>;
 
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
+        using Floats = Typelist<DataTypeFloat32, DataTypeFloat64>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
-            typename TypeListConcat<Types, Floats>::Type,
+            TLConcat<Types, Floats>,
             Types>;
 
-        return castTypeToEitherTL<ValidTypes>(type, std::forward<decltype(f)>(f));
+        return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
     }
 
     template <typename F>
