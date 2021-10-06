@@ -1,7 +1,7 @@
 #include <string>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

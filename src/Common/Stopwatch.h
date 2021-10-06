@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/time.h>
-#include <common/types.h>
+#include <base/time.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <memory>

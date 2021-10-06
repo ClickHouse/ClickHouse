@@ -110,10 +110,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
-            SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
-
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
@@ -131,7 +127,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().tryGet(what, context) != nullptr
+                return FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || additional_names.count(what);
