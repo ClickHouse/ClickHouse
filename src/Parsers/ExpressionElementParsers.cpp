@@ -103,33 +103,25 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
-    /// Empty expression in parentheses is not allowed.
+    /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    /// Special case for one-element tuple.
     if (expr_list.children.size() == 1 && is_elem)
     {
-        auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
-        /// But only if its argument is not tuple,
-        /// since otherwise it will do incorrect transformation:
-        ///
-        ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
-        if (!(ast_literal && ast_literal->value.getType() == Field::Types::Tuple))
-        {
-            node = expr_list.children.front();
-            return true;
-        }
+        node = expr_list.children.front();
     }
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "tuple";
-    function_node->arguments = contents_node;
-    function_node->children.push_back(contents_node);
-    node = function_node;
+    else
+    {
+        auto function_node = std::make_shared<ASTFunction>();
+        function_node->name = "tuple";
+        function_node->arguments = contents_node;
+        function_node->children.push_back(contents_node);
+        node = function_node;
+    }
 
     return true;
 }
@@ -1524,25 +1516,6 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 }
 
-static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
-{
-    errno = 0;    /// Functions strto* don't clear errno.
-
-    char * pos_integer = buffer;
-    UInt64 uint_value = std::strtoull(buffer, &pos_integer, base);
-
-    if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
-    {
-        if (negative)
-            res = static_cast<Int64>(-uint_value);
-        else
-            res = uint_value;
-
-        return true;
-    }
-
-    return false;
-}
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1583,22 +1556,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Float64 float_value = std::strtod(buf, &pos_double);
     if (pos_double != buf + pos->size() || errno == ERANGE)
     {
-        /// Try to parse number as binary literal representation. Example: 0b0001.
-        if (pos->size() > 2 && buf[0] == '0' && buf[1] == 'b')
-        {
-            char * buf_skip_prefix = buf + 2;
-
-            if (parseNumber(buf_skip_prefix, pos->size() - 2, negative, 2, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-        }
-
         expected.add(pos, "number");
         return false;
     }
@@ -1613,13 +1570,22 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// try to use more exact type: UInt64
 
-    parseNumber(buf, pos->size(), negative, 0, res);
+    char * pos_integer = buf;
+
+    errno = 0;
+    UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+    {
+        if (negative)
+            res = static_cast<Int64>(-uint_value);
+        else
+            res = uint_value;
+    }
 
     auto literal = std::make_shared<ASTLiteral>(res);
     literal->begin = literal_begin;
     literal->end = ++pos;
     node = literal;
-
     return true;
 }
 

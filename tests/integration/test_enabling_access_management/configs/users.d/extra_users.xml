@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <users>
         <readonly>
             <password></password>
@@ -10,4 +10,4 @@
             <profile>default</profile>
         </xyz>
     </users>
-</clickhouse>
+</yandex>

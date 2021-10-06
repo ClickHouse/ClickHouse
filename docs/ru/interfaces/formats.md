@@ -22,6 +22,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -58,7 +59,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -364,7 +364,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 ## CSVWithNames {#csvwithnames}
 
-Выводит также заголовок, аналогично [TabSeparatedWithNames](#tabseparatedwithnames).
+Выводит также заголовок, аналогично `TabSeparatedWithNames`.
 
 ## CustomSeparated {#format-customseparated}
 
@@ -915,6 +915,10 @@ test: string with 'quotes' and   with some special
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
+## VerticalRaw {#verticalraw}
+
+Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+
 ## XML {#xml}
 
 Формат XML подходит только для вывода данных, не для парсинга. Пример:
@@ -1176,15 +1180,13 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
-### Вставка и выборка данных {#inserting-and-selecting-data}
+### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
@@ -1244,8 +1246,6 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
-
 ### Вывод данных {#selecting-data-arrow}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
@@ -1294,7 +1294,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
-### Вставка данных {#inserting-data-2}
+### Вставка данных {#vstavka-dannykh-1}
 
 Чтобы вставить в ClickHouse данные из файла в формате ORC, используйте команду следующего вида:
 
@@ -1302,9 +1302,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
-
-### Вывод данных {#selecting-data-2}
+### Вывод данных {#vyvod-dannykh-1}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
 
@@ -1459,33 +1457,4 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 
 ``` text
 f9725a22f9191e064120d718e26862a9  -
-```
-
-## MsgPack {#msgpack}
-
-ClickHouse поддерживает запись и чтение из файлов в формате [MessagePack](https://msgpack.org/).
-
-### Соответствие типов данных {#data-types-matching-msgpack}
-
-| Тип данных MsgPack              | Тип данных ClickHouse                                                              |
-|---------------------------------|------------------------------------------------------------------------------------|
-| `uint N`, `positive fixint`         | [UIntN](../sql-reference/data-types/int-uint.md)                               |
-| `int N`                           | [IntN](../sql-reference/data-types/int-uint.md)                                  |
-| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
-| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
-| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
-| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
-| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
-| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
-| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
-| `nil`                             | [Nothing](../sql-reference/data-types/special-data-types/nothing.md)             |
-
-Пример:
-
-Запись в файл ".msgpk":
-
-```sql
-$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
-$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
-$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
 ```

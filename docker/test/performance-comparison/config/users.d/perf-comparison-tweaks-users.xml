@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <allow_introspection_functions>1</allow_introspection_functions>
@@ -18,12 +18,9 @@
             <!-- One NUMA node w/o hyperthreading -->
             <max_threads>12</max_threads>
 
-            <!-- disable JIT for perf tests -->
+            <!-- disable jit for perf tests -->
             <compile_expressions>0</compile_expressions>
             <compile_aggregate_expressions>0</compile_aggregate_expressions>
-
-            <!-- Don't fail some prewarm queries too early -->
-            <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
         </default>
     </profiles>
     <users>
@@ -31,4 +28,4 @@
             <access_management>1</access_management>
         </default>
     </users>
-</clickhouse>
+</yandex>

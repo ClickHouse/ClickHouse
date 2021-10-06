@@ -30,6 +30,8 @@ struct ProjectionDescription
 
     static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
 
+    static const char * typeToString(Type type);
+
     /// Definition AST of projection
     ASTPtr definition_ast;
 
@@ -46,6 +48,12 @@ struct ProjectionDescription
     Names required_columns;
 
     Names getRequiredColumns() const { return required_columns; }
+
+    /// Names of projection columns (not to be confused with required columns)
+    Names column_names;
+
+    /// Data types of projection columns
+    DataTypes data_types;
 
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;

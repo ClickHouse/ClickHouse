@@ -16,7 +16,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 
 namespace DB
@@ -240,7 +240,8 @@ public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
             std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
+                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
+                    ColumnVector<DictionaryAttributeType>>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -266,7 +267,7 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (is_decimal<DictionaryAttributeType>)
+        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);
@@ -567,7 +568,8 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
     Block block;

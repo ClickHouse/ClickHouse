@@ -22,7 +22,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -309,8 +308,9 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
+                throw Exception(
+                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                    ErrorCodes::NOT_IMPLEMENTED);
         }
     }
     else
@@ -318,8 +318,9 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
+                throw Exception(
+                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                    ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 }

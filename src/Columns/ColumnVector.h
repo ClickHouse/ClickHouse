@@ -7,8 +7,6 @@
 #include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
-#include <Core/TypeId.h>
-#include <Core/TypeName.h>
 
 
 namespace DB
@@ -104,7 +102,7 @@ template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!is_decimal<T>);
+    static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;

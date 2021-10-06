@@ -1,3 +1,3 @@
-<clickhouse>
+<yandex>
     <interserver_http_port>9010</interserver_http_port>
-</clickhouse>
+</yandex>

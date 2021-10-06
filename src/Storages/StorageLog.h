@@ -23,7 +23,6 @@ class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
-    ~StorageLog() override;
     String getName() const override { return "Log"; }
 
     Pipe read(

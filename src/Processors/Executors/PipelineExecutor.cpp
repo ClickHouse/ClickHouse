@@ -429,13 +429,11 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    if (!is_execution_initialized)
-    {
-        initializeExecution(1);
+    if (finished)
+        return false;
 
-        if (yield_flag && *yield_flag)
-            return true;
-    }
+    if (!is_execution_initialized)
+        initializeExecution(1);
 
     executeStepImpl(0, 1, yield_flag);
 

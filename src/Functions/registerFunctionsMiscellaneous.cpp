@@ -80,7 +80,6 @@ void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
 void registerFunctionQueryID(FunctionFactory & factory);
 void registerFunctionInitialQueryID(FunctionFactory & factory);
 void registerFunctionServerUUID(FunctionFactory &);
-void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -161,7 +160,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionQueryID(factory);
     registerFunctionInitialQueryID(factory);
     registerFunctionServerUUID(factory);
-    registerFunctionZooKeeperSessionUptime(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

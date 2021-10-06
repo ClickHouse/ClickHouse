@@ -212,7 +212,6 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
-add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
@@ -262,7 +261,7 @@ dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickH
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
-    dbms_target_link_libraries (PUBLIC ${REQUIRED_LLVM_LIBRARIES})
+    dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
@@ -349,14 +348,6 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
 )
-
-if (NOT_UNBUNDLED)
-    dbms_target_link_libraries (
-        PUBLIC
-            boost::circular_buffer
-            boost::heap
-    )
-endif()
 
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
