@@ -3756,8 +3756,8 @@ Enables or disables supporting positional arguments for [GROUP BY](../../sql-ref
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+-   1 — Column numbers can use instead of column names.
+-   0 — Positional arguments aren't supported.
 
 Default value: `0`.
 
