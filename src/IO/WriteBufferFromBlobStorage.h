@@ -20,6 +20,7 @@ namespace DB
 class WriteBufferFromBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
+
     explicit WriteBufferFromBlobStorage(
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
         const String & blob_path_,
@@ -28,13 +29,9 @@ public:
     void nextImpl() override;
 
 private:
-    void allocateBuffer();
 
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
     const String blob_path;
-    size_t buf_size;
-
-    // std::shared_ptr<Azure::Core::IO::FileBodyStream> tmp_buffer;
 };
 
 }

@@ -7,7 +7,6 @@
 #include <iostream>
 
 #include <IO/ReadBufferFromBlobStorage.h>
-// #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 
 namespace DB
@@ -15,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
@@ -23,14 +21,11 @@ namespace ErrorCodes
 
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-    const String & main_path_,
     const String & path_,
-    size_t buf_size_) :
+    size_t /* buf_size_ */) :
     SeekableReadBuffer(nullptr, 0),
     blob_container_client(blob_container_client_),
-    main_path(main_path_),
-    path(path_),
-    buf_size(buf_size_) {}
+    path(path_) {}
 
 
 bool ReadBufferFromBlobStorage::nextImpl()
@@ -55,8 +50,6 @@ bool ReadBufferFromBlobStorage::nextImpl()
         /// Try to read a next portion of data.
         next_result = impl->next();
     }
-
-    // std::cout << "\nReadBufferFromBlobStorage::nextImpl next_result: " << next_result << "\n";
 
     if (!next_result)
         return false;
@@ -94,17 +87,14 @@ off_t ReadBufferFromBlobStorage::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromBlobStorage::initialize()
 {
-    std::cout << "path: " << path << "\n";
-    std::cout << "main_path: " << main_path << "\n";
-    std::cout << "buf_size: " << buf_size << "\n";
-
-    std::cout << "blob_container_client.GetUrl(): " << blob_container_client.GetUrl() << "\n";
-
     auto blob_client = blob_container_client.GetBlobClient(path);
     auto prop = blob_client.GetProperties();
     auto blob_size = prop.Value.BlobSize;
 
+#ifdef VERBOSE_DEBUG_MODE
+    std::cout << "path: " << path << "\n";
     std::cout << "blob_size: " << blob_size << "\n";
+#endif
 
     tmp_buffer.resize(blob_size);
 

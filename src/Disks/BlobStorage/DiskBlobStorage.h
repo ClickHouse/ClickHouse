@@ -20,29 +20,19 @@
 namespace DB
 {
 
-void blob_do_sth();
+/// helper demo function to show how to access and modify Blob Storage
+void blob_storage_demo();
+
 
 class DiskBlobStorage final : public IDiskRemote
 {
 public:
 
-    // DiskBlobStorage(
-    //     const String & name_,
-    //     const String & remote_fs_root_path_,
-    //     const String & metadata_path_,
-    //     const String & log_name_,
-    //     size_t thread_pool_size);
-
-    // DiskBlobStorage();
-
     DiskBlobStorage(
         const String & name_,
         const String & metadata_path_,
-        const String & endpoint_url,
-        std::shared_ptr<Azure::Identity::ManagedIdentityCredential> managed_identity_credential_,
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-        size_t thread_pool_size_ = 1
-    );
+        size_t thread_pool_size_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -69,8 +59,8 @@ public:
 
 private:
 
+    /// client used to access the files in the Blob Storage cloud
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
-
 };
 
 }
