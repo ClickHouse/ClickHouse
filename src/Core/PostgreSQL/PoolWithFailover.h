@@ -10,7 +10,7 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 

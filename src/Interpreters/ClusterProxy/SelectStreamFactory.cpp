@@ -9,7 +9,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

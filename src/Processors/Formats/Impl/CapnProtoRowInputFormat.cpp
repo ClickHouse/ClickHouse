@@ -9,8 +9,8 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
-#include <common/logger_useful.h>
-#include <common/find_symbols.h>
+#include <base/logger_useful.h>
+#include <base/find_symbols.h>
 
 
 namespace DB

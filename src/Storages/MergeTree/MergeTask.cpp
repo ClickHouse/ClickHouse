@@ -3,7 +3,7 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "Common/ActionBlocker.h"
 
 #include "Storages/MergeTree/MergeTreeData.h"
@@ -398,9 +398,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         column_part_source->setProgressCallback(
             MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->column_progress));
 
-        QueryPipeline column_part_pipeline;
-        column_part_pipeline.init(Pipe(std::move(column_part_source)));
-        column_part_pipeline.setMaxThreads(1);
+        QueryPipeline column_part_pipeline(Pipe(std::move(column_part_source)));
+        column_part_pipeline.setNumThreads(1);
 
         ctx->column_part_streams[part_num] =
                 std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
@@ -536,11 +535,18 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+        const Settings & settings = global_ctx->context->getSettingsRef();
+
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
             projection.metadata,
             global_ctx->merge_entry,
-            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part),
+            std::make_unique<MergeListElement>(
+                (*global_ctx->merge_entry)->table_id,
+                projection_future_part,
+                settings.memory_profiler_step,
+                settings.memory_profiler_sample_probability,
+                settings.max_untracked_memory),
             global_ctx->time_of_merge,
             global_ctx->context,
             global_ctx->space_reservation,
@@ -791,10 +797,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             break;
     }
 
-    QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-    pipeline.addTransform(std::move(merged_transform));
-    pipeline.setMaxThreads(1);
+    auto res_pipe = Pipe::unitePipes(std::move(pipes));
+    res_pipe.addTransform(std::move(merged_transform));
+    QueryPipeline pipeline(std::move(res_pipe));
+    pipeline.setNumThreads(1);
 
     global_ctx->merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
