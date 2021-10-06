@@ -17,7 +17,6 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 class IReservation;
-using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
 
@@ -40,6 +39,7 @@ public:
     /// mutations files
     virtual DiskPtr getAnyDisk() const = 0;
     virtual DiskPtr getDiskByName(const String & disk_name) const = 0;
+    virtual Disks getDisksByType(DiskType::Type type) const = 0;
     /// Get free space from most free disk
     virtual UInt64 getMaxUnreservedFreeSpace() const = 0;
     /// Reserves space on any volume with index > min_volume_index or returns nullptr

@@ -358,4 +358,4 @@ Result:
 └───────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->

@@ -484,14 +484,19 @@ template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-inline void writeText(const Null & x, WriteBuffer & buf)
+inline void writeText(const Null &, WriteBuffer & buf)
 {
-    if (x.isNegativeInfinity())
-        writeText("-Inf", buf);
-    if (x.isPositiveInfinity())
-        writeText("+Inf", buf);
-    else
-        writeText("NULL", buf);
+    writeText(std::string("NULL"), buf);
+}
+
+inline void writeText(const NegativeInfinity &, WriteBuffer & buf)
+{
+    writeText(std::string("-Inf"), buf);
+}
+
+inline void writeText(const PositiveInfinity &, WriteBuffer & buf)
+{
+    writeText(std::string("+Inf"), buf);
 }
 
 String toString(const Field & x)

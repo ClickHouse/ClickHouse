@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: distributed
 
 # FIXME: this is an .sh test because JOIN with Distributed in the left will use default database for the right.
 

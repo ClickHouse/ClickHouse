@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 SET log_queries=1;
 
@@ -17,7 +15,7 @@ SELECT uniqArray([1, 1, 2]),
        toDayOfYear(d) % 2)
 FROM numbers(100);
 
-SELECT repeat('aa', number)
+SELECT repeat('a', number)
 FROM numbers(10e3)
 SETTINGS max_memory_usage=4e6, max_block_size=100
 FORMAT Null; -- { serverError 241 }

@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</clickhouse>
+</yandex>

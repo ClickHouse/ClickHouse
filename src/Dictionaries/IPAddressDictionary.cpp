@@ -352,7 +352,8 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
     std::vector<IPRecord> ip_records;
 
@@ -953,7 +954,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr /* context */,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)

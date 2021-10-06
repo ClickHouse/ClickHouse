@@ -239,9 +239,7 @@ public:
         const IDataType * type_ptr = &type;
         Field left_mut = left;
         Field right_mut = right;
-
-        Monotonicity result = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
-
+        Monotonicity result(true, true, true);
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {

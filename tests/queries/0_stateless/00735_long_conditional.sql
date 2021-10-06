@@ -1,5 +1,3 @@
--- Tags: long
-
 SET send_logs_level = 'fatal';
 
 SELECT 'value vs value';

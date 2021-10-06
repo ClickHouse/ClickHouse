@@ -112,7 +112,6 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
@@ -146,16 +145,9 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool traverseASTEquals(
-        const String & function_name,
-        const ASTPtr & key_ast,
-        const DataTypePtr & value_type,
-        const Field & value_field,
-        RPNElement & out);
-
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
+    bool getKey(const ASTPtr & node, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(

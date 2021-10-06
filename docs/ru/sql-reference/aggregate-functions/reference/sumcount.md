@@ -43,4 +43,4 @@ SELECT sumCount(x) from s_table;
 
 **Смотрите также**
 
-- Настройка [optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions)
+- Настройка [optimize_fuse_sum_count_avg](../../../operations/settings/settings.md#optimize_fuse_sum_count_avg)

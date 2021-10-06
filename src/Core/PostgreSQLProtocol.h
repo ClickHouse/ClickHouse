@@ -900,7 +900,8 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        const Authentication::Type user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
+        Authentication::Type user_auth_type = session.getAuthenticationType(user_name);
+
         if (type_to_method.find(user_auth_type) != type_to_method.end())
         {
             type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);

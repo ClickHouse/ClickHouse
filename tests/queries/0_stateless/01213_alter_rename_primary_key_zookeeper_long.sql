@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 DROP TABLE IF EXISTS table_for_rename_pk;
 
 CREATE TABLE table_for_rename_pk

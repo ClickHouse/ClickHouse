@@ -303,7 +303,8 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
@@ -687,7 +688,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr /* context */,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (dict_struct.key)

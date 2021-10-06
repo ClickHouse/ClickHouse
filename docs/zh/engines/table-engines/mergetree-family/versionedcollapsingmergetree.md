@@ -233,4 +233,4 @@ SELECT * FROM UAct FINAL
 
 这是一个非常低效的方式来选择数据。 不要把它用于数据量大的表。
 
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

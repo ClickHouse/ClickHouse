@@ -36,7 +36,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
 
@@ -617,7 +616,7 @@ bool StorageKafka::streamToViews()
     streams.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -640,23 +639,12 @@ bool StorageKafka::streamToViews()
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
-
+    std::atomic<bool> stub = {false};
     size_t rows = 0;
+    copyData(*in, *block_io.out, [&rows](const Block & block)
     {
-        PushingPipelineExecutor executor(block_io.pipeline);
-
-        in->readPrefix();
-        executor.start();
-
-        while (auto block = in->read())
-        {
-            rows += block.rows();
-            executor.push(std::move(block));
-        }
-
-        in->readSuffix();
-        executor.finish();
-    }
+        rows += block.rows();
+    }, &stub);
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)

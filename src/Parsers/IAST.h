@@ -157,8 +157,6 @@ public:
             set(field, child);
     }
 
-    void reset(IAST *& field);
-
     /// Convert to a string.
 
     /// Format settings.

@@ -104,11 +104,9 @@ public:
 
         const auto * attr_name_col = checkAndGetColumnConst<ColumnString>(sample_columns.getByPosition(1).column.get());
         if (!attr_name_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet must be a constant string");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet... must be a constant string");
 
-        const auto dictionary_name = dict_name_col->getValue<String>();
-        const auto attribute_name = attr_name_col->getValue<String>();
-        return getDictionary(dictionary_name)->isInjective(attribute_name);
+        return getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
     }
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
