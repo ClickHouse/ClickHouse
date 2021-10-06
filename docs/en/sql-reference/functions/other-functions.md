@@ -2357,8 +2357,8 @@ Result:
 
 ## shardNum {#shard-num}
 
-Returns the number of a shard which executes the query for a distributed query.
-If query is not distributed then *constant value* is returned.
+Returns the index of a shard which processes a part of data for a distributed query. Indices are started from `1`.
+If a query is not distributed then constant value `0` is returned.
 
 **Syntax**
 
@@ -2368,14 +2368,39 @@ shardNum()
 
 **Returned value**
 
--   Shard number.
+-   Shard index or constant `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
+**Example**
+
+In the following example a configuration with two shards is used. The query is executed on the [system.one](../../operations/system-tables/one.md) table on every shard.
+
+Query:
+
+``` sql
+CREATE TABLE shard_num_example (dummy UInt8) 
+    ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
+```
+
+Result:
+
+``` text
+┌─dummy─┬─shardNum()─┬─shardCount()─┐
+│     0 │          2 │            2 │
+│     0 │          1 │            2 │
+└───────┴────────────┴──────────────┘
+```
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+
 ## shardCount {#shard-count}
 
-Returns the total number of shards which execute a distributed query.
-If query is not distributed then *constant value* is returned.
+Returns the total number of shards for a distributed query.
+If a query is not distributed then constant value `0` is returned.
 
 **Syntax**
 
@@ -2385,8 +2410,10 @@ shardCount()
 
 **Returned value**
 
--   Total number of shards.
+-   Total number of shards or `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
+**See Also**
 
+- [shardNum()](#shard-num) function example also contains `shardCount()` function call.
