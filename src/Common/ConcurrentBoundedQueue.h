@@ -3,153 +3,194 @@
 #include <queue>
 #include <type_traits>
 #include <atomic>
-
-#include <Poco/Mutex.h>
-#include <Poco/Semaphore.h>
+#include <condition_variable>
+#include <mutex>
 
 #include <base/MoveOrCopyIfThrow.h>
-#include <Common/Exception.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
 
 /** A very simple thread-safe queue of limited size.
-  * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.
-  * If you try to push an element into an overflowed queue, the thread is blocked until space appears in the queue.
+  * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
+  * If you try to push an element into an overflowed queue, the thread is blocked until space appears in the queue or queue is finished.
   */
 template <typename T>
 class ConcurrentBoundedQueue
 {
 private:
     std::queue<T> queue;
-    mutable Poco::FastMutex mutex;
-    Poco::Semaphore fill_count;
-    Poco::Semaphore empty_count;
-    std::atomic_bool closed = false;
 
-    template <typename... Args>
-    bool tryEmplaceImpl(Args &&... args)
+    mutable std::mutex queue_mutex;
+    std::condition_variable push_condition;
+    std::condition_variable pop_condition;
+
+    bool is_finished = false;
+
+    size_t max_fill = 0;
+
+    template <typename ... Args>
+    bool emplaceImpl(bool wait_on_timeout, UInt64 timeout_milliseconds = 0, Args &&...args)
     {
-        bool emplaced = true;
-
         {
-            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            if (closed)
-                emplaced = false;
+            std::unique_lock<std::mutex> queue_lock(queue_mutex);
+
+            auto predicate = [&]() { return is_finished || queue.size() < max_fill; };
+
+            if (wait_on_timeout)
+            {
+                bool wait_result = push_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds), predicate);
+
+                if (!wait_result)
+                    return false;
+            }
             else
-                queue.emplace(std::forward<Args>(args)...);
+            {
+                push_condition.wait(queue_lock, [&](){ return is_finished || queue.size() < max_fill; });
+            }
+
+            if (is_finished)
+                return false;
+
+            queue.emplace(std::forward<Args>(args)...);
         }
 
-        if (emplaced)
-            fill_count.set();
-        else
-            empty_count.set();
-
-        return emplaced;
-    }
-
-    void popImpl(T & x)
-    {
-        {
-            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-            queue.pop();
-        }
-        empty_count.set();
-    }
-
-public:
-    explicit ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill)
-        , empty_count(max_fill, max_fill)
-    {}
-
-    void push(const T & x)
-    {
-        empty_count.wait();
-        if (!tryEmplaceImpl(x))
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "tryPush/tryEmplace must be used with close()");
-    }
-
-    template <typename... Args>
-    void emplace(Args &&... args)
-    {
-        empty_count.wait();
-        if (!tryEmplaceImpl(std::forward<Args>(args)...))
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "tryPush/tryEmplace must be used with close()");
-    }
-
-    void pop(T & x)
-    {
-        fill_count.wait();
-        popImpl(x);
-    }
-
-    bool tryPush(const T & x, UInt64 milliseconds = 0)
-    {
-        if (!empty_count.tryWait(milliseconds))
-            return false;
-
-        return tryEmplaceImpl(x);
-    }
-
-    template <typename... Args>
-    bool tryEmplace(UInt64 milliseconds, Args &&... args)
-    {
-        if (!empty_count.tryWait(milliseconds))
-            return false;
-
-        return tryEmplaceImpl(std::forward<Args>(args)...);
-    }
-
-    bool tryPop(T & x, UInt64 milliseconds = 0)
-    {
-        if (!fill_count.tryWait(milliseconds))
-            return false;
-
-        popImpl(x);
+        pop_condition.notify_one();
         return true;
     }
 
+    bool popImpl(T & x, bool wait_on_timeout, UInt64 timeout_milliseconds = 0)
+    {
+        {
+            std::unique_lock<std::mutex> queue_lock(queue_mutex);
+
+            auto predicate = [&]() { return is_finished || !queue.empty(); };
+
+            if (wait_on_timeout)
+            {
+                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds), predicate);
+
+                if (!wait_result)
+                    return false;
+            }
+            else
+            {
+                pop_condition.wait(queue_lock, [&](){ return is_finished || !queue.empty(); });
+            }
+
+            if (is_finished)
+                return false;
+
+            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+            queue.pop();
+        }
+
+        push_condition.notify_one();
+        return true;
+    }
+
+public:
+
+    explicit ConcurrentBoundedQueue(size_t max_fill_)
+        : max_fill(max_fill_)
+    {}
+
+    /// Returns false if queue is finished
+    bool push(const T & x)
+    {
+        return emplace(x);
+    }
+
+    /// Returns false if queue is finished
+    template <typename... Args>
+    bool emplace(Args &&... args)
+    {
+        emplaceImpl(false /*wait on timeout*/, 0 /* timeout in milliseconds */, std::forward<Args...>(args...));
+        return true;
+    }
+
+    /// Returns false if queue is finished
+    [[nodiscard]] bool pop(T & x)
+    {
+        return popImpl(x, false /* wait on timeout*/);
+    }
+
+    /// Returns false if queue is finished or object was not pushed during timeout
+    bool tryPush(const T & x, UInt64 milliseconds = 0)
+    {
+        return emplaceImpl(true /*wait on timeout*/, milliseconds, x);
+    }
+
+    /// Returns false if queue is finished or object was not emplaced during timeout
+    template <typename... Args>
+    bool tryEmplace(UInt64 milliseconds, Args &&... args)
+    {
+        return emplaceImpl(true /*wait on timeout*/, milliseconds, std::forward<Args...>(args...));
+    }
+
+    /// Returns false if queue is finished or object was not popped during timeout
+    [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds = 0)
+    {
+        return popImpl(x, true /*wait on timeout*/, milliseconds);
+    }
+
+    /// Returns size of queue
     size_t size() const
     {
-        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return queue.size();
     }
 
-    size_t empty() const
+    /// Returns if queue is empty
+    bool empty() const
     {
-        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return queue.empty();
     }
 
-    /// Forbids to push new elements to queue.
-    /// Returns false if queue was not closed before call, returns true if queue was already closed.
-    bool close()
+    /** Clear and finish queue
+      * After that push or pop operations will return false
+      * Returns true if queue was already finished
+      */
+    bool finish()
     {
-        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-        return closed.exchange(true);
+        bool was_finished_before = false;
+
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+
+            if (is_finished)
+                return true;
+
+            std::queue<T> empty_queue;
+            queue.swap(empty_queue);
+
+            was_finished_before = is_finished;
+            is_finished = true;
+        }
+
+        pop_condition.notify_all();
+        push_condition.notify_all();
+
+        return was_finished_before;
     }
 
-    bool isClosed() const
+    /// Returns if queue is finished
+    bool isFinished() const
     {
-        return closed.load();
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        return is_finished;
     }
 
+    /// Clear queue
     void clear()
     {
-        while (fill_count.tryWait(0))
-        {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                queue.pop();
-            }
-            empty_count.set();
-        }
+        std::lock_guard<std::mutex> lock(queue_mutex);
+
+        if (is_finished)
+            return;
+
+        std::queue<T> empty_queue;
+        queue.swap(empty_queue);
+
+        push_condition.notify_all();
     }
 };

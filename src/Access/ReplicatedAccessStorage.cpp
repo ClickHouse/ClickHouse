@@ -63,12 +63,10 @@ void ReplicatedAccessStorage::shutdown()
     bool prev_stop_flag = stop_flag.exchange(true);
     if (!prev_stop_flag)
     {
+        refresh_queue.finish();
+
         if (worker_thread.joinable())
-        {
-            /// Notify the worker thread to stop waiting for new queue items
-            refresh_queue.push(UUIDHelpers::Nil);
             worker_thread.join();
-        }
     }
 }
 

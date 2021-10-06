@@ -1186,7 +1186,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
             state_machine->create_snapshot(s, when_done);
             CreateSnapshotTask snapshot_task;
-            snapshots_queue.pop(snapshot_task);
+            bool pop_result = snapshots_queue.pop(snapshot_task);
+            EXPECT_TRUE(pop_result);
+
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
         if (snapshot_created)
