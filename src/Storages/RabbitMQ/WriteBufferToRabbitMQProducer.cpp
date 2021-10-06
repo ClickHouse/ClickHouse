@@ -192,9 +192,8 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
     /* It is important to make sure that delivery_record.size() is never bigger than returned.size(), i.e. number if unacknowledged
      * messages cannot exceed returned.size(), because they all might end up there
      */
-    while (!messages.empty() && producer_channel->usable() && delivery_record.size() < RETURNED_LIMIT)
+    while (messages.pop(payload) && producer_channel->usable() && delivery_record.size() < RETURNED_LIMIT)
     {
-        messages.pop(payload);
         AMQP::Envelope envelope(payload.second.data(), payload.second.size());
 
         /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty
