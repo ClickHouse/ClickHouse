@@ -495,7 +495,12 @@ private:
             else
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = (*right_nullmap)[i] ? ResultType() : apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                {
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                        c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                }
             }
         }
         else
