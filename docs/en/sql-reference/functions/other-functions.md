@@ -8,6 +8,7 @@ toc_title: Other
 ## hostName() {#hostname}
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## getMacro {#getmacro}
 
@@ -691,10 +692,12 @@ Returns the largest value of a and b.
 ## uptime() {#uptime}
 
 Returns the server’s uptime in seconds.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## version() {#version}
 
 Returns the version of the server as a string.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## blockNumber {#blocknumber}
 
@@ -2101,6 +2104,7 @@ UNSUPPORTED_METHOD
 ## tcpPort {#tcpPort}
 
 Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
+If it is executed in the context of a distributed table, then it generates a normal column, otherwise it produces a constant value.
 
 **Syntax**
 
