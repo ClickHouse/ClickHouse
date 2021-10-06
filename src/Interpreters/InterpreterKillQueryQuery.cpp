@@ -354,8 +354,6 @@ BlockIO InterpreterKillQueryQuery::execute()
                 "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
                 ErrorCodes::ACCESS_DENIED);
 
-
-
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
         break;
