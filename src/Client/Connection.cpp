@@ -537,6 +537,7 @@ void Connection::sendQuery(
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
+    block_profile_events_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
