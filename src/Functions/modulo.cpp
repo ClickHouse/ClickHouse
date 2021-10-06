@@ -43,7 +43,9 @@ struct ModuloByConstantImpl
             if (right_nullmap)
             {
                 for (size_t i = 0; i < size; ++i)
-                    if (!(*right_nullmap)[i])
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
                         apply<op_case>(a, b, c, i);
             }
             else
