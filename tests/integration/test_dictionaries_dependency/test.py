@@ -36,6 +36,8 @@ def cleanup_after_test():
         yield
     finally:
         for node in nodes:
+            for i in range(4):
+                node.query("DROP DICTIONARY IF EXISTS test.other_{}".format(i))
             node.query("DROP DICTIONARY IF EXISTS test.adict")
             node.query("DROP DICTIONARY IF EXISTS test.zdict")
             node.query("DROP DICTIONARY IF EXISTS atest.dict")
