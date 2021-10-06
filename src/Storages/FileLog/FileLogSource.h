@@ -58,8 +58,8 @@ private:
 
     /// The start pos and end pos of files responsible by this stream,
     /// does not includind end
-    int start;
-    int end;
+    size_t start;
+    size_t end;
 };
 
 }
