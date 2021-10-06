@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Parsers/formatAST.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
@@ -24,6 +25,7 @@ namespace DB
 
 class Context;
 class StorageDistributed;
+class PushingPipelineExecutor;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
  *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
@@ -34,11 +36,11 @@ class StorageDistributed;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedBlockOutputStream : public IBlockOutputStream
+class DistributedSink : public SinkToStorage
 {
 public:
-    DistributedBlockOutputStream(
-        const Context & context_,
+    DistributedSink(
+        ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ClusterPtr & cluster_,
@@ -47,11 +49,9 @@ public:
         StorageID main_table_,
         const Names & columns_to_send_);
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
-    void writePrefix() override;
-
-    void writeSuffix() override;
+    String getName() const override { return "DistributedSink"; }
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
     IColumn::Selector createSelector(const Block & source_block) const;
@@ -80,16 +80,15 @@ private:
     void initWritingJobs(const Block & first_block, size_t start, size_t end);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
+    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
 
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-private:
     /// Context used for writing to remote tables.
-    const Context & context;
+    ContextMutablePtr context;
 
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -100,9 +99,14 @@ private:
     size_t inserted_rows = 0;
 
     bool insert_sync;
+    bool random_shard_insert;
+    bool allow_materialized;
+
+    bool is_first_chunk = true;
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
+    StorageID main_table;
     NameSet columns_to_send;
     Stopwatch watch;
     Stopwatch watch_current_block;
@@ -122,8 +126,9 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        std::unique_ptr<Context> local_context;
-        BlockOutputStreamPtr stream;
+        ContextPtr local_context;
+        QueryPipeline pipeline;
+        std::unique_ptr<PushingPipelineExecutor> executor;
 
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;
