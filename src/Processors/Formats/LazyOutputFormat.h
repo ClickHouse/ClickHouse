@@ -15,7 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 
 public:
     explicit LazyOutputFormat(const Block & header)
-        : IOutputFormat(header, out), queue(2), finished_processing(false) {}
+        : IOutputFormat(header, out), queue(2) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -23,7 +23,7 @@ public:
     Chunk getTotals();
     Chunk getExtremes();
 
-    bool isFinished() { return finished_processing && queue.size() == 0; }
+    bool isFinished() { return queue.isFinished(); }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
@@ -31,17 +31,12 @@ public:
 
     void onCancel() override
     {
-        finished_processing = true;
-        /// Clear queue in case if somebody is waiting lazy_format to push.
-        queue.clear();
+        queue.finish();
     }
 
     void finalize() override
     {
-        finished_processing = true;
-
-        /// In case we are waiting for result.
-        queue.emplace(Chunk());
+        queue.finish();
     }
 
     bool expectMaterializedColumns() const override { return false; }
@@ -49,7 +44,7 @@ public:
 protected:
     void consume(Chunk chunk) override
     {
-        if (!finished_processing)
+        if (!queue.isFinished())
             queue.emplace(std::move(chunk));
     }
 
@@ -66,8 +61,6 @@ private:
     static WriteBuffer out;
 
     BlockStreamProfileInfo info;
-
-    std::atomic<bool> finished_processing;
 };
 
 }

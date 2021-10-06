@@ -164,7 +164,8 @@ void KeeperDispatcher::snapshotThread()
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
-        snapshots_queue.pop(task);
+        if (!snapshots_queue.pop(task))
+            break;
 
         if (shutdown_called)
             break;
@@ -295,16 +296,15 @@ void KeeperDispatcher::shutdown()
 
             if (requests_queue)
             {
-                requests_queue->push({});
-                if (request_thread.joinable())
-                    request_thread.join();
+                requests_queue->finish();
+                request_thread.join();
             }
 
-            responses_queue.push({});
+            responses_queue.finish();
             if (responses_thread.joinable())
                 responses_thread.join();
 
-            snapshots_queue.push({});
+            snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
         }
