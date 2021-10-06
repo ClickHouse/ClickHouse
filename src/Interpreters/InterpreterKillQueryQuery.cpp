@@ -355,7 +355,8 @@ BlockIO InterpreterKillQueryQuery::execute()
                 ErrorCodes::ACCESS_DENIED);
 
 
-        res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
+
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
         break;
     }
