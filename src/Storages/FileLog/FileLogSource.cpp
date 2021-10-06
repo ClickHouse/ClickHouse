@@ -36,21 +36,17 @@ FileLogSource::FileLogSource(
           metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
+
+    const auto & file_infos = storage.getFileInfos();
+
+    size_t files_per_stream = file_infos.file_names.size() / max_streams_number;
+    start = stream_number * files_per_stream;
+    end = stream_number == max_streams_number - 1 ? file_infos.file_names.size() : (stream_number + 1) * files_per_stream;
 }
 
 void FileLogSource::onFinish()
 {
-    auto & file_infos = storage.getFileInfos();
-
-    size_t files_per_stream = file_infos.file_names.size() / max_streams_number;
-    size_t start = stream_number * files_per_stream;
-    size_t end = stream_number == max_streams_number - 1 ? file_infos.file_names.size() : (stream_number + 1) * files_per_stream;
-
-    /// Each stream responsible for close it's files and store meta
-    for (size_t i = start; i < end; ++i)
-    {
-        storage.closeFileAndStoreMeta(file_infos.file_names[i]);
-    }
+    storage.closeFilesAndStoreMeta(start, end);
 }
 
 Chunk FileLogSource::generate()
@@ -60,6 +56,7 @@ Chunk FileLogSource::generate()
         /// There is no onFinish for ISource, we call it
         /// when no records return to close files
         onFinish();
+        finished = true;
         return {};
     }
 
@@ -105,7 +102,11 @@ Chunk FileLogSource::generate()
     }
 
     if (total_rows == 0)
+    {
+        onFinish();
+        finished = true;
         return {};
+    }
 
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
@@ -120,6 +121,9 @@ Chunk FileLogSource::generate()
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);
+
+    /// After generate each block, store metas into disk
+    storage.storeMetas(start, end);
 
     return Chunk(result_block.getColumns(), result_block.rows());
 }

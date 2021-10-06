@@ -30,6 +30,12 @@ public:
 
     void onFinish();
 
+    virtual ~FileLogSource() override
+    {
+        if (!finished)
+            onFinish();
+    }
+
 protected:
     Chunk generate() override;
 
@@ -49,6 +55,11 @@ private:
 
     Block non_virtual_header;
     Block virtual_header;
+
+    /// The start pos and end pos of files responsible by this stream,
+    /// does not includind end
+    int start;
+    int end;
 };
 
 }
