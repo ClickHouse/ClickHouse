@@ -24,7 +24,6 @@ ENDIF ()
 
 PEERDIR(
     contrib/libs/cctz
-    contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
     contrib/libs/poco/NetSSL_OpenSSL
