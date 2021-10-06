@@ -123,9 +123,11 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
-        /// If the decompressed block fits entirely where it needs to be copied.
-        if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
+        /// If the decompressed block fits entirely where it needs to be copied and we don't
+        /// need to skip some bytes in decompressed data (seek happened before readBig call).
+        if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
+
             decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
