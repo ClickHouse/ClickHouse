@@ -1765,9 +1765,12 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     assert TSV(result) == TSV(expected)
 
+    instance.query('''
+        DROP TABLE test.kafka;
+        DROP TABLE test.view;
+    ''')
     kafka_delete_topic(admin_client, "virt2_0")
     kafka_delete_topic(admin_client, "virt2_1")
-
     instance.rotate_logs()
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
