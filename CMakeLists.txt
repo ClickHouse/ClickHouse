@@ -135,6 +135,7 @@ if (ENABLE_FUZZING)
     # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
 endif()
 
 # Global libraries
