@@ -43,7 +43,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         /// That's not good to determine the type of error by its description, but
         /// this is the only way to do it here, because kj doesn't specify the type of error.
         String description = String(e.getDescription().cStr());
-        if (description.starts_with("no such directory"))
+        if (description.starts_with("No such file or directory"))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open CapnProto schema, file {} doesn't exists", schema_info.absoluteSchemaPath());
 
         if (description.starts_with("Parse error"))
