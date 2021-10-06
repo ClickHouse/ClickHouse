@@ -96,7 +96,7 @@ private:
     Source * source_to_fully_copy = nullptr;
 
     ssize_t next_required_source = -1;
-    size_t cur_block_preferred_size;
+    size_t cur_block_preferred_size = 0;
 
     UInt64 merged_rows = 0;
     UInt64 merged_bytes = 0;
