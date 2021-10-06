@@ -1514,11 +1514,73 @@ struct WindowFunctionDenseRank final : public WindowFunction
     }
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public WindowFunction
+struct RecurrentWindowFunction : public WindowFunction
+{
+    RecurrentWindowFunction(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+    }
+
+    template<typename T> T getLastValueFromInputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+    }
+
+    template<> Float64 getLastValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[column_index]];
+                return column->getFloat64(column->size()-1);
+            }
+        }
+        else
+        {
+            auto & column = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[column_index]];
+            return column->getFloat64(current_row.row-1);
+        }
+
+        return 0;
+    }
+
+    template<typename T> T getLastValueFromOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+    }
+
+    template<> Float64 getLastValueFromOutputColumn(const WindowTransform * transform, size_t function_index)
+    {
+        auto current_row = transform->current_row;
+
+        if (current_row.row == 0)
+        {
+            if (current_row.block > 0)
+            {
+                auto & column = transform->blockAt(current_row.block-1).output_columns[function_index];
+                return column->getFloat64(column->size()-1);
+            }
+        }
+        else
+        {
+            auto & column = transform->blockAt(current_row.block).output_columns[function_index];
+            return column->getFloat64(current_row.row-1);
+        }
+
+        return 0;
+    }
+};
+
+struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
 {
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
+        : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
         if (parameters_.size() != 1)
         {
@@ -1560,25 +1622,8 @@ struct WindowFunctionExponentialTimeDecayedSum final : public WindowFunction
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
-        Float64 last_val = 0;
-        Float64 last_t = 0;
-        if (current_row.row == 0)
-        {
-            if (current_row.block > 0)
-            {
-                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
-                last_val = column_val->getFloat64(column_val->size()-1);
-                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
-                last_t = column_t->getFloat64(column_t->size()-1);
-            }
-        }
-        else
-        {
-            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
-            last_val = column_val->getFloat64(current_row.row-1);
-            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
-            last_t = column_t->getFloat64(current_row.row-1);
-        }
+        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
 
         IColumn & to = *current_block.output_columns[function_index];
 
@@ -1593,11 +1638,11 @@ struct WindowFunctionExponentialTimeDecayedSum final : public WindowFunction
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
 {
     WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
+        : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
         if (parameters_.size() != 1)
         {
@@ -1639,25 +1684,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
-        Float64 last_val = 0;
-        Float64 last_t = 0;
-        if (current_row.row == 0)
-        {
-            if (current_row.block > 0)
-            {
-                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
-                last_val = column_val->getFloat64(column_val->size()-1);
-                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
-                last_t = column_t->getFloat64(column_t->size()-1);
-            }
-        }
-        else
-        {
-            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
-            last_val = column_val->getFloat64(current_row.row-1);
-            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
-            last_t = column_t->getFloat64(current_row.row-1);
-        }
+        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
 
         IColumn & to = *current_block.output_columns[function_index];
 
@@ -1672,11 +1700,11 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
 {
     WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
+        : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
         if (parameters_.size() != 1)
         {
@@ -1711,20 +1739,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
-        Float64 last_t = 0;
-        if (current_row.row == 0)
-        {
-            if (current_row.block > 0)
-            {
-                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[0]];
-                last_t = column_t->getFloat64(column_t->size()-1);
-            }
-        }
-        else
-        {
-            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[0]];
-            last_t = column_t->getFloat64(current_row.row-1);
-        }
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
 
         IColumn & to = *current_block.output_columns[function_index];
 
@@ -1738,11 +1753,11 @@ struct WindowFunctionExponentialTimeDecayedCount final : public WindowFunction
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
 {
     WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
+        : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
         if (parameters_.size() != 1)
         {
@@ -1784,25 +1799,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public WindowFunction
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
-        Float64 last_val = 0;
-        Float64 last_t = 0;
-        if (current_row.row == 0)
-        {
-            if (current_row.block > 0)
-            {
-                auto & column_val = transform->blockAt(current_row.block-1).output_columns[function_index];
-                last_val = column_val->getFloat64(column_val->size()-1) * (transform->current_row_number - transform->frame_start.row - 1);
-                auto & column_t = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[1]];
-                last_t = column_t->getFloat64(column_t->size()-1);
-            }
-        }
-        else
-        {
-            auto & column_val = transform->blockAt(current_row.block).output_columns[function_index];
-            last_val = column_val->getFloat64(current_row.row-1) * (transform->current_row_number - transform->frame_start.row - 1);
-            auto & column_t = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[1]];
-            last_t = column_t->getFloat64(current_row.row-1);
-        }
+        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
 
         IColumn & to = *current_block.output_columns[function_index];
 
