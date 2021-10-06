@@ -630,7 +630,6 @@ bool StorageKafka::streamToViews()
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         source->setLimits(limits);
-        source->createBuffer();
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

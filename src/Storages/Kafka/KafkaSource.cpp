@@ -39,6 +39,7 @@ KafkaSource::KafkaSource(
     , virtual_header(metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
     , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
+    createBuffer();
 }
 
 KafkaSource::~KafkaSource()
@@ -70,9 +71,6 @@ void KafkaSource::createBuffer()
 
 Chunk KafkaSource::generateImpl()
 {
-    if (!buffer)
-        createBuffer();
-
     if (!buffer || is_finished)
         return {};
 

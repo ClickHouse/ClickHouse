@@ -30,7 +30,6 @@ public:
 
     Chunk generate() override;
 
-    void createBuffer();
     void commit();
     bool isStalled() const;
 
@@ -51,6 +50,7 @@ private:
     const Block virtual_header;
     const HandleKafkaErrorMode handle_error_mode;
 
+    void createBuffer();
     Chunk generateImpl();
 };
 
