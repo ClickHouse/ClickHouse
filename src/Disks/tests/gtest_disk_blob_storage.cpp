@@ -5,9 +5,9 @@
 
 using namespace DB;
 
-TEST(DiskBlobStorage, doAll)
+TEST(DiskBlobStorage, demo)
 {
-    blob_do_sth();
+    blob_storage_demo();
 }
 
 #endif

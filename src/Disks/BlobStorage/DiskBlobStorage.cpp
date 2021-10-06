@@ -9,9 +9,8 @@
 namespace DB
 {
 
-// namespace
-// {
 
+// // TODO: abstract this function from DiskS3.cpp, from where it was copy-pasted
 // String getRandomName()
 // {
 //     std::uniform_int_distribution<int> distribution('a', 'z');
@@ -21,7 +20,6 @@ namespace DB
 //     return res;
 // }
 
-// }
 
 class BlobStoragePathKeeper : public RemoteFSPathKeeper
 {
@@ -40,47 +38,30 @@ class ReadIndirectBufferFromBlobStorage final : public ReadIndirectBufferFromRem
 public:
     ReadIndirectBufferFromBlobStorage(
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-        const String & main_path_,
         IDiskRemote::Metadata metadata_,
         size_t buf_size_) :
         ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>(metadata_),
         blob_container_client(blob_container_client_),
-        main_path(main_path_),
         buf_size(buf_size_)
     {}
 
     std::unique_ptr<ReadBufferFromBlobStorage> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, main_path, metadata.remote_fs_root_path + path, buf_size);
+        return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + path, buf_size);
     }
 
 private:
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
-    const String & main_path;
     size_t buf_size;
 };
-
-
-// DiskBlobStorage::DiskBlobStorage(
-//     const String & name_,
-//     const String & remote_fs_root_path_,
-//     const String & metadata_path_,
-//     const String & log_name_,
-//     size_t thread_pool_size_) :
-//     IDiskRemote(name_, remote_fs_root_path_, metadata_path_, log_name_, thread_pool_size_) {}
-
-
-// DiskBlobStorage::DiskBlobStorage() : IDiskRemote("blob_storage", "https://sadttmpstgeus.blob.core.windows.net/data", "/home/jkuklis/blob_storage", "DiskBlobStorage", 1) {}
 
 
 DiskBlobStorage::DiskBlobStorage(
     const String & name_,
     const String & metadata_path_,
-    const String & /* endpoint_url */,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential> /* managed_identity_credential_ */,
     Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
     size_t thread_pool_size_) :
-    IDiskRemote(name_, "" /* or maybe endpoint_url ?*/, metadata_path_, "DiskBlobStorage", thread_pool_size_),
+    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_path_, "DiskBlobStorage", thread_pool_size_),
     blob_container_client(blob_container_client_)
 {
 
@@ -100,7 +81,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     LOG_DEBUG(log, "Read from file by path: {}. Existing Blob Storage objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(blob_container_client, path, metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(blob_container_client, metadata, buf_size);
+
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), buf_size); // TODO: last one is the min bytes read, to change
 }
 
@@ -111,8 +93,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
-
-    auto blob_path = path; // getRandomName();
+    auto blob_path = path; // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
 
     LOG_DEBUG(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + blob_path);
@@ -153,9 +134,9 @@ RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
 }
 
 
-void blob_do_sth()
+void blob_storage_demo()
 {
-    // not to repeat it for every storage function
+    // to not repeat it for every storage function
     using namespace Azure::Storage::Blobs;
 
     // obtain the managed identity, it should be available in the VM
@@ -215,6 +196,8 @@ void blob_do_sth()
     std::cout << "Last modified date of uploaded blob: " << blobList.Value.LastModified.ToString()
         << ", size: " << blobList.Value.BlobSize << "\n";
 
+    // TODO: make sure "file.txt" exists or create it
+
     // // overwrite "file.txt" blob with the data from the file "file.txt" in the same directory
     // blockBlobClient.UploadFrom("file.txt");
 
@@ -224,48 +207,6 @@ void blob_do_sth()
     // // should print a recent time and the size of file.txt
     // std::cout << "Last modified date of uploaded blob: " << blobList.Value.LastModified.ToString()
     //     << ", size: " << blobList.Value.BlobSize << "\n";
-}
-
-
-void blob_do_sth_2()
-{
-    using namespace Azure::Storage::Blobs;
-
-    auto managedIdentityCredential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-
-    auto url = "https://sadttmpstgeus.blob.core.windows.net/data";
-
-    auto blobContainerClient = BlobContainerClient(url, managedIdentityCredential);
-
-    auto blobClient = blobContainerClient.GetBlobClient("hello");
-
-    int buf_size = 80;
-
-    std::vector<uint8_t> v(buf_size);
-
-    blobClient.DownloadTo(v.data(), buf_size);
-
-    std::cout << "v contents (" << v.size() << "): ";
-
-    for (auto i : v)
-    {
-        std::cout << static_cast<int>(i) << " ";
-    }
-
-    std::cout << "\n";
-
-    auto downloaded_data = blobClient.Download();
-
-    auto f = downloaded_data.RawResponse->GetBody();
-
-    std::cout << "f contents (" << f.size() << "): ";
-
-    for (auto i : f)
-    {
-        std::cout << static_cast<int>(i) << " ";
-    }
-
-    std::cout << "\n";
 }
 
 }

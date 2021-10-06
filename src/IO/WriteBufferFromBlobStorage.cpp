@@ -16,20 +16,10 @@ WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     size_t buf_size_) :
     BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0),
     blob_container_client(blob_container_client_),
-    blob_path(blob_path_),
-    buf_size(buf_size_)
-{
-    // allocateBuffer();
-}
+    blob_path(blob_path_) {}
 
-void WriteBufferFromBlobStorage::allocateBuffer()
-{
-
-}
 
 void WriteBufferFromBlobStorage::nextImpl() {
-    std::cout << "buf_size: " << buf_size << "\n";
-    std::cout << "offset(): " << offset() << "\n";
 
     if (!offset())
         return;
@@ -37,15 +27,16 @@ void WriteBufferFromBlobStorage::nextImpl() {
     auto pos = working_buffer.begin();
     auto len = offset();
 
+#ifdef VERBOSE_DEBUG_MODE
+    std::cout << "offset(): " << offset() << "\n";
     std::cout << "buffer contents: ";
 
     for (size_t i = 0; i < offset(); i++)
     {
         std::cout << static_cast<uint8_t>(*(pos + i)) << " ";
     }
-
     std::cout << "\n";
-
+#endif
 
     Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos), len);
 

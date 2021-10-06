@@ -15,9 +15,9 @@ namespace DB
 class ReadBufferFromBlobStorage : public SeekableReadBuffer
 {
 public:
+
     explicit ReadBufferFromBlobStorage(
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-        const String & main_path_,
         const String & path_,
         size_t buf_size_
     );
@@ -28,17 +28,14 @@ public:
     bool nextImpl() override;
 
 private:
-    std::unique_ptr<ReadBuffer> impl;
-    off_t offset = 0;
-
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
-    const String & main_path;
-    const String & path;
-    size_t buf_size;
 
     std::unique_ptr<ReadBuffer> initialize();
 
+    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+    std::unique_ptr<ReadBuffer> impl;
     std::vector<uint8_t> tmp_buffer;
+    const String & path;
+    off_t offset = 0;
 
 };
 
