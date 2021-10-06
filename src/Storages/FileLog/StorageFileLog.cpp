@@ -403,7 +403,10 @@ void StorageFileLog::shutdown()
             LOG_TRACE(log, "Waiting for cleanup");
             task->holder->deactivate();
         }
-        closeFilesAndStoreMeta();
+        /// If no reading call and threadFunc, the log files will never
+        /// be opened, also just leave the work of close files and
+        /// store meta to streams. because if we close files in here,
+        /// may result in data race with unfinishing reading pipeline
     }
     catch (...)
     {
@@ -446,16 +449,6 @@ void StorageFileLog::openFilesAndSetPos()
             file_ctx.reader.seekg(meta.last_writen_position);
             assertStreamGood(file_ctx.reader);
         }
-    }
-    serialize();
-}
-
-void StorageFileLog::closeFilesAndStoreMeta()
-{
-    for (auto & it : file_infos.context_by_name)
-    {
-        if (it.second.reader.is_open())
-            it.second.reader.close();
     }
     serialize();
 }
