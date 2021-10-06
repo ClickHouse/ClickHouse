@@ -66,6 +66,8 @@ void registerFunctionAESDecryptMysql(FunctionFactory & factory);
 
 #endif
 
+void registerFunctionHelloWrold(FunctionFactory & factory);
+
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
@@ -130,6 +132,7 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
+    registerFunctionHelloWrold(factory);
 }
 
 }
