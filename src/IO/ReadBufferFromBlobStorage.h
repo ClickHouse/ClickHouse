@@ -38,6 +38,8 @@ private:
 
     std::unique_ptr<ReadBuffer> initialize();
 
+    std::vector<uint8_t> tmp_buffer;
+
 };
 
 }

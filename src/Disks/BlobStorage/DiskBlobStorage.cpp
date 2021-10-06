@@ -101,7 +101,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(blob_container_client, path, metadata, buf_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), 32);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), buf_size); // TODO: last one is the min bytes read, to change
 }
 
 
