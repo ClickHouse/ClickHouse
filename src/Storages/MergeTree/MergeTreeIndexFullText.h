@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/ITokenExtractor.h>
-#include <Interpreters/BloomFilter.h>
+#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <memory>
+#include <Interpreters/BloomFilter.h>
+#include <Interpreters/ITokenExtractor.h>
 
 
 namespace DB
