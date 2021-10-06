@@ -223,17 +223,26 @@ void StorageFileLog::serialize() const
     {
         std::filesystem::create_directories(root_meta_path);
     }
-    for (const auto & it : file_infos.meta_by_inode)
+    for (const auto & [inode, meta] : file_infos.meta_by_inode)
     {
-        auto full_name = getFullMetaPath(it.second.file_name);
+        auto full_name = getFullMetaPath(meta.file_name);
         if (!std::filesystem::exists(full_name))
         {
             FS::createFile(full_name);
         }
+        else
+        {
+            auto last_pos = getLastWrittenPos(meta.file_name);
+            if (last_pos > meta.last_writen_position)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Last stored last written pos is bigger than current last written pos need to store for meta file {}.",
+                    full_name);
+        }
         WriteBufferFromFile out(full_name);
-        writeIntText(it.first, out);
+        writeIntText(inode, out);
         writeChar('\n', out);
-        writeIntText(it.second.last_writen_position, out);
+        writeIntText(meta.last_writen_position, out);
     }
 }
 
@@ -247,6 +256,15 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
     if (!std::filesystem::exists(full_name))
     {
         FS::createFile(full_name);
+    }
+    else
+    {
+        auto last_pos = getLastWrittenPos(file_meta.file_name);
+        if (last_pos > file_meta.last_writen_position)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Last stored last written pos is bigger than current last written pos need to store for meta file {}.",
+                full_name);
     }
     WriteBufferFromFile out(full_name);
     writeIntText(inode, out);
@@ -288,6 +306,23 @@ void StorageFileLog::deserialize()
     }
 }
 
+UInt64 StorageFileLog::getLastWrittenPos(const String & file_name) const
+{
+    ReadBufferFromFile in(getFullMetaPath(file_name));
+    UInt64 _, last_written_pos;
+
+    if (!tryReadIntText(_, in))
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", getFullMetaPath(file_name));
+    }
+    assertChar('\n', in);
+    if (!tryReadIntText(last_written_pos, in))
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", getFullMetaPath(file_name));
+    }
+    return last_written_pos;
+}
+
 UInt64 StorageFileLog::getInode(const String & file_name)
 {
     struct stat file_stat;
@@ -307,7 +342,19 @@ Pipe StorageFileLog::read(
     size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
-    /// We need this lock, in case read and streamToViews execute at the same time
+    auto table_id = getStorageID();
+    size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+    /// If there are MVs depended on this table, we just forbid reading
+    if (dependencies_count)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Can not read from table {}, because it has been depended by other tables.",
+            table_id.getTableName());
+    }
+
+    /// We need this lock, in case read and streamToViews execute at the same time.
+    /// In case of MV attached during reading
     std::lock_guard<std::mutex> lock(status_mutex);
 
     updateFileInfos();
@@ -440,14 +487,41 @@ void StorageFileLog::closeFilesAndStoreMeta()
     serialize();
 }
 
-void StorageFileLog::closeFileAndStoreMeta(const String & file_name)
+void StorageFileLog::closeFilesAndStoreMeta(int start, int end)
 {
-    auto & file_ctx = findInMap(file_infos.context_by_name, file_name);
-    if (file_ctx.reader.is_open())
-        file_ctx.reader.close();
+#ifndef NDEBUG
+    assert(start >= 0);
+    assert(start < end);
+    assert(end <= file_infos.file_names.size());
+#endif
 
-    auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
-    serialize(file_ctx.inode, meta);
+    for (int i = start; i < end; ++i)
+    {
+        auto & file_ctx = findInMap(file_infos.context_by_name, file_infos.file_names[i]);
+
+        if (file_ctx.reader.is_open())
+            file_ctx.reader.close();
+
+        auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+        serialize(file_ctx.inode, meta);
+    }
+}
+
+void StorageFileLog::storeMetas(int start, int end)
+{
+#ifndef NDEBUG
+    assert(start >= 0);
+    assert(start < end);
+    assert(end <= file_infos.file_names.size());
+#endif
+
+    for (int i = start; i < end; ++i)
+    {
+        auto & file_ctx = findInMap(file_infos.context_by_name, file_infos.file_names[i]);
+
+        auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+        serialize(file_ctx.inode, meta);
+    }
 }
 
 size_t StorageFileLog::getMaxBlockSize() const

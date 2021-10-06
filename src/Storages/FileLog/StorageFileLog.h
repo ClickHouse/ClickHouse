@@ -97,10 +97,14 @@ public:
     static UInt64 getInode(const String & file_name);
 
     void openFilesAndSetPos();
+
     /// Used in shutdown()
     void closeFilesAndStoreMeta();
-    /// Used in FileSource
-    void closeFileAndStoreMeta(const String & file_name);
+    /// Used in FileLogSource when finish generating all blocks
+    void closeFilesAndStoreMeta(int start, int end);
+
+    /// Used in FileLogSource after generating every block
+    void storeMetas(int start, int end);
 
     static void assertStreamGood(const std::ifstream & reader);
 
@@ -183,6 +187,7 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
+    UInt64 getLastWrittenPos(const String & file_name) const;
 };
 
 }
