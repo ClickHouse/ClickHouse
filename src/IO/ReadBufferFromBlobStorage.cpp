@@ -101,34 +101,16 @@ std::unique_ptr<ReadBuffer> ReadBufferFromBlobStorage::initialize()
     std::cout << "blob_container_client.GetUrl(): " << blob_container_client.GetUrl() << "\n";
 
     auto blob_client = blob_container_client.GetBlobClient(path);
-    // auto blob_client = blob_container_client.GetBlobClient("cwtwuujiyxiqpylavpoziotxlygiaias");
-
     auto prop = blob_client.GetProperties();
+    auto blob_size = prop.Value.BlobSize;
 
-    auto proper_buf_size = prop.Value.BlobSize;
+    std::cout << "blob_size: " << blob_size << "\n";
 
-    std::cout << "proper_buf_size: " << proper_buf_size << "\n";
+    tmp_buffer.resize(blob_size);
 
-    std::vector<uint8_t> v(proper_buf_size);
+    blob_client.DownloadTo(tmp_buffer.data(), blob_size);
 
-    blob_client.DownloadTo(v.data(), proper_buf_size);
-
-    // std::cout << "v contents (" << v.size() << "): ";
-
-    // for (auto i : v)
-    // {
-    //     std::cout << static_cast<int>(i) << " ";
-    // }
-
-    // std::cout << "\n";
-
-    // auto downloaded_data = blob_client.Download();
-
-    return std::make_unique<ReadBufferFromString>(v);
-
-    // return std::make_unique<ReadBufferFromString>(downloaded_data.RawResponse->GetBody());
-    // return std::make_unique<ReadBufferFromIStream>(downloaded_data.RawResponse->ExtractBodyStream(), buf_size);
-    // return std::make_unique<ReadBufferFromIStream>(downloaded_data.Value.BodyStream, buf_size);
+    return std::make_unique<ReadBufferFromString>(tmp_buffer);
 }
 
 }

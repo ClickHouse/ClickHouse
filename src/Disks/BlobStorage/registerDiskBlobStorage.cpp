@@ -20,27 +20,30 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+constexpr char test_str[] = "test";
+constexpr size_t test_str_size = 4;
+
 
 void checkWriteAccess(IDisk & disk)
 {
     auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write("test", 4);
+    file->write(test_str, test_str_size);
 }
 
 
 void checkReadAccess(IDisk & disk)
 {
     auto file = disk.readFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE);
-    String buf(4, '0');
-    file->readStrict(buf.data(), 4);
+    String buf(test_str_size, '0');
+    file->readStrict(buf.data(), test_str_size);
     std::cout << "buf: ";
-    for (size_t i = 0; i < 4; i++)
+    for (size_t i = 0; i < test_str_size; i++)
     {
         std::cout << static_cast<uint8_t>(buf[i]) << " ";
     }
     std::cout << "\n";
 
-    if (buf != "test")
+    if (buf != test_str)
         throw Exception("No read access to disk", ErrorCodes::PATH_ACCESS_DENIED);
 }
 
