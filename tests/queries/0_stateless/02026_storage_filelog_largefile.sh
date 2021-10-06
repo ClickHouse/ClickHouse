@@ -16,6 +16,8 @@ mkdir -p ${user_files_path}/logs/
 
 rm -rf ${user_files_path}/logs/*
 
+chmod 777 ${user_files_path}/logs/
+
 for i in {1..200}
 do
 	${CLICKHOUSE_CLIENT} --query "insert into function file('${user_files_path}/logs/test$i.csv', 'CSV', 'k UInt32, v UInt32') select number, number from numbers(10000);"
