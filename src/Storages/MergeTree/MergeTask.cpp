@@ -11,6 +11,7 @@
 #include "Storages/MergeTree/MergeTreeSequentialSource.h"
 #include "Storages/MergeTree/FutureMergedMutatedPart.h"
 #include "Processors/Transforms/ExpressionTransform.h"
+#include "Processors/Transforms/MaterializingTransform.h"
 #include "Processors/Merges/MergingSortedTransform.h"
 #include "Processors/Merges/CollapsingSortedTransform.h"
 #include "Processors/Merges/SummingSortedTransform.h"
@@ -236,8 +237,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         ctx->compression_codec,
         ctx->blocks_are_granules_size);
 
-    global_ctx->merged_stream->readPrefix();
-
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
@@ -298,14 +297,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
     Block block;
-    if (!ctx->is_cancelled() && (block = global_ctx->merged_stream->read()))
+    if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
     {
         global_ctx->rows_written += block.rows();
 
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
-        global_ctx->merge_list_element_ptr->rows_written = global_ctx->merged_stream->getProfileInfo().rows;
-        global_ctx->merge_list_element_ptr->bytes_written_uncompressed = global_ctx->merged_stream->getProfileInfo().bytes;
+        UInt64 result_rows = 0;
+        UInt64 result_bytes = 0;
+        global_ctx->merged_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
+        global_ctx->merge_list_element_ptr->rows_written = result_rows;
+        global_ctx->merge_list_element_ptr->bytes_written_uncompressed = result_bytes;
 
         /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
         if (global_ctx->space_reservation && ctx->sum_input_rows_upper_bound)
@@ -323,8 +325,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
         return true;
     }
 
-    global_ctx->merged_stream->readSuffix();
-    global_ctx->merged_stream.reset();
+    global_ctx->merging_executor.reset();
+    global_ctx->merged_pipeline.reset();
 
     if (global_ctx->merges_blocker->isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -799,26 +801,25 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     auto res_pipe = Pipe::unitePipes(std::move(pipes));
     res_pipe.addTransform(std::move(merged_transform));
-    QueryPipeline pipeline(std::move(res_pipe));
-    pipeline.setNumThreads(1);
-
-    global_ctx->merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (global_ctx->deduplicate)
-        global_ctx->merged_stream = std::make_shared<DistinctSortedBlockInputStream>(
-            global_ctx->merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns);
+        res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
+            res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
 
     if (ctx->need_remove_expired_values)
-        global_ctx->merged_stream = std::make_shared<TTLBlockInputStream>(
-            global_ctx->merged_stream, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
+        res_pipe.addTransform(std::make_shared<TTLTransform>(
+            res_pipe.getHeader(), *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl));
 
     if (global_ctx->metadata_snapshot->hasSecondaryIndices())
     {
         const auto & indices = global_ctx->metadata_snapshot->getSecondaryIndices();
-        global_ctx->merged_stream = std::make_shared<ExpressionBlockInputStream>(
-            global_ctx->merged_stream, indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext()));
-        global_ctx->merged_stream = std::make_shared<MaterializingBlockInputStream>(global_ctx->merged_stream);
+        res_pipe.addTransform(std::make_shared<ExpressionTransform>(
+            res_pipe.getHeader(), indices.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())));
+        res_pipe.addTransform(std::make_shared<MaterializingTransform>(res_pipe.getHeader()));
     }
+
+    global_ctx->merged_pipeline = QueryPipeline(std::move(res_pipe));
+    global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
 }
 
 

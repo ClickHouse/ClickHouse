@@ -4,18 +4,17 @@
 namespace DB
 {
 
-TTLCalcInputStream::TTLCalcInputStream(
-    const BlockInputStreamPtr & input_,
+TTLCalcTransform::TTLCalcTransform(
+    const Block & header_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
-    : data_part(data_part_)
+    : ISimpleTransform(header_, header_, true)
+    , data_part(data_part_)
     , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcInputStream)"))
 {
-    children.push_back(input_);
-    header = children.at(0)->getHeader();
     auto old_ttl_infos = data_part->ttl_infos;
 
     if (metadata_snapshot_->hasRowsTTL())
@@ -51,27 +50,36 @@ TTLCalcInputStream::TTLCalcInputStream(
             recompression_ttl, TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
-Block TTLCalcInputStream::readImpl()
+void TTLCalcTransform::transform(Chunk & chunk)
 {
-    auto block = children.at(0)->read();
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
     if (!block)
-        return block;
+        return;
 
-    Block res;
-    for (const auto & col : header)
-        res.insert(block.getByName(col.name));
+    Chunk res;
+    for (const auto & col : getOutputPort().getHeader())
+        res.addColumn(block.getByName(col.name).column);
 
-    return res;
+    chunk = std::move(res);
 }
 
-void TTLCalcInputStream::readSuffixImpl()
+void TTLCalcTransform::finalize()
 {
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+}
+
+IProcessor::Status TTLCalcTransform::prepare()
+{
+    auto status = ISimpleTransform::prepare();
+    if (status == Status::Finished)
+        finalize();
+
+    return status;
 }
 
 }
