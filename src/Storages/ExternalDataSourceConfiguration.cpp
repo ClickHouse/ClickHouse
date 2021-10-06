@@ -66,7 +66,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
 
         if (!config.has(config_prefix))
         {
-            /// For table function remote we do not throw on no collection, becuase then we consifer first arg
+            /// For table function remote we do not throw on no collection, because then we consider first arg
             /// as cluster definition from config.
             if (!throw_on_no_collection)
                 return std::nullopt;
