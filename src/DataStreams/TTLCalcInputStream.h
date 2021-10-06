@@ -1,5 +1,5 @@
 #pragma once
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
@@ -11,11 +11,11 @@
 namespace DB
 {
 
-class TTLCalcInputStream : public IBlockInputStream
+class TTLCalcTransform : public ISimpleTransform
 {
 public:
-    TTLCalcInputStream(
-        const BlockInputStreamPtr & input_,
+    TTLCalcTransform(
+        const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -24,13 +24,13 @@ public:
     );
 
     String getName() const override { return "TTL_CALC"; }
-    Block getHeader() const override { return header; }
+    Status prepare() override;
 
 protected:
-    Block readImpl() override;
+    void transform(Chunk & chunk) override;
 
     /// Finalizes ttl infos and updates data part
-    void readSuffixImpl() override;
+    void finalize();
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
@@ -38,7 +38,6 @@ private:
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
     Poco::Logger * log;
-    Block header;
 };
 
 }
