@@ -232,12 +232,7 @@ void StorageFileLog::serialize() const
         }
         else
         {
-            auto last_pos = getLastWrittenPos(meta.file_name);
-            if (last_pos > meta.last_writen_position)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Last stored last written pos is bigger than current last written pos need to store for meta file {}.",
-                    full_name);
+            checkOffsetIsValid(full_name, meta.last_writen_position);
         }
         WriteBufferFromFile out(full_name);
         writeIntText(inode, out);
@@ -259,12 +254,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
     }
     else
     {
-        auto last_pos = getLastWrittenPos(file_meta.file_name);
-        if (last_pos > file_meta.last_writen_position)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Last stored last written pos is bigger than current last written pos need to store for meta file {}.",
-                full_name);
+        checkOffsetIsValid(full_name, file_meta.last_writen_position);
     }
     WriteBufferFromFile out(full_name);
     writeIntText(inode, out);
@@ -304,23 +294,6 @@ void StorageFileLog::deserialize()
 
         file_infos.meta_by_inode.emplace(inode, meta);
     }
-}
-
-UInt64 StorageFileLog::getLastWrittenPos(const String & file_name) const
-{
-    ReadBufferFromFile in(getFullMetaPath(file_name));
-    UInt64 _, last_written_pos;
-
-    if (!tryReadIntText(_, in))
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", getFullMetaPath(file_name));
-    }
-    assertChar('\n', in);
-    if (!tryReadIntText(last_written_pos, in))
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", getFullMetaPath(file_name));
-    }
-    return last_written_pos;
 }
 
 UInt64 StorageFileLog::getInode(const String & file_name)
@@ -487,7 +460,7 @@ void StorageFileLog::closeFilesAndStoreMeta()
     serialize();
 }
 
-void StorageFileLog::closeFilesAndStoreMeta(int start, int end)
+void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
 #ifndef NDEBUG
     assert(start >= 0);
@@ -495,7 +468,7 @@ void StorageFileLog::closeFilesAndStoreMeta(int start, int end)
     assert(end <= file_infos.file_names.size());
 #endif
 
-    for (int i = start; i < end; ++i)
+    for (size_t i = start; i < end; ++i)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file_infos.file_names[i]);
 
@@ -507,7 +480,7 @@ void StorageFileLog::closeFilesAndStoreMeta(int start, int end)
     }
 }
 
-void StorageFileLog::storeMetas(int start, int end)
+void StorageFileLog::storeMetas(size_t start, size_t end)
 {
 #ifndef NDEBUG
     assert(start >= 0);
@@ -515,13 +488,32 @@ void StorageFileLog::storeMetas(int start, int end)
     assert(end <= file_infos.file_names.size());
 #endif
 
-    for (int i = start; i < end; ++i)
+    for (size_t i = start; i < end; ++i)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file_infos.file_names[i]);
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
     }
+}
+
+void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset)
+{
+    ReadBufferFromFile in(full_name);
+    UInt64 _, last_written_pos;
+
+    if (!tryReadIntText(_, in))
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", full_name);
+    }
+    assertChar('\n', in);
+    if (!tryReadIntText(last_written_pos, in))
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", full_name);
+    }
+    if (last_written_pos > offset)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Last stored last_written_pos in meta file {} is bigger than current last_written_pos.", full_name);
 }
 
 size_t StorageFileLog::getMaxBlockSize() const

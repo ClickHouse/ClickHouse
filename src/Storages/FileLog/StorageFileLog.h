@@ -50,6 +50,12 @@ public:
 
     void drop() override;
 
+    /// We need to call drop() immediately to remove meta data directory,
+    /// otherwise, if another filelog table with same name created before
+    /// the table be dropped finally, then its meta data directory will
+    /// be deleted by this table drop finally
+    bool dropTableImmediately() override { return true; }
+
     const auto & getFormatName() const { return format_name; }
 
     enum class FileStatus
@@ -101,10 +107,10 @@ public:
     /// Used in shutdown()
     void closeFilesAndStoreMeta();
     /// Used in FileLogSource when finish generating all blocks
-    void closeFilesAndStoreMeta(int start, int end);
+    void closeFilesAndStoreMeta(size_t start, size_t end);
 
     /// Used in FileLogSource after generating every block
-    void storeMetas(int start, int end);
+    void storeMetas(size_t start, size_t end);
 
     static void assertStreamGood(const std::ifstream & reader);
 
@@ -187,7 +193,7 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
-    UInt64 getLastWrittenPos(const String & file_name) const;
+    static void checkOffsetIsValid(const String & full_name, UInt64 offset);
 };
 
 }
