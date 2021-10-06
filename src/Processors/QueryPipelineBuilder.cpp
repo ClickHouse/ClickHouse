@@ -139,7 +139,6 @@ void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
 {
     checkInitializedAndNotCompleted();
     pipe.addChains(std::move(chains));
-    setMaxThreads(pipe.maxParallelStreams());
 }
 
 void QueryPipelineBuilder::addChain(Chain chain)
@@ -149,7 +148,6 @@ void QueryPipelineBuilder::addChain(Chain chain)
     chains.emplace_back(std::move(chain));
     pipe.resize(1);
     pipe.addChains(std::move(chains));
-    setMaxThreads(pipe.maxParallelStreams());
 }
 
 void QueryPipelineBuilder::transform(const Transformer & transformer)
