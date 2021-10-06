@@ -53,14 +53,14 @@ public:
         const auto & ngram_argument_column = arguments[1].column;
         auto ngram_argument_type = WhichDataType(column_with_type.type);
 
-        if (!ngram_argument_type.isNativeUInt() && ngram_argument_column && isColumnConst(*ngram_argument_column))
+        if (!ngram_argument_type.isNativeUInt() || !ngram_argument_column || !isColumnConst(*ngram_argument_column))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} second argument type should be constant UInt. Actual {}",
                 getName(),
                 arguments[1].type->getName());
 
         Field ngram_argument_value;
-        arguments[1].column->get(0, ngram_argument_value);
+        ngram_argument_column->get(0, ngram_argument_value);
         auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(ngram_value));

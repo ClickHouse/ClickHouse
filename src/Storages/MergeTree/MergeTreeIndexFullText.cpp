@@ -18,7 +18,6 @@
 #include <Poco/Logger.h>
 
 
-
 namespace DB
 {
 
@@ -135,7 +134,6 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     granule->has_elems = true;
     *pos += rows_read;
 }
-
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
