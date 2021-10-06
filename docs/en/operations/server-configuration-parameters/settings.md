@@ -481,19 +481,17 @@ Backlog (queue size of pending connections) of the listen socket.
 
 Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
 
-Usually you don't need to change this, since:
+Usually this value does not need to be changed, since:
 - default value is large enough,
 - and for accepting client's connections server has separate thread.
 
-So even if you have `TcpExtListenOverflows` (from `nstat`) non zero (and you
-100% sure that this counter grows for ClickHouse server) it does not mean that
-you need to increase this value, since:
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this
+counter grows for ClickHouse server it does not mean that this value need to be
+increased, since:
 - usually if 4096 is not enough it shows some internal ClickHouse scaling
   issue, so it is better to report an issue.
 - and it does not mean that the server can handle more connections later (and
   even if it can, clients can already goes away / disconnect).
-
-However if you 100% sure, go ahead.
 
 Examples:
 
