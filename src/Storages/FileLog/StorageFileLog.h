@@ -104,9 +104,8 @@ public:
 
     void openFilesAndSetPos();
 
-    /// Used in shutdown()
-    void closeFilesAndStoreMeta();
-    /// Used in FileLogSource when finish generating all blocks
+    /// Used in FileLogSource when finish generating all blocks.
+    /// Each stream responsible for close its files and store meta.
     void closeFilesAndStoreMeta(size_t start, size_t end);
 
     /// Used in FileLogSource after generating every block
