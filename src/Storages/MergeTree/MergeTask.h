@@ -148,7 +148,8 @@ private:
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
         std::shared_ptr<MergedBlockOutputStream> to{nullptr};
-        BlockInputStreamPtr merged_stream{nullptr};
+        QueryPipeline merged_pipeline;
+        std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         SyncGuardPtr sync_guard{nullptr};
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
