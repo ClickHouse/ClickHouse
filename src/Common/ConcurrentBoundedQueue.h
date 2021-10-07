@@ -76,11 +76,13 @@ private:
                 pop_condition.wait(queue_lock, [&](){ return is_finished || !queue.empty(); });
             }
 
-            if (is_finished)
+            if (is_finished && queue.empty())
                 return false;
 
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
             queue.pop();
+
+            return true;
         }
 
         push_condition.notify_one();
@@ -147,7 +149,8 @@ public:
     }
 
     /** Clear and finish queue
-      * After that push or pop operations will return false
+      * After that push operation will return false
+      * pop operations will return values until queue become empty
       * Returns true if queue was already finished
       */
     bool finish()
@@ -191,6 +194,24 @@ public:
         std::queue<T> empty_queue;
         queue.swap(empty_queue);
 
+        push_condition.notify_all();
+    }
+
+    /// Clear and finish queue
+    void clearAndFinish()
+    {
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+
+            if (is_finished)
+                return;
+
+            std::queue<T> empty_queue;
+            queue.swap(empty_queue);
+            is_finished = true;
+        }
+
+        pop_condition.notify_all();
         push_condition.notify_all();
     }
 };
