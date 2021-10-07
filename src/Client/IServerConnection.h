@@ -13,6 +13,8 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 
+#include <Storages/MergeTree/RequestResponse.h>
+
 
 #include <boost/noncopyable.hpp>
 

@@ -11,9 +11,9 @@
 #include <cassert>
 
 
-#include <common/logger_useful.h>
-#include <common/types.h>
-#include <common/scope_guard.h>
+#include <base/logger_useful.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
 #include "IO/WriteBufferFromString.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
