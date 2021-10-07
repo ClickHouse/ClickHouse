@@ -10,8 +10,8 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
-#include <common/logger_useful.h>
-#include <common/scope_guard_safe.h>
+#include <base/logger_useful.h>
+#include <base/scope_guard_safe.h>
 #include <iomanip>
 #include <filesystem>
 

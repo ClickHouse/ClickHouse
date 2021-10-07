@@ -2,7 +2,7 @@
 
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 #include <limits>
 #include <type_traits>
 

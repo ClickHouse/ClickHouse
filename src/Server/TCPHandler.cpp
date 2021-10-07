@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -16,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
@@ -32,7 +31,8 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -48,6 +48,10 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric QueryThread;
+}
 
 namespace DB
 {
@@ -218,6 +222,8 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
+            std::mutex fatal_error_mutex;
+
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -226,7 +232,11 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
+                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
+                {
+                    std::lock_guard lock(fatal_error_mutex);
+                    sendLogs();
+                });
             }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -318,8 +328,10 @@ void TCPHandler::runImpl()
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this]()
+                    auto callback = [this, &fatal_error_mutex]()
                     {
+                        std::lock_guard lock(fatal_error_mutex);
+
                         if (isQueryCancelled())
                             return true;
 
@@ -1177,6 +1189,17 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
+    /// In interserer mode,
+    /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
+    /// (i.e. when the INSERT is done with the global context w/o user),
+    /// so it is better to reset session to avoid using old user.
+    if (is_interserver_mode)
+    {
+        ClientInfo original_session_client_info = session->getClientInfo();
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
+        session->getClientInfo() = original_session_client_info;
+    }
+
     /// Read client info.
     ClientInfo client_info = session->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -1224,11 +1247,13 @@ void TCPHandler::receiveQuery()
             throw NetException("Hash mismatch", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
         /// TODO: change error code?
 
-        /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
-        /// i.e. when the INSERT is done with the global context (w/o user).
-        if (!client_info.initial_user.empty())
+        if (client_info.initial_user.empty())
         {
-            LOG_DEBUG(log, "User (initial): {}", client_info.initial_user);
+            LOG_DEBUG(log, "User (no user, interserver mode)");
+        }
+        else
+        {
+            LOG_DEBUG(log, "User (initial, interserver mode): {}", client_info.initial_user);
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else

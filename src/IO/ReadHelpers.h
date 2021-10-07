@@ -9,12 +9,12 @@
 
 #include <type_traits>
 
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
-#include <common/StringRef.h>
-#include <common/arithmeticOverflow.h>
-#include <common/unit.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LocalDateTime.h>
+#include <base/StringRef.h>
+#include <base/arithmeticOverflow.h>
+#include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
