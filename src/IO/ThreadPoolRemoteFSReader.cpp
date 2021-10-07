@@ -12,7 +12,6 @@
 
 #include <future>
 #include <iostream>
-#include <common/logger_useful.h>
 
 
 namespace ProfileEvents
