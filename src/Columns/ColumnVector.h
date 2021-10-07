@@ -8,7 +8,7 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <base/TypeName.h>
 
 
 namespace DB
@@ -237,7 +237,7 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
@@ -367,12 +367,7 @@ template <typename T>
 template <typename Type>
 ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    size_t size = indexes.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
+    assert(limit <= indexes.size());
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();

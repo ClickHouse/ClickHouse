@@ -1,7 +1,5 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -275,12 +273,14 @@ namespace
 
         while (Block block = block_in.read())
         {
-            ConvertingBlockInputStream convert(
-                std::make_shared<OneBlockInputStream>(block),
-                remote.getHeader(),
-                ConvertingBlockInputStream::MatchColumnsMode::Name);
-            auto adopted_block = convert.read();
-            remote.write(adopted_block);
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                block.cloneEmpty().getColumnsWithTypeAndName(),
+                remote.getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            converting_actions->execute(block);
+            remote.write(block);
         }
 
         block_in.readSuffix();

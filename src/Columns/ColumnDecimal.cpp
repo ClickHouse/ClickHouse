@@ -169,17 +169,7 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
 template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
-    size_t size = limit ? std::min(data.size(), limit) : data.size();
-    if (perm.size() < size)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    auto res = this->create(size, scale);
-    typename Self::Container & res_data = res->getData();
-
-    for (size_t i = 0; i < size; ++i)
-        res_data[i] = data[perm[i]];
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 template <is_decimal T>
