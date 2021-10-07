@@ -445,14 +445,15 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE)
         {
-            file_ctx.reader.open(getFullDataPath(file));
-            assertStreamGood(file_ctx.reader);
+            file_ctx.reader.emplace(getFullDataPath(file));
+            auto & reader = file_ctx.reader.value();
+            assertStreamGood(reader);
 
-            file_ctx.reader.seekg(0, file_ctx.reader.end);
-            assertStreamGood(file_ctx.reader);
+            reader.seekg(0, reader.end);
+            assertStreamGood(reader);
 
-            auto file_end = file_ctx.reader.tellg();
-            assertStreamGood(file_ctx.reader);
+            auto file_end = reader.tellg();
+            assertStreamGood(reader);
 
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
@@ -462,8 +463,8 @@ void StorageFileLog::openFilesAndSetPos()
             /// update file end at the monment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
 
-            file_ctx.reader.seekg(meta.last_writen_position);
-            assertStreamGood(file_ctx.reader);
+            reader.seekg(meta.last_writen_position);
+            assertStreamGood(reader);
         }
     }
     serialize();
@@ -481,8 +482,11 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
     {
         auto & file_ctx = findInMap(file_infos.context_by_name, file_infos.file_names[i]);
 
-        if (file_ctx.reader.is_open())
-            file_ctx.reader.close();
+        if (file_ctx.reader)
+        {
+            if ((*file_ctx.reader).is_open())
+                (*file_ctx.reader).close();
+        }
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
