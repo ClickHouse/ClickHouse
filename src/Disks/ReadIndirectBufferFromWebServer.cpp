@@ -20,18 +20,13 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
-static const auto WAIT_MS = 10;
-
-
 ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
-    const String & url_, ContextPtr context_, size_t buf_size_, size_t backoff_threshold_, size_t max_tries_)
+    const String & url_, ContextPtr context_, size_t buf_size_, size_t, size_t)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
-    , backoff_threshold_ms(backoff_threshold_)
-    , max_tries(max_tries_)
 {
 }
 
@@ -59,65 +54,32 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,
+        context->getReadSettings(),
         headers);
 }
 
 
 bool ReadIndirectBufferFromWebServer::nextImpl()
 {
-    bool next_result = false, successful_read = false;
-    UInt16 milliseconds_to_wait = WAIT_MS;
-
     if (impl)
     {
         /// Restore correct position at the needed offset.
         impl->position() = position();
         assert(!impl->hasPendingData());
     }
-
-    WriteBufferFromOwnString error_msg;
-    for (size_t i = 0; (i < max_tries) && !successful_read && !next_result; ++i)
+    else
     {
-        while (milliseconds_to_wait < backoff_threshold_ms)
-        {
-            try
-            {
-                if (!impl)
-                {
-                    impl = initialize();
-                    next_result = impl->hasPendingData();
-                    if (next_result)
-                        break;
-                }
-
-                next_result = impl->next();
-                successful_read = true;
-                break;
-            }
-            catch (const Poco::Exception & e)
-            {
-                LOG_WARNING(log, "Read attempt failed for url: {}. Error: {}", url, e.what());
-                error_msg << fmt::format("Error: {}\n", e.what());
-
-                sleepForMilliseconds(milliseconds_to_wait);
-                milliseconds_to_wait *= 2;
-                impl.reset();
-            }
-        }
-        milliseconds_to_wait = WAIT_MS;
+        impl = initialize();
     }
 
-    if (!successful_read)
-        throw Exception(ErrorCodes::NETWORK_ERROR,
-                        "All read attempts failed for url: {}. Reason:\n{}", url, error_msg.str());
-
-    if (next_result)
+    auto result = impl->next();
+    if (result)
     {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
         offset += working_buffer.size();
     }
 
-    return next_result;
+    return result;
 }
 
 

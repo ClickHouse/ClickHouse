@@ -197,7 +197,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
     auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(),
-        read_settings.remote_fs_buffer_size, read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries);
+        read_settings.remote_fs_buffer_size, read_settings.remote_fs_read_max_backoff_ms, read_settings.remote_fs_read_backoff_max_tries);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
