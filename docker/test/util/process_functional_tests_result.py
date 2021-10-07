@@ -28,6 +28,7 @@ def process_test_log(log_path):
     test_results = []
     with open(log_path, 'r') as test_file:
         for line in test_file:
+            original_line = line
             line = line.strip()
             if any(s in line for s in NO_TASK_TIMEOUT_SIGNS):
                 task_timeout = False
@@ -63,7 +64,7 @@ def process_test_log(log_path):
                     success += int(OK_SIGN in line)
                     test_results.append((test_name, "OK", test_time, []))
             elif len(test_results) > 0 and test_results[-1][1] == "FAIL":
-                test_results[-1][3].append(line)
+                test_results[-1][3].append(original_line)
 
     test_results = [(test[0], test[1], test[2], ''.join(test[3])) for test in test_results]
 
