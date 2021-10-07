@@ -34,6 +34,7 @@ public:
     {
         if (!finished)
             onFinish();
+        storage.reduceStreams();
     }
 
 protected:
