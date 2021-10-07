@@ -23,7 +23,7 @@ TTLTransform::TTLTransform(
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
-    : ISimpleTransform(header_, header_, false)
+    : IAccumulatingTransform(header_, header_)
     , data_part(data_part_)
     , log(&Poco::Logger::get(storage_.getLogName() + " (TTLTransform)"))
 {
@@ -97,16 +97,16 @@ Block reorderColumns(Block block, const Block & header)
     return res;
 }
 
-void TTLTransform::transform(Chunk & chunk)
+void TTLTransform::consume(Chunk chunk)
 {
     if (all_data_dropped)
     {
-        stopReading();
-        chunk.clear();
+        finishConsume();
         return;
     }
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
@@ -114,8 +114,20 @@ void TTLTransform::transform(Chunk & chunk)
         return;
 
     size_t num_rows = block.rows();
+    setReadyChunk(Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows));
+}
 
-    chunk = Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows);
+Chunk TTLTransform::generate()
+{
+    Block block;
+    for (const auto & algorithm : algorithms)
+        algorithm->execute(block);
+
+    if (!block)
+        return {};
+
+    size_t num_rows = block.rows();
+    return Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows);
 }
 
 void TTLTransform::finalize()
@@ -133,7 +145,7 @@ void TTLTransform::finalize()
 
 IProcessor::Status TTLTransform::prepare()
 {
-    auto status = ISimpleTransform::prepare();
+    auto status = IAccumulatingTransform::prepare();
     if (status == Status::Finished)
         finalize();
 
