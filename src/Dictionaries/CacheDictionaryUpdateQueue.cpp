@@ -83,7 +83,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
     if (finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CacheDictionaryUpdateQueue for dictionary {} already finished", dictionary_name_for_logs);
 
-    std::unique_lock<std::mutex> update_lock(update_unit_ptr->lock);
+    std::unique_lock update_lock(update_unit_ptr->lock);
 
     bool result = update_unit_ptr->is_update_finished.wait_for(
         update_lock,
