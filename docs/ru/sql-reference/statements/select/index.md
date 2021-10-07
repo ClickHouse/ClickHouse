@@ -140,7 +140,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Вы можете использовать синонимы (алиасы `AS`) в любом месте запроса.
 
-В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` поддерживаются позиционные аргументы. Например, если вы напишите `ORDER BY 1,2` - будет выполнена сортировка сначала по первому, а затем по второму столбцу.
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать не названия столбцов, а номера. Для этого нужно включить настройку [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments). Тогда, например, в запросе с `ORDER BY 1,2` будет выполнена сортировка сначала по первому, а затем по второму столбцу.
 
 
 ## Детали реализации {#implementation-details}
