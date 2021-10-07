@@ -130,7 +130,7 @@ public:
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const StorageMetadataPtr & metadata_snapshot,
-        MergeListEntry & merge_entry,
+        MergeListElement & merge_list_element,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
@@ -146,7 +146,7 @@ public:
         const FutureMergedMutatedPart & future_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
-        MergeListEntry & merge_entry,
+        MergeListElement & merge_list_element,
         time_t time_of_mutation,
         ContextPtr context,
         const ReservationPtr & space_reservation,
@@ -232,7 +232,7 @@ private:
         BlockInputStreamPtr mutating_stream,
         IMergedBlockOutputStream & out,
         time_t time_of_mutation,
-        MergeListEntry & merge_entry,
+        MergeListElement & merge_list_element,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
         ContextPtr context,
@@ -247,7 +247,7 @@ private:
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
+        MergeListElement & merge_list_element,
         ExecuteTTLType execute_ttl_type,
         bool need_sync,
         const ReservationPtr & space_reservation,
@@ -265,7 +265,7 @@ private:
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
+        MergeListElement & merge_list_element,
         ExecuteTTLType execute_ttl_type,
         bool need_sync,
         const ReservationPtr & space_reservation,
@@ -297,7 +297,7 @@ private:
         bool need_remove_expired_values,
         const MergeTreeData::MergingParams & merging_params) const;
 
-    bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
+    bool checkOperationIsNotCanceled(const MergeListElement & merge_list_element) const;
 
 
 private:
