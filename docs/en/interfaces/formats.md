@@ -515,11 +515,11 @@ Example:
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
 This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
 
-**Example**
+**Examples**
 
 Query:
 
@@ -538,6 +538,26 @@ Result:
 │ {}                                │
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
+```
+
+**An array of JSON objects**
+
+Query:
+
+``` sql
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+Result:
+
+```text
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
