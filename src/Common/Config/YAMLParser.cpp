@@ -21,7 +21,7 @@
 
 #include <yaml-cpp/yaml.h> // Y_IGNORE
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 using namespace Poco::XML;
 

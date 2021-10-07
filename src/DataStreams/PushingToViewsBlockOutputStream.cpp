@@ -16,8 +16,8 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <common/scope_guard.h>
-#include <common/logger_useful.h>
+#include <base/scope_guard.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -348,7 +348,7 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), context);
+        auto sink = storage->write(query_ptr, metadata_snapshot, context);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));

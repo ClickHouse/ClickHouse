@@ -42,7 +42,7 @@ toc_title: "Библиотеки для интеграции от сторонн
         -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 -   Мониторинг
     -   [Graphite](https://graphiteapp.org)
-        -   [graphouse](https://github.com/yandex/graphouse)
+        -   [graphouse](https://github.com/ClickHouse/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration)
