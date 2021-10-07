@@ -14,7 +14,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Pipe.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -484,8 +483,8 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
         if (file_ctx.reader)
         {
-            if ((*file_ctx.reader).is_open())
-                (*file_ctx.reader).close();
+            if (file_ctx.reader->is_open())
+                file_ctx.reader->close();
         }
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
