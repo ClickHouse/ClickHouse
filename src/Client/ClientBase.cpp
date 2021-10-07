@@ -426,10 +426,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     catch (Exception & e)
     {
         if (!is_interactive)
-        {
             e.addMessage("(in query: {})", full_query);
-            throw;
-        }
+        throw;
     }
 
     if (have_error)
