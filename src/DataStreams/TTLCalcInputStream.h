@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
+#include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class TTLCalcTransform : public ISimpleTransform
+class TTLCalcTransform : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
@@ -27,7 +27,8 @@ public:
     Status prepare() override;
 
 protected:
-    void transform(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
+    Chunk generate() override;
 
     /// Finalizes ttl infos and updates data part
     void finalize();

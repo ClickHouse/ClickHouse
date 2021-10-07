@@ -47,7 +47,10 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 
         /// Just go to the next block if there isn't any new record in the current one.
         if (!has_new_data)
+        {
+            chunk.clear();
             return;
+        }
 
         if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         {

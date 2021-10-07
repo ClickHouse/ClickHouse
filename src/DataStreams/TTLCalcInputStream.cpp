@@ -11,9 +11,9 @@ TTLCalcTransform::TTLCalcTransform(
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
-    : ISimpleTransform(header_, header_, true)
+    : IAccumulatingTransform(header_, header_)
     , data_part(data_part_)
-    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcInputStream)"))
+    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
 
@@ -50,7 +50,7 @@ TTLCalcTransform::TTLCalcTransform(
             recompression_ttl, TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
-void TTLCalcTransform::transform(Chunk & chunk)
+void TTLCalcTransform::consume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     for (const auto & algorithm : algorithms)
@@ -63,7 +63,23 @@ void TTLCalcTransform::transform(Chunk & chunk)
     for (const auto & col : getOutputPort().getHeader())
         res.addColumn(block.getByName(col.name).column);
 
-    chunk = std::move(res);
+    setReadyChunk(std::move(res));
+}
+
+Chunk TTLCalcTransform::generate()
+{
+    Block block;
+    for (const auto & algorithm : algorithms)
+        algorithm->execute(block);
+
+    if (!block)
+        return {};
+
+    Chunk res;
+    for (const auto & col : getOutputPort().getHeader())
+        res.addColumn(block.getByName(col.name).column);
+
+    return res;
 }
 
 void TTLCalcTransform::finalize()
@@ -75,7 +91,7 @@ void TTLCalcTransform::finalize()
 
 IProcessor::Status TTLCalcTransform::prepare()
 {
-    auto status = ISimpleTransform::prepare();
+    auto status = IAccumulatingTransform::prepare();
     if (status == Status::Finished)
         finalize();
 
