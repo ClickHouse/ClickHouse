@@ -42,7 +42,7 @@ public:
                 std::chrono::milliseconds(timeout_ms), [this] { return is_finished || !queue.empty(); }))
             return false;
 
-        if (is_finished)
+        if (is_finished && queue.empty())
             return false;
 
         ::detail::moveOrCopyIfThrow(std::move(queue.front()), response);
