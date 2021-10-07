@@ -1,7 +1,5 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -12,10 +10,11 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -266,7 +265,7 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteBlockOutputStream & remote, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
         NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
@@ -274,12 +273,14 @@ namespace
 
         while (Block block = block_in.read())
         {
-            ConvertingBlockInputStream convert(
-                std::make_shared<OneBlockInputStream>(block),
-                remote.getHeader(),
-                ConvertingBlockInputStream::MatchColumnsMode::Name);
-            auto adopted_block = convert.read();
-            remote.write(adopted_block);
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                block.cloneEmpty().getColumnsWithTypeAndName(),
+                remote.getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            converting_actions->execute(block);
+            remote.write(block);
         }
 
         block_in.readSuffix();
@@ -287,7 +288,7 @@ namespace
 
     void writeRemoteConvert(
         const DistributedHeader & distributed_header,
-        RemoteBlockOutputStream & remote,
+        RemoteInserter & remote,
         bool compression_expected,
         ReadBufferFromFile & in,
         Poco::Logger * log)
@@ -619,14 +620,13 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
-        RemoteBlockOutputStream remote{*connection, timeouts,
+        RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
             distributed_header.client_info};
-        remote.writePrefix();
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
-        remote.writeSuffix();
+        remote.onFinish();
     }
     catch (Exception & e)
     {
@@ -833,7 +833,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 private:
     void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
     {
-        std::unique_ptr<RemoteBlockOutputStream> remote;
+        std::unique_ptr<RemoteInserter> remote;
 
         for (UInt64 file_idx : file_indices)
         {
@@ -847,18 +847,17 @@ private:
 
             if (!remote)
             {
-                remote = std::make_unique<RemoteBlockOutputStream>(connection, timeouts,
+                remote = std::make_unique<RemoteInserter>(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote->writePrefix();
             }
             bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
 
         if (remote)
-            remote->writeSuffix();
+            remote->onFinish();
     }
 
     void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
@@ -880,14 +879,13 @@ private:
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-                RemoteBlockOutputStream remote(connection, timeouts,
+                RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote.writePrefix();
                 bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
-                remote.writeSuffix();
+                remote.onFinish();
             }
             catch (Exception & e)
             {
@@ -972,7 +970,7 @@ private:
     Data data;
 };
 
-ProcessorPtr StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
+std::shared_ptr<ISource> StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
 {
     return std::make_shared<DirectoryMonitorSource>(file_name);
 }

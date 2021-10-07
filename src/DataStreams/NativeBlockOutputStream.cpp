@@ -1,4 +1,4 @@
-#include <Core/Defines.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Block.h>
 
 #include <IO/WriteHelpers.h>

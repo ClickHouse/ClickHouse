@@ -5,11 +5,12 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <IO/ReadBuffer.h>
 
 namespace DB
 {
 
+class Chain;
+class ThreadStatus;
 
 /** Interprets the INSERT query.
   */
@@ -21,7 +22,8 @@ public:
         ContextPtr context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,
-        bool no_destination_ = false);
+        bool no_destination_ = false,
+        bool async_insert_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -30,23 +32,35 @@ public:
       */
     BlockIO execute() override;
 
-    /// Returns only sinks, without input sources.
-    Processors getSinks();
-
     StorageID getDatabaseTable() const;
 
+    Chain buildChain(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & columns,
+        ThreadStatus * thread_status = nullptr,
+        std::atomic_uint64_t * elapsed_counter_ms = nullptr);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+
     StoragePtr getTable(ASTInsertQuery & query);
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
 private:
-    std::pair<BlockIO, BlockOutputStreams> executeImpl(
-        const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, Block & sample_block);
+    Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     ASTPtr query_ptr;
     const bool allow_materialized;
     const bool no_squash;
     const bool no_destination;
+    const bool async_insert;
+
+    Chain buildChainImpl(
+        const StoragePtr & table,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block,
+        ThreadStatus * thread_status,
+        std::atomic_uint64_t * elapsed_counter_ms);
 };
 
 
