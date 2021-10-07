@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
+    extern const int CANNOT_SELECT;
 }
 
 namespace
@@ -326,6 +327,11 @@ Pipe StorageFileLog::read(
             table_id.getTableName());
     }
 
+    if (running_streams.load(std::memory_order_relaxed))
+    {
+        throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
+    }
+
     /// We need this lock, in case read and streamToViews execute at the same time.
     /// In case of MV attached during reading
     std::lock_guard<std::mutex> lock(status_mutex);
@@ -362,6 +368,16 @@ Pipe StorageFileLog::read(
     }
 
     return Pipe::unitePipes(std::move(pipes));
+}
+
+void StorageFileLog::increaseStreams()
+{
+    running_streams.fetch_add(1, std::memory_order_relaxed);
+}
+
+void StorageFileLog::reduceStreams()
+{
+    running_streams.fetch_sub(1, std::memory_order_relaxed);
 }
 
 void StorageFileLog::drop()

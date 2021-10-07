@@ -122,6 +122,9 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
+    void increaseStreams();
+    void reduceStreams();
+
 protected:
     StorageFileLog(
         const StorageID & table_id_,
@@ -168,6 +171,12 @@ private:
         }
     };
     std::shared_ptr<TaskContext> task;
+
+    /// In order to avoid data race, using a naive trick to forbid execute two select
+    /// simultaneously, although read is not useful in this engine. Using an atomic
+    /// variable to records current unfinishing streams, then if have unfinishing streams,
+    /// later select should forbid to execute.
+    std::atomic<int> running_streams = 0;
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 

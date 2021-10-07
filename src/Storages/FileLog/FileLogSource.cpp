@@ -42,6 +42,8 @@ FileLogSource::FileLogSource(
     size_t files_per_stream = file_infos.file_names.size() / max_streams_number;
     start = stream_number * files_per_stream;
     end = stream_number == max_streams_number - 1 ? file_infos.file_names.size() : (stream_number + 1) * files_per_stream;
+
+    storage.increaseStreams();
 }
 
 void FileLogSource::onFinish()
