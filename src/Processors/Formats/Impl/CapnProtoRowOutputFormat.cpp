@@ -88,7 +88,13 @@ static capnp::DynamicValue::Builder initStructFieldBuilder(const ColumnPtr & col
     return struct_builder.get(field);
 }
 
-static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const ColumnPtr & column, const DataTypePtr & data_type, size_t row_num, capnp::DynamicValue::Builder builder, FormatSettings::EnumComparingMode enum_comparing_mode)
+static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
+    const ColumnPtr & column,
+    const DataTypePtr & data_type,
+    size_t row_num,
+    capnp::DynamicValue::Builder builder,
+    FormatSettings::EnumComparingMode enum_comparing_mode,
+    std::vector<std::unique_ptr<String>> & temporary_text_data_storage)
 {
     /// Here we don't do any types validation, because we did it in CapnProtoRowOutputFormat constructor.
 
@@ -97,7 +103,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
         const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
         const auto & dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
         size_t index = lc_column->getIndexAt(row_num);
-        return convertToDynamicValue(lc_column->getDictionary().getNestedColumn(), dict_type, index, builder, enum_comparing_mode);
+        return convertToDynamicValue(lc_column->getDictionary().getNestedColumn(), dict_type, index, builder, enum_comparing_mode, temporary_text_data_storage);
     }
 
     switch (builder.getType())
@@ -129,8 +135,16 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
         }
         case capnp::DynamicValue::Type::TEXT:
         {
-            auto data = column->getDataAt(row_num);
-            return capnp::DynamicValue::Reader(capnp::Text::Reader(data.data, data.size));
+            /// In TEXT type data should be null-terminated, but ClickHouse String data could not be.
+            /// To make data null-terminated we should copy it to temporary String object, but
+            /// capnp::Text::Reader works only with pointer to the data and it's size, so we should
+            /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
+            /// To do this we store new String object in a temporary storage, passed in this function
+            /// by reference. We use unique_ptr<String> instead of just String to avoid pointers
+            /// invalidation on vector reallocation.
+            temporary_text_data_storage.push_back(std::make_unique<String>(column->getDataAt(row_num)));
+            auto & data = temporary_text_data_storage.back();
+            return capnp::DynamicValue::Reader(capnp::Text::Reader(data->data(), data->size()));
         }
         case capnp::DynamicValue::Type::STRUCT:
         {
@@ -153,7 +167,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
                     struct_builder.clear(value_field);
                     const auto & nested_column = nullable_column->getNestedColumnPtr();
                     auto value_builder = initStructFieldBuilder(nested_column, row_num, struct_builder, value_field);
-                    auto value = convertToDynamicValue(nested_column, nullable_type->getNestedType(), row_num, value_builder, enum_comparing_mode);
+                    auto value = convertToDynamicValue(nested_column, nullable_type->getNestedType(), row_num, value_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
                         struct_builder.set(value_field, std::move(*value));
                 }
@@ -168,7 +182,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
                     auto pos = tuple_data_type->getPositionByName(name);
                     auto field_builder
                         = initStructFieldBuilder(nested_columns[pos], row_num, struct_builder, nested_struct_schema.getFieldByName(name));
-                    auto value = convertToDynamicValue(nested_columns[pos], nested_types[pos], row_num, field_builder, enum_comparing_mode);
+                    auto value = convertToDynamicValue(nested_columns[pos], nested_types[pos], row_num, field_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
                         struct_builder.set(name, std::move(*value));
                 }
@@ -199,7 +213,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
                 else
                     value_builder = list_builder[i];
 
-                auto value = convertToDynamicValue(nested_column, nested_type, offset + i, value_builder, enum_comparing_mode);
+                auto value = convertToDynamicValue(nested_column, nested_type, offset + i, value_builder, enum_comparing_mode, temporary_text_data_storage);
                 if (value)
                     list_builder.set(i, std::move(*value));
             }
@@ -213,12 +227,15 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(const Co
 void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     capnp::MallocMessageBuilder message;
+    /// Temporary storage for data that will be outputted in fields with CapnProto type TEXT.
+    /// See comment in convertToDynamicValue() for more details.
+    std::vector<std::unique_ptr<String>> temporary_text_data_storage;
     capnp::DynamicStruct::Builder root = message.initRoot<capnp::DynamicStruct>(schema);
     for (size_t i = 0; i != columns.size(); ++i)
     {
         auto [struct_builder, field] = getStructBuilderAndFieldByColumnName(root, column_names[i]);
         auto field_builder = initStructFieldBuilder(columns[i], row_num, struct_builder, field);
-        auto value = convertToDynamicValue(columns[i], column_types[i], row_num, field_builder, format_settings.capn_proto.enum_comparing_mode);
+        auto value = convertToDynamicValue(columns[i], column_types[i], row_num, field_builder, format_settings.capn_proto.enum_comparing_mode, temporary_text_data_storage);
         if (value)
             struct_builder.set(field, *value);
     }
