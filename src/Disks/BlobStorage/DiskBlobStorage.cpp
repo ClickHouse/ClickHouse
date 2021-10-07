@@ -78,8 +78,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(log, "Read from file by path: {}. Existing Blob Storage objects: {}",
-        backQuote(metadata_path + path), metadata.remote_fs_objects.size());
+    LOG_DEBUG(log, "Read from file by path: {}", backQuote(metadata_path + path));
 
     auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(blob_container_client, metadata, buf_size);
 
