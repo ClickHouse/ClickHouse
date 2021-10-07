@@ -18,21 +18,19 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <base/logger_useful.h>
-#include <base/getThreadId.h>
-#include <base/range.h>
+#include <common/logger_useful.h>
+#include <common/getThreadId.h>
+#include <common/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 
 
 namespace ProfileEvents
@@ -163,7 +161,13 @@ protected:
         columns.reserve(column_names_and_types.size());
 
         for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(buffer.data, elem));
+        {
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);
@@ -521,7 +525,7 @@ public:
         , metadata_snapshot(metadata_snapshot_)
     {
         // Check table structure.
-        metadata_snapshot->check(getHeader(), true);
+        metadata_snapshot->check(getPort().getHeader(), true);
     }
 
     String getName() const override { return "BufferSink"; }
@@ -532,7 +536,7 @@ public:
         if (!rows)
             return;
 
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -956,10 +960,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
-    PushingPipelineExecutor executor(block_io.pipeline);
-    executor.start();
-    executor.push(std::move(block_to_write));
-    executor.finish();
+    block_io.out->writePrefix();
+    block_io.out->write(block_to_write);
+    block_io.out->writeSuffix();
 }
 
 
@@ -1018,13 +1021,11 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];

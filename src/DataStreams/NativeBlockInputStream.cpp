@@ -6,7 +6,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataTypes/DataTypeLowCardinality.h>

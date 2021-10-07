@@ -6,9 +6,9 @@
 #include <memory>
 #include <string>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Common/Exception.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB

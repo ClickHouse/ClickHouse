@@ -24,7 +24,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Core/ProtocolDefines.h>
 
 
 namespace ProfileEvents

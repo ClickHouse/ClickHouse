@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -387,7 +387,6 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
-                socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -1252,7 +1251,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     {
         elem.type = log_type;
         elem.event_time = event_time;
-        elem.address = socket_address;
+        elem.address = socket.peerAddress();
         elem.session_id = session_id;
         maybe_zk_log->add(elem);
     }

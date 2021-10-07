@@ -162,7 +162,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return ColumnMatch::DBAndTable;
+        return ColumnMatch::DbAndTable;
 
     /// alias.column
     if (doesIdentifierBelongTo(identifier, db_and_table.alias))
@@ -199,7 +199,7 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
         case ColumnMatch::TableAlias:
             to_strip = 1;
             break;
-        case ColumnMatch::DBAndTable:
+        case ColumnMatch::DbAndTable:
             to_strip = 2;
             break;
         default:

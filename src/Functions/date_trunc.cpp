@@ -143,7 +143,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return { true, true, true };
     }
 
 private:

@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
     <user_directories replace="replace">
         <users_xml>
@@ -7,7 +7,7 @@
         </users_xml>
         <local_directory>
             <!-- Path to folder where users created by SQL commands are stored. -->
-            <path>/var/lib/clickhouse/access/</path>
+            <path>access/</path>
         </local_directory>
     </user_directories>
-</clickhouse>
+</yandex>

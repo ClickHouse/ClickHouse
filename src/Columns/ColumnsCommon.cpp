@@ -85,7 +85,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end; ++pos, ++pos2)
+    for (; pos < end; ++pos)
         count += (*pos & ~*pos2) != 0;
 
     return count;
@@ -344,20 +344,5 @@ namespace detail
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
-
-size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
-{
-    if (limit == 0)
-        limit = column_size;
-    else
-        limit = std::min(column_size, limit);
-
-    if (perm_size < limit)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of permutation ({}) is less than required ({})", perm_size, limit);
-
-    return limit;
-}
-
 
 }

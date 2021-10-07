@@ -4,7 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
 
@@ -55,7 +54,6 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
-    ParserInsertQuery insert_p(end);
     ASTPtr query;
     if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
@@ -66,8 +64,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             return false;
     }
     else if (select_p.parse(pos, query, expected) ||
-        create_p.parse(pos, query, expected) ||
-        insert_p.parse(pos, query, expected))
+        create_p.parse(pos, query, expected))
         explain_query->setExplainedQuery(std::move(query));
     else
         return false;

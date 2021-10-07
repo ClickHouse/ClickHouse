@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>

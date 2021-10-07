@@ -1,5 +1,4 @@
 #include <Coordination/KeeperServer.h>
-#include <Coordination/Defines.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"

@@ -2,7 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
@@ -53,7 +53,6 @@ struct QueryState
     /// Where to write result data.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     BlockOutputStreamPtr block_out;
-    Block block_for_insert;
 
     /// Query text.
     String query;

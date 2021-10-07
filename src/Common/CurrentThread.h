@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 #include <memory>
 #include <string>

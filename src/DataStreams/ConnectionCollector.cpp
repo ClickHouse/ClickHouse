@@ -3,7 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace CurrentMetrics
 {

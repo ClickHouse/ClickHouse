@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
 
@@ -43,7 +43,7 @@ class Native41 : public IPlugin
 public:
     Native41();
 
-    Native41(const String & password_, const String & scramble_);
+    Native41(const String & password, const String & auth_plugin_data);
 
     String getName() override { return "mysql_native_password"; }
 

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
@@ -16,7 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>

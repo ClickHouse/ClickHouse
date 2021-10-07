@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -199,8 +199,6 @@ private:
     Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
-    /// To avoid excessive getpeername(2) calls.
-    Poco::Net::SocketAddress socket_address;
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 

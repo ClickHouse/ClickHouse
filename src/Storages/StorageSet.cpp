@@ -11,12 +11,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
+#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -72,7 +69,7 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
     , backup_file_name(backup_file_name_)
-    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
+    , backup_buf(table_.disk->writeFile(backup_tmp_path + backup_file_name))
     , compressed_backup_buf(*backup_buf)
     , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
     , persistent(persistent_)
@@ -82,7 +79,7 @@ SetOrJoinSink::SetOrJoinSink(
 void SetOrJoinSink::consume(Chunk chunk)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block sorted_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
     table.insertBlock(sorted_block);
     if (persistent)
@@ -99,7 +96,7 @@ void SetOrJoinSink::onFinish()
         backup_buf->next();
         backup_buf->finalize();
 
-        table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+        table.disk->replaceFile(backup_tmp_path + backup_file_name, backup_path + backup_file_name);
     }
 }
 
@@ -107,7 +104,7 @@ void SetOrJoinSink::onFinish()
 SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinSink>(*this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinSink>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 
@@ -166,7 +163,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+    disk->createDirectories(path + "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
     header = header.sortColumns();
@@ -179,9 +176,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->exists(path + "tmp/"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(path + "tmp/");
         return;
     }
 

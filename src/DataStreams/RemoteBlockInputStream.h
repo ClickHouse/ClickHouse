@@ -2,7 +2,7 @@
 
 #include <optional>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/Throttler.h>

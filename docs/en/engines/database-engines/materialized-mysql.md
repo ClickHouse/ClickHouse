@@ -1,6 +1,6 @@
 ---
 toc_priority: 29
-toc_title: MaterializedMySQL
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -197,4 +197,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

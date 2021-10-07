@@ -2,7 +2,7 @@
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Formats/FormatFactory.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -31,7 +31,8 @@ void RabbitMQSink::onStart()
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer, getHeader(), context,
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+        getPort().getHeader(), context,
         [this](const Columns & /* columns */, size_t /* rows */)
         {
             buffer->countRow();
@@ -42,7 +43,7 @@ void RabbitMQSink::onStart()
 
 void RabbitMQSink::consume(Chunk chunk)
 {
-    child->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 

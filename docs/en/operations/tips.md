@@ -33,9 +33,6 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-!!! warning "Attention"
-    If your system has less than 16 GB of RAM you may experience various memory exceptions because default settings does not match this amount of RAM. Recommended amount of RAM is 32 GB or more. You can use ClickHouse in system with small amount of RAM, even with 2 GB of RAM, but it requires an additional tuning and able to process small ingestion rate.
-
 ## Storage Subsystem {#storage-subsystem}
 
 If your budget allows you to use SSD, use SSD.
@@ -262,4 +259,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}
+{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}

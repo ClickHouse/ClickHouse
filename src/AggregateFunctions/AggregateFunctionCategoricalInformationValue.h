@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB

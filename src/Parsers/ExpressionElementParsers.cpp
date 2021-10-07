@@ -3,10 +3,10 @@
 
 #include <Poco/String.h>
 
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/DumpASTNode.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/DumpASTNode.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -103,33 +103,25 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
-    /// Empty expression in parentheses is not allowed.
+    /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    /// Special case for one-element tuple.
     if (expr_list.children.size() == 1 && is_elem)
     {
-        auto * ast_literal = expr_list.children.front()->as<ASTLiteral>();
-        /// But only if its argument is not tuple,
-        /// since otherwise it will do incorrect transformation:
-        ///
-        ///     (foo,bar) IN (('foo','bar')) -> (foo,bar) IN ('foo','bar')
-        if (!(ast_literal && ast_literal->value.getType() == Field::Types::Tuple))
-        {
-            node = expr_list.children.front();
-            return true;
-        }
+        node = expr_list.children.front();
     }
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "tuple";
-    function_node->arguments = contents_node;
-    function_node->children.push_back(contents_node);
-    node = function_node;
+    else
+    {
+        auto function_node = std::make_shared<ASTFunction>();
+        function_node->name = "tuple";
+        function_node->arguments = contents_node;
+        function_node->children.push_back(contents_node);
+        node = function_node;
+    }
 
     return true;
 }
@@ -276,6 +268,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
+
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
@@ -283,7 +276,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword all("ALL");
     ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
-    ParserKeyword filter("FILTER");
     ParserKeyword over("OVER");
 
     bool has_all = false;
@@ -448,25 +440,14 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
-    if (filter.ignore(pos, expected))
-    {
-        // We are slightly breaking the parser interface by parsing the window
-        // definition into an existing ASTFunction. Normally it would take a
-        // reference to ASTPtr and assign it the new node. We only have a pointer
-        // of a different type, hence this workaround with a temporary pointer.
-        ASTPtr function_node_as_iast = function_node;
-
-        ParserFilterClause filter_parser;
-        if (!filter_parser.parse(pos, function_node_as_iast, expected))
-        {
-            return false;
-        }
-    }
-
     if (over.ignore(pos, expected))
     {
         function_node->is_window_function = true;
 
+        // We are slightly breaking the parser interface by parsing the window
+        // definition into an existing ASTFunction. Normally it would take a
+        // reference to ASTPtr and assign it the new node. We only have a pointer
+        // of a different type, hence this workaround with a temporary pointer.
         ASTPtr function_node_as_iast = function_node;
 
         ParserWindowReference window_reference;
@@ -520,40 +501,6 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     function_node->arguments = expr_list_with_single_query;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
-    return true;
-}
-
-bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    assert(node);
-    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
-
-    ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
-    if (!parser_opening_bracket.ignore(pos, expected))
-    {
-        return false;
-    }
-
-    ParserKeyword parser_where("WHERE");
-    if (!parser_where.ignore(pos, expected))
-    {
-        return false;
-    }
-    ParserExpressionList parser_condition(false);
-    ASTPtr condition;
-    if (!parser_condition.parse(pos, condition, expected) || condition->children.size() != 1)
-    {
-        return false;
-    }
-
-    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-    if (!parser_closing_bracket.ignore(pos, expected))
-    {
-        return false;
-    }
-
-    function.name += "If";
-    function.arguments->children.push_back(condition->children[0]);
     return true;
 }
 
@@ -1524,25 +1471,6 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 }
 
-static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
-{
-    errno = 0;    /// Functions strto* don't clear errno.
-
-    char * pos_integer = buffer;
-    UInt64 uint_value = std::strtoull(buffer, &pos_integer, base);
-
-    if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
-    {
-        if (negative)
-            res = static_cast<Int64>(-uint_value);
-        else
-            res = uint_value;
-
-        return true;
-    }
-
-    return false;
-}
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1583,22 +1511,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Float64 float_value = std::strtod(buf, &pos_double);
     if (pos_double != buf + pos->size() || errno == ERANGE)
     {
-        /// Try to parse number as binary literal representation. Example: 0b0001.
-        if (pos->size() > 2 && buf[0] == '0' && buf[1] == 'b')
-        {
-            char * buf_skip_prefix = buf + 2;
-
-            if (parseNumber(buf_skip_prefix, pos->size() - 2, negative, 2, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-        }
-
         expected.add(pos, "number");
         return false;
     }
@@ -1613,13 +1525,22 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// try to use more exact type: UInt64
 
-    parseNumber(buf, pos->size(), negative, 0, res);
+    char * pos_integer = buf;
+
+    errno = 0;
+    UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+    {
+        if (negative)
+            res = static_cast<Int64>(-uint_value);
+        else
+            res = uint_value;
+    }
 
     auto literal = std::make_shared<ASTLiteral>(res);
     literal->begin = literal_begin;
     literal->end = ++pos;
     node = literal;
-
     return true;
 }
 
@@ -1906,47 +1827,20 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             with_open_round_bracket = true;
         }
 
-        ASTPtr lambda;
-        String lambda_arg;
         ASTPtr func_name;
+        if (!ParserIdentifier().parse(pos, func_name, expected))
+            return false;
+
         ASTPtr expr_list_args;
-        auto opos = pos;
-        if (ParserLambdaExpression().parse(pos, lambda, expected))
+        if (pos->type == TokenType::OpeningRoundBracket)
         {
-            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
-            {
-                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
-                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
-                if (lambda_arg_asts.size() != 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "APPLY column transformer can only accept lambda with one argument");
-
-                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
-                    lambda_arg = *opt_arg_name;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "lambda argument declarations must be identifiers");
-            }
-            else
-            {
-                lambda = nullptr;
-                pos = opos;
-            }
-        }
-
-        if (!lambda)
-        {
-            if (!ParserIdentifier().parse(pos, func_name, expected))
+            ++pos;
+            if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
                 return false;
 
-            if (pos->type == TokenType::OpeningRoundBracket)
-            {
-                ++pos;
-                if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
-                    return false;
-
-                if (pos->type != TokenType::ClosingRoundBracket)
-                    return false;
-                ++pos;
-            }
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
         }
 
         String column_name_prefix;
@@ -1970,16 +1864,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         }
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
-        if (lambda)
-        {
-            res->lambda = lambda;
-            res->lambda_arg = lambda_arg;
-        }
-        else
-        {
-            res->func_name = getIdentifierName(func_name);
-            res->parameters = expr_list_args;
-        }
+        res->func_name = getIdentifierName(func_name);
+        res->parameters = expr_list_args;
         res->column_name_prefix = column_name_prefix;
         node = std::move(res);
         return true;
@@ -2222,16 +2108,6 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParserExistsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserKeyword("EXISTS").ignore(pos, expected) && ParserSubquery().parse(pos, node, expected))
-    {
-        node = makeASTFunction("exists", node);
-        return true;
-    }
-    return false;
-}
-
 
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2255,7 +2131,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserExistsExpression().parse(pos, node, expected)
         || ParserCompoundIdentifier(false, true).parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected)
         || ParserMySQLGlobalVariable().parse(pos, node, expected);

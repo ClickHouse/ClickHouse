@@ -8,7 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
@@ -33,9 +33,10 @@ IDiskRemote::Metadata::Metadata(
         const String & disk_path_,
         const String & metadata_file_path_,
         bool create)
-    : RemoteMetadata(remote_fs_root_path_, metadata_file_path_)
+    : remote_fs_root_path(remote_fs_root_path_)
     , disk_path(disk_path_)
-    , total_size(0), ref_count(0)
+    , metadata_file_path(metadata_file_path_)
+    , total_size(0), remote_fs_objects(0), ref_count(0)
 {
     if (create)
         return;
@@ -71,9 +72,10 @@ IDiskRemote::Metadata::Metadata(
             readEscapedString(remote_fs_object_path, buf);
             if (version == VERSION_ABSOLUTE_PATHS)
             {
-                if (!remote_fs_object_path.starts_with(remote_fs_root_path))
-                    throw Exception(ErrorCodes::UNKNOWN_FORMAT,
-                        "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
+                if (!boost::algorithm::starts_with(remote_fs_object_path, remote_fs_root_path))
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_FORMAT,
+                        "Path in metadata does not correspond S3 root path. Path: {}, root path: {}, disk path: {}",
                         remote_fs_object_path, remote_fs_root_path, disk_path_);
 
                 remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
