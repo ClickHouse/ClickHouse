@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
@@ -67,7 +68,7 @@ StorageJoin::StorageJoin(
     restore();
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
@@ -377,9 +378,6 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
-        if (!join->getTableJoin().oneDisjunct())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
-
         column_indices.resize(sample_block.columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
@@ -413,7 +411,7 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
+        if (!joinDispatch(join->kind, join->strictness, join->data->maps,
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;

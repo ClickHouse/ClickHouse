@@ -90,46 +90,6 @@ def test_sequential_nodes(started_cluster):
         genuine_childs = list(sorted(genuine_zk.get_children("/test_sequential_nodes")))
         fake_childs = list(sorted(fake_zk.get_children("/test_sequential_nodes")))
         assert genuine_childs == fake_childs
-
-        genuine_zk.create("/test_sequential_nodes_1")
-        fake_zk.create("/test_sequential_nodes_1")
-
-        genuine_zk.create("/test_sequential_nodes_1/a", sequence=True)
-        fake_zk.create("/test_sequential_nodes_1/a", sequence=True)
-
-        genuine_zk.create("/test_sequential_nodes_1/a0000000002")
-        fake_zk.create("/test_sequential_nodes_1/a0000000002")
-
-        genuine_throw = False
-        fake_throw = False
-        try:
-            genuine_zk.create("/test_sequential_nodes_1/a", sequence=True)
-        except Exception as ex:
-            genuine_throw = True
-
-        try:
-            fake_zk.create("/test_sequential_nodes_1/a", sequence=True)
-        except Exception as ex:
-            fake_throw = True
-
-        assert genuine_throw == True
-        assert fake_throw == True
-
-        genuine_childs_1 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_1")))
-        fake_childs_1 = list(sorted(fake_zk.get_children("/test_sequential_nodes_1")))
-        assert genuine_childs_1 == fake_childs_1
-
-        genuine_zk.create("/test_sequential_nodes_2")
-        fake_zk.create("/test_sequential_nodes_2")
-
-        genuine_zk.create("/test_sequential_nodes_2/node")
-        fake_zk.create("/test_sequential_nodes_2/node")
-        genuine_zk.create("/test_sequential_nodes_2/node", sequence=True)
-        fake_zk.create("/test_sequential_nodes_2/node", sequence=True)
-
-        genuine_childs_2 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_2")))
-        fake_childs_2 = list(sorted(fake_zk.get_children("/test_sequential_nodes_2")))
-        assert genuine_childs_2 == fake_childs_2
     finally:
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)

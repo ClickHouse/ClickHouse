@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 set optimize_on_insert = 0;
 
 drop table if exists mult_tab;

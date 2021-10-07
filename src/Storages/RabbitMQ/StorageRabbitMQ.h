@@ -3,7 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -47,7 +47,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context) override;
@@ -149,7 +149,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    ContextMutablePtr addSettings(ContextPtr context) const;
+    std::shared_ptr<Context> addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
@@ -163,7 +163,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    static String getRandomName()
+    String getRandomName() const
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');

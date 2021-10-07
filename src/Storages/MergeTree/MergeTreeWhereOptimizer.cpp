@@ -12,7 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <base/map.h>
+#include <common/map.h>
 
 
 namespace DB
@@ -373,7 +373,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
+    auto array_join_expression_list = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

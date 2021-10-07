@@ -128,6 +128,7 @@ def walk_datetime_in_incrementing_steps(self, date, hrs_range=(0, 24), step=1, t
     stress = self.context.stress
     secs = f"00{'.' * (precision > 0)}{'0' * precision}"
 
+    tasks = []
     with Pool(2) as pool:
         try:
             with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min increments"):
@@ -137,11 +138,11 @@ def walk_datetime_in_incrementing_steps(self, date, hrs_range=(0, 24), step=1, t
                         expected = datetime
 
                         with When(f"time is {datetime}"):
-                            Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime, parallel=True, executor=pool)(
-                                datetime=datetime, precision=precision, timezone=timezone,
-                                expected=expected)
+                            run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
+                                         kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
+                                                     expected=expected))
         finally:
-            join()
+            join(tasks)
 
 
 @TestStep
@@ -158,6 +159,7 @@ def walk_datetime_in_decrementing_steps(self, date, hrs_range=(23, 0), step=1, t
     stress = self.context.stress
     secs = f"00{'.' * (precision > 0)}{'0' * precision}"
 
+    tasks = []
     with Pool(2) as pool:
         try:
             with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min decrements"):
@@ -167,8 +169,8 @@ def walk_datetime_in_decrementing_steps(self, date, hrs_range=(23, 0), step=1, t
                         expected = datetime
 
                         with When(f"time is {datetime}"):
-                            Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime, parallel=True, executor=pool)(
-                                 datetime=datetime, precision=precision, timezone=timezone,
-                                 expected=expected)
+                            run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
+                                         kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
+                                                     expected=expected))
         finally:
-            join()
+            join(tasks)

@@ -43,7 +43,7 @@ PostgreSQL Array types converts into ClickHouse arrays.
 
 !!! info "Note"
     Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
-
+	
 Supports multiple replicas that must be listed by `|`. For example:
 
 ```sql
@@ -129,4 +129,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

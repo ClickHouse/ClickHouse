@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <algorithm>
 #include <cassert>
 

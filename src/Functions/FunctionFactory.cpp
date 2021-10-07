@@ -26,8 +26,8 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void FunctionFactory::registerFunction(
-    const std::string & name,
+void FunctionFactory::registerFunction(const
+    std::string & name,
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
@@ -87,15 +87,6 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     return getImpl(name, context);
 }
 
-bool FunctionFactory::has(const std::string & name) const
-{
-    String canonical_name = getAliasToOrName(name);
-    if (functions.contains(canonical_name))
-        return true;
-    canonical_name = Poco::toLower(canonical_name);
-    return case_insensitive_functions.contains(canonical_name);
-}
-
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const
@@ -128,8 +119,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
-    const std::string & name,
-    ContextPtr context) const
+        const std::string & name,
+        ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
     return impl ? std::move(impl) : nullptr;
