@@ -25,7 +25,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|MODIFY|
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL;
 -   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца;
--   [MATERIALIZE COLUMN](#materialize-column) — делает столбец материализованным (MATERIALIZED) в его частях, у которых отсутствуют значения.
+-   [MATERIALIZE COLUMN](#materialize-column) — делает столбец материализованным (`MATERIALIZED`) в кусках, в которых отсутствуют значения.
 
 Подробное описание для каждого действия приведено ниже.
 
