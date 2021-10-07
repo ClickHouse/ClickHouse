@@ -3267,7 +3267,7 @@ RQ_SRS_006_RBAC_Quota_ShowQuotas_Format = Requirement(
         '[ClickHouse] SHALL support the `FORMAT` clause in the `SHOW QUOTAS` statement to define a format for the output quota list.\n'
         '\n'
         'The types of valid formats are many, listed in output column:\n'
-        'https://clickhouse.tech/docs/en/interfaces/formats/\n'
+        'https://clickhouse.com/docs/en/interfaces/formats/\n'
         '\n'
         ),
     link=None,
@@ -11997,7 +11997,7 @@ version: 1.0
 [ClickHouse] SHALL support the `FORMAT` clause in the `SHOW QUOTAS` statement to define a format for the output quota list.
 
 The types of valid formats are many, listed in output column:
-https://clickhouse.tech/docs/en/interfaces/formats/
+https://clickhouse.com/docs/en/interfaces/formats/
 
 ##### RQ.SRS-006.RBAC.Quota.ShowQuotas.Settings
 version: 1.0
@@ -14485,14 +14485,14 @@ the user has that role with `ADMIN OPTION` privilege.
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
 * **Revision history:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 * **Git:** https://git-scm.com/
 * **MySQL:** https://dev.mysql.com/doc/refman/8.0/en/account-management-statements.html
 * **PostgreSQL:** https://www.postgresql.org/docs/12/user-manag.html
 
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
 [Revision history]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 [Git]: https://git-scm.com/

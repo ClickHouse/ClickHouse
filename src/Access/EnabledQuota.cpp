@@ -2,8 +2,8 @@
 #include <Access/QuotaUsage.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <common/chrono_io.h>
-#include <common/range.h>
+#include <base/chrono_io.h>
+#include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/fill.hpp>
 
