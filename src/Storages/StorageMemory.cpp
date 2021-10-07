@@ -107,7 +107,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)

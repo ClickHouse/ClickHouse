@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -487,11 +489,15 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 insert->columns = buffer.columnsAST;
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
-                auto block_io = interpreter.execute();
-                OneBlockInputStream input(result_rows);
+                auto io = interpreter.execute();
+                auto input = std::make_shared<SourceFromSingleChunk>(
+                    result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
-                copyData(input, *block_io.out);
+                assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
+                io.pipeline.complete(Pipe(std::move(input)));
+
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
 
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }

@@ -1,7 +1,7 @@
 #include <string>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -14,18 +14,19 @@ namespace ErrorCodes
 /// Mapping from quantile functions for single value to plural
 static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
     {NameQuantile::name, NameQuantiles::name},
+    {NameQuantileBFloat16::name, NameQuantilesBFloat16::name},
+    {NameQuantileBFloat16Weighted::name, NameQuantilesBFloat16Weighted::name},
     {NameQuantileDeterministic::name, NameQuantilesDeterministic::name},
     {NameQuantileExact::name, NameQuantilesExact::name},
-    {NameQuantileExactLow::name, NameQuantilesExactLow::name},
-    {NameQuantileExactHigh::name, NameQuantilesExactHigh::name},
     {NameQuantileExactExclusive::name, NameQuantilesExactExclusive::name},
+    {NameQuantileExactHigh::name, NameQuantilesExactHigh::name},
     {NameQuantileExactInclusive::name, NameQuantilesExactInclusive::name},
+    {NameQuantileExactLow::name, NameQuantilesExactLow::name},
     {NameQuantileExactWeighted::name, NameQuantilesExactWeighted::name},
-    {NameQuantileTiming::name, NameQuantilesTiming::name},
-    {NameQuantileTimingWeighted::name, NameQuantilesTimingWeighted::name},
     {NameQuantileTDigest::name, NameQuantilesTDigest::name},
     {NameQuantileTDigestWeighted::name, NameQuantilesTDigestWeighted::name},
-    {NameQuantileBFloat16::name, NameQuantilesBFloat16::name}
+    {NameQuantileTiming::name, NameQuantilesTiming::name},
+    {NameQuantileTimingWeighted::name, NameQuantilesTimingWeighted::name},
 };
 
 String GatherFunctionQuantileData::getFusedName(const String & func_name)
@@ -54,7 +55,8 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
     bool need_two_args = func->name == NameQuantileDeterministic::name
                          || func->name == NameQuantileExactWeighted::name
                          || func->name == NameQuantileTimingWeighted::name
-                         || func->name == NameQuantileTDigestWeighted::name;
+                         || func->name == NameQuantileTDigestWeighted::name
+                         || func->name == NameQuantileBFloat16Weighted::name;
     if (arguments.size() != (need_two_args ? 2 : 1))
         return;
 

@@ -1,7 +1,7 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <common/logger_useful.h>
-#include <common/sleep.h>
+#include <base/logger_useful.h>
+#include <base/sleep.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ConnectionTimeoutsContext.h>

@@ -250,12 +250,9 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;    /// Is the function monotonous (nondecreasing or nonincreasing).
-        bool is_positive = true;    /// true if the function is nondecreasing, false, if notincreasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
-
-        Monotonicity(bool is_monotonic_ = false, bool is_positive_ = true, bool is_always_monotonic_ = false)
-                : is_monotonic(is_monotonic_), is_positive(is_positive_), is_always_monotonic(is_always_monotonic_) {}
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -278,9 +275,7 @@ class IFunctionOverloadResolver
 public:
     virtual ~IFunctionOverloadResolver() = default;
 
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
-
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+    virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
@@ -322,7 +317,10 @@ public:
 
 protected:
 
-    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
+    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
+    {
+        throw Exception("buildImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
@@ -359,6 +357,8 @@ protected:
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };

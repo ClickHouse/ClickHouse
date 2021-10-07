@@ -1,6 +1,6 @@
 #include "DiskWebServer.h"
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 #include <Disks/IDiskRemote.h>
@@ -43,7 +43,7 @@ void DiskWebServer::initialize(const String & uri_path) const
                                             ReadWriteBufferFromHTTP::OutStreamCallback(),
                                             ConnectionTimeouts::getHTTPTimeouts(getContext()));
         String file_name;
-        FileData file_data;
+        FileData file_data{};
 
         String dir_name = fs::path(uri_path.substr(url.size())) / "";
         LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
