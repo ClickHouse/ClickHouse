@@ -236,9 +236,15 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
-        requests_queue->push(std::move(request_info));
+    {
+        if (!requests_queue->push(std::move(request_info)))
+            throw Exception("Cannot push request to queue", ErrorCodes::LOGICAL_ERROR);
+    }
     else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+    }
+
     return true;
 }
 
@@ -372,7 +378,8 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        requests_queue->push(std::move(request_info));
+                        if (!requests_queue->push(std::move(request_info)))
+                            LOG_INFO(log, "Cannot push request to queue");
                     }
 
                     /// Remove session from registered sessions

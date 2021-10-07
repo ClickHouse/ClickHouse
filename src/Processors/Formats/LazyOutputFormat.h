@@ -45,7 +45,7 @@ protected:
     void consume(Chunk chunk) override
     {
         if (!queue.isFinished())
-            queue.emplace(std::move(chunk));
+            (void)(queue.emplace(std::move(chunk)));
     }
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
