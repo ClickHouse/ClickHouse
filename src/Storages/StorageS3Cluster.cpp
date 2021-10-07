@@ -15,6 +15,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -36,7 +37,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>

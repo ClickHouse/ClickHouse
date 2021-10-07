@@ -58,7 +58,7 @@ ORDER BY expr
 
      如果没有使用 `PRIMARY KEY` 显式指定的主键，ClickHouse 会使用排序键作为主键。
 
-     如果不需要排序，可以使用 `ORDER BY tuple()`. 参考 [选择主键](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#selecting-the-primary-key)
+     如果不需要排序，可以使用 `ORDER BY tuple()`. 参考 [选择主键](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#selecting-the-primary-key)
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
 
@@ -90,7 +90,7 @@ ORDER BY expr
   - `index_granularity_bytes` — 索引粒度，以字节为单位，默认值: 10Mb。如果想要仅按数据行数限制索引粒度, 请设置为0(不建议)。
   - `min_index_granularity_bytes` - 允许的最小数据粒度，默认值：1024b。该选项用于防止误操作，添加了一个非常低索引粒度的表。参考[数据存储](#mergetree-data-storage)
   - `enable_mixed_granularity_parts` — 是否启用通过 `index_granularity_bytes` 控制索引粒度的大小。在19.11版本之前, 只有 `index_granularity` 配置能够用于限制索引粒度的大小。当从具有很大的行（几十上百兆字节）的表中查询数据时候，`index_granularity_bytes` 配置能够提升ClickHouse的性能。如果您的表里有很大的行，可以开启这项配置来提升`SELECT` 查询的性能。
-  - `use_minimalistic_part_header_in_zookeeper` — ZooKeeper中数据片段存储方式 。如果`use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考[服务配置参数]([Server Settings | ClickHouse Documentation](https://clickhouse.com/docs/zh/operations/server-configuration-parameters/settings/))这章中的 [设置描述](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
+  - `use_minimalistic_part_header_in_zookeeper` — ZooKeeper中数据片段存储方式 。如果`use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考[服务配置参数]([Server Settings | ClickHouse Documentation](https://clickhouse.tech/docs/zh/operations/server-configuration-parameters/settings/))这章中的 [设置描述](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
   - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
   - `merge_with_ttl_timeout` — TTL合并频率的最小间隔时间，单位：秒。默认值: 86400 (1 天)。
@@ -99,9 +99,9 @@ ORDER BY expr
   - `storage_policy` — 存储策略。 参见 [使用具有多个块的设备进行数据存储](#table_engine-mergetree-multiple-volumes).
   - `min_bytes_for_wide_part`,`min_rows_for_wide_part` 在数据片段中可以使用`Wide`格式进行存储的最小字节数/行数。您可以不设置、只设置一个，或全都设置。参考：[数据存储](#mergetree-data-storage)
   - `max_parts_in_total` - 所有分区中最大块的数量(意义不明)
-  - `max_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最大大小。您可以在全局设置中设置该值(参见[max_compress_block_size](https://clickhouse.com/docs/zh/operations/settings/settings/#max-compress-block-size))。建表时指定该值会覆盖全局设置。
-  - `min_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最小大小。您可以在全局设置中设置该值(参见[min_compress_block_size](https://clickhouse.com/docs/zh/operations/settings/settings/#min-compress-block-size))。建表时指定该值会覆盖全局设置。
-  - `max_partitions_to_read` - 一次查询中可访问的分区最大数。您可以在全局设置中设置该值(参见[max_partitions_to_read](https://clickhouse.com/docs/zh/operations/settings/settings/#max_partitions_to_read))。
+  - `max_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最大大小。您可以在全局设置中设置该值(参见[max_compress_block_size](https://clickhouse.tech/docs/zh/operations/settings/settings/#max-compress-block-size))。建表时指定该值会覆盖全局设置。
+  - `min_compress_block_size` - 在数据压缩写入表前，未压缩数据块的最小大小。您可以在全局设置中设置该值(参见[min_compress_block_size](https://clickhouse.tech/docs/zh/operations/settings/settings/#min-compress-block-size))。建表时指定该值会覆盖全局设置。
+  - `max_partitions_to_read` - 一次查询中可访问的分区最大数。您可以在全局设置中设置该值(参见[max_partitions_to_read](https://clickhouse.tech/docs/zh/operations/settings/settings/#max_partitions_to_read))。
 
 **示例配置**
 
@@ -186,7 +186,7 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](https://clickhouse.com/docs/zh/operations/settings/settings/#allow-nullable-key)，[NULLS_LAST](https://clickhouse.com/docs/zh/sql-reference/statements/select/order-by/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](https://clickhouse.tech/docs/zh/operations/settings/settings/#allow-nullable-key)，[NULLS_LAST](https://clickhouse.tech/docs/zh/sql-reference/statements/select/order-by/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
@@ -543,7 +543,7 @@ MergeTree 系列表引擎可以将数据存储在多个块设备上。这对某�
 - 卷 — 相同磁盘的顺序列表 （类似于 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)）
 - 存储策略 — 卷的集合及他们之间的数据移动规则
 
- 以上名称的信息在Clickhouse中系统表[system.storage_policies](https://clickhouse.com/docs/zh/operations/system-tables/storage_policies/#system_tables-storage_policies)和[system.disks](https://clickhouse.com/docs/zh/operations/system-tables/disks/#system_tables-disks)体现。为了应用存储策略，可以在建表时使用`storage_policy`设置。
+ 以上名称的信息在Clickhouse中系统表[system.storage_policies](https://clickhouse.tech/docs/zh/operations/system-tables/storage_policies/#system_tables-storage_policies)和[system.disks](https://clickhouse.tech/docs/zh/operations/system-tables/disks/#system_tables-disks)体现。为了应用存储策略，可以在建表时使用`storage_policy`设置。
 
 ### 配置 {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -809,4 +809,4 @@ S3磁盘也可以设置冷热存储：
 
 指定了`cold`选项后，本地磁盘剩余空间如果小于`move_factor * disk_size`，或有TTL设置时，数据就会定时迁移至S3了。
 
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
-#include <base/logger_useful.h>
-#include <base/find_symbols.h>
+#include <common/logger_useful.h>
+#include <common/find_symbols.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>

@@ -11,7 +11,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>

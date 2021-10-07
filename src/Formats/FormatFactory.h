@@ -5,7 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -186,9 +186,6 @@ public:
     {
         return dict;
     }
-
-    bool isInputFormat(const String & name) const;
-    bool isOutputFormat(const String & name) const;
 
 private:
     FormatsDictionary dict;

@@ -3,10 +3,10 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <base/defines.h>
-#include <base/getFQDNOrHostName.h>
-#include <base/getMemoryAmount.h>
-#include <base/logger_useful.h>
+#include <common/defines.h>
+#include <common/getFQDNOrHostName.h>
+#include <common/getMemoryAmount.h>
+#include <common/logger_useful.h>
 
 #include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>

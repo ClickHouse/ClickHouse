@@ -3,7 +3,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -58,6 +57,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -272,8 +272,6 @@ public:
 
         void clear() { precommitted_parts.clear(); }
     };
-
-    using TransactionUniquePtr = std::unique_ptr<Transaction>;
 
     using PathWithDisk = std::pair<String, DiskPtr>;
 
@@ -829,9 +827,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
+    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes
@@ -861,7 +859,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
-    friend class MergeTask;
 
     bool require_part_metadata;
 
@@ -925,23 +922,6 @@ protected:
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
     MergeTreePartsMover parts_mover;
-
-    /// Executors are common for both ReplicatedMergeTree and plain MergeTree
-    /// but they are being started and finished in derived classes, so let them be protected.
-    ///
-    /// Why there are two executors, not one? Or an executor for each kind of operation?
-    /// It is historically formed.
-    /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
-    /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
-    /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
-    BackgroundJobsAssignee background_operations_assignee;
-    BackgroundJobsAssignee background_moves_assignee;
-
-    /// Strongly connected with two fields above.
-    /// Every task that is finished will ask to assign a new one into an executor.
-    /// These callbacks will be passed to the constructor of each task.
-    std::function<void(bool)> common_assignee_trigger;
-    std::function<void(bool)> moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
@@ -1147,13 +1127,5 @@ struct CurrentlySubmergingEmergingTagger
 
     ~CurrentlySubmergingEmergingTagger();
 };
-
-
-/// TODO: move it somewhere
-[[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-{
-    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-}
 
 }

@@ -5,8 +5,7 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
-#include <base/logger_useful.h>
-#include <base/FnTraits.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -37,7 +36,7 @@ public:
         chunks.back().push_back(path.data());
     }
 
-    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
+    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
     {
         for (auto & chunk : chunks)
             remove_chunk_func(std::move(chunk));

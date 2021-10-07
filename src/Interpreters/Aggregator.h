@@ -4,9 +4,9 @@
 #include <memory>
 #include <functional>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>

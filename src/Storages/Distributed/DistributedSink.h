@@ -2,7 +2,6 @@
 
 #include <Parsers/formatAST.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
@@ -25,7 +24,6 @@ namespace DB
 
 class Context;
 class StorageDistributed;
-class PushingPipelineExecutor;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
  *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
@@ -43,11 +41,11 @@ public:
         ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
+        const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
         UInt64 insert_timeout_,
-        StorageID main_table_,
-        const Names & columns_to_send_);
+        StorageID main_table_);
 
     String getName() const override { return "DistributedSink"; }
     void consume(Chunk chunk) override;
@@ -64,9 +62,6 @@ private:
     void writeSplitAsync(const Block & block);
 
     void writeAsyncImpl(const Block & block, size_t shard_id = 0);
-
-    /// Removes columns which should not be sent to shards.
-    Block removeSuperfluousColumns(Block block) const;
 
     /// Increments finished_writings_count after each repeat.
     void writeToLocal(const Block & block, size_t repeats);
@@ -87,9 +82,7 @@ private:
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-    /// Context used for writing to remote tables.
     ContextMutablePtr context;
-
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -107,7 +100,6 @@ private:
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
     StorageID main_table;
-    NameSet columns_to_send;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
@@ -127,8 +119,7 @@ private:
 
         ConnectionPool::Entry connection_entry;
         ContextPtr local_context;
-        QueryPipeline pipeline;
-        std::unique_ptr<PushingPipelineExecutor> executor;
+        BlockOutputStreamPtr stream;
 
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;

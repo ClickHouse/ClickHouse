@@ -26,8 +26,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Processors/QueryPlan/QueryPlan.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -39,8 +37,6 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
-
 
 namespace DB
 {
@@ -189,11 +185,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
                 /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
-
                 if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type of set. Expected tuple, got {}",
-                        function_result.getTypeName());
+                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
+                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
                 tuple = &function_result.get<Tuple>();
             }
@@ -204,9 +198,8 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             {
                 /// The literal must be tuple.
                 if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type in set. Expected tuple, got {}",
-                        literal->value.getTypeName());
+                    throw Exception("Invalid type in set. Expected tuple, got "
+                        + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
                 tuple = &literal->value.get<Tuple>();
             }
@@ -858,21 +851,17 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
-
-    if (!function_builder)
+    FunctionOverloadResolverPtr function_builder;
+    try
     {
-        try
-        {
-            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
-        }
-        catch (Exception & e)
-        {
-            auto hints = AggregateFunctionFactory::instance().getHints(node.name);
-            if (!hints.empty())
-                e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
-            throw;
-        }
+        function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+    }
+    catch (Exception & e)
+    {
+        auto hints = AggregateFunctionFactory::instance().getHints(node.name);
+        if (!hints.empty())
+            e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
+        throw;
     }
 
     Names argument_names;

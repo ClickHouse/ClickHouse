@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SharedLibrary.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include "LibraryUtils.h"
 

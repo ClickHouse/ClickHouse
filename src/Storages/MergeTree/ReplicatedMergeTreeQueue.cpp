@@ -674,7 +674,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             }
         }
 
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
     }
 
     return stat.version;
@@ -763,7 +763,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     }
 
     if (some_active_mutations_were_killed)
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
 
     if (!entries_to_load.empty())
     {
@@ -897,7 +897,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     }
 
     if (mutation_was_active)
-        storage.background_operations_assignee.trigger();
+        storage.background_executor.triggerTask();
 
     return entry;
 }
@@ -1232,10 +1232,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
+            size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
+            size_t thread_pool_size = data.getContext()->getSettingsRef().background_pool_size;
+            size_t free_threads = thread_pool_size - busy_threads_in_pool;
+            size_t required_threads = data_settings->number_of_free_entries_in_pool_to_execute_mutation;
             out_postpone_reason = fmt::format("Not executing log entry {} of type {} for part {}"
-                " because source parts size ({}) is greater than the current maximum ({}).",
+                " because source parts size ({}) is greater than the current maximum ({})."
+                " {} free of {} threads, required {} free threads.",
                 entry.znode_name, entry.typeToString(), entry.new_part_name,
-                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
+                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size),
+                free_threads, thread_pool_size, required_threads);
 
             LOG_DEBUG(log, out_postpone_reason);
 
@@ -1485,7 +1491,33 @@ bool ReplicatedMergeTreeQueue::processEntry(
     if (saved_exception)
     {
         std::lock_guard lock(state_mutex);
+
         entry->exception = saved_exception;
+
+        if (entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
+        {
+            /// Record the exception in the system.mutations table.
+            Int64 result_data_version = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version)
+                .getDataVersion();
+            auto source_part_info = MergeTreePartInfo::fromPartName(
+                entry->source_parts.at(0), format_version);
+
+            auto in_partition = mutations_by_partition.find(source_part_info.partition_id);
+            if (in_partition != mutations_by_partition.end())
+            {
+                auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());
+                auto mutations_end_it = in_partition->second.upper_bound(result_data_version);
+                for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+                {
+                    MutationStatus & status = *it->second;
+                    status.latest_failed_part = entry->source_parts.at(0);
+                    status.latest_failed_part_info = source_part_info;
+                    status.latest_fail_time = time(nullptr);
+                    status.latest_fail_reason = getExceptionMessage(saved_exception, false);
+                }
+            }
+        }
+
         return false;
     }
 

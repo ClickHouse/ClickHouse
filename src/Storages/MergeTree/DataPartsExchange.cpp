@@ -14,7 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <iterator>
 #include <regex>
@@ -580,8 +580,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         new_projection_part->is_temp = false;
         new_projection_part->setColumns(block.getNamesAndTypesList());
         MergeTreePartition partition{};
+        IMergeTreeDataPart::MinMaxIndex minmax_idx{};
         new_projection_part->partition = std::move(partition);
-        new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        new_projection_part->minmax_idx = std::move(minmax_idx);
 
         MergedBlockOutputStream part_out(
             new_projection_part,
@@ -607,7 +608,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
-    new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(

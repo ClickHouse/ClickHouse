@@ -16,6 +16,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -194,7 +195,7 @@ public:
             writer->writePrefix();
             is_first_chunk = false;
         }
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
