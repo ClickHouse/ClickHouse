@@ -1,6 +1,6 @@
 ---
 title: 'Five Methods For Database Obfuscation'
-image: 'https://blog-images.clickhouse.com/en/2020/five-methods-for-database-obfuscation/main.jpg'
+image: 'https://blog-images.clickhouse.tech/en/2020/five-methods-for-database-obfuscation/main.jpg'
 date: '2020-01-27'
 tags: ['article', 'obfuscation']
 ---

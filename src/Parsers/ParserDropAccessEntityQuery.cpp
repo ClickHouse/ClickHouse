@@ -5,7 +5,7 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseUserName.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB

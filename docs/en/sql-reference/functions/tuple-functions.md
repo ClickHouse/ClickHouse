@@ -87,8 +87,6 @@ Result:
 └───────┴───────┘
 ```
 
-Note: the names are implementation specific and are subject to change. You should not assume specific names of the columns after application of the `untuple`.
-
 Example of using an `EXCEPT` expression:
 
 Query:

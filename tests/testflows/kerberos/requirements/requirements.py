@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210312.1172513.
+# document by TestFlows v1.6.201216.1172002.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -23,21 +23,6 @@ RQ_SRS_016_Kerberos = Requirement(
     level=3,
     num='4.1.1')
 
-RQ_SRS_016_Kerberos_Ping = Requirement(
-    name='RQ.SRS-016.Kerberos.Ping',
-    version='1.0',
-    priority=None,
-    group=None,
-    type=None,
-    uid=None,
-    description=(
-        'Docker containers SHALL be able to ping each other.\n'
-        '\n'
-        ),
-    link=None,
-    level=3,
-    num='4.2.1')
-
 RQ_SRS_016_Kerberos_Configuration_MultipleAuthMethods = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods',
     version='1.0',
@@ -51,7 +36,7 @@ RQ_SRS_016_Kerberos_Configuration_MultipleAuthMethods = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.1')
+    num='4.2.1')
 
 RQ_SRS_016_Kerberos_Configuration_KerberosNotEnabled = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled',
@@ -64,32 +49,32 @@ RQ_SRS_016_Kerberos_Configuration_KerberosNotEnabled = Requirement(
         '[ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:\n'
         '\n'
         '```xml\n'
-        '<clickhouse>\n'
+        '<yandex>\n'
         '    <!- ... -->\n'
         '    <kerberos />\n'
-        '</clickhouse>\n'
+        '</yandex>\n'
         '```\n'
         '```xml\n'
-        '<clickhouse>\n'
+        '<yandex>\n'
         '    <!- ... -->\n'
         '    <kerberos>\n'
         '        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>\n'
         '    </kerberos>\n'
-        '</clickhouse>\n'
+        '</yandex>\n'
         '```\n'
         '```xml\n'
-        '<clickhouse>\n'
+        '<yandex>\n'
         '    <!- ... -->\n'
         '    <kerberos>\n'
         '        <realm>EXAMPLE.COM</realm>\n'
         '    </kerberos>\n'
-        '</clickhouse>\n'
+        '</yandex>\n'
         '```\n'
         '\n'
         ),
     link=None,
     level=3,
-    num='4.3.2')
+    num='4.2.2')
 
 RQ_SRS_016_Kerberos_Configuration_MultipleKerberosSections = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections',
@@ -104,7 +89,7 @@ RQ_SRS_016_Kerberos_Configuration_MultipleKerberosSections = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.3')
+    num='4.2.3')
 
 RQ_SRS_016_Kerberos_Configuration_WrongUserRealm = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.WrongUserRealm',
@@ -119,7 +104,7 @@ RQ_SRS_016_Kerberos_Configuration_WrongUserRealm = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.4')
+    num='4.2.4')
 
 RQ_SRS_016_Kerberos_Configuration_PrincipalAndRealmSpecified = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified',
@@ -134,7 +119,7 @@ RQ_SRS_016_Kerberos_Configuration_PrincipalAndRealmSpecified = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.5')
+    num='4.2.5')
 
 RQ_SRS_016_Kerberos_Configuration_MultiplePrincipalSections = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections',
@@ -149,7 +134,7 @@ RQ_SRS_016_Kerberos_Configuration_MultiplePrincipalSections = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.6')
+    num='4.2.6')
 
 RQ_SRS_016_Kerberos_Configuration_MultipleRealmSections = Requirement(
     name='RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections',
@@ -164,7 +149,7 @@ RQ_SRS_016_Kerberos_Configuration_MultipleRealmSections = Requirement(
         ),
     link=None,
     level=3,
-    num='4.3.7')
+    num='4.2.7')
 
 RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
     name='RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser',
@@ -177,7 +162,7 @@ RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
         '[ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:\n'
         '\n'
         '```xml\n'
-        '<clickhouse>\n'
+        '<yandex>\n'
         '    <!- ... -->\n'
         '    <users>\n'
         '        <!- ... -->\n'
@@ -188,13 +173,13 @@ RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
         '            </kerberos>\n'
         '        </my_user>\n'
         '    </users>\n'
-        '</clickhouse>\n'
+        '</yandex>\n'
         '```\n'
         '\n'
         ),
     link=None,
     level=3,
-    num='4.4.1')
+    num='4.3.1')
 
 RQ_SRS_016_Kerberos_ValidUser_RBACConfiguredUser = Requirement(
     name='RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser',
@@ -219,7 +204,7 @@ RQ_SRS_016_Kerberos_ValidUser_RBACConfiguredUser = Requirement(
         ),
     link=None,
     level=3,
-    num='4.4.2')
+    num='4.3.2')
 
 RQ_SRS_016_Kerberos_ValidUser_KerberosNotConfigured = Requirement(
     name='RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured',
@@ -234,7 +219,7 @@ RQ_SRS_016_Kerberos_ValidUser_KerberosNotConfigured = Requirement(
         ),
     link=None,
     level=3,
-    num='4.4.3')
+    num='4.3.3')
 
 RQ_SRS_016_Kerberos_InvalidUser = Requirement(
     name='RQ.SRS-016.Kerberos.InvalidUser',
@@ -249,7 +234,7 @@ RQ_SRS_016_Kerberos_InvalidUser = Requirement(
         ),
     link=None,
     level=3,
-    num='4.5.1')
+    num='4.4.1')
 
 RQ_SRS_016_Kerberos_InvalidUser_UserDeleted = Requirement(
     name='RQ.SRS-016.Kerberos.InvalidUser.UserDeleted',
@@ -264,7 +249,7 @@ RQ_SRS_016_Kerberos_InvalidUser_UserDeleted = Requirement(
         ),
     link=None,
     level=3,
-    num='4.5.2')
+    num='4.4.2')
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidServerTicket = Requirement(
     name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket',
@@ -279,7 +264,7 @@ RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidServerTicket = Requirement(
         ),
     link=None,
     level=3,
-    num='4.6.1')
+    num='4.5.1')
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidClientTicket = Requirement(
     name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket',
@@ -294,7 +279,7 @@ RQ_SRS_016_Kerberos_KerberosNotAvailable_InvalidClientTicket = Requirement(
         ),
     link=None,
     level=3,
-    num='4.6.2')
+    num='4.5.2')
 
 RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets = Requirement(
     name='RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets',
@@ -309,7 +294,7 @@ RQ_SRS_016_Kerberos_KerberosNotAvailable_ValidTickets = Requirement(
         ),
     link=None,
     level=3,
-    num='4.6.3')
+    num='4.5.3')
 
 RQ_SRS_016_Kerberos_KerberosServerRestarted = Requirement(
     name='RQ.SRS-016.Kerberos.KerberosServerRestarted',
@@ -324,7 +309,7 @@ RQ_SRS_016_Kerberos_KerberosServerRestarted = Requirement(
         ),
     link=None,
     level=3,
-    num='4.7.1')
+    num='4.6.1')
 
 RQ_SRS_016_Kerberos_Performance = Requirement(
     name='RQ.SRS-016.Kerberos.Performance',
@@ -339,7 +324,7 @@ RQ_SRS_016_Kerberos_Performance = Requirement(
         ),
     link=None,
     level=3,
-    num='4.8.1')
+    num='4.7.1')
 
 RQ_SRS_016_Kerberos_Parallel = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel',
@@ -354,7 +339,7 @@ RQ_SRS_016_Kerberos_Parallel = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.1')
+    num='4.8.1')
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_KerberosAndNonKerberos = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos',
@@ -369,7 +354,7 @@ RQ_SRS_016_Kerberos_Parallel_ValidRequests_KerberosAndNonKerberos = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.2')
+    num='4.8.2')
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_SameCredentials = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials',
@@ -384,7 +369,7 @@ RQ_SRS_016_Kerberos_Parallel_ValidRequests_SameCredentials = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.3')
+    num='4.8.3')
 
 RQ_SRS_016_Kerberos_Parallel_ValidRequests_DifferentCredentials = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials',
@@ -399,7 +384,7 @@ RQ_SRS_016_Kerberos_Parallel_ValidRequests_DifferentCredentials = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.4')
+    num='4.8.4')
 
 RQ_SRS_016_Kerberos_Parallel_ValidInvalid = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel.ValidInvalid',
@@ -414,7 +399,7 @@ RQ_SRS_016_Kerberos_Parallel_ValidInvalid = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.5')
+    num='4.8.5')
 
 RQ_SRS_016_Kerberos_Parallel_Deletion = Requirement(
     name='RQ.SRS-016.Kerberos.Parallel.Deletion',
@@ -429,17 +414,17 @@ RQ_SRS_016_Kerberos_Parallel_Deletion = Requirement(
         ),
     link=None,
     level=3,
-    num='4.9.6')
+    num='4.8.6')
 
 QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
     name='QA-SRS016 ClickHouse Kerberos Authentication', 
     description=None,
-    author=None,
-    date=None, 
-    status=None, 
-    approved_by=None,
-    approved_date=None,
-    approved_version=None,
+    author='Andrey Zvonov',
+    date='December 14, 2020', 
+    status='-', 
+    approved_by='-',
+    approved_date='-',
+    approved_version='-',
     version=None,
     group=None,
     type=None,
@@ -454,43 +439,40 @@ QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
         Heading(name='Requirements', level=1, num='4'),
         Heading(name='Generic', level=2, num='4.1'),
         Heading(name='RQ.SRS-016.Kerberos', level=3, num='4.1.1'),
-        Heading(name='Ping', level=2, num='4.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Ping', level=3, num='4.2.1'),
-        Heading(name='Configuration', level=2, num='4.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods', level=3, num='4.3.1'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled', level=3, num='4.3.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections', level=3, num='4.3.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.WrongUserRealm', level=3, num='4.3.4'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified', level=3, num='4.3.5'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections', level=3, num='4.3.6'),
-        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections', level=3, num='4.3.7'),
-        Heading(name='Valid User', level=2, num='4.4'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser', level=3, num='4.4.1'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser', level=3, num='4.4.2'),
-        Heading(name='RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured', level=3, num='4.4.3'),
-        Heading(name='Invalid User', level=2, num='4.5'),
-        Heading(name='RQ.SRS-016.Kerberos.InvalidUser', level=3, num='4.5.1'),
-        Heading(name='RQ.SRS-016.Kerberos.InvalidUser.UserDeleted', level=3, num='4.5.2'),
-        Heading(name='Kerberos Not Available', level=2, num='4.6'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket', level=3, num='4.6.1'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket', level=3, num='4.6.2'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets', level=3, num='4.6.3'),
-        Heading(name='Kerberos Restarted', level=2, num='4.7'),
-        Heading(name='RQ.SRS-016.Kerberos.KerberosServerRestarted', level=3, num='4.7.1'),
-        Heading(name='Performance', level=2, num='4.8'),
-        Heading(name='RQ.SRS-016.Kerberos.Performance', level=3, num='4.8.1'),
-        Heading(name='Parallel Requests processing', level=2, num='4.9'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel', level=3, num='4.9.1'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos', level=3, num='4.9.2'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials', level=3, num='4.9.3'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials', level=3, num='4.9.4'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidInvalid', level=3, num='4.9.5'),
-        Heading(name='RQ.SRS-016.Kerberos.Parallel.Deletion', level=3, num='4.9.6'),
+        Heading(name='Configuration', level=2, num='4.2'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods', level=3, num='4.2.1'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled', level=3, num='4.2.2'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections', level=3, num='4.2.3'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.WrongUserRealm', level=3, num='4.2.4'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified', level=3, num='4.2.5'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections', level=3, num='4.2.6'),
+        Heading(name='RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections', level=3, num='4.2.7'),
+        Heading(name='Valid User', level=2, num='4.3'),
+        Heading(name='RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser', level=3, num='4.3.1'),
+        Heading(name='RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser', level=3, num='4.3.2'),
+        Heading(name='RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured', level=3, num='4.3.3'),
+        Heading(name='Invalid User', level=2, num='4.4'),
+        Heading(name='RQ.SRS-016.Kerberos.InvalidUser', level=3, num='4.4.1'),
+        Heading(name='RQ.SRS-016.Kerberos.InvalidUser.UserDeleted', level=3, num='4.4.2'),
+        Heading(name='Kerberos Not Available', level=2, num='4.5'),
+        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket', level=3, num='4.5.1'),
+        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket', level=3, num='4.5.2'),
+        Heading(name='RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets', level=3, num='4.5.3'),
+        Heading(name='Kerberos Restarted', level=2, num='4.6'),
+        Heading(name='RQ.SRS-016.Kerberos.KerberosServerRestarted', level=3, num='4.6.1'),
+        Heading(name='Performance', level=2, num='4.7'),
+        Heading(name='RQ.SRS-016.Kerberos.Performance', level=3, num='4.7.1'),
+        Heading(name='Parallel Requests processing', level=2, num='4.8'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel', level=3, num='4.8.1'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos', level=3, num='4.8.2'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials', level=3, num='4.8.3'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials', level=3, num='4.8.4'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel.ValidInvalid', level=3, num='4.8.5'),
+        Heading(name='RQ.SRS-016.Kerberos.Parallel.Deletion', level=3, num='4.8.6'),
         Heading(name='References', level=1, num='5'),
         ),
     requirements=(
         RQ_SRS_016_Kerberos,
-        RQ_SRS_016_Kerberos_Ping,
         RQ_SRS_016_Kerberos_Configuration_MultipleAuthMethods,
         RQ_SRS_016_Kerberos_Configuration_KerberosNotEnabled,
         RQ_SRS_016_Kerberos_Configuration_MultipleKerberosSections,
@@ -519,6 +501,25 @@ QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
 # QA-SRS016 ClickHouse Kerberos Authentication
 # Software Requirements Specification
 
+(c) 2020 Altinity LTD. All Rights Reserved.
+
+**Document status:** Confidential
+
+**Author:** Andrey Zvonov
+
+**Date:** December 14, 2020
+
+## Approval
+
+**Status:** -
+
+**Version:** -
+
+**Approved by:** -
+
+**Date:** -
+
+
 ## Table of Contents
 
 * 1 [Revision History](#revision-history)
@@ -527,50 +528,47 @@ QA_SRS016_ClickHouse_Kerberos_Authentication = Specification(
 * 4 [Requirements](#requirements)
   * 4.1 [Generic](#generic)
     * 4.1.1 [RQ.SRS-016.Kerberos](#rqsrs-016kerberos)
-  * 4.2 [Ping](#ping)
-    * 4.2.1 [RQ.SRS-016.Kerberos.Ping](#rqsrs-016kerberosping)
-  * 4.3 [Configuration](#configuration)
-    * 4.3.1 [RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods](#rqsrs-016kerberosconfigurationmultipleauthmethods)
-    * 4.3.2 [RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled](#rqsrs-016kerberosconfigurationkerberosnotenabled)
-    * 4.3.3 [RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections](#rqsrs-016kerberosconfigurationmultiplekerberossections)
-    * 4.3.4 [RQ.SRS-016.Kerberos.Configuration.WrongUserRealm](#rqsrs-016kerberosconfigurationwronguserrealm)
-    * 4.3.5 [RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified](#rqsrs-016kerberosconfigurationprincipalandrealmspecified)
-    * 4.3.6 [RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections](#rqsrs-016kerberosconfigurationmultipleprincipalsections)
-    * 4.3.7 [RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections](#rqsrs-016kerberosconfigurationmultiplerealmsections)
-  * 4.4 [Valid User](#valid-user)
-    * 4.4.1 [RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser](#rqsrs-016kerberosvaliduserxmlconfigureduser)
-    * 4.4.2 [RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser](#rqsrs-016kerberosvaliduserrbacconfigureduser)
-    * 4.4.3 [RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured](#rqsrs-016kerberosvaliduserkerberosnotconfigured)
-  * 4.5 [Invalid User](#invalid-user)
-    * 4.5.1 [RQ.SRS-016.Kerberos.InvalidUser](#rqsrs-016kerberosinvaliduser)
-    * 4.5.2 [RQ.SRS-016.Kerberos.InvalidUser.UserDeleted](#rqsrs-016kerberosinvaliduseruserdeleted)
-  * 4.6 [Kerberos Not Available](#kerberos-not-available)
-    * 4.6.1 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket](#rqsrs-016kerberoskerberosnotavailableinvalidserverticket)
-    * 4.6.2 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket](#rqsrs-016kerberoskerberosnotavailableinvalidclientticket)
-    * 4.6.3 [RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets](#rqsrs-016kerberoskerberosnotavailablevalidtickets)
-  * 4.7 [Kerberos Restarted](#kerberos-restarted)
-    * 4.7.1 [RQ.SRS-016.Kerberos.KerberosServerRestarted](#rqsrs-016kerberoskerberosserverrestarted)
-  * 4.8 [Performance](#performance)
-    * 4.8.1 [RQ.SRS-016.Kerberos.Performance](#rqsrs-016kerberosperformance)
-  * 4.9 [Parallel Requests processing](#parallel-requests-processing)
-    * 4.9.1 [RQ.SRS-016.Kerberos.Parallel](#rqsrs-016kerberosparallel)
-    * 4.9.2 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos](#rqsrs-016kerberosparallelvalidrequestskerberosandnonkerberos)
-    * 4.9.3 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials](#rqsrs-016kerberosparallelvalidrequestssamecredentials)
-    * 4.9.4 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials](#rqsrs-016kerberosparallelvalidrequestsdifferentcredentials)
-    * 4.9.5 [RQ.SRS-016.Kerberos.Parallel.ValidInvalid](#rqsrs-016kerberosparallelvalidinvalid)
-    * 4.9.6 [RQ.SRS-016.Kerberos.Parallel.Deletion](#rqsrs-016kerberosparalleldeletion)
+  * 4.2 [Configuration](#configuration)
+    * 4.2.1 [RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods](#rqsrs-016kerberosconfigurationmultipleauthmethods)
+    * 4.2.2 [RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled](#rqsrs-016kerberosconfigurationkerberosnotenabled)
+    * 4.2.3 [RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections](#rqsrs-016kerberosconfigurationmultiplekerberossections)
+    * 4.2.4 [RQ.SRS-016.Kerberos.Configuration.WrongUserRealm](#rqsrs-016kerberosconfigurationwronguserrealm)
+    * 4.2.5 [RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified](#rqsrs-016kerberosconfigurationprincipalandrealmspecified)
+    * 4.2.6 [RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections](#rqsrs-016kerberosconfigurationmultipleprincipalsections)
+    * 4.2.7 [RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections](#rqsrs-016kerberosconfigurationmultiplerealmsections)
+  * 4.3 [Valid User](#valid-user)
+    * 4.3.1 [RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser](#rqsrs-016kerberosvaliduserxmlconfigureduser)
+    * 4.3.2 [RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser](#rqsrs-016kerberosvaliduserrbacconfigureduser)
+    * 4.3.3 [RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured](#rqsrs-016kerberosvaliduserkerberosnotconfigured)
+  * 4.4 [Invalid User](#invalid-user)
+    * 4.4.1 [RQ.SRS-016.Kerberos.InvalidUser](#rqsrs-016kerberosinvaliduser)
+    * 4.4.2 [RQ.SRS-016.Kerberos.InvalidUser.UserDeleted](#rqsrs-016kerberosinvaliduseruserdeleted)
+  * 4.5 [Kerberos Not Available](#kerberos-not-available)
+    * 4.5.1 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket](#rqsrs-016kerberoskerberosnotavailableinvalidserverticket)
+    * 4.5.2 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket](#rqsrs-016kerberoskerberosnotavailableinvalidclientticket)
+    * 4.5.3 [RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets](#rqsrs-016kerberoskerberosnotavailablevalidtickets)
+  * 4.6 [Kerberos Restarted](#kerberos-restarted)
+    * 4.6.1 [RQ.SRS-016.Kerberos.KerberosServerRestarted](#rqsrs-016kerberoskerberosserverrestarted)
+  * 4.7 [Performance](#performance)
+    * 4.7.1 [RQ.SRS-016.Kerberos.Performance](#rqsrs-016kerberosperformance)
+  * 4.8 [Parallel Requests processing](#parallel-requests-processing)
+    * 4.8.1 [RQ.SRS-016.Kerberos.Parallel](#rqsrs-016kerberosparallel)
+    * 4.8.2 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos](#rqsrs-016kerberosparallelvalidrequestskerberosandnonkerberos)
+    * 4.8.3 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials](#rqsrs-016kerberosparallelvalidrequestssamecredentials)
+    * 4.8.4 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials](#rqsrs-016kerberosparallelvalidrequestsdifferentcredentials)
+    * 4.8.5 [RQ.SRS-016.Kerberos.Parallel.ValidInvalid](#rqsrs-016kerberosparallelvalidinvalid)
+    * 4.8.6 [RQ.SRS-016.Kerberos.Parallel.Deletion](#rqsrs-016kerberosparalleldeletion)
 * 5 [References](#references)
-
 
 ## Revision History
 
 This document is stored in an electronic form using [Git] source control management software
-hosted in a [GitHub Repository].  
+hosted in a [GitLab Repository].  
 All the updates are tracked using the [Git]'s [Revision History].
 
 ## Introduction
 
-This document specifies the behavior for authenticating existing users via [Kerberos] authentication protocol.
+This document specifies the behavior for authenticating existing users using [Kerberos] authentication protocol.
 Existing [ClickHouse] users, that are properly configured, have an ability to authenticate using [Kerberos]. Kerberos authentication is only supported for HTTP requests, and users configured to authenticate via Kerberos cannot be authenticated by any other means of authentication.
 
 In order to use Kerberos authentication, Kerberos needs to be properly configured in the environment: Kerberos server must be present and user's and server's credentials must be set up. Configuring the Kerberos environment is outside the scope of this document.
@@ -606,13 +604,6 @@ version: 1.0
 
 [ClickHouse] SHALL support user authentication using [Kerberos] server.
 
-### Ping
-
-#### RQ.SRS-016.Kerberos.Ping
-version: 1.0
-
-Docker containers SHALL be able to ping each other.
-
 ### Configuration
 
 #### RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods
@@ -626,26 +617,26 @@ version: 1.0
 [ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos />
-</clickhouse>
+</yandex>
 ```
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 
 #### RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections
@@ -681,7 +672,7 @@ version: 1.0
 [ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <users>
         <!- ... -->
@@ -692,7 +683,7 @@ version: 1.0
             </kerberos>
         </my_user>
     </users>
-</clickhouse>
+</yandex>
 ```
 
 #### RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser
@@ -792,18 +783,18 @@ version: 1.0
 
 ## References
 
-* **ClickHouse:** https://clickhouse.com
-* **GitHub Repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
-* **Revision History:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
+* **ClickHouse:** https://clickhouse.tech
+* **Gitlab Repository:** https://gitlab.com/altinity-qa/documents/qa-srs016-clickhouse-kerberos-authentication/-/blob/master/QA_SRS016_ClickHouse_Kerberos_Authentication.md
+* **Revision History:** https://gitlab.com/altinity-qa/documents/qa-srs016-clickhouse-kerberos-authentication/-/commits/master/QA_SRS016_ClickHouse_Kerberos_Authentication.md
 * **Git:** https://git-scm.com/
 * **Kerberos terminology:** https://web.mit.edu/kerberos/kfw-4.1/kfw-4.1/kfw-4.1-help/html/kerberos_terminology.htm
 
 [Kerberos]: https://en.wikipedia.org/wiki/Kerberos_(protocol)
 [SPNEGO]: https://en.wikipedia.org/wiki/SPNEGO
-[ClickHouse]: https://clickhouse.com
-[GitHub]: https://gitlab.com
-[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
-[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
+[ClickHouse]: https://clickhouse.tech
+[GitLab]: https://gitlab.com
+[GitLab Repository]: https://gitlab.com/altinity-qa/documents/qa-srs016-clickhouse-kerberos-authentication/-/blob/master/QA_SRS016_ClickHouse_Kerberos_Authentication.md
+[Revision History]: https://gitlab.com/altinity-qa/documents/qa-srs016-clickhouse-kerberos-authentication/-/commits/master/QA_SRS016_ClickHouse_Kerberos_Authentication.md
 [Git]: https://git-scm.com/
 [Kerberos terminology]: https://web.mit.edu/kerberos/kfw-4.1/kfw-4.1/kfw-4.1-help/html/kerberos_terminology.htm
 ''')

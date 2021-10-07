@@ -1,5 +1,3 @@
--- Tags: shard
-
 -- make the order static
 SET max_threads = 1;
 

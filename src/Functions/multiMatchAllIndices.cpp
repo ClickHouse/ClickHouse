@@ -14,7 +14,8 @@ struct NameMultiMatchAllIndices
 };
 
 using FunctionMultiMatchAllIndices = FunctionsMultiStringSearch<
-    MultiMatchAllIndicesImpl<NameMultiMatchAllIndices, UInt64, false>,
+    MultiMatchAllIndicesImpl<UInt64, false>,
+    NameMultiMatchAllIndices,
     std::numeric_limits<UInt32>::max()>;
 
 }

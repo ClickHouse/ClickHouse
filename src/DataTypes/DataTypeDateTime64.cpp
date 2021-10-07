@@ -4,7 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>

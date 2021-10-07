@@ -51,6 +51,7 @@ class AccessControlManager;
 class SettingsConstraints
 {
 public:
+    SettingsConstraints();
     SettingsConstraints(const AccessControlManager & manager_);
     SettingsConstraints(const SettingsConstraints & src);
     SettingsConstraints & operator =(const SettingsConstraints & src);

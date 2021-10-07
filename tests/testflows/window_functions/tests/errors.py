@@ -44,8 +44,8 @@ def error_window_function_in_where(self):
 def error_window_function_in_join(self):
     """Check that trying to use window function in `JOIN` returns an error.
     """
-    exitcode = 147
-    message = "DB::Exception: Cannot get JOIN keys from JOIN ON section: row_number() OVER (ORDER BY salary ASC) < 10"
+    exitcode = 48
+    message = "DB::Exception: JOIN ON inequalities are not supported. Unexpected 'row_number() OVER (ORDER BY salary ASC) < 10"
 
     sql = ("SELECT * FROM empsalary INNER JOIN tenk1 ON row_number() OVER (ORDER BY salary) < 10")
 

@@ -9,8 +9,8 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
+#include <common/chrono_io.h>
+#include <common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -1198,8 +1198,8 @@ class ExternalLoader::PeriodicUpdater : private boost::noncopyable
 public:
     static constexpr UInt64 check_period_sec = 5;
 
-    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_, std::recursive_mutex & config_mutex_)
-        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_), config_mutex(config_mutex_)
+    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_)
+        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_)
     {
     }
 
@@ -1242,11 +1242,8 @@ private:
         while (!event.wait_for(lock, std::chrono::seconds(check_period_sec), pred))
         {
             lock.unlock();
-            {
-                std::lock_guard config_lock{config_mutex};
-                loading_dispatcher.setConfiguration(config_files_reader.read());
-                loading_dispatcher.reloadOutdated();
-            }
+            loading_dispatcher.setConfiguration(config_files_reader.read());
+            loading_dispatcher.reloadOutdated();
             lock.lock();
         }
     }
@@ -1254,7 +1251,6 @@ private:
     LoadablesConfigReader & config_files_reader;
     LoadingDispatcher & loading_dispatcher;
 
-    std::recursive_mutex & config_mutex;
     mutable std::mutex mutex;
     bool enabled = false;
     ThreadFromGlobalPool thread;
@@ -1268,7 +1264,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
           [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
           type_name_,
           log_))
-    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher, config_mutex))
+    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
     , log(log_)
 {
@@ -1280,13 +1276,11 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
 {
     auto * ptr = repository.get();
     String name = ptr->getName();
-    std::lock_guard lock{config_mutex};
     config_files_reader->addConfigRepository(std::move(repository));
     reloadConfig(name);
 
     return [this, ptr, name]()
     {
-        std::lock_guard config_lock{config_mutex};
         config_files_reader->removeConfigRepository(ptr);
         reloadConfig(name);
     };
@@ -1385,10 +1379,7 @@ ReturnType ExternalLoader::load(const FilterByNameFunction & filter) const
 template <typename ReturnType, typename>
 ReturnType ExternalLoader::loadOrReload(const String & name) const
 {
-    {
-        std::lock_guard lock{config_mutex};
-        loading_dispatcher->setConfiguration(config_files_reader->read());
-    }
+    loading_dispatcher->setConfiguration(config_files_reader->read());
     auto result = loading_dispatcher->tryLoadOrReload<LoadResult>(name, WAIT);
     checkLoaded(result, true);
     return convertTo<ReturnType>(result);
@@ -1397,10 +1388,7 @@ ReturnType ExternalLoader::loadOrReload(const String & name) const
 template <typename ReturnType, typename>
 ReturnType ExternalLoader::loadOrReload(const FilterByNameFunction & filter) const
 {
-    {
-        std::lock_guard lock{config_mutex};
-        loading_dispatcher->setConfiguration(config_files_reader->read());
-    }
+    loading_dispatcher->setConfiguration(config_files_reader->read());
     auto results = loading_dispatcher->tryLoadOrReload<LoadResults>(filter, WAIT);
     checkLoaded(results, true);
     return convertTo<ReturnType>(results);
@@ -1488,19 +1476,16 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,
 
 void ExternalLoader::reloadConfig() const
 {
-    std::lock_guard lock{config_mutex};
     loading_dispatcher->setConfiguration(config_files_reader->read());
 }
 
 void ExternalLoader::reloadConfig(const String & repository_name) const
 {
-    std::lock_guard lock{config_mutex};
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name));
 }
 
 void ExternalLoader::reloadConfig(const String & repository_name, const String & path) const
 {
-    std::lock_guard lock{config_mutex};
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
 }
 

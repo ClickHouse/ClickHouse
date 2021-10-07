@@ -1,4 +1,4 @@
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -69,10 +69,6 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 

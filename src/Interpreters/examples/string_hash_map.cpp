@@ -2,7 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/AggregationCommon.h>
@@ -10,7 +10,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 /**
 

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <base/types.h>
-#include <Core/ProtocolDefines.h>
+#include <common/types.h>
 
 
 namespace DB
