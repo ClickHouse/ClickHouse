@@ -896,7 +896,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
-        ParserLiteral literal_p;
+        ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }
