@@ -204,7 +204,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
 ```
 
-**Пример использования при создании нового столбца:**
+**Пример**
 
 ```sql
 DROP TABLE IF EXISTS tmp;
