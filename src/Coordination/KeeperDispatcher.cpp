@@ -317,16 +317,9 @@ void KeeperDispatcher::shutdown()
         /// Set session expired for all pending requests
         while (requests_queue && requests_queue->tryPop(request_for_session))
         {
-            if (request_for_session.request)
-            {
-                auto response = request_for_session.request->makeResponse();
-                response->error = Coordination::Error::ZSESSIONEXPIRED;
-                setResponse(request_for_session.session_id, response);
-            }
-            else
-            {
-                break;
-            }
+            auto response = request_for_session.request->makeResponse();
+            response->error = Coordination::Error::ZSESSIONEXPIRED;
+            setResponse(request_for_session.session_id, response);
         }
 
         /// Clear all registered sessions
