@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionMinMaxAny.h> // SingleValueDataString used in embedded compiler

@@ -3,8 +3,8 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
-#include <common/types.h>
-#include <common/scope_guard.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
 #include <map>
 #include <mutex>
 #include <set>

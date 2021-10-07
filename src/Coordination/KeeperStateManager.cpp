@@ -1,4 +1,5 @@
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/Defines.h>
 #include <Common/Exception.h>
 #include <filesystem>
 

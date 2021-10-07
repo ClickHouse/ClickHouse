@@ -1,21 +1,21 @@
-#include <Processors/QueryPipeline.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Pipe.h>
+#include <queue>
 #include <Processors/Chain.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/IProcessor.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sinks/NullSink.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/NullSink.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <DataStreams/CountingBlockOutputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/LimitTransform.h>
-#include <queue>
 namespace DB
 {
 
