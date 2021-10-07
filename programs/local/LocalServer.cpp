@@ -418,6 +418,11 @@ try
     ThreadStatus thread_status;
     setupSignalHandler();
 
+#ifdef FUZZING_MODE
+    static bool first_time = true;
+    if (first_time)
+    {
+#endif
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
@@ -441,6 +446,10 @@ try
     processConfig();
     applyCmdSettings(global_context);
     connect();
+#ifdef FUZZING_MODE
+    first_time = false;
+    }
+#endif
 
     if (is_interactive)
     {
@@ -455,7 +464,9 @@ try
         runNonInteractive();
     }
 
+#ifndef FUZZING_MODE
     cleanup();
+#endif
     return Application::EXIT_OK;
 }
 catch (...)
@@ -729,3 +740,60 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         return code ? code : 1;
     }
 }
+
+#ifdef FUZZING_MODE
+#include <Functions/getFuzzerData.cpp>
+
+std::optional<DB::LocalServer> fuzz_app;
+
+extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
+{
+    int & argc = *pargc;
+    char ** argv = *pargv;
+
+    // position of delimiter "--" that separates arguments
+    // of clickhouse-local and fuzzer
+    int pos_delim = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--") == 0)
+        {
+            pos_delim = i;
+            break;
+        }
+    }
+
+    fuzz_app.emplace();
+    fuzz_app->init(pos_delim, argv);
+    for (int i = pos_delim + 1; i < argc; ++i)
+        std::swap(argv[i], argv[i - pos_delim]);
+    argc -= pos_delim;
+    if (argc == 0)  // no delimiter provided
+        ++argc;
+    return 0;
+}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+{
+    try
+    {
+        // inappropriate symbol for fuzzing at the end
+        if (size)
+            --size;
+        auto cur_str = String(reinterpret_cast<const char *>(data), size);
+        // to clearly see the beginning and the end
+        std::cerr << '>' << cur_str << '<' << std::endl;
+        DB::FunctionGetFuzzerData::update(cur_str);
+        fuzz_app->run();
+    }
+    catch (...)
+    {
+        std::cerr << "Why here?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!" << std::endl;
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
+        return 0;
+        //auto code = DB::getCurrentExceptionCode();
+        //return code ? code : 1;
+    }
+    return 0;
+}
+#endif
