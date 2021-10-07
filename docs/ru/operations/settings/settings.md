@@ -3572,5 +3572,4 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  20 │  20 │   10  │
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
-
 ```
