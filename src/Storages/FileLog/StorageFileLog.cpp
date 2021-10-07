@@ -879,8 +879,6 @@ bool StorageFileLog::updateFileInfos()
         {
             if (it->second.status == FileStatus::REMOVED)
             {
-                file_infos.context_by_name.erase(it);
-
                 /// We need to check that this inode does not hold by other file(mv),
                 /// otherwise, we can not destroy it.
                 auto inode = it->second.inode;
@@ -892,6 +890,7 @@ bool StorageFileLog::updateFileInfos()
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
                     std::filesystem::remove(getFullMetaPath(file_name));
+                file_infos.context_by_name.erase(it);
             }
             else
             {
