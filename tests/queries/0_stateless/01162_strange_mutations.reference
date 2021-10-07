@@ -4,7 +4,6 @@ MergeTree
 2
 0
 50	6225	0
-0
 50	6225	1900
 ReplicatedMergeTree
 1
@@ -12,15 +11,13 @@ ReplicatedMergeTree
 2
 0
 50	6225	0
-2
-50	6225	0
+50	6225	1900
 Memory
 1
 2
 2
 0
 50	6225	0
-0
 50	6225	1900
 Join
 1
@@ -28,5 +25,4 @@ Join
 2
 0
 50	6225	0
-0
 50	6225	0
