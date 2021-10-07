@@ -65,7 +65,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThro
 
     try
     {
-        std::unique_lock<std::mutex> update_lock(queue_mutex);
+        std::unique_lock update_lock(queue_mutex);
         queue.push(update_unit_ptr);
 
         queue_cond.notify_one();
@@ -148,7 +148,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
         CacheDictionaryUpdateUnitPtr<dictionary_key_type> unit_to_update;
 
         {
-            std::unique_lock<std::mutex> queue_cond_lock(queue_mutex);
+            std::unique_lock queue_cond_lock(queue_mutex);
             queue_cond.wait(queue_cond_lock, [&](){ return finished || !queue.empty(); });
 
             if (finished)
@@ -167,12 +167,12 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 
             /// Notify thread about finished updating the bunch of ids
             /// where their own ids were included.
-            std::unique_lock<std::mutex> lock(unit_to_update->lock);
+            std::unique_lock lock(unit_to_update->lock);
             unit_to_update->is_done = true;
         }
         catch (...)
         {
-            std::unique_lock<std::mutex> lock(unit_to_update->lock);
+            std::unique_lock lock(unit_to_update->lock);
             unit_to_update->current_exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
         }
 
