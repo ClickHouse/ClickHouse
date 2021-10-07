@@ -38,7 +38,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
 public:
-    explicit ReadBufferFromS3(
+    ReadBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
