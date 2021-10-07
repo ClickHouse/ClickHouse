@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
-#include <common/extended_types.h>
+#include <base/arithmeticOverflow.h>
+#include <base/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>

@@ -69,6 +69,13 @@ void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 }
 
 
+void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task)
+{
+    bool res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    res ? trigger() : postpone();
+}
+
+
 String BackgroundJobsAssignee::toString(Type type)
 {
     switch (type)
@@ -102,6 +109,7 @@ void BackgroundJobsAssignee::finish()
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 

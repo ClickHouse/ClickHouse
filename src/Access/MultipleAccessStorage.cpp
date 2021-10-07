@@ -1,7 +1,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Credentials.h>
 #include <Common/Exception.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
