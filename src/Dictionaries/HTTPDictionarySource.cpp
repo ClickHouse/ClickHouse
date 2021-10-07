@@ -103,6 +103,7 @@ Pipe HTTPDictionarySource::loadAll()
         0,
         credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
+        context->getReadSettings(),
         configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -121,6 +122,7 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
         0,
         credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
+        context->getReadSettings(),
         configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -148,6 +150,7 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         0,
         credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
+        context->getReadSettings(),
         configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -175,6 +178,7 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
         0,
         credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
+        context->getReadSettings(),
         configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));

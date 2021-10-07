@@ -39,9 +39,6 @@ private:
     std::unique_ptr<ReadBuffer> impl;
 
     off_t offset = 0;
-
-    size_t backoff_threshold_ms;
-    size_t max_tries;
 };
 
 }

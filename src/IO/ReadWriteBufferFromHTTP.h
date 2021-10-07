@@ -2,10 +2,12 @@
 
 #include <functional>
 #include <base/types.h>
+#include <base/sleep.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadSettings.h>
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -17,6 +19,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
+#include <charconv>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -101,6 +104,15 @@ namespace detail
         RemoteHostFilter remote_host_filter;
         std::function<void(size_t)> next_callback;
 
+        size_t buffer_size;
+
+        size_t bytes_read = 0;
+        size_t start_byte = 0;
+        std::optional<size_t> total_bytes_to_read;
+
+        ReadSettings settings;
+        bool retry_partially_read = true;
+
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -117,6 +129,9 @@ namespace detail
             {
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
+
+            if (bytes_read && retry_partially_read)
+                request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
@@ -159,6 +174,7 @@ namespace detail
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+            const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
             const RemoteHostFilter & remote_host_filter_ = {})
             : ReadBuffer(nullptr, 0)
@@ -169,9 +185,29 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
+            , buffer_size {buffer_size_}
+            , settings {settings_}
         {
-            Poco::Net::HTTPResponse response;
+            /**
+             *  Get first byte from `bytes=offset-`, `bytes=offset-end`.
+             *  Now there are two places, where it can be set: 1. in DiskWeb (offset), 2. via config as part of named-collection.
+             *  Also header can be `bytes=-k` (read last k bytes), for this case retries in the middle of reading are disabled.
+             */
+            auto range_header = std::find_if(http_header_entries_.begin(), http_header_entries_.end(),
+                [&](const HTTPHeaderEntry & header) { return std::get<0>(header) == "Range"; });
+            if (range_header != http_header_entries_.end())
+            {
+                auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
+                auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
+                if (ec != std::errc())
+                    retry_partially_read = false;
+            }
+        }
 
+        void initialize()
+        {
+
+            Poco::Net::HTTPResponse response;
             istr = call(uri, response);
 
             while (isRedirect(response.getStatus()))
@@ -184,9 +220,19 @@ namespace detail
                 istr = call(uri_redirect, response);
             }
 
+            /// If it is the very first initialization.
+            if (!bytes_read && !total_bytes_to_read)
+            {
+                /// If we do not know total size, disable retries in the middle of reading.
+                if (response.hasContentLength())
+                    total_bytes_to_read = response.getContentLength();
+                else
+                    retry_partially_read = false;
+            }
+
             try
             {
-                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
             }
             catch (const Poco::Exception & e)
             {
@@ -202,12 +248,54 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
-            if (!working_buffer.empty())
-                impl->position() = position();
-            if (!impl->next())
+
+            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
                 return false;
+
+            if (impl && !working_buffer.empty())
+                impl->position() = position();
+
+            bool result = false;
+            bool successful_read = false;
+            size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+
+            /// Default http_max_tries = 1.
+            for (size_t i = 0; (i < settings.http_max_tries) && !successful_read; ++i)
+            {
+                while (milliseconds_to_wait < settings.http_retry_max_backoff_ms)
+                {
+                    try
+                    {
+                        if (!impl)
+                            initialize();
+
+                        result = impl->next();
+                        successful_read = true;
+                        break;
+                    }
+                    catch (const Poco::Exception &)
+                    {
+                        if (!settings.http_retriable_read
+                            || i == settings.http_max_tries - 1
+                            || (bytes_read && !retry_partially_read))
+                            throw;
+
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        impl.reset();
+
+                        sleepForMilliseconds(milliseconds_to_wait);
+                        milliseconds_to_wait *= 2;
+                    }
+                }
+                milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+            }
+
+            if (!result)
+                return false;
+
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
+            bytes_read += working_buffer.size();
             return true;
         }
 
@@ -270,10 +358,11 @@ public:
         const UInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
         const RemoteHostFilter & remote_host_filter_ = {})
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
+            uri_, method_, out_stream_callback_, credentials_, buffer_size_, settings_, http_header_entries_, remote_host_filter_)
     {
     }
 };
