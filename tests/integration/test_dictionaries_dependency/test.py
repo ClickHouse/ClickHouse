@@ -106,8 +106,11 @@ def test_dependency_via_dictionary_database(node):
         for d_name in d_names:
             assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
-    check()
+
+    for d_name in d_names:
+        assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
     # Restart must not break anything.
     node.restart_clickhouse()
-    check()
+    for d_name in d_names:
+        assert node.query_with_retry("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
