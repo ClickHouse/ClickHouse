@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
 
 ReadBufferFromFileLog::ReadBufferFromFileLog(
     StorageFileLog & storage_,
@@ -102,23 +106,27 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
 
         auto & file_meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
 
+        if (!file_ctx.reader)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} does not initialized.", file_meta.file_name);
+
+        auto & reader = file_ctx.reader.value();
         Record record;
-        while (read_records_size < need_records_size && static_cast<UInt64>(file_ctx.reader.tellg()) < file_meta.last_open_end)
+        while (read_records_size < need_records_size && static_cast<UInt64>(reader.tellg()) < file_meta.last_open_end)
         {
             /// Need to get offset before reading record from stream
-            record.offset = file_ctx.reader.tellg();
+            record.offset = reader.tellg();
             record.file_name = file_name;
 
-            StorageFileLog::assertStreamGood(file_ctx.reader);
+            StorageFileLog::assertStreamGood(reader);
 
-            std::getline(file_ctx.reader, record.data);
+            std::getline(reader, record.data);
 
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
-        UInt64 current_position = file_ctx.reader.tellg();
-        StorageFileLog::assertStreamGood(file_ctx.reader);
+        UInt64 current_position = reader.tellg();
+        StorageFileLog::assertStreamGood(reader);
 
         file_meta.last_writen_position = current_position;
 

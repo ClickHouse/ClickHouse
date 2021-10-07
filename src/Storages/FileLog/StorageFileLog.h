@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -70,7 +71,7 @@ public:
     {
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
-        std::ifstream reader{};
+        std::optional<std::ifstream> reader = std::nullopt;
     };
 
     struct FileMeta
