@@ -1,6 +1,6 @@
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <Common/ProfileEvents.h>
 #include <iostream>
+#include <Processors/Transforms/CountingTransform.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

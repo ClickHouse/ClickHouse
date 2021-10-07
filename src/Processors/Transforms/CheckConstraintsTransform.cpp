@@ -1,15 +1,15 @@
-#include <Common/assert_cast.h>
-#include <Common/quoteString.h>
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <Parsers/formatAST.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Processors/Transforms/CheckConstraintsTransform.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/formatAST.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
