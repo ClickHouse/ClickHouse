@@ -63,24 +63,26 @@ namespace ErrorCodes
 }
 
 
-void LocalServer::processError(const String & query) const
+void LocalServer::processError(const String &) const
 {
     if (ignore_error)
         return;
 
     if (is_interactive)
     {
+        String message;
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, getExceptionMessage(*server_exception, print_stack_trace, true));
-            fmt::print(stderr, "\n");
+            message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
-        if (client_exception)
+        else if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
-            fmt::print(stderr, "\n");
+            message = client_exception->message();
         }
+
+        fmt::print(stderr, "Received exception:\n{}\n", message);
+        fmt::print(stderr, "\n");
     }
     else
     {
