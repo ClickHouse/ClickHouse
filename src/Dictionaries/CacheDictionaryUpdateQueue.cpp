@@ -113,7 +113,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
     if (update_queue.isFinished())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
-    update_queue.finish();
+    update_queue.clearAndFinish();
     update_pool.wait();
 }
 
