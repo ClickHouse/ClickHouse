@@ -21,13 +21,15 @@ endif()
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
     set (WITH_COVERAGE ON)
-    add_executable(fuzz-clickhouse-local LocalServer.cpp ${SRCS})
-    target_link_libraries(fuzz-clickhouse-local PRIVATE
+    target_link_libraries(clickhouse-local-lib PRIVATE ${LIB_FUZZING_ENGINE})
+    #add_executable(fuzz-clickhouse-local LocalServer.cpp ${SRCS})
+    #[[target_link_libraries(fuzz-clickhouse-local PRIVATE
             dbms
             ${LIB_FUZZING_ENGINE}
             loggers
             clickhouse_functions
             clickhouse_aggregate_functions
             clickhouse_storages_system
-            clickhouse_table_functions)
+            clickhouse_table_functions
+            readpassphrase)]]
 endif ()
