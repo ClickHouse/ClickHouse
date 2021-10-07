@@ -86,6 +86,17 @@ class Client(clickhouse_driver.Client):
         data = pandas.DataFrame(data=rows, columns=header)
         return data
 
+# Helpers
+def make_clickhouse_client(base_args, *args, **kwargs):
+    return Client(host=base_args.tcp_host, port=base_args.tcp_port,
+        settings=get_additional_client_options_dict(base_args))
+def clickhouse_execute_one(base_args, *args, **kwargs):
+    return make_clickhouse_client(base_args).execute_one(*args, **kwargs)
+def clickhouse_execute(base_args, *args, **kwargs):
+    return make_clickhouse_client(base_args).execute(*args, **kwargs)
+def clickhouse_execute_pandas(base_args, *args, **kwargs):
+    return make_clickhouse_client(base_args).execute_pandas(*args, **kwargs)
+
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -128,16 +139,14 @@ def get_db_engine(args, database_name):
 
 
 def get_zookeeper_session_uptime(args):
-    global clickhouse_client
-
     try:
         if args.replicated_database:
-            return int(clickhouse_client.execute_one("""
+            return int(clickhouse_execute_one(args, """
             SELECT min(materialize(zookeeperSessionUptime()))
             FROM clusterAllReplicas('test_cluster_database_replicated', system.one)
             """))
         else:
-            return int(clickhouse_client.execute_one('SELECT zookeeperSessionUptime()'))
+            return int(clickhouse_execute_one(args, 'SELECT zookeeperSessionUptime()'))
     except:
         return None
 
@@ -167,15 +176,14 @@ def need_retry_error(args, error, total_time):
 
 
 def get_processlist(args):
-    global clickhouse_client
     if args.replicated_database:
-        return clickhouse_client.execute_pandas("""
+        return clickhouse_execute_pandas(args, """
         SELECT materialize((hostName(), tcpPort())) as host, *
         FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
         WHERE query NOT LIKE '%system.processes%'
         """)
     else:
-        return clickhouse_client.execute_pandas('SHOW PROCESSLIST')
+        return clickhouse_execute_pandas(args, 'SHOW PROCESSLIST')
 
 
 # collect server stacktraces using gdb
@@ -342,7 +350,6 @@ class TestCase:
 
     @staticmethod
     def configure_testcase_args(args, case_file, suite_tmp_dir):
-        global clickhouse_client
         testcase_args = copy.deepcopy(args)
 
         testcase_args.testcase_start_time = datetime.now()
@@ -363,7 +370,7 @@ class TestCase:
             database = 'test_{suffix}'.format(suffix=random_str())
 
             try:
-                clickhouse_client.execute("CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={'log_comment': testcase_basename})
+                clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={'log_comment': testcase_basename})
             except (TimeoutError, clickhouse_driver.errors.SocketTimeoutError):
                 total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
                 return None, "", f"Timeout creating database {database} before test", total_time
@@ -536,12 +543,10 @@ class TestCase:
 
     @staticmethod
     def send_test_name_failed(suite: str, case: str) -> bool:
-        global clickhouse_client
         pid = os.getpid()
-        clickhouse_client.execute(f"SELECT 'Running test {suite}/{case} from pid={pid}'")
+        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
 
     def run_single_test(self, server_logs_level, client_options):
-        global clickhouse_client
         args = self.testcase_args
         client = args.testcase_client
         start_time = args.testcase_start_time
@@ -585,8 +590,10 @@ class TestCase:
         if need_drop_database:
             seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
             try:
-                with clickhouse_client.connection.timeout_setter(seconds_left):
-                    clickhouse_client.execute("DROP DATABASE " + database)
+                client = make_clickhouse_client(args)
+                client.connection.force_connect()
+                with client.connection.timeout_setter(seconds_left):
+                    client.execute("DROP DATABASE " + database)
             except (TimeoutError, clickhouse_driver.errors.SocketTimeoutError):
                 total_time = (datetime.now() - start_time).total_seconds()
                 return None, "", f"Timeout dropping database {database} after test", total_time
@@ -793,8 +800,7 @@ class TestSuite:
     @staticmethod
     def readTestSuite(args, suite_dir_name: str):
         def is_data_present():
-            global clickhouse_client
-            return int(clickhouse_client.execute_one('EXISTS TABLE test.hits'))
+            return int(clickhouse_execute_one(args, 'EXISTS TABLE test.hits'))
 
         base_dir = os.path.abspath(args.queries)
         tmp_dir = os.path.abspath(args.tmp)
@@ -827,7 +833,6 @@ class TestSuite:
 
 
 stop_time = None
-clickhouse_client = None
 exit_code = None
 server_died = None
 stop_tests_triggered_lock = None
@@ -957,14 +962,14 @@ def run_tests_array(all_tests_with_params):
 server_logs_level = "warning"
 
 
-def check_server_started(retry_count):
-    global clickhouse_client
+def check_server_started(args):
     print("Connecting to ClickHouse server...", end='')
 
     sys.stdout.flush()
+    retry_count = args.server_check_retries
     while retry_count > 0:
         try:
-            clickhouse_client.execute('SELECT 1')
+            clickhouse_execute(args, 'SELECT 1')
             print(" OK")
             sys.stdout.flush()
             return True
@@ -992,12 +997,10 @@ class BuildFlags():
     POLYMORPHIC_PARTS = 'polymorphic-parts'
 
 
-def collect_build_flags():
-    global clickhouse_client
-
+def collect_build_flags(args):
     result = []
 
-    value = clickhouse_client.execute_one("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    value = clickhouse_execute_one(args, "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
     if '-fsanitize=thread' in value:
         result.append(BuildFlags.THREAD)
     elif '-fsanitize=address' in value:
@@ -1007,21 +1010,21 @@ def collect_build_flags():
     elif '-fsanitize=memory' in value:
         result.append(BuildFlags.MEMORY)
 
-    value = clickhouse_client.execute_one("SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+    value = clickhouse_execute_one(args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
     if 'Debug' in value:
         result.append(BuildFlags.DEBUG)
     elif 'RelWithDebInfo' in value or 'Release' in value:
         result.append(BuildFlags.RELEASE)
 
-    value = clickhouse_client.execute_one("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+    value = clickhouse_execute_one(args, "SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
     if value in ('ON', '1'):
         result.append(BuildFlags.UNBUNDLED)
 
-    value = clickhouse_client.execute_one("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
+    value = clickhouse_execute_one(args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'")
     if value == 'Ordinary':
         result.append(BuildFlags.ORDINARY_DATABASE)
 
-    value = int(clickhouse_client.execute_one("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"))
+    value = int(clickhouse_execute_one(args, "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"))
     if value == 0:
         result.append(BuildFlags.POLYMORPHIC_PARTS)
 
@@ -1118,9 +1121,8 @@ def main(args):
     global exit_code
     global server_logs_level
     global restarted_tests
-    global clickhouse_client
 
-    if not check_server_started(args.server_check_retries):
+    if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
             If you are using split build, you have to specify -c option."
         if args.hung_check:
@@ -1130,7 +1132,7 @@ def main(args):
             print_stacktraces()
         raise Exception(msg)
 
-    args.build_flags = collect_build_flags()
+    args.build_flags = collect_build_flags(args)
 
     if args.skip:
         args.skip = set(args.skip)
@@ -1167,7 +1169,7 @@ def main(args):
         while create_database_retries < MAX_RETRIES:
             start_time = datetime.now()
             try:
-                clickhouse_client.execute("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name))
+                clickhouse_execute(args, "CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name))
             except Exception as e:
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry_error(args, e, total_time):
@@ -1384,9 +1386,10 @@ if __name__ == '__main__':
 
         tcp_host = os.getenv("CLICKHOUSE_HOST")
         if tcp_host is not None:
+            args.tcp_host = tcp_host
             args.client += f' --host={tcp_host}'
         else:
-            tcp_host = 'localhost'
+            args.tcp_host = 'localhost'
 
         tcp_port = os.getenv("CLICKHOUSE_PORT_TCP")
         if tcp_port is not None:
@@ -1398,8 +1401,9 @@ if __name__ == '__main__':
         client_database = os.getenv("CLICKHOUSE_DATABASE")
         if client_database is not None:
             args.client += f' --database={client_database}'
+            args.client_database = client_database
         else:
-            client_database = 'default'
+            args.client_database = 'default'
 
     if args.client_option:
         # Set options for client
@@ -1430,10 +1434,5 @@ if __name__ == '__main__':
     # configure pandas to make it more like Vertical format
     pandas.options.display.max_columns = None
     pandas.options.display.width = None
-
-    clickhouse_client = Client(host=tcp_host,
-        port=args.tcp_port,
-        database=client_database,
-        settings=get_additional_client_options_dict(args))
 
     main(args)
