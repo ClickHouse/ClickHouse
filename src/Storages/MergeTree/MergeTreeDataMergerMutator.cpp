@@ -328,7 +328,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
+    }
 
     if (!final && parts.size() == 1)
     {
@@ -342,6 +346,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
+        if (out_disable_reason)
+            *out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
         return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
