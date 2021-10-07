@@ -37,7 +37,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
-void registerFunctionNgrams(FunctionFactory &);
+void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -101,7 +101,7 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
-    registerFunctionNgrams(factory);
+    registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
