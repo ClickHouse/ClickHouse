@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <optional>
 
 namespace DB
 {
@@ -45,12 +44,6 @@ struct SelectQueryOptions
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
-
-    /// These two fields are used to evaluate shardNum() and shardCount() function when
-    /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
-    /// instance might have multiple shards and scalars can only hold one value.
-    std::optional<UInt32> shard_num;
-    std::optional<UInt32> shard_count;
 
     SelectQueryOptions(
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -129,13 +122,6 @@ struct SelectQueryOptions
     SelectQueryOptions & setWithAllColumns(bool value = true)
     {
         with_all_cols = value;
-        return *this;
-    }
-
-    SelectQueryOptions & setShardInfo(UInt32 shard_num_, UInt32 shard_count_)
-    {
-        shard_num = shard_num_;
-        shard_count = shard_count_;
         return *this;
     }
 };

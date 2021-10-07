@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <compression>
         <case>
             <!-- Conditions. All must be satisfied simultaneously. Some conditions may not be specified. -->
@@ -9,4 +9,4 @@
             <level>10</level>
         </case>
     </compression>
-</clickhouse>
+</yandex>

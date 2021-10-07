@@ -1,6 +1,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <pthread.h>
 #include <cstdint>
 

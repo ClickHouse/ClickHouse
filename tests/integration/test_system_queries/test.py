@@ -97,7 +97,7 @@ def test_DROP_DNS_CACHE(started_cluster):
 
 
 def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
-    macros = "<clickhouse><macros><mac>ro</mac></macros></clickhouse>"
+    macros = "<yandex><macros><mac>ro</mac></macros></yandex>"
     create_macros = 'echo "{}" > /etc/clickhouse-server/config.d/macros.xml'.format(macros)
 
     instance = cluster.instances['ch1']

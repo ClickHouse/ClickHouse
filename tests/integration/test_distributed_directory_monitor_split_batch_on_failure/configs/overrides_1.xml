@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <!-- always send via network -->
@@ -12,4 +12,4 @@
             <distributed_directory_monitor_max_sleep_time_ms>86400</distributed_directory_monitor_max_sleep_time_ms>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

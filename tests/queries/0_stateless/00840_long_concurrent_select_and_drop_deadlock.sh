@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-parallel
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 

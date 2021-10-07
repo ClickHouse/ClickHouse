@@ -3,7 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB

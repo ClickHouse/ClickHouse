@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/TimeoutSetter.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
@@ -54,9 +55,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
-            peer_address.toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
     catch (const Poco::IOException & e)
     {
