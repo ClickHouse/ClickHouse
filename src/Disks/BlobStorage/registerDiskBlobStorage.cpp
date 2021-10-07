@@ -76,7 +76,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
 
-        auto thread_pool_size = config.getInt(config_prefix + ".thread_pool_size", 1); // TODO: try larger thread pool size than 1
+        auto thread_pool_size = config.getInt(config_prefix + ".thread_pool_size", 16);
 
         std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
             name,
