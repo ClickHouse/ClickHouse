@@ -64,9 +64,10 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
                 if (row_delimiter != '\0')
                     message_received += row_delimiter;
 
-                received.push({message_received, message.hasMessageID() ? message.messageID() : "",
+                if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
                         message.hasTimestamp() ? message.timestamp() : 0,
-                        redelivered, AckTracker(delivery_tag, channel_id)});
+                        redelivered, AckTracker(delivery_tag, channel_id)}))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
             }
         })
         .onError([&](const char * message)

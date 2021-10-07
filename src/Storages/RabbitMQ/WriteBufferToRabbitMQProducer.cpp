@@ -102,7 +102,8 @@ void WriteBufferToRabbitMQProducer::countRow()
         reinitializeChunks();
 
         ++payload_counter;
-        payloads.push(std::make_pair(payload_counter, payload));
+        if (!payloads.push(std::make_pair(payload_counter, payload)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
 }
 
@@ -122,7 +123,8 @@ void WriteBufferToRabbitMQProducer::setupChannel()
          * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
          */
         for (const auto & record : delivery_record)
-            returned.tryPush(record.second);
+            if (!returned.push(record.second))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         LOG_DEBUG(log, "Producer on channel {} hasn't confirmed {} messages, {} waiting to be published",
                 channel_id, delivery_record.size(), payloads.size());
@@ -170,7 +172,8 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
 
         if (republish)
             for (auto record = delivery_record.begin(); record != record_iter; ++record)
-                returned.tryPush(record->second);
+                if (!returned.push(record->second))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
         delivery_record.erase(delivery_record.begin(), record_iter);
@@ -178,7 +181,8 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
     else
     {
         if (republish)
-            returned.tryPush(record_iter->second);
+            if (returned.push(record_iter->second))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         delivery_record.erase(record_iter);
     }

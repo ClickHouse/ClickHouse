@@ -95,14 +95,14 @@ public:
     {}
 
     /// Returns false if queue is finished
-    bool push(const T & x)
+    [[nodiscard]] bool push(const T & x)
     {
         return emplace(x);
     }
 
     /// Returns false if queue is finished
     template <typename... Args>
-    bool emplace(Args &&... args)
+    [[nodiscard]] bool emplace(Args &&... args)
     {
         emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
         return true;
@@ -115,14 +115,14 @@ public:
     }
 
     /// Returns false if queue is finished or object was not pushed during timeout
-    bool tryPush(const T & x, UInt64 milliseconds = 0)
+    [[nodiscard]] bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
         return emplaceImpl(milliseconds, x);
     }
 
     /// Returns false if queue is finished or object was not emplaced during timeout
     template <typename... Args>
-    bool tryEmplace(UInt64 milliseconds, Args &&... args)
+    [[nodiscard]] bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
         return emplaceImpl(milliseconds, std::forward<Args...>(args...));
     }
