@@ -5,7 +5,7 @@
 #include <Core/ServerUUID.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

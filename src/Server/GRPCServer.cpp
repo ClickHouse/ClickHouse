@@ -6,9 +6,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -35,7 +36,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
