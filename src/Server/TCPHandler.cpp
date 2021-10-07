@@ -16,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
@@ -33,6 +32,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <base/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -48,6 +48,10 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric QueryThread;
+}
 
 namespace DB
 {
