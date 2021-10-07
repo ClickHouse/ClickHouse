@@ -2,7 +2,6 @@
 
 #include <Common/Stopwatch.h>
 #include <IO/ThreadPoolRemoteFSReader.h>
-#include <common/logger_useful.h>
 
 
 namespace CurrentMetrics
