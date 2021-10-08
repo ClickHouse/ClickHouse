@@ -111,7 +111,6 @@ namespace detail
         std::optional<size_t> total_bytes_to_read;
 
         ReadSettings settings;
-        bool retry_partially_read = true;
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -130,7 +129,7 @@ namespace detail
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
 
-            if (bytes_read && retry_partially_read)
+            if (bytes_read && settings.http_retriable_read)
                 request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
 
             if (!credentials.getUsername().empty())
@@ -200,7 +199,7 @@ namespace detail
                 auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
                 auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
                 if (ec != std::errc())
-                    retry_partially_read = false;
+                    settings.http_retriable_read = false;
             }
         }
 
@@ -227,7 +226,7 @@ namespace detail
                 if (response.hasContentLength())
                     total_bytes_to_read = response.getContentLength();
                 else
-                    retry_partially_read = false;
+                    settings.http_retriable_read = false;
             }
 
             try
@@ -275,9 +274,8 @@ namespace detail
                     }
                     catch (const Poco::Exception &)
                     {
-                        if (!settings.http_retriable_read
-                            || i == settings.http_max_tries - 1
-                            || (bytes_read && !retry_partially_read))
+                        if (i == settings.http_max_tries - 1
+                            || (bytes_read && !settings.http_retriable_read))
                             throw;
 
                         tryLogCurrentException(__PRETTY_FUNCTION__);
