@@ -179,6 +179,13 @@ public:
         return is_finished;
     }
 
+    /// Returns if queue is finished and empty
+    bool isFinishedAndEmpty() const
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        return is_finished && queue.empty();
+    }
+
     /// Clear queue
     void clear()
     {

@@ -1159,7 +1159,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest logs("./logs");
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();
@@ -1310,7 +1310,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();

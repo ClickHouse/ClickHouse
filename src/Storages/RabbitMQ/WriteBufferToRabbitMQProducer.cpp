@@ -21,6 +21,7 @@ static const auto RETURNED_LIMIT = 50000;
 namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_RABBITMQ;
+    extern const int LOGICAL_ERROR;
 }
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -181,7 +182,7 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
     else
     {
         if (republish)
-            if (returned.push(record_iter->second))
+            if (!returned.push(record_iter->second))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         delivery_record.erase(record_iter);
