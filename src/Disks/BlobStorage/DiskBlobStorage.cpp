@@ -21,6 +21,11 @@ namespace DB
 // }
 
 
+DiskBlobStorageSettings::DiskBlobStorageSettings(
+    int thread_pool_size_) :
+    thread_pool_size(thread_pool_size_) {}
+
+
 class BlobStoragePathKeeper : public RemoteFSPathKeeper
 {
 public:
@@ -60,12 +65,12 @@ DiskBlobStorage::DiskBlobStorage(
     const String & name_,
     const String & metadata_path_,
     Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-    size_t thread_pool_size_) :
-    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_path_, "DiskBlobStorage", thread_pool_size_),
-    blob_container_client(blob_container_client_)
-{
-
-}
+    SettingsPtr settings_,
+    GetDiskSettings settings_getter_) :
+    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_path_, "DiskBlobStorage", settings_->thread_pool_size),
+    blob_container_client(blob_container_client_),
+    current_settings(std::move(settings_)),
+    settings_getter(settings_getter_) {}
 
 
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
@@ -130,6 +135,17 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr)
 RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
 {
     return std::make_shared<BlobStoragePathKeeper>(1024);
+}
+
+// TODO: applyNewSettings - copy-paste from DiskS3
+void DiskBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+{
+    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
+
+    current_settings.set(std::move(new_settings));
+
+    if (AsyncExecutor * exec = dynamic_cast<AsyncExecutor*>(&getExecutor()))
+        exec->setMaxThreads(current_settings.get()->thread_pool_size);
 }
 
 

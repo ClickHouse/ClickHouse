@@ -59,6 +59,15 @@ void checkRemoveAccess(IDisk & disk) {
 }
 
 
+std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /* context */)
+{
+    return std::make_unique<DiskBlobStorageSettings>(
+        config.getInt(config_prefix + ".thread_pool_size", 16)
+        // TODO: use context for global settings from Settings.h
+        );
+}
+
+
 void registerDiskBlobStorage(DiskFactory & factory)
 {
     auto creator = [](
@@ -68,7 +77,6 @@ void registerDiskBlobStorage(DiskFactory & factory)
         ContextPtr context,
         const DisksMap &)
     {
-        // TODO: possibly create a function to get all the relevant settings
         auto endpoint_url = config.getString(config_prefix + ".endpoint", "https://sadttmpstgeus.blob.core.windows.net/data"); // TODO: remove default url
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
         auto blob_container_client = Azure::Storage::Blobs::BlobContainerClient(endpoint_url, managed_identity_credential);
@@ -77,13 +85,12 @@ void registerDiskBlobStorage(DiskFactory & factory)
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
 
-        auto thread_pool_size = config.getInt(config_prefix + ".thread_pool_size", 16);
-
         std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
             name,
             metadata_path,
             blob_container_client,
-            thread_pool_size
+            getSettings(config, config_prefix, context),
+            getSettings
         );
 
         // NOTE: test - almost direct copy-paste from registerDiskS3
