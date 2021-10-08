@@ -172,7 +172,7 @@
       -->
     <!-- <listen_reuse_port>0</listen_reuse_port> -->
 
-    <!-- <listen_backlog>64</listen_backlog> -->
+    <!-- <listen_backlog>4096</listen_backlog> -->
 
     <max_connections>4096</max_connections>
 

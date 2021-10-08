@@ -13,7 +13,7 @@
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
-#    include <DataStreams/CountingBlockOutputStream.h>
+#    include <Processors/Transforms/CountingTransform.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
