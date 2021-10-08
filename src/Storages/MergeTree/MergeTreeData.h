@@ -654,6 +654,12 @@ public:
         return column_sizes;
     }
 
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        auto lock = lockParts();
+        return secondary_index_sizes;
+    }
+
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
@@ -873,6 +879,9 @@ protected:
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;
 
+    /// Current secondary index sizes in compressed and uncompressed form.
+    IndexSizeByName secondary_index_sizes;
+
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
@@ -1005,11 +1014,12 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnSizesImpl();
-    /// Adds or subtracts the contribution of the part to compressed column sizes.
-    void addPartContributionToColumnSizes(const DataPartPtr & part);
-    void removePartContributionToColumnSizes(const DataPartPtr & part);
+    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
+    void calculateColumnAndSecondaryIndexSizesImpl();
+
+    /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
+    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
