@@ -66,6 +66,14 @@ echo "yes"
 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 wait
 
+# Check correctness of multiple subqueries
+query_id=max_concurrent_queries_$RANDOM
+${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "select i from simple where j in (select i from simple where i < 10)"
+
+# We have to grep the server's error log because the following warning message
+# is generated during pipeline destruction and thus is not sent to the client.
+grep -E -q "{$query_id} <Warning>.*We have query_id removed but it's not recorded. This is a bug" /var/log/clickhouse-server/clickhouse-server.err.log && exit 1
+
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
 drop table simple
 "
