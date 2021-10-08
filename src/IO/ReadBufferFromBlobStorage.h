@@ -19,6 +19,7 @@ public:
     explicit ReadBufferFromBlobStorage(
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
         const String & path_,
+        UInt64 max_single_read_retries_,
         size_t buf_size_
     );
 
@@ -34,6 +35,7 @@ private:
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
     std::unique_ptr<ReadBuffer> impl;
     std::vector<uint8_t> tmp_buffer;
+    UInt64 max_single_read_retries;
     const String & path;
     off_t offset = 0;
 

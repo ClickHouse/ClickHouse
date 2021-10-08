@@ -8,6 +8,8 @@
 
 #include <IO/ReadBufferFromBlobStorage.h>
 #include <IO/ReadBufferFromString.h>
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -22,9 +24,11 @@ namespace ErrorCodes
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
     const String & path_,
+    UInt64 max_single_read_retries_,
     size_t /* buf_size_ */) :
     SeekableReadBuffer(nullptr, 0),
     blob_container_client(blob_container_client_),
+    max_single_read_retries(max_single_read_retries_),
     path(path_) {}
 
 
@@ -45,10 +49,33 @@ bool ReadBufferFromBlobStorage::nextImpl()
         next_result = impl->hasPendingData();
     }
 
-    if (!next_result)
+    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+    for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
     {
-        /// Try to read a next portion of data.
-        next_result = impl->next();
+        try
+        {
+            /// Try to read a next portion of data.
+            next_result = impl->next();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            // TODO: can't get this to compile, getting "error: reference to overloaded function could not be resolved; did you mean to call it?"
+            // LOG_DEBUG(log, "Caught exception while reading Blob Storage object. Object: {}, Offset: {}, Attempt: {}, Message: {}",
+            //     path, getPosition(), attempt, e.message());
+
+            std::cout << "Caught exception while reading Blob Storage object. Object: " << path << ", Offset: "
+                << getPosition() << ", Attempt: " << attempt << ", Message: " << e.message() << "\n";
+
+            /// Pause before next attempt.
+            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+
+            /// Try to reinitialize `impl`.
+            impl.reset();
+            impl = initialize();
+            next_result = impl->hasPendingData();
+        }
     }
 
     if (!next_result)
