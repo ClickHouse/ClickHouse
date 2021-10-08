@@ -343,7 +343,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
                 size_t index = __builtin_ctz(mask);
                 res_data.push_back(data_pos[index]);
                 mask = mask & (mask - 1);
-            }         
+            }
         }
 
         filt_pos += SIMD_BYTES;
