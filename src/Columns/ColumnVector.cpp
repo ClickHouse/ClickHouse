@@ -338,10 +338,11 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         else
         {
             size_t pcnt = __builtin_popcount(mask);
-            for(size_t j = 0; j < pcnt; j++) {
+            for (size_t j = 0; j < pcnt; ++j)
+            {
                 size_t index = __builtin_ctz(mask);
                 res_data.push_back(data_pos[index]);
-                mask = mask & (mask-1);
+                mask = mask & (mask - 1);
             }         
         }
 
