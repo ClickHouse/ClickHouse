@@ -1,4 +1,4 @@
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <base/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/formatReadable.h>
