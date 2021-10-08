@@ -2975,8 +2975,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
 {
-    std::cerr << "MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl" << std::endl;
-
     column_sizes.clear();
 
     /// Take into account only committed parts
@@ -2987,13 +2985,9 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
 {
-    std::cerr << "MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes " << part->name << std::endl;
-
     for (const auto & column : part->getColumns())
     {
-        std::cerr << "Column name " << column.name << std::endl;
         ColumnSize & total_column_size = column_sizes[column.name];
-        std::cerr << "Total column size compressed " << total_column_size.data_compressed << " uncompressed size " << total_column_size.data_uncompressed << std::endl;
         ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
