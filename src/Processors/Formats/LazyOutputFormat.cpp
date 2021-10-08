@@ -9,7 +9,7 @@ WriteBuffer LazyOutputFormat::out(nullptr, 0);
 
 Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 {
-    if (queue.isFinished())
+    if (isFinished())
         return {};
 
     Chunk chunk;
