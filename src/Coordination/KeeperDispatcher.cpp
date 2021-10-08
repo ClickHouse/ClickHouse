@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int SYSTEM_ERROR;
 }
 
 KeeperDispatcher::KeeperDispatcher()
@@ -239,7 +240,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
         if (!requests_queue->push(std::move(request_info)))
-            throw Exception("Cannot push request to queue", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
     else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
@@ -304,7 +305,9 @@ void KeeperDispatcher::shutdown()
             if (requests_queue)
             {
                 requests_queue->finish();
-                request_thread.join();
+
+                if (request_thread.joinable())
+                    request_thread.join();
             }
 
             responses_queue.finish();
@@ -380,7 +383,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     {
                         std::lock_guard lock(push_request_mutex);
                         if (!requests_queue->push(std::move(request_info)))
-                            LOG_INFO(log, "Cannot push request to queue");
+                            LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     }
 
                     /// Remove session from registered sessions
@@ -416,7 +419,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
         response->zxid = 0;
         response->error = error;
         if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,
                 response->zxid,
