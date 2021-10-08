@@ -45,7 +45,7 @@ private:
             }
             else
             {
-                push_condition.wait(queue_lock, [&](){ return is_finished || queue.size() < max_fill; });
+                push_condition.wait(queue_lock, predicate);
             }
 
             if (is_finished)
