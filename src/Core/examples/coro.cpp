@@ -27,11 +27,11 @@ namespace std
 
 
 template <typename T>
-struct suspend_value
+struct suspend_value // NOLINT(readability-identifier-naming)
 {
-    constexpr bool await_ready() const noexcept { return true; }
-    constexpr void await_suspend(std::coroutine_handle<>) const noexcept {}
-    constexpr T await_resume() const noexcept
+    constexpr bool await_ready() const noexcept { return true; } // NOLINT(readability-identifier-naming)
+    constexpr void await_suspend(std::coroutine_handle<>) const noexcept {} // NOLINT(readability-identifier-naming)
+    constexpr T await_resume() const noexcept // NOLINT(readability-identifier-naming)
     {
         std::cout << "  ret " << val << std::endl;
         return val;
@@ -41,57 +41,57 @@ struct suspend_value
 };
 
 template <typename T>
-struct resumable
+struct Task
 {
-    struct promise_type
+    struct promise_type // NOLINT(readability-identifier-naming)
     {
         using coro_handle = std::coroutine_handle<promise_type>;
-        auto get_return_object() { return coro_handle::from_promise(*this); }
-        auto initial_suspend() { return std::suspend_never(); }
-        auto final_suspend() noexcept { return suspend_value<T>{*r->value}; }
+        auto get_return_object() { return coro_handle::from_promise(*this); } // NOLINT(readability-identifier-naming)
+        auto initial_suspend() { return std::suspend_never(); } // NOLINT(readability-identifier-naming)
+        auto final_suspend() noexcept { return suspend_value<T>{*r->value}; } // NOLINT(readability-identifier-naming)
         //void return_void() {}
-        void return_value(T value_) { r->value = value_; }
-        void unhandled_exception()
+        void return_value(T value_) { r->value = value_; } // NOLINT(readability-identifier-naming)
+        void unhandled_exception() // NOLINT(readability-identifier-naming)
         {
             DB::tryLogCurrentException("Logger");
-            r->exception = std::current_exception();
+            r->exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
         }
 
         explicit promise_type(std::string tag_) : tag(tag_) {}
         ~promise_type() { std::cout << "~promise_type " << tag << std::endl; }
         std::string tag;
         coro_handle next;
-        resumable * r = nullptr;
+        Task * r = nullptr;
     };
 
     using coro_handle = std::coroutine_handle<promise_type>;
 
-    bool await_ready() const noexcept { return false; }
-    void await_suspend(coro_handle g) noexcept
+    bool await_ready() const noexcept { return false; } // NOLINT(readability-identifier-naming)
+    void await_suspend(coro_handle g) noexcept // NOLINT(readability-identifier-naming)
     {
         std::cout << "  await_suspend " << my.promise().tag << std::endl;
         std::cout << "  g tag " << g.promise().tag << std::endl;
         g.promise().next = my;
     }
-    T await_resume() noexcept
+    T await_resume() noexcept // NOLINT(readability-identifier-naming)
     {
         std::cout << "  await_res " << my.promise().tag << std::endl;
         return *value;
     }
 
-    resumable(coro_handle handle) : my(handle), tag(handle.promise().tag)
+    explicit Task(coro_handle handle) : my(handle), tag(handle.promise().tag)
     {
         assert(handle);
         my.promise().r = this;
-        std::cout << "    resumable " << tag << std::endl;
+        std::cout << "    Task " << tag << std::endl;
     }
-    resumable(resumable &) = delete;
-    resumable(resumable &&rhs) : my(rhs.my), tag(rhs.tag)
+    Task(Task &) = delete;
+    Task(Task &&rhs) : my(rhs.my), tag(rhs.tag)
     {
         rhs.my = {};
-        std::cout << "    resumable&& " << tag << std::endl;
+        std::cout << "    Task&& " << tag << std::endl;
     }
-    static bool resume_impl(resumable *r)
+    static bool resumeImpl(Task *r)
     {
         if (r->value)
         return false;
@@ -100,7 +100,7 @@ struct resumable
 
         if (next)
         {
-            if (resume_impl(next.promise().r))
+            if (resumeImpl(next.promise().r))
             return true;
             next = {};
         }
@@ -116,7 +116,7 @@ struct resumable
 
     bool resume()
     {
-        return resume_impl(this);
+        return resumeImpl(this);
     }
 
     T res()
@@ -124,9 +124,9 @@ struct resumable
         return *value;
     }
 
-    ~resumable()
+    ~Task()
     {
-        std::cout << "    ~resumable " << tag << std::endl;
+        std::cout << "    ~Task " << tag << std::endl;
     }
 
 private:
@@ -136,7 +136,7 @@ private:
     std::exception_ptr exception;
 };
 
-resumable<int> boo([[maybe_unused]] std::string tag)
+Task<int> boo([[maybe_unused]] std::string tag)
 {
     std::cout << "x" << std::endl;
     co_await std::suspend_always();
@@ -145,7 +145,7 @@ resumable<int> boo([[maybe_unused]] std::string tag)
     co_return 1;
 }
 
-resumable<int> bar([[maybe_unused]] std::string tag)
+Task<int> bar([[maybe_unused]] std::string tag)
 {
     std::cout << "a" << std::endl;
     int res1 = co_await boo("boo1");
@@ -157,7 +157,7 @@ resumable<int> bar([[maybe_unused]] std::string tag)
     co_return res1 + res2;  // 1 + 1 = 2
 }
 
-resumable<int> foo([[maybe_unused]] std::string tag) {
+Task<int> foo([[maybe_unused]] std::string tag) {
     std::cout << "Hello" << std::endl;
     auto res1 = co_await bar("bar1");
     std::cout << "Coro " << res1 << std::endl;
