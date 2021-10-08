@@ -327,18 +327,13 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
         mask = ~mask;
 
-        if (0 == mask)
-        {
-            /// Nothing is inserted.
-        }
-        else if (0xFFFF == mask)
+        if (0xFFFF == mask)
         {
             res_data.insert(data_pos, data_pos + SIMD_BYTES);
         }
         else
         {
-            size_t pcnt = __builtin_popcount(mask);
-            for (size_t j = 0; j < pcnt; ++j)
+            while(mask)
             {
                 size_t index = __builtin_ctz(mask);
                 res_data.push_back(data_pos[index]);
