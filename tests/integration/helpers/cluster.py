@@ -2071,7 +2071,7 @@ class ClickHouseInstance:
         return self.cluster.exec_in_container(self.docker_id, cmd, detach, nothrow, **kwargs)
 
     def rotate_logs(self):
-        self.exec_in_container(["bash", "-c", f"kill -1  {self.get_process_pid('clickhouse server')}"], user='root')
+        self.exec_in_container(["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"], user='root')
 
     def contains_in_log(self, substring, from_host=False):
         if from_host:
