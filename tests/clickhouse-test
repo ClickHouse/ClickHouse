@@ -87,8 +87,11 @@ class Client(clickhouse_driver.Client):
         return data
 
 # Helpers
-def make_clickhouse_client(base_args, *args, **kwargs):
+def make_clickhouse_client(base_args):
     return Client(host=base_args.tcp_host, port=base_args.tcp_port,
+        # hung check in stress tests may remove the database,
+        # hence we should use 'system'.
+        database='system',
         settings=get_additional_client_options_dict(base_args))
 def clickhouse_execute_one(base_args, *args, **kwargs):
     return make_clickhouse_client(base_args).execute_one(*args, **kwargs)
