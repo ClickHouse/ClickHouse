@@ -311,7 +311,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
-#ifdef __SSE2__
+#if defined(__SSE2__) && defined(__POPCNT__)
     /** A slightly more optimized version.
     * Based on the assumption that often pieces of consecutive values
     *  completely pass or do not pass the filter.
@@ -337,9 +337,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         }
         else
         {
-            for (size_t i = 0; i < SIMD_BYTES; ++i)
-                if (filt_pos[i])
-                    res_data.push_back(data_pos[i]);
+            size_t pcnt = __builtin_popcount(mask);
+            for(size_t j = 0; j < pcnt; j++) {
+                size_t index = __builtin_ctz(mask);
+                res_data.push_back(data_pos[index]);
+                mask = mask & (mask-1);
+            }         
         }
 
         filt_pos += SIMD_BYTES;

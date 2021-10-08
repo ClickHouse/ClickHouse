@@ -231,7 +231,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     const UInt8 * filt_end = filt_pos + col_size;
     const UInt8 * data_pos = chars.data();
 
-#ifdef __SSE2__
+#if defined(__SSE2__) && defined(__POPCNT__)
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.
@@ -251,28 +251,24 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         if (0 == mask)
         {
             /// Nothing is inserted.
-            data_pos += chars_per_simd_elements;
         }
         else if (0xFFFF == mask)
         {
             res->chars.insert(data_pos, data_pos + chars_per_simd_elements);
-            data_pos += chars_per_simd_elements;
         }
         else
         {
             size_t res_chars_size = res->chars.size();
-            for (size_t i = 0; i < SIMD_BYTES; ++i)
-            {
-                if (filt_pos[i])
-                {
-                    res->chars.resize(res_chars_size + n);
-                    memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
-                    res_chars_size += n;
-                }
-                data_pos += n;
+            size_t pcnt = __builtin_popcount(mask);
+            for(size_t j = 0; j < pcnt; j++) {
+                size_t index = __builtin_ctz(mask);
+                res->chars.resize(res_chars_size + n);
+                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos+index*n, n);
+                res_chars_size += n;
+                mask = mask & (mask-1);
             }
         }
-
+        data_pos += chars_per_simd_elements;
         filt_pos += SIMD_BYTES;
     }
 #endif
