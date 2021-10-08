@@ -1643,7 +1643,7 @@ class ClickHouseCluster:
             self.shutdown()
             raise
 
-    def shutdown(self, kill=True):
+    def shutdown(self, kill=True, ignore_fatal=True):
         sanitizer_assert_instance = None
         fatal_log = None
 
@@ -1674,7 +1674,7 @@ class ClickHouseCluster:
                     sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True)
                     logging.error("Sanitizer in instance %s log %s", name, sanitizer_assert_instance)
 
-                if instance.contains_in_log("Fatal", from_host=True):
+                if not ignore_fatal and instance.contains_in_log("Fatal", from_host=True):
                     fatal_log = instance.grep_in_log("Fatal", from_host=True)
                     if 'Child process was terminated by signal 9 (KILL)' in fatal_log:
                         fatal_log = None
