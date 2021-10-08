@@ -24,15 +24,28 @@ namespace DB
 void blob_storage_demo();
 
 
+struct DiskBlobStorageSettings final
+{
+    DiskBlobStorageSettings(
+        int thread_pool_size_);
+
+    int thread_pool_size;
+};
+
+
 class DiskBlobStorage final : public IDiskRemote
 {
 public:
+
+    using SettingsPtr = std::unique_ptr<DiskBlobStorageSettings>;
+    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
 
     DiskBlobStorage(
         const String & name_,
         const String & metadata_path_,
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
-        size_t thread_pool_size_);
+        SettingsPtr settings_,
+        GetDiskSettings settings_getter_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -57,10 +70,16 @@ public:
 
     RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
+
 private:
 
     /// client used to access the files in the Blob Storage cloud
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+
+    MultiVersion<DiskBlobStorageSettings> current_settings;
+    /// Gets disk settings from context.
+    GetDiskSettings settings_getter;
 };
 
 }
