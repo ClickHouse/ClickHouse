@@ -203,11 +203,11 @@ def test_show_profiles():
     assert instance.query(
         "SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\', add_http_cors_header = 1\n"
     assert instance.query(
-        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
+        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\', add_http_cors_header = 1\n" \
                                    "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                                    "CREATE SETTINGS PROFILE xyz\n"
 
-    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
+    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\', add_http_cors_header = 1\n" \
                       "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                       "CREATE SETTINGS PROFILE xyz\n"
     assert expected_access in instance.query("SHOW ACCESS")
