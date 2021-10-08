@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SYSTEM_ERROR;
 }
 
 namespace
@@ -130,7 +131,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
-                LOG_WARNING(log, "Could not push response {} into responses queue", response_for_session.session_id);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
     }
 
     last_committed_idx = log_idx;
@@ -221,7 +222,7 @@ void KeeperStateMachine::create_snapshot(
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flash to disk", s.get_last_log_idx());
     /// Flush snapshot to disk in a separate thread.
     if (!snapshots_queue.push(std::move(snapshot_task)))
-        LOG_DEBUG(log, "Cannot push snapshot task into queue");
+        LOG_WARNING(log, "Cannot push snapshot task into queue");
 }
 
 void KeeperStateMachine::save_logical_snp_obj(
@@ -308,7 +309,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
     auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            LOG_WARNING(log, "Could not push response {} into responses queue", response.session_id);
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()
