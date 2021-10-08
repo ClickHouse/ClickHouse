@@ -12,37 +12,25 @@
 #include <Poco/AutoPtr.h>
 
 #if defined(__clang__)
-
 #include <experimental/coroutine>
 
-template <typename T>
-using coroutine_handle = std::experimental::coroutine_handle<T>;
-
-using default_coroutine_handle = std::experimental::coroutine_handle<>;
-
-using suspend_never = std::experimental::suspend_never;
-using suspend_always = std::experimental::suspend_always;
+namespace std
+{
+    using namespace experimental::coroutines_v1;
+}
 
 #else
-
 #include <coroutine>
-
-template <typename T>
-using coroutine_handle = std::coroutine_handle<T>;
-
-using default_coroutine_handle = std::coroutine_handle<>;
-
-using suspend_never = std::suspend_never;
-using suspend_always = std::suspend_always;
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #endif
 
 
 template <typename T>
-struct suspend_never_val
+struct suspend_value
 {
     constexpr bool await_ready() const noexcept { return true; }
-    constexpr void await_suspend(default_coroutine_handle) const noexcept {}
+    constexpr void await_suspend(std::coroutine_handle<>) const noexcept {}
     constexpr T await_resume() const noexcept
     {
         std::cout << "  ret " << val << std::endl;
@@ -57,10 +45,10 @@ struct resumable
 {
     struct promise_type
     {
-        using coro_handle = coroutine_handle<promise_type>;
+        using coro_handle = std::coroutine_handle<promise_type>;
         auto get_return_object() { return coro_handle::from_promise(*this); }
-        auto initial_suspend() { return suspend_never(); }
-        auto final_suspend() noexcept { return suspend_never_val<T>{*r->value}; }
+        auto initial_suspend() { return std::suspend_never(); }
+        auto final_suspend() noexcept { return suspend_value<T>{*r->value}; }
         //void return_void() {}
         void return_value(T value_) { r->value = value_; }
         void unhandled_exception()
@@ -76,7 +64,7 @@ struct resumable
         resumable * r = nullptr;
     };
 
-    using coro_handle = coroutine_handle<promise_type>;
+    using coro_handle = std::coroutine_handle<promise_type>;
 
     bool await_ready() const noexcept { return false; }
     void await_suspend(coro_handle g) noexcept
@@ -148,16 +136,16 @@ private:
     std::exception_ptr exception;
 };
 
-resumable<int> boo(std::string tag)
+resumable<int> boo([[maybe_unused]] std::string tag)
 {
     std::cout << "x" << std::endl;
-    co_await suspend_always();
+    co_await std::suspend_always();
     std::cout << StackTrace().toString();
     std::cout << "y" << std::endl;
     co_return 1;
 }
 
-resumable<int> bar(std::string tag)
+resumable<int> bar([[maybe_unused]] std::string tag)
 {
     std::cout << "a" << std::endl;
     int res1 = co_await boo("boo1");
@@ -169,7 +157,7 @@ resumable<int> bar(std::string tag)
     co_return res1 + res2;  // 1 + 1 = 2
 }
 
-resumable<int> foo(std::string tag) {
+resumable<int> foo([[maybe_unused]] std::string tag) {
     std::cout << "Hello" << std::endl;
     auto res1 = co_await bar("bar1");
     std::cout << "Coro " << res1 << std::endl;
