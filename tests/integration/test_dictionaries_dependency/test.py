@@ -88,7 +88,10 @@ def test_dependency_via_explicit_table(node):
     # Restart must not break anything.
     node.restart_clickhouse()
     check()
-
+    for dct in d_names:
+        node.query(f"DROP DICTIONARY {dct}")
+    for tbl in tbl_names:
+        node.query(f"DROP TABLE {tbl}")
 
 @pytest.mark.parametrize("node", nodes)
 def test_dependency_via_dictionary_database(node):
