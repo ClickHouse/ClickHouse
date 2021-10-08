@@ -516,7 +516,7 @@ void SystemLog<LogElement>::prepareTable()
         auto alias_columns = LogElement::getNamesAndAliases();
         auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
 
-        if (old_query->getTreeHash() != current_query->getTreeHash())
+        if (serializeAST(*old_query) != serializeAST(*current_query))
         {
             /// Rename the existing table.
             int suffix = 0;
