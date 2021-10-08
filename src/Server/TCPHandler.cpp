@@ -16,8 +16,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -1369,7 +1369,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
     bool read_ok = skip_block_in->read();
 
     if (!read_ok)
@@ -1399,7 +1399,7 @@ void TCPHandler::initBlockInput()
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
-        state.block_in = std::make_shared<NativeBlockInputStream>(
+        state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version);
@@ -1430,7 +1430,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                 state.maybe_compressed_out = out;
         }
 
-        state.block_out = std::make_shared<NativeBlockOutputStream>(
+        state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1444,7 +1444,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     {
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
-        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+        state.logs_block_out = std::make_unique<NativeWriter>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
