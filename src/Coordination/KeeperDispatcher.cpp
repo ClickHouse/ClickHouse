@@ -15,6 +15,7 @@ namespace ErrorCodes
 
 KeeperDispatcher::KeeperDispatcher()
     : coordination_settings(std::make_shared<CoordinationSettings>())
+    , responses_queue(std::numeric_limits<size_t>::max())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -414,7 +415,12 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
         response->xid = request->xid;
         response->zxid = 0;
         response->error = error;
-        responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Could not push error response xid {} zxid {} error message {} to responses queue",
+                response->xid,
+                response->zxid,
+                errorMessage(error));
     }
 }
 

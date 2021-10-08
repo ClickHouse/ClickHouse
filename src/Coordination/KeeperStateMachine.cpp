@@ -120,7 +120,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
-            responses_queue.push(response_for_session);
+            if (!responses_queue.push(response_for_session))
+                LOG_WARNING(log, "Could not push response {} into responses queue", session_id);
         }
     }
     else
@@ -128,7 +129,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         std::lock_guard lock(storage_and_responses_lock);
         KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
         for (auto & response_for_session : responses_for_sessions)
-            responses_queue.push(response_for_session);
+            if (!responses_queue.push(response_for_session))
+                LOG_WARNING(log, "Could not push response {} into responses queue", response_for_session.session_id);
     }
 
     last_committed_idx = log_idx;
@@ -305,7 +307,8 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
     std::lock_guard lock(storage_and_responses_lock);
     auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
     for (const auto & response : responses)
-        responses_queue.push(response);
+        if (!responses_queue.push(response))
+            LOG_WARNING(log, "Could not push response {} into responses queue", response.session_id);
 }
 
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()

@@ -23,7 +23,7 @@ public:
     Chunk getTotals();
     Chunk getExtremes();
 
-    bool isFinished() { return queue.isFinished(); }
+    bool isFinished() { return queue.isFinishedAndEmpty(); }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
@@ -31,7 +31,7 @@ public:
 
     void onCancel() override
     {
-        queue.finish();
+        queue.clearAndFinish();
     }
 
     void finalize() override
@@ -44,8 +44,7 @@ public:
 protected:
     void consume(Chunk chunk) override
     {
-        if (!queue.isFinished())
-            (void)(queue.emplace(std::move(chunk)));
+        (void)(queue.emplace(std::move(chunk)));
     }
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
