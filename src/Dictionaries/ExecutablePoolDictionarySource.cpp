@@ -1,7 +1,7 @@
 #include "ExecutablePoolDictionarySource.h"
 
-#include <common/logger_useful.h>
-#include <common/LocalDateTime.h>
+#include <base/logger_useful.h>
+#include <base/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
 #include <DataStreams/formatBlock.h>

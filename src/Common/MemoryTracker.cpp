@@ -4,7 +4,7 @@
 #include "Common/TraceCollector.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 

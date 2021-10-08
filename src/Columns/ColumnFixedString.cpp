@@ -11,8 +11,8 @@
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <common/sort.h>
-#include <common/scope_guard.h>
+#include <base/sort.h>
+#include <base/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -137,15 +137,33 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
 }
 
 template <bool positive>
-struct ColumnFixedString::less
+struct ColumnFixedString::Cmp
 {
     const ColumnFixedString & parent;
-    explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
-    bool operator()(size_t lhs, size_t rhs) const
+    explicit Cmp(const ColumnFixedString & parent_) : parent(parent_) {}
+    int operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
-        return positive ? (res < 0) : (res > 0);
+
+        if constexpr (positive)
+            return res;
+        else
+            return -res;
     }
+};
+
+struct ColumnFixedString::less
+{
+    Cmp<true> cmp;
+    explicit less(const ColumnFixedString & parent_) : cmp(parent_) {}
+    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) < 0; }
+};
+
+struct ColumnFixedString::greater
+{
+    Cmp<true> cmp;
+    explicit greater(const ColumnFixedString & parent_) : cmp(parent_) {}
+    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) > 0; }
 };
 
 void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
@@ -161,93 +179,25 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
         else
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
     }
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), less<false>(*this));
+            std::sort(res.begin(), res.end(), greater(*this));
         else
-            std::sort(res.begin(), res.end(), less<true>(*this));
+            std::sort(res.begin(), res.end(), less(*this));
     }
 }
 
 void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_ranges.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
-        else
-            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
-
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
-        else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
-
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
-    }
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
+    else
+        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -464,13 +414,12 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    less<true> less_op(*this);
-
+    auto cmp_less = less(*this);
     for (size_t i = 1; i < col_size; ++i)
     {
-        if (less_op(i, min_idx))
+        if (cmp_less(i, min_idx))
             min_idx = i;
-        else if (less_op(max_idx, i))
+        else if (cmp_less(max_idx, i))
             max_idx = i;
     }
 
