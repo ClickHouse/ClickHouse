@@ -122,7 +122,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
             if (!responses_queue.push(response_for_session))
-                LOG_WARNING(log, "Could not push response {} into responses queue", session_id);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
         }
     }
     else
