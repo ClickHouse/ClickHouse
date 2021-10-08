@@ -201,6 +201,8 @@ namespace detail
                 if (ec != std::errc())
                     settings.http_retriable_read = false;
             }
+
+            initialize();
         }
 
         void initialize()
