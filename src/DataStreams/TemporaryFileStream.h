@@ -5,6 +5,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/NativeReader.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ struct TemporaryFileStream
 {
     ReadBufferFromFile file_in;
     CompressedReadBuffer compressed_in;
-    BlockInputStreamPtr block_in;
+    std::unique_ptr<NativeReader> block_in;
 
     explicit TemporaryFileStream(const std::string & path);
     TemporaryFileStream(const std::string & path, const Block & header_);

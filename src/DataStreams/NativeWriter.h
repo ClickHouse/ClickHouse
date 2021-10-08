@@ -1,8 +1,8 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <base/types.h>
 #include <DataTypes/IDataType.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -17,20 +17,20 @@ class CompressedWriteBuffer;
   * A stream can be specified to write the index. The index contains offsets to each part of each column.
   * If an `append` is made to an existing file, and you need to write the index, then specify `initial_size_of_file`.
   */
-class NativeBlockOutputStream : public IBlockOutputStream
+class NativeWriter
 {
 public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
-    NativeBlockOutputStream(
+    NativeWriter(
         WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_ = false,
         WriteBuffer * index_ostr_ = nullptr, size_t initial_size_of_file_ = 0);
 
-    Block getHeader() const override { return header; }
-    void write(const Block & block) override;
-    void flush() override;
+    Block getHeader() const { return header; }
+    void write(const Block & block);
+    void flush();
 
-    String getContentType() const override { return "application/octet-stream"; }
+    static String getContentType() { return "application/octet-stream"; }
 
 private:
     WriteBuffer & ostr;
