@@ -28,5 +28,6 @@ LIFETIME(MIN 0 MAX 1000)
 COMMENT 'Test dictionary with comment';
 
 SHOW CREATE DICTIONARY 2024_dictionary_with_comment;
+SELECT comment FROM system.dictionaries WHERE name == '2024_dictionary_with_comment' AND database == currentDatabase();
 
-SELECT comment FROM system.dictionaries WHERE name == '2024_dictionary_with_comment';
+DROP DICTIONARY IF EXISTS 2024_dictionary_with_comment;
