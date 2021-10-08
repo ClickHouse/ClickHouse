@@ -17,11 +17,7 @@
 
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <DataStreams/ColumnGathererStream.h>
+#include <DataStreams/ColumnGathererTransform.h>
 
 using DB::RowSourcePart;
 
