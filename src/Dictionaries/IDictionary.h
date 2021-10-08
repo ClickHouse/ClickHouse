@@ -216,12 +216,25 @@ struct IDictionary : public IExternalLoadable
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
+    void setDictionaryComment(String new_comment)
+    {
+        std::lock_guard lock{name_mutex};
+        dictionary_comment = std::move(new_comment);
+    }
+
+    String getDictionaryComment() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_comment;
+    }
+
 private:
     mutable std::mutex name_mutex;
     mutable StorageID dictionary_id;
 
 protected:
     const String full_name;
+    String dictionary_comment;
 };
 
 }
