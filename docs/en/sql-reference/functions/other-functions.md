@@ -699,6 +699,12 @@ If it is executed in the context of a distributed table, then it generates a nor
 Returns the version of the server as a string.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
+## buildId() {#buildid}
+
+Returns the compiler build id of the running binary.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+
+
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
