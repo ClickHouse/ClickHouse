@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -242,7 +242,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
-    if (isComma(kind) || isCross(kind))
+    if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
         sample_block_with_columns_to_add = right_sample_block;

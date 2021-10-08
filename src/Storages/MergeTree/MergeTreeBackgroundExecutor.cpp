@@ -58,9 +58,12 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
             item->is_currently_deleting = true;
     }
 
-
+    /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
+    {
         item->is_done.wait();
+        item.reset();
+    }
 }
 
 
@@ -100,12 +103,18 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             /// This is significant to order the destructors.
             item->task.reset();
             item->is_done.set();
+            item = nullptr;
             return;
         }
 
-        pending.push(item);
+        /// After the `guard` destruction `item` has to be in moved from state
+        /// Not to own the object it points to.
+        /// Otherwise the destruction of the task won't be ordered with the destruction of the
+        /// storage.
+        pending.push(std::move(item));
         erase_from_active();
         has_tasks.notify_one();
+        item = nullptr;
         return;
     }
 
@@ -136,6 +145,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         item->task.reset();
         item->is_done.set();
+        item = nullptr;
     }
 }
 

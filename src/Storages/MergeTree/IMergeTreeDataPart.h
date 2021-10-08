@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>

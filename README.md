@@ -11,4 +11,4 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-rxm3rdrk-lIUmhLC3V8WTaL0TGxsOmg) and [Telegram](https://telegram.me/clickhouse_en) allow to chat with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/en/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Code Browser](https://clickhouse.com/codebrowser/html_report/ClickHouse/index.html) with syntax highlight and navigation.
-* [Contacts](https://clickhouse.com/#contacts) can help to get your questions answered if there are any.
+* [Contacts](https://clickhouse.com/company/#contact) can help to get your questions answered if there are any.

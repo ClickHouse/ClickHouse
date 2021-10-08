@@ -5,7 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
 

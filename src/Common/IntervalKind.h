@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/types.h>
-#include <common/EnumReflection.h>
+#include <base/types.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
