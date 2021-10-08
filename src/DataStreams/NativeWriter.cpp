@@ -6,7 +6,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <DataStreams/MarkInCompressedFile.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-NativeBlockOutputStream::NativeBlockOutputStream(
+NativeWriter::NativeWriter(
     WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)
     : ostr(ostr_), client_revision(client_revision_), header(header_),
@@ -35,7 +35,7 @@ NativeBlockOutputStream::NativeBlockOutputStream(
 }
 
 
-void NativeBlockOutputStream::flush()
+void NativeWriter::flush()
 {
     ostr.next();
 }
@@ -62,7 +62,7 @@ static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuf
 }
 
 
-void NativeBlockOutputStream::write(const Block & block)
+void NativeWriter::write(const Block & block)
 {
     /// Additional information about the block.
     if (client_revision > 0)
