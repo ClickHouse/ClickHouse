@@ -6,24 +6,24 @@
 #include <random>
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
 
 
-// // TODO: abstract this function from DiskS3.cpp, from where it was copy-pasted
-// String getRandomName()
-// {
-//     std::uniform_int_distribution<int> distribution('a', 'z');
-//     String res(32, ' '); /// The number of bits of entropy should be not less than 128.
-//     for (auto & c : res)
-//         c = distribution(thread_local_rng);
-//     return res;
-// }
-
-
 DiskBlobStorageSettings::DiskBlobStorageSettings(
-    int thread_pool_size_) :
-    thread_pool_size(thread_pool_size_) {}
+    UInt64 max_single_read_retries_,
+    UInt64 min_upload_part_size_,
+    UInt64 max_single_part_upload_size_,
+    UInt64 min_bytes_for_seek_,
+    int thread_pool_size_,
+    int objects_chunk_size_to_delete_) :
+    max_single_read_retries(max_single_read_retries_),
+    min_upload_part_size(min_upload_part_size_),
+    max_single_part_upload_size(max_single_part_upload_size_),
+    min_bytes_for_seek(min_bytes_for_seek_),
+    thread_pool_size(thread_pool_size_),
+    objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
 
 
 class BlobStoragePathKeeper : public RemoteFSPathKeeper
@@ -44,19 +44,22 @@ public:
     ReadIndirectBufferFromBlobStorage(
         Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
         IDiskRemote::Metadata metadata_,
+        UInt64 max_single_read_retries_,
         size_t buf_size_) :
         ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>(metadata_),
         blob_container_client(blob_container_client_),
+        max_single_read_retries(max_single_read_retries_),
         buf_size(buf_size_)
     {}
 
     std::unique_ptr<ReadBufferFromBlobStorage> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + path, buf_size);
+        return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+    UInt64 max_single_read_retries;
     size_t buf_size;
 };
 
@@ -85,9 +88,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
 
     LOG_DEBUG(log, "Read from file by path: {}", backQuote(metadata_path + path));
 
-    auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(blob_container_client, metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(
+        blob_container_client, metadata, current_settings.get()->max_single_read_retries, buf_size);
 
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), buf_size); // TODO: last one is the min bytes read, to change
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), current_settings.get()->min_bytes_for_seek);
 }
 
 
@@ -102,7 +106,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     LOG_DEBUG(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + blob_path);
 
-    auto buffer = std::make_unique<WriteBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + blob_path, buf_size);
+    auto buffer = std::make_unique<WriteBufferFromBlobStorage>(
+        blob_container_client,
+        metadata.remote_fs_root_path + blob_path,
+        current_settings.get()->min_upload_part_size,
+        current_settings.get()->max_single_part_upload_size,
+        buf_size);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromBlobStorage>>(std::move(buffer), std::move(metadata), blob_path);
 }
@@ -134,10 +143,10 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr)
 
 RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
 {
-    return std::make_shared<BlobStoragePathKeeper>(1024);
+    return std::make_shared<BlobStoragePathKeeper>(current_settings.get()->objects_chunk_size_to_delete);
 }
 
-// TODO: applyNewSettings - copy-paste from DiskS3
+// NOTE: applyNewSettings - direct copy-paste from DiskS3
 void DiskBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
