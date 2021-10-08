@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 
 # pylint: disable=too-many-return-statements
-# pylint: disable=consider-using-f-string
 # pylint: disable=global-variable-not-assigned
-# pylint: disable=consider-using-with
-# pylint: disable=unspecified-encoding
-# pylint: disable=consider-using-min-builtin
 
 import enum
 import shutil
