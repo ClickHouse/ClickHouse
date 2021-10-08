@@ -24,7 +24,7 @@ ATTACH VIEW columns
     `domain_schema` Nullable(String),
     `domain_name` Nullable(String),
     `column_comment` String,
-    `column_type` Nullable(String),
+    `column_type` String,
     `TABLE_CATALOG` String ALIAS table_catalog,
     `TABLE_SCHEMA` String ALIAS table_schema,
     `TABLE_NAME` String ALIAS table_name,
@@ -49,7 +49,7 @@ ATTACH VIEW columns
     `DOMAIN_SCHEMA` Nullable(String) ALIAS domain_schema,
     `DOMAIN_NAME` Nullable(String) ALIAS domain_name,
     `COLUMN_COMMENT` String ALIAS column_comment,
-    `COLUMN_TYPE` Nullable(String) ALIAS column_type
+    `COLUMN_TYPE` String ALIAS column_type
 ) AS
 SELECT
     database AS table_catalog,
@@ -76,5 +76,5 @@ SELECT
     NULL AS domain_schema,
     NULL AS domain_name,
     comment AS column_comment,
-    NULL AS column_type
+    type AS column_type
 FROM system.columns
