@@ -260,12 +260,13 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         {
             size_t res_chars_size = res->chars.size();
             size_t pcnt = __builtin_popcount(mask);
-            for(size_t j = 0; j < pcnt; j++) {
+            for (size_t j = 0; j < pcnt; ++j)
+            {
                 size_t index = __builtin_ctz(mask);
                 res->chars.resize(res_chars_size + n);
-                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos+index*n, n);
+                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask-1);
+                mask = mask & (mask - 1);
             }
         }
         data_pos += chars_per_simd_elements;
