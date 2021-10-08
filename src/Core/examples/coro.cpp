@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -157,7 +155,8 @@ Task<int> bar([[maybe_unused]] std::string tag)
     co_return res1 + res2;  // 1 + 1 = 2
 }
 
-Task<int> foo([[maybe_unused]] std::string tag) {
+Task<int> foo([[maybe_unused]] std::string tag)
+{
     std::cout << "Hello" << std::endl;
     auto res1 = co_await bar("bar1");
     std::cout << "Coro " << res1 << std::endl;
