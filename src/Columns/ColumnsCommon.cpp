@@ -229,7 +229,7 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #ifdef __SSE2__
+    #if defined(__SSE2__) && defined(__POPCNT__)
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
@@ -262,9 +262,12 @@ namespace
             }
             else
             {
-                for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
-                        copy_array(offsets_pos + i);
+                size_t pcnt = __builtin_popcount(mask);
+                for(size_t j = 0; j < pcnt; j++) {
+                    size_t index = __builtin_ctz(mask);
+                    copy_array(offsets_pos + index);
+                    mask = mask & (mask-1);
+                }
             }
 
             filt_pos += SIMD_BYTES;
