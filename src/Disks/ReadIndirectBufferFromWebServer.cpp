@@ -21,12 +21,13 @@ namespace ErrorCodes
 }
 
 ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
-    const String & url_, ContextPtr context_, size_t buf_size_, size_t, size_t)
+    const String & url_, ContextPtr context_, size_t buf_size_, const ReadSettings & settings_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
+    , read_settings(settings_)
 {
 }
 
@@ -54,7 +55,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,
-        context->getReadSettings(),
+        read_settings,
         headers);
 }
 

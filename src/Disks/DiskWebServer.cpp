@@ -113,28 +113,25 @@ public:
             RemoteMetadata metadata_,
             ContextPtr context_,
             size_t buf_size_,
-            size_t backoff_threshold_,
-            size_t max_tries_)
+            const ReadSettings & settings_)
         : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
         , uri(uri_)
         , context(context_)
         , buf_size(buf_size_)
-        , backoff_threshold(backoff_threshold_)
-        , max_tries(max_tries_)
+        , settings(settings_)
     {
     }
 
     std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries);
+        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size, settings);
     }
 
 private:
     String uri;
     ContextPtr context;
     size_t buf_size;
-    size_t backoff_threshold;
-    size_t max_tries;
+    ReadSettings settings;
 };
 
 
@@ -196,8 +193,9 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(),
-        read_settings.remote_fs_buffer_size, read_settings.remote_fs_read_max_backoff_ms, read_settings.remote_fs_read_backoff_max_tries);
+    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size,
+                                                            read_settings);
+
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
