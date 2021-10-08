@@ -10,6 +10,7 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -53,9 +54,22 @@ void checkReadAccess(IDisk & disk)
 }
 
 
-void checkRemoveAccess(IDisk & disk) {
+void checkRemoveAccess(IDisk & disk)
+{
     // TODO: implement actually removing the file from Blob Storage cloud, now it seems only the metadata file is removed
     disk.removeFile(test_file);
+}
+
+
+void validate_endpoint_url(const String & endpoint_url)
+{
+    auto endpoint_url_pattern_str = "http(()|s)://[a-z0-9-]+\\.blob\\.core\\.windows\\.net/[a-z0-9-]+";
+    static const RE2 endpoint_url_pattern(endpoint_url_pattern_str);
+
+    if (!re2::RE2::FullMatch(endpoint_url, endpoint_url_pattern))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Blob Storage URL is not valid, should follow the format: {}, got: {}", endpoint_url_pattern_str, endpoint_url);
+    }
 }
 
 
@@ -83,6 +97,8 @@ void registerDiskBlobStorage(DiskFactory & factory)
         const DisksMap &)
     {
         auto endpoint_url = config.getString(config_prefix + ".endpoint", "https://sadttmpstgeus.blob.core.windows.net/data"); // TODO: remove default url
+        validate_endpoint_url(endpoint_url);
+
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
         auto blob_container_client = Azure::Storage::Blobs::BlobContainerClient(endpoint_url, managed_identity_credential);
 
