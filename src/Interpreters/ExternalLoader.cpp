@@ -1243,8 +1243,10 @@ private:
         {
             lock.unlock();
             {
-                std::lock_guard config_lock{config_mutex};
-                loading_dispatcher.setConfiguration(config_files_reader.read());
+                {
+                    std::lock_guard config_lock{config_mutex};
+                    loading_dispatcher.setConfiguration(config_files_reader.read());
+                }
                 loading_dispatcher.reloadOutdated();
             }
             lock.lock();
