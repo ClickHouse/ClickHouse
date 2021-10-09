@@ -77,7 +77,7 @@ struct Task
         return *value;
     }
 
-    explicit Task(coro_handle handle) : my(handle), tag(handle.promise().tag)
+    Task(coro_handle handle) : my(handle), tag(handle.promise().tag) // NOLINT(google-explicit-constructor)
     {
         assert(handle);
         my.promise().r = this;
