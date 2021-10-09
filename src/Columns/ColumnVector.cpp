@@ -311,7 +311,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
-#if defined(__SSE2__) && defined(__POPCNT__)
+#ifdef __SSE2__
     /** A slightly more optimized version.
     * Based on the assumption that often pieces of consecutive values
     *  completely pass or do not pass the filter.
