@@ -745,10 +745,13 @@ void HTTPHandler::processQuery(
     if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on or config has http_options_response,
-    /// which means that there are some headers to be sent, and the client passed Origin header.
-    if (settings.add_http_cors_header && config.has("http_options_response") && !request.get("Origin", "").empty())
+    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin,
+    /// or  if config has http_options_response, which means that there
+    /// are some headers to be sent, and the client passed Origin header.
+    if (config.has("http_options_response") && !request.get("Origin", "").empty())
         tryAddHeadersFromConfig(response, config);
+    else if (settings.add_http_cors_header)
+        used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
     auto append_callback = [context = context] (ProgressCallback callback)
     {

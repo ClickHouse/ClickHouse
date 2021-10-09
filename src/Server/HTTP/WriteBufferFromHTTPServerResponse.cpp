@@ -29,6 +29,9 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     {
         headers_started_sending = true;
 
+        if (add_cors_header)
+            response.set("Access-Control-Allow-Origin", "*");
+
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
         if (!is_http_method_head)
