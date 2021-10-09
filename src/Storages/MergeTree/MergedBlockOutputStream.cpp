@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -49,11 +48,6 @@ void MergedBlockOutputStream::write(const Block & block)
 void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
     writeImpl(block, permutation);
-}
-
-void MergedBlockOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(

@@ -2357,17 +2357,20 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        def write_embedded_config(name, dest_dir):
+        def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
                 data = data.replace('yandex', self.config_root_name)
+                if fix_log_level:
+                    data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
                     r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
+            need_fix_log_level = self.tag != 'latest'
+            write_embedded_config('0_common_instance_config.xml', self.config_d_dir, need_fix_log_level)
 
         write_embedded_config('0_common_instance_users.xml', users_d_dir)
 
