@@ -61,14 +61,6 @@ void NativeReader::resetParser()
 {
     istr_concrete = nullptr;
     use_index = false;
-
-#ifndef NDEBUG
-    read_prefix_is_called = false;
-    read_suffix_is_called = false;
-#endif
-
-    // is_cancelled.store(false);
-    // is_killed.store(false);
 }
 
 void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
