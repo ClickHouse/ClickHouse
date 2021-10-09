@@ -24,7 +24,7 @@ namespace
     public:
         static constexpr auto name = "buildId";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBuildId>(context); }
-        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(context, SymbolIndex::instance()->getBuildIDHex()) {}
+        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance()->getBuildIDHex(), context->isDistributed()) {}
     };
 #endif
 
@@ -35,7 +35,7 @@ namespace
     public:
         static constexpr auto name = "hostName";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHostName>(context); }
-        explicit FunctionHostName(ContextPtr context) : FunctionConstantBase(context, DNSResolver::instance().getHostName()) {}
+        explicit FunctionHostName(ContextPtr context) : FunctionConstantBase(DNSResolver::instance().getHostName(), context->isDistributed()) {}
     };
 
 
@@ -44,7 +44,7 @@ namespace
     public:
         static constexpr auto name = "serverUUID";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerUUID>(context); }
-        explicit FunctionServerUUID(ContextPtr context) : FunctionConstantBase(context, ServerUUID::get()) {}
+        explicit FunctionServerUUID(ContextPtr context) : FunctionConstantBase(ServerUUID::get(), context->isDistributed()) {}
     };
 
 
@@ -53,7 +53,7 @@ namespace
     public:
         static constexpr auto name = "tcpPort";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTcpPort>(context); }
-        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context, context->getTCPPort()) {}
+        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
     };
 
 
@@ -63,7 +63,7 @@ namespace
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(context, String{DateLUT::instance().getTimeZone()}) {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance().getTimeZone()}, context->isDistributed()) {}
     };
 
 
@@ -73,7 +73,7 @@ namespace
     public:
         static constexpr auto name = "uptime";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionUptime>(context); }
-        explicit FunctionUptime(ContextPtr context) : FunctionConstantBase(context, context->getUptimeSeconds()) {}
+        explicit FunctionUptime(ContextPtr context) : FunctionConstantBase(context->getUptimeSeconds(), context->isDistributed()) {}
     };
 
 
@@ -83,14 +83,17 @@ namespace
     public:
         static constexpr auto name = "version";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionVersion>(context); }
-        explicit FunctionVersion(ContextPtr context) : FunctionConstantBase(context, VERSION_STRING) {}
+        explicit FunctionVersion(ContextPtr context) : FunctionConstantBase(VERSION_STRING, context->isDistributed()) {}
     };
 
     class FunctionZooKeeperSessionUptime : public FunctionConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "zookeeperSessionUptime";
-        explicit FunctionZooKeeperSessionUptime(ContextPtr context) : FunctionConstantBase(context, context->getZooKeeperSessionUptime()) {}
+        explicit FunctionZooKeeperSessionUptime(ContextPtr context)
+            : FunctionConstantBase(context->getZooKeeperSessionUptime(), context->isDistributed())
+        {
+        }
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 }
