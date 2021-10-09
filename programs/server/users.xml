@@ -18,10 +18,7 @@
                  first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
             -->
             <load_balancing>random</load_balancing>
-
-            <!-- Turn on this setting for CORS headers. -->
-            <!-- add_http_cors_header>1</add_http_cors_header -->
-        </default>
+       </default>
 
         <!-- Profile that allows only read queries. -->
         <readonly>
