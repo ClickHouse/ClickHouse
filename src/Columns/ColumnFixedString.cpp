@@ -255,7 +255,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         else
         {
             size_t res_chars_size = res->chars.size();
-            while(mask)
+            while (mask)
             {
                 size_t index = __builtin_ctz(mask);
                 res->chars.resize(res_chars_size + n);
