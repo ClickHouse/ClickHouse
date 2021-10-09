@@ -368,6 +368,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
+        const DataPartsVector & parts,
+        DataPartsVector & normal_parts,
         ContextPtr query_context) const;
 
     bool getQueryProcessingStageWithAggregateProjection(
