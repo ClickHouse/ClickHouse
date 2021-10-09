@@ -7,6 +7,10 @@
 #include <Common/DNSResolver.h>
 #include <base/DateLUT.h>
 
+#if defined(OS_LINUX)
+#    include <Poco/Environment.h>
+#endif
+
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
@@ -93,6 +97,17 @@ namespace
         explicit FunctionZooKeeperSessionUptime(ContextPtr context) : FunctionConstantBase(context, context->getZooKeeperSessionUptime()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
+
+#if defined(OS_LINUX)
+    class FunctionOSKernelVersion : public FunctionConstantBase<FunctionOSKernelVersion, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "OSKernelVersion";
+        explicit FunctionOSKernelVersion(ContextPtr context) : FunctionConstantBase(context, Poco::Environment::osName() + " " + Poco::Environment::osVersion()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOSKernelVersion>(context); }
+    };
+#endif
+
 }
 
 
@@ -139,6 +154,15 @@ void registerFunctionZooKeeperSessionUptime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionZooKeeperSessionUptime>();
 }
+
+
+void registerFunctionOSKernelVersion(FunctionFactory & factory)
+{
+#if defined(OS_LINUX)
+    factory.registerFunction<FunctionOSKernelVersion>();
+#endif
+}
+
 
 }
 
