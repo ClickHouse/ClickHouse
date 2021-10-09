@@ -31,10 +31,20 @@ def assert_objects_count(started_cluster, objects_count, path='data/'):
     hdfs_objects = fs.listdir('/clickhouse')
     assert objects_count == len(hdfs_objects)
 
-
+# TinyLog: files: id.bin, sizes.json
+# INSERT overwrites 1 file (`sizes.json`) and appends 1 file (`id.bin`), so
+# files_overhead=1, files_overhead_per_insert=1
+#
+# Log: files: id.bin, __marks.mrk, sizes.json
+# INSERT overwrites 1 file (`sizes.json`), and appends 2 files (`id.bin`, `__marks.mrk`), so
+# files_overhead=1, files_overhead_per_insert=2
+#
+# StripeLog: files: data.bin, index.mrk, sizes.json
+# INSERT overwrites 1 file (`sizes.json`), and appends 2 files (`index.mrk`, `data.bin`), so
+# files_overhead=1, files_overhead_per_insert=2
 @pytest.mark.parametrize(
     "log_engine,files_overhead,files_overhead_per_insert",
-    [("TinyLog", 1, 1), ("Log", 2, 1), ("StripeLog", 1, 2)])
+    [("TinyLog", 1, 1), ("Log", 1, 2), ("StripeLog", 1, 2)])
 def test_log_family_hdfs(started_cluster, log_engine, files_overhead, files_overhead_per_insert):
     node = started_cluster.instances["node"]
 
