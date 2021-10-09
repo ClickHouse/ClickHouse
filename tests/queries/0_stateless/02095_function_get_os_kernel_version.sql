@@ -1,1 +1,1 @@
-WITH splitByChar(' ', getOSKernelVersion()) AS version_pair SELECT version_pair[1], toUInt32(splitByChar('.', version_pair[2])[1]) > 3
+WITH splitByChar(' ', getOSKernelVersion()) AS version_pair SELECT version_pair[1]
