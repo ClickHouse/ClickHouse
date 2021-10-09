@@ -4398,6 +4398,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
     const SelectQueryInfo & query_info,
+    const DataPartsVector & parts,
+    DataPartsVector & normal_parts,
     ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
@@ -4406,7 +4408,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             ErrorCodes::LOGICAL_ERROR);
 
     auto block = metadata_snapshot->minmax_count_projection->sample_block;
+    String primary_key_max_column_name;
+    if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
+        primary_key_max_column_name = *(block.getNames().cend() - 2);
+    bool need_primary_key_max_column = std::any_of(
+        required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
+
     auto minmax_count_columns = block.mutateColumns();
+    auto minmax_count_columns_size = minmax_count_columns.size();
 
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
@@ -4422,7 +4431,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    auto parts = getDataPartsVector();
     ASTPtr expression_ast;
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
     if (virtual_columns_block.rows() == 0)
@@ -4446,15 +4454,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
-        if (2 * minmax_idx_size + 1 != minmax_count_columns.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "minmax_count projection should have twice plus one the number of ranges in minmax_idx. 2 * minmax_idx_size + 1 = {}, "
-                "minmax_count_columns.size() = {}. It's a bug",
-                2 * minmax_idx_size + 1,
-                minmax_count_columns.size());
+        if (need_primary_key_max_column && !part->index_granularity.hasFinalMark())
+        {
+            normal_parts.push_back(part);
+            continue;
+        }
 
+        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
             size_t min_pos = i * 2;
@@ -4464,6 +4470,16 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
+        }
+
+        if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
+        {
+            const auto & primary_key_column = *part->index[0];
+            auto primary_key_column_size = primary_key_column.size();
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[minmax_count_columns_size - 3]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[minmax_count_columns_size - 2]);
+            insert(min_column, primary_key_column[0]);
+            insert(max_column, primary_key_column[primary_key_column_size - 1]);
         }
 
         {
@@ -4722,33 +4738,74 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
     if (metadata_snapshot->minmax_count_projection)
         add_projection_candidate(*metadata_snapshot->minmax_count_projection);
+    std::optional<ProjectionCandidate> minmax_conut_projection_candidate;
+    if (!candidates.empty())
+    {
+        minmax_conut_projection_candidate.emplace(std::move(candidates.front()));
+        candidates.clear();
+    }
+    MergeTreeDataSelectExecutor reader(*this);
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
+    if (settings.select_sequential_consistency)
+    {
+        if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
+            max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+    }
+    auto parts = getDataPartsVector();
 
-    // Only add more projection candidates if minmax_count_projection cannot match.
-    if (candidates.empty())
+    // If minmax_count_projection is a valid candidate, check its completeness.
+    if (minmax_conut_projection_candidate)
+    {
+        DataPartsVector normal_parts;
+        query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
+            metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
+
+        if (normal_parts.empty())
+        {
+            selected_candidate = &*minmax_conut_projection_candidate;
+            selected_candidate->complete = true;
+            min_sum_marks = query_info.minmax_count_projection_block.rows();
+        }
+        else
+        {
+            if (normal_parts.size() == parts.size())
+            {
+                // minmax_count_projection is useless.
+            }
+            else
+            {
+                auto normal_result_ptr = reader.estimateNumMarksToRead(
+                    normal_parts,
+                    analysis_result.required_columns,
+                    metadata_snapshot,
+                    metadata_snapshot,
+                    query_info,
+                    query_context,
+                    settings.max_threads,
+                    max_added_blocks);
+
+                if (!normal_result_ptr->error())
+                {
+                    selected_candidate = &*minmax_conut_projection_candidate;
+                    selected_candidate->merge_tree_normal_select_result_ptr = normal_result_ptr;
+                    min_sum_marks = query_info.minmax_count_projection_block.rows() + normal_result_ptr->marks();
+                }
+            }
+
+            // We cannot find a complete match of minmax_count_projection, add more projections to check.
+            for (const auto & projection : metadata_snapshot->projections)
+                add_projection_candidate(projection);
+        }
+    }
+    else
     {
         for (const auto & projection : metadata_snapshot->projections)
             add_projection_candidate(projection);
     }
-    else
-    {
-        selected_candidate = &candidates.front();
-        query_info.minmax_count_projection_block
-            = getMinMaxCountProjectionBlock(metadata_snapshot, selected_candidate->required_columns, query_info, query_context);
-        min_sum_marks = query_info.minmax_count_projection_block.rows();
-    }
 
     // Let's select the best projection to execute the query.
-    if (!candidates.empty() && !selected_candidate)
+    if (!candidates.empty())
     {
-        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
-        if (settings.select_sequential_consistency)
-        {
-            if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
-                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
-        }
-
-        auto parts = getDataPartsVector();
-        MergeTreeDataSelectExecutor reader(*this);
         query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
             parts,
             analysis_result.required_columns,
@@ -4763,7 +4820,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         {
             // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
             // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+            auto sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+            if (sum_marks < min_sum_marks)
+            {
+                selected_candidate = nullptr;
+                min_sum_marks = sum_marks;
+            }
         }
 
         /// Favor aggregate projections
