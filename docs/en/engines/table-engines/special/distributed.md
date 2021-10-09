@@ -197,5 +197,6 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 -   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)
+-   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->
+
