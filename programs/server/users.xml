@@ -18,7 +18,7 @@
                  first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
             -->
             <load_balancing>random</load_balancing>
-       </default>
+        </default>
 
         <!-- Profile that allows only read queries. -->
         <readonly>
