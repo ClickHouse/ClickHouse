@@ -60,6 +60,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.metadata = metadata;
     other.key_size = key_size;
     other.is_minmax_count_projection = is_minmax_count_projection;
+    other.has_primary_key_minmax = has_primary_key_minmax;
 
     return other;
 }
@@ -172,9 +173,15 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     return result;
 }
 
-ProjectionDescription
-ProjectionDescription::getMinMaxCountProjection(const ColumnsDescription & columns, const Names & minmax_columns, ContextPtr query_context)
+ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
+    const ColumnsDescription & columns,
+    const Names & minmax_columns,
+    const ASTs & primary_key_asts,
+    ContextPtr query_context)
 {
+    ProjectionDescription result;
+    result.is_minmax_count_projection = true;
+
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
     for (const auto & column : minmax_columns)
@@ -182,10 +189,15 @@ ProjectionDescription::getMinMaxCountProjection(const ColumnsDescription & colum
         select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
     }
+    if (!primary_key_asts.empty())
+    {
+        select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
+        select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
+        result.has_primary_key_minmax = true;
+    }
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
-    ProjectionDescription result;
     result.definition_ast = select_query;
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
@@ -203,7 +215,6 @@ ProjectionDescription::getMinMaxCountProjection(const ColumnsDescription & colum
     metadata.sorting_key = KeyDescription::buildEmptyKey();
     metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    result.is_minmax_count_projection = true;
     return result;
 }
 

@@ -58,12 +58,14 @@ struct ProjectionDescription
 
     bool is_minmax_count_projection = false;
 
+    bool has_primary_key_minmax = false;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
 
-    static ProjectionDescription
-    getMinMaxCountProjection(const ColumnsDescription & columns, const Names & minmax_columns, ContextPtr query_context);
+    static ProjectionDescription getMinMaxCountProjection(
+        const ColumnsDescription & columns, const Names & minmax_columns, const ASTs & primary_key_asts, ContextPtr query_context);
 
     ProjectionDescription() = default;
 
