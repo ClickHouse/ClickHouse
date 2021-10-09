@@ -2102,7 +2102,7 @@ class ClickHouseInstance:
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
         start_time = time.time()
         result = self.exec_in_container(
-            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Ema {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
+            ["bash", "-c", 'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(timeout, look_behind_lines, filename, repetitions, shlex.quote(regexp))])
 
         # if repetitions>1 grep will return success even if not enough lines were collected,
         if repetitions>1 and len(result.splitlines()) < repetitions:
