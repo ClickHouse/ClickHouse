@@ -229,7 +229,7 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #if defined(__SSE2__) && defined(__POPCNT__)
+    #ifdef __SSE2__
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
