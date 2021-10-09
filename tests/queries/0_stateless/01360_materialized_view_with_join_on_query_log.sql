@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS slow_log;
 DROP TABLE IF EXISTS expected_times;
 
@@ -10,9 +8,7 @@ SET log_queries=1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
 
-
 -- NOTE: can be rewritten using log_queries_min_query_duration_ms
-
 CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
 (
         SELECT * FROM

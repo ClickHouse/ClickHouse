@@ -1,14 +1,16 @@
 #include "MySQLHandler.h"
 
 #include <limits>
+#include <common/scope_guard.h>
+#include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/copyData.h>
-#include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
@@ -18,15 +20,18 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/IStorage.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <regex>
+#include <Access/User.h>
+#include <Access/AccessControlManager.h>
 #include <Common/setThreadName.h>
-#include <Core/MySQL/Authentication.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
 
 #if USE_SSL
+#    include <Poco/Crypto/CipherFactory.h>
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -52,7 +57,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -62,7 +66,6 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -70,6 +73,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
+    , connection_context(Context::createCopy(server.context()))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
@@ -79,18 +83,16 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
 }
 
 void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");
     ThreadStatus thread_status;
-
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
-    SCOPE_EXIT({ session.reset(); });
-
-    session->getClientInfo().connection_id = connection_id;
+    connection_context->makeSessionContext();
+    connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
+    connection_context->setDefaultFormat("MySQLWire");
+    connection_context->getClientInfo().connection_id = connection_id;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -124,12 +126,14 @@ void MySQLHandler::run()
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
+        connection_context->getClientInfo().initial_user = handshake_response.username;
+
         try
         {
-            session->makeSessionContext();
-            session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
-                session->sessionContext()->setCurrentDatabase(handshake_response.database);
+                connection_context->setCurrentDatabase(handshake_response.database);
+            connection_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
+
         }
         catch (const Exception & exc)
         {
@@ -246,13 +250,15 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::Authentication::SHA256_PASSWORD)
+        auto user = connection_context->getAccessControlManager().read<User>(user_name);
+        const DB::Authentication::Type user_auth_type = user->authentication.getType();
+        if (user_auth_type == DB::Authentication::SHA256_PASSWORD)
         {
             authPluginSSL();
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
-        auth_plugin->authenticate(user_name, *session, auth_response, packet_endpoint, secure_connection, socket().peerAddress());
+        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_endpoint, secure_connection, socket().peerAddress());
     }
     catch (const Exception & exc)
     {
@@ -268,7 +274,7 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    session->sessionContext()->setCurrentDatabase(database);
+    connection_context->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1), true);
 }
 
@@ -276,9 +282,8 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
-    const auto session_context = session->sessionContext();
-    String database = session_context->getCurrentDatabase();
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    String database = connection_context->getCurrentDatabase();
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
@@ -325,9 +330,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         ReadBufferFromString replacement(replacement_query);
 
-        auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
-        CurrentThread::QueryScope query_scope{query_context};
+        auto query_context = Context::createCopy(connection_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -339,15 +342,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
             affected_rows += progress.written_rows;
         });
 
+        CurrentThread::QueryScope query_scope{query_context};
+
         FormatSettings format_settings;
         format_settings.mysql_wire.client_capabilities = client_capabilities;
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
+        auto set_result_details = [&with_output](const String &, const String &, const String &, const String &)
         {
-            if (format != "MySQLWire")
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
             with_output = true;
         };
 
@@ -456,14 +459,6 @@ static String showTableStatusReplacementQuery(const String & query)
             " WHERE name LIKE "
             + suffix);
     }
-    return query;
-}
-
-static String selectLimitReplacementQuery(const String & query)
-{
-    const String prefix = "SET SQL_SELECT_LIMIT";
-    if (query.starts_with(prefix))
-        return "SET limit" + std::string(query.data() + prefix.length());
     return query;
 }
 

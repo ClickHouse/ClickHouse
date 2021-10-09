@@ -21,6 +21,9 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+struct PrewhereDAGInfo;
+using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
+
 struct FilterInfo;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 
@@ -39,25 +42,37 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
-
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ActionsDAGPtr alias_actions;
+    ExpressionActionsPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ActionsDAGPtr row_level_filter;
+    ExpressionActionsPtr row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
+    ExpressionActionsPtr prewhere_actions;
+    /// Actions which are executed after reading from storage in order to remove unused columns.
+    ExpressionActionsPtr remove_columns_actions;
+    String row_level_column_name;
+    String prewhere_column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+};
+
+/// Same as PrewhereInfo, but with ActionsDAG.
+struct PrewhereDAGInfo
+{
+    ActionsDAGPtr alias_actions;
+    ActionsDAGPtr row_level_filter_actions;
     ActionsDAGPtr prewhere_actions;
+    ActionsDAGPtr remove_columns_actions;
     String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
-    PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+    PrewhereDAGInfo() = default;
+    explicit PrewhereDAGInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
@@ -86,10 +101,9 @@ struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
-    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
 
     bool operator ==(const InputOrderInfo & other) const
     {
@@ -103,10 +117,12 @@ class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
+struct MergeTreeDataSelectCache;
+
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    ProjectionDescriptionRawPtr desc{};
+    const ProjectionDescription * desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -121,8 +137,8 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
 };
 
 /** Query along with some additional data,
@@ -162,10 +178,7 @@ struct SelectQueryInfo
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
-    bool is_projection_query = false;
-    bool merge_tree_empty_result = false;
-    Block minmax_count_projection_block;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_cache;
 };
 
 }

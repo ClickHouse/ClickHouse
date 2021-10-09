@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/ISimpleTransform.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/SortDescription.h>
 
@@ -18,22 +18,24 @@ namespace DB
   * set limit_hint to non zero value. So we stop emitting new rows after
   * count of already emitted rows will reach the limit_hint.
   */
-class DistinctSortedTransform : public ISimpleTransform
+class DistinctSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all columns.
-    DistinctSortedTransform(const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
+    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
-    String getName() const override { return "DistinctSortedTransform"; }
+    String getName() const override { return "DistinctSorted"; }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
-    void transform(Chunk & chunk) override;
+    Block readImpl() override;
 
 private:
-    ColumnRawPtrs getKeyColumns(const Chunk & chunk) const;
+    ColumnRawPtrs getKeyColumns(const Block & block) const;
     /// When clearing_columns changed, we can clean HashSet to memory optimization
     /// clearing_columns is a left-prefix of SortDescription exists in key_columns
-    ColumnRawPtrs getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const;
+    ColumnRawPtrs getClearingColumns(const Block & block, const ColumnRawPtrs & key_columns) const;
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data
@@ -48,12 +50,12 @@ private:
 
     SortDescription description;
 
-    struct PreviousChunk
+    struct PreviousBlock
     {
-        Chunk chunk;
+        Block block;
         ColumnRawPtrs clearing_hint_columns;
     };
-    PreviousChunk prev_chunk;
+    PreviousBlock prev_block;
 
     Names columns_names;
     ClearableSetVariants data;

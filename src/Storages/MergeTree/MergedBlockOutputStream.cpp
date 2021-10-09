@@ -8,6 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -48,6 +49,11 @@ void MergedBlockOutputStream::write(const Block & block)
 void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
     writeImpl(block, permutation);
+}
+
+void MergedBlockOutputStream::writeSuffix()
+{
+    throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
@@ -129,8 +135,8 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
             new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
-            if (new_part->minmax_idx->initialized)
-                new_part->minmax_idx->store(storage, volume->getDisk(), part_path, checksums);
+            if (new_part->minmax_idx.initialized)
+                new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
             else if (rows_count)
                 throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                         + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);

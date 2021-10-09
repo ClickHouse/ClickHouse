@@ -8,28 +8,40 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctSortedTransform::DistinctSortedTransform(
-    const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
-    : ISimpleTransform(header, header, true)
-    , description(std::move(sort_description))
+DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(
+    const BlockInputStreamPtr & input, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
+    : description(std::move(sort_description))
     , columns_names(columns)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
+    children.push_back(input);
 }
 
-void DistinctSortedTransform::transform(Chunk & chunk)
+Block DistinctSortedBlockInputStream::readImpl()
 {
-        const ColumnRawPtrs column_ptrs(getKeyColumns(chunk));
-        if (column_ptrs.empty())
-            return;
+    /// Execute until end of stream or until
+    /// a block with some new records will be gotten.
+    for (;;)
+    {
+        /// Stop reading if we already reached the limit.
+        if (limit_hint && data.getTotalRowCount() >= limit_hint)
+            return Block();
 
-        const ColumnRawPtrs clearing_hint_columns(getClearingColumns(chunk, column_ptrs));
+        Block block = children.back()->read();
+        if (!block)
+            return Block();
+
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
+        if (column_ptrs.empty())
+            return block;
+
+        const ColumnRawPtrs clearing_hint_columns(getClearingColumns(block, column_ptrs));
 
         if (data.type == ClearableSetVariants::Type::EMPTY)
             data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
 
-        const size_t rows = chunk.getNumRows();
+        const size_t rows = block.rows();
         IColumn::Filter filter(rows);
 
         bool has_new_data = false;
@@ -47,36 +59,25 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 
         /// Just go to the next block if there isn't any new record in the current one.
         if (!has_new_data)
-        {
-            chunk.clear();
-            return;
-        }
+            continue;
 
         if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        {
-            stopReading();
-            chunk.clear();
-            return;
-        }
+            return {};
 
-        /// Stop reading if we already reached the limit.
-        if (limit_hint && data.getTotalRowCount() >= limit_hint)
-            stopReading();
+        prev_block.block = block;
+        prev_block.clearing_hint_columns = std::move(clearing_hint_columns);
 
-        prev_chunk.chunk = std::move(chunk);
-        prev_chunk.clearing_hint_columns = std::move(clearing_hint_columns);
-
-        size_t all_columns = prev_chunk.chunk.getNumColumns();
-        Chunk res_chunk;
+        size_t all_columns = block.columns();
         for (size_t i = 0; i < all_columns; ++i)
-            res_chunk.addColumn(prev_chunk.chunk.getColumns().at(i)->filter(filter, -1));
+            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(filter, -1);
 
-        chunk = std::move(res_chunk);
+        return block;
+    }
 }
 
 
 template <typename Method>
-bool DistinctSortedTransform::buildFilter(
+bool DistinctSortedBlockInputStream::buildFilter(
     Method & method,
     const ColumnRawPtrs & columns,
     const ColumnRawPtrs & clearing_hint_columns,
@@ -89,8 +90,8 @@ bool DistinctSortedTransform::buildFilter(
     /// Compare last row of previous block and first row of current block,
     /// If rows not equal, we can clear HashSet,
     /// If clearing_hint_columns is empty, we CAN'T clear HashSet.
-    if (!clearing_hint_columns.empty() && !prev_chunk.clearing_hint_columns.empty()
-        && !rowsEqual(clearing_hint_columns, 0, prev_chunk.clearing_hint_columns, prev_chunk.chunk.getNumRows() - 1))
+    if (!clearing_hint_columns.empty() && !prev_block.clearing_hint_columns.empty()
+        && !rowsEqual(clearing_hint_columns, 0, prev_block.clearing_hint_columns, prev_block.block.rows() - 1))
     {
         method.data.clear();
     }
@@ -116,20 +117,18 @@ bool DistinctSortedTransform::buildFilter(
     return has_new_data;
 }
 
-ColumnRawPtrs DistinctSortedTransform::getKeyColumns(const Chunk & chunk) const
+ColumnRawPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block & block) const
 {
-    size_t columns = columns_names.empty() ? chunk.getNumColumns() : columns_names.size();
+    size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns);
 
     for (size_t i = 0; i < columns; ++i)
     {
-        auto pos = i;
-        if (!columns_names.empty())
-            pos = input.getHeader().getPositionByName(columns_names[i]);
-
-        const auto & column = chunk.getColumns()[pos];
+        const auto & column = columns_names.empty()
+            ? block.safeGetByPosition(i).column
+            : block.getByName(columns_names[i]).column;
 
         /// Ignore all constant columns.
         if (!isColumnConst(*column))
@@ -139,13 +138,13 @@ ColumnRawPtrs DistinctSortedTransform::getKeyColumns(const Chunk & chunk) const
     return column_ptrs;
 }
 
-ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const
+ColumnRawPtrs DistinctSortedBlockInputStream::getClearingColumns(const Block & block, const ColumnRawPtrs & key_columns) const
 {
     ColumnRawPtrs clearing_hint_columns;
     clearing_hint_columns.reserve(description.size());
     for (const auto & sort_column_description : description)
     {
-        const auto * sort_column_ptr = chunk.getColumns().at(sort_column_description.column_number).get();
+        const auto * sort_column_ptr = block.safeGetByPosition(sort_column_description.column_number).column.get();
         const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
         if (it != key_columns.cend()) /// if found in key_columns
             clearing_hint_columns.emplace_back(sort_column_ptr);
@@ -155,7 +154,7 @@ ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const Chunk & chunk, c
     return clearing_hint_columns;
 }
 
-bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
+bool DistinctSortedBlockInputStream::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
 {
     for (size_t column_index = 0, num_columns = lhs.size(); column_index < num_columns; ++column_index)
     {

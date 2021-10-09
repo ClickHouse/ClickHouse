@@ -18,7 +18,7 @@ from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/rabbitmq.xml'],
+                                main_configs=['configs/rabbitmq.xml', 'configs/log_conf.xml'],
                                 with_rabbitmq=True)
 
 
@@ -751,15 +751,22 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view_many (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+        CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
+            SELECT * FROM test.rabbitmq_consume;
     ''')
 
-    messages_num = 10000
-    values = []
-    for i in range(messages_num):
-        values.append("({i}, {i})".format(i=i))
-    values = ','.join(values)
+    messages_num = 1000
 
     def insert():
+        values = []
+        for i in range(messages_num):
+            values.append("({i}, {i})".format(i=i))
+        values = ','.join(values)
+
         while True:
             try:
                 instance.query("INSERT INTO test.rabbitmq_many VALUES {}".format(values))
@@ -771,30 +778,18 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                     raise
 
     threads = []
-    threads_num = 10
+    threads_num = 20
     for _ in range(threads_num):
         threads.append(threading.Thread(target=insert))
     for thread in threads:
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    instance.query('''
-        CREATE TABLE test.view_many (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
-            SELECT * FROM test.rabbitmq_consume;
-    ''')
-
-    for thread in threads:
-        thread.join()
-
     while True:
         result = instance.query('SELECT count() FROM test.view_many')
-        print(result, messages_num * threads_num)
+        time.sleep(1)
         if int(result) == messages_num * threads_num:
             break
-        time.sleep(1)
 
     instance.query('''
         DROP TABLE test.rabbitmq_consume;
@@ -802,6 +797,9 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
         DROP TABLE test.consumer_many;
         DROP TABLE test.view_many;
     ''')
+
+    for thread in threads:
+        thread.join()
 
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
@@ -1671,6 +1669,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=messages[msg_id],
                               properties=pika.BasicProperties(delivery_mode=2, message_id=str(msg_id)))
     connection.close()
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1682,7 +1681,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     ''')
 
     while int(instance.query('SELECT count() FROM test.view')) == 0:
-        print(3)
         time.sleep(0.1)
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
@@ -1714,7 +1712,6 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
-        DROP TABLE IF EXISTS test.rabbitmq;
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
@@ -1779,22 +1776,9 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     assert result == 1, 'Messages from RabbitMQ get duplicated!'
 
 
-def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
+def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
     # no connection when table is initialized
     rabbitmq_cluster.pause_container('rabbitmq1')
-    instance.query_and_get_error('''
-        CREATE TABLE test.cs (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'cs',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_num_consumers = '5',
-                     rabbitmq_row_delimiter = '\\n';
-    ''')
-    rabbitmq_cluster.unpause_container('rabbitmq1')
-
-
-def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -1811,10 +1795,10 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.cs;
     ''')
-    instance.query("DETACH TABLE test.cs")
-    rabbitmq_cluster.pause_container('rabbitmq1')
-    instance.query("ATTACH TABLE test.cs")
+    time.sleep(5)
     rabbitmq_cluster.unpause_container('rabbitmq1')
+    # need to make sure rabbit table made all rabbit setup
+    time.sleep(10)
 
     messages_num = 1000
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -2047,19 +2031,18 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
     instance.query('DROP TABLE test.rabbitmq_queue')
 
 
-def test_rabbitmq_bad_args(rabbitmq_cluster):
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    channel.exchange_declare(exchange='f', exchange_type='fanout')
-    instance.query_and_get_error('''
+def test_rabbitmq_drop_table_with_unfinished_setup(rabbitmq_cluster):
+    rabbitmq_cluster.pause_container('rabbitmq1')
+    instance.query('''
         CREATE TABLE test.drop (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'f',
+                     rabbitmq_exchange_name = 'drop',
                      rabbitmq_format = 'JSONEachRow';
     ''')
+    time.sleep(5)
+    instance.query('DROP TABLE test.drop;')
+    rabbitmq_cluster.unpause_container('rabbitmq1')
 
 
 if __name__ == '__main__':

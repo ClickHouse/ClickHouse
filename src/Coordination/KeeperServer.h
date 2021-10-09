@@ -7,7 +7,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -38,8 +38,6 @@ private:
 
     Poco::Logger * log;
 
-    /// Callback func which is called by NuRaft on all internal events.
-    /// Used to determine the moment when raft is ready to server new requests
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
@@ -59,25 +57,18 @@ public:
         SnapshotsQueue & snapshots_queue_,
         bool standalone_keeper);
 
-    /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup();
 
-    /// Put local read request and execute in state machine directly and response into
-    /// responses queue
     void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
-    /// Put batch of requests into Raft and get result of put. Responses will be set separately into
-    /// responses_queue.
     RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
-    /// Return set of the non-active sessions
-    std::vector<int64_t> getDeadSessions();
+    std::unordered_set<int64_t> getDeadSessions();
 
     bool isLeader() const;
 
     bool isLeaderAlive() const;
 
-    /// Wait server initialization (see callbackFunc)
     void waitInit();
 
     void shutdown();

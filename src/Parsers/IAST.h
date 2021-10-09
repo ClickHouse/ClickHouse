@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -157,8 +157,6 @@ public:
             set(field, child);
     }
 
-    void reset(IAST *& field);
-
     /// Convert to a string.
 
     /// Format settings.
@@ -228,9 +226,6 @@ public:
     static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
-
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
 
 public:
     /// For syntax highlighting.

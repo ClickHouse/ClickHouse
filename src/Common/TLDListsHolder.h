@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/defines.h>
-#include <base/StringRef.h>
+#include <common/defines.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/Arena.h>
 #include <Poco/Util/AbstractConfiguration.h>
