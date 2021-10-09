@@ -19,8 +19,8 @@
             -->
             <load_balancing>random</load_balancing>
 
-            <!-- Always try to add http cors header. -->
-            <add_http_cors_header>1</add_http_cors_header>
+            <!-- Turn on this setting for CORS headers. -->
+            <!-- add_http_cors_header>1</add_http_cors_header -->
         </default>
 
         <!-- Profile that allows only read queries. -->
