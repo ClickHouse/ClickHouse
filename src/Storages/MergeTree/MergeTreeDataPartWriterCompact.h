@@ -1,3 +1,4 @@
+#pragma once
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB
@@ -17,18 +18,26 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation,
-        const Block & primary_key_block, const Block & skip_indexes_block) override;
+    void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
-
-protected:
-    void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
+    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
 private:
-    void writeBlock(const Block & block);
+    /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+
+    void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
+
+    /// Write block of rows into .bin file and marks in .mrk files
+    void writeDataBlock(const Block & block, const Granules & granules);
+
+    /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
+    /// and skip indices in their corresponding files.
+    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
+
+    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
 
     Block header;
 
@@ -52,33 +61,29 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
     HashingWriteBuffer plain_hashing;
 
+    /// Compressed stream which allows to write with codec.
     struct CompressedStream
     {
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer hashing_buf;
 
         CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec)
-            : compressed_buf(buf, codec), hashing_buf(compressed_buf) {}
+            : compressed_buf(buf, codec)
+            , hashing_buf(compressed_buf) {}
     };
 
     using CompressedStreamPtr = std::shared_ptr<CompressedStream>;
 
-    /// Create compressed stream for every different codec.
+    /// Create compressed stream for every different codec. All streams write to
+    /// a single file on disk.
     std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
 
-    /// For better performance save pointer to stream by every column.
-    std::vector<CompressedStreamPtr> compressed_streams;
+    /// Stream for each column's substreams path (look at addStreams).
+    std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
-
-    /// Write single granule of one column (rows between 2 marks)
-    static void writeColumnSingleGranule(
-        const ColumnWithTypeAndName & column,
-        const CompressedStreamPtr & stream,
-        size_t from_row,
-        size_t number_of_rows);
 };
 
 }

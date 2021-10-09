@@ -1,6 +1,6 @@
 # system.graphite_retentions {#system-graphite-retentions}
 
-Содержит информацию о том, какие параметры [graphite\_rollup](../server-configuration-parameters/settings.md#server_configuration_parameters-graphite) используются в таблицах с движками [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md).
+Содержит информацию о том, какие параметры [graphite_rollup](../server-configuration-parameters/settings.md#server_configuration_parameters-graphite) используются в таблицах с движками [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md).
 
 Столбцы:
 
@@ -14,4 +14,3 @@
 -   `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
 -   `Tables.table` (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/graphite_retentions) <!--hide-->

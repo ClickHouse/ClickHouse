@@ -4,11 +4,12 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -66,8 +67,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
         values_types.push_back(array_type->getNestedType());
     }
 
-    return  std::tuple{std::move(keys_type), std::move(values_types),
-                tuple_argument};
+    return std::tuple{std::move(keys_type), std::move(values_types), tuple_argument};
 }
 
 // This function instantiates a particular overload of the sumMap family of
@@ -76,7 +76,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 // function template that allows to choose the aggregate function variant that
 // accepts either normal arguments or tuple argument.
 template<template <bool tuple_argument> typename MappedFunction>
-AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params)
+AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
 

@@ -1,20 +1,23 @@
 # system.query_thread_log {#system_tables-query_thread_log}
 
-Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
+Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 
-1.  Configure parameters in the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log\_query\_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
+1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
+2.  Set [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn’t delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+
+You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
 Columns:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
+-   `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 -   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
@@ -57,60 +60,60 @@ Columns:
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
 
 **Example**
 
 ``` sql
- SELECT * FROM system.query_thread_log LIMIT 1 FORMAT Vertical
+ SELECT * FROM system.query_thread_log LIMIT 1 \G
 ```
 
 ``` text
 Row 1:
 ──────
-event_date:           2020-05-13
-event_time:           2020-05-13 14:02:28
-query_start_time:     2020-05-13 14:02:28
-query_duration_ms:    0
-read_rows:            1
-read_bytes:           1
-written_rows:         0
-written_bytes:        0
-memory_usage:         0
-peak_memory_usage:    0
-thread_name:          QueryPipelineEx
-thread_id:            28952
-master_thread_id:     28924
-query:                SELECT 1
-is_initial_query:     1
-user:                 default
-query_id:             5e834082-6f6d-4e34-b47b-cd1934f4002a
-address:              ::ffff:127.0.0.1
-port:                 57720
-initial_user:         default
-initial_query_id:     5e834082-6f6d-4e34-b47b-cd1934f4002a
-initial_address:      ::ffff:127.0.0.1
-initial_port:         57720
-interface:            1
-os_user:              bayonet
-client_hostname:      clickhouse.ru-central1.internal
-client_name:          ClickHouse client
-client_revision:      54434
-client_version_major: 20
-client_version_minor: 4
-client_version_patch: 1
-http_method:          0
+event_date:                    2020-09-11
+event_time:                    2020-09-11 10:08:17
+event_time_microseconds:       2020-09-11 10:08:17.134042
+query_start_time:              2020-09-11 10:08:17
+query_start_time_microseconds: 2020-09-11 10:08:17.063150
+query_duration_ms:             70
+read_rows:                     0
+read_bytes:                    0
+written_rows:                  1
+written_bytes:                 12
+memory_usage:                  4300844
+peak_memory_usage:             4300844
+thread_name:                   TCPHandler
+thread_id:                     638133
+master_thread_id:              638133
+query:                         INSERT INTO test1 VALUES
+is_initial_query:              1
+user:                          default
+query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
+address:                       ::ffff:127.0.0.1
+port:                          33452
+initial_user:                  default
+initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
+initial_address:               ::ffff:127.0.0.1
+initial_port:                  33452
+interface:                     1
+os_user:                       bharatnc
+client_hostname:               tower
+client_name:                   ClickHouse
+client_revision:               54437
+client_version_major:          20
+client_version_minor:          7
+client_version_patch:          2
+http_method:                   0
 http_user_agent:
 quota_key:
-revision:             54434
-ProfileEvents.Names:  ['ContextLock','RealTimeMicroseconds','UserTimeMicroseconds','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds']
-ProfileEvents.Values: [1,97,81,5,81]
-...
+revision:                      54440
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
 ```
 
 **See Also**
 
--   [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/query_thread_log) <!--hide-->

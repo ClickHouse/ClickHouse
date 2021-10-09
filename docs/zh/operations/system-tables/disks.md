@@ -15,7 +15,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 -   `total_space` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Disk volume in bytes.
 -   `keep_free_space` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` 磁盘配置参数。
 
-## 系统。storage\_policies {#system_tables-storage_policies}
+## 系统。storage_policies {#system_tables-storage_policies}
 
 包含有关存储策略和卷中定义的信息 [服务器配置](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

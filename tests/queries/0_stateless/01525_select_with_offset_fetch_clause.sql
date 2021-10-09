@@ -1,0 +1,8 @@
+SELECT number FROM numbers(10) ORDER BY number DESC OFFSET 2 ROWS FETCH NEXT 3 ROWS WITH TIES;
+
+DROP TABLE IF EXISTS test_fetch;
+CREATE TABLE test_fetch(a Int32, b Int32) Engine = Memory;
+INSERT INTO test_fetch VALUES(1, 1), (2, 1), (3, 4), (3, 3), (5, 4), (0, 6), (5, 7);
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS WITH TIES;
+DROP TABLE test_fetch;

@@ -81,7 +81,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## ロールアップ構成 {#rollup-configuration}
 
-ロールアップの設定は、 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) サーバー構成のパラメータ。 パラメーターの名前は任意です。 複数の構成を作成し、異なるテーブルに使用できます。
+ロールアップの設定は、 [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) サーバー構成のパラメータ。 パラメーターの名前は任意です。 複数の構成を作成し、異なるテーブルに使用できます。
 
 ロールアップ構成構造:
 
@@ -171,4 +171,4 @@ default
 </graphite_rollup>
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

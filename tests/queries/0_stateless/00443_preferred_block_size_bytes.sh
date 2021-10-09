@@ -3,6 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS preferred_block_size_bytes"
@@ -41,10 +42,10 @@ popd > /dev/null
 #SCRIPTDIR=`dirname "$SCRIPTPATH"`
 SCRIPTDIR=$SCRIPTPATH
 
-cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=10 --merge_tree_uniform_read_distribution=1 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout 2>&1
+cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=10 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout
 cmp "$SCRIPTDIR"/00282_merging.reference "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
 
-cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=20 --merge_tree_uniform_read_distribution=0 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout 2>&1
+cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=20 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout
 cmp "$SCRIPTDIR"/00282_merging.reference "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
 
 rm "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout

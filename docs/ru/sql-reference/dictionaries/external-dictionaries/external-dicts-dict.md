@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: "Настройка внешнего словаря"
+---
+
 # Настройка внешнего словаря {#dicts-external-dicts-dict}
 
 XML-конфигурация словаря имеет следующую структуру:
@@ -43,4 +48,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [structure](external-dicts-dict-structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 -   [lifetime](external-dicts-dict-lifetime.md) — Периодичность обновления словарей.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->

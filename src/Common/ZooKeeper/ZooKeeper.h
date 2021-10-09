@@ -7,10 +7,12 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <unistd.h>
 
 
@@ -24,12 +26,13 @@ namespace CurrentMetrics
     extern const Metric EphemeralNode;
 }
 
+namespace DB
+{
+    class ZooKeeperLog;
+}
 
 namespace zkutil
 {
-
-const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
-const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -41,9 +44,6 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 /// watch notification.
 /// Callback-based watch interface is also provided.
 ///
-/// Read-only methods retry retry_num times if recoverable errors like OperationTimeout
-/// or ConnectionLoss are encountered.
-///
 /// Modifying methods do not retry, because it leads to problems of the double-delete type.
 ///
 /// Methods with names not starting at try- raise KeeperException on any error.
@@ -52,11 +52,20 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
-              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
+    /// hosts_string -- comma separated [secure://]host:port list
+    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper");
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+
+    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -80,7 +89,7 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -186,10 +195,17 @@ public:
     /// result would be the same as for the single call.
     void tryRemoveRecursive(const std::string & path);
 
+    /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
+    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
+    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
+    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
     using WaitCondition = std::function<bool()>;
+
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
@@ -208,50 +224,69 @@ public:
     /// auto result1 = future1.get();
     /// auto result2 = future2.get();
     ///
-    /// Future should not be destroyed before the result is gotten.
+    /// NoThrow versions never throw any exception on future.get(), even on SessionExpired error.
 
     using FutureCreate = std::future<Coordination::CreateResponse>;
     FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
 
     using FutureGet = std::future<Coordination::GetResponse>;
-    FutureGet asyncGet(const std::string & path);
-
-    FutureGet asyncTryGet(const std::string & path);
+    FutureGet asyncGet(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
-    FutureExists asyncExists(const std::string & path);
+    FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
-    FutureGetChildren asyncGetChildren(const std::string & path);
+    FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGetChildren asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureSet asyncTrySetNoThrow(const std::string & path, const std::string & data, int32_t version = -1);
 
     using FutureRemove = std::future<Coordination::RemoveResponse>;
     FutureRemove asyncRemove(const std::string & path, int32_t version = -1);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1);
 
+    using FutureMulti = std::future<Coordination::MultiResponse>;
+    FutureMulti asyncMulti(const Coordination::Requests & ops);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+
+    /// Very specific methods introduced without following general style. Implements
+    /// some custom throw/no throw logic on future.get().
+    ///
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * The versions do not match
     /// * The node has children
     FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    using FutureMulti = std::future<Coordination::MultiResponse>;
-    FutureMulti asyncMulti(const Coordination::Requests & ops);
+    /// Doesn't throw in the following cases:
+    /// * The node doesn't exist
+    FutureGet asyncTryGet(const std::string & path);
 
-    /// Like the previous one but don't throw any exceptions on future.get()
-    FutureMulti tryAsyncMulti(const Coordination::Requests & ops);
+    void finalize();
+
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
 
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
+    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
-    void removeChildrenRecursive(const std::string & path);
-    void tryRemoveChildrenRecursive(const std::string & path);
-
-    /// The following methods don't throw exceptions but return error codes.
+    /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
@@ -264,7 +299,7 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    std::string hosts;
+    Strings hosts;
     std::string identity;
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
@@ -274,6 +309,9 @@ private:
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
+    std::shared_ptr<DB::ZooKeeperLog> zk_log;
+
+    AtomicStopwatch session_uptime;
 };
 
 
@@ -313,8 +351,15 @@ public:
         return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
+    void setAlreadyRemoved()
+    {
+        need_remove = false;
+    }
+
     ~EphemeralNodeHolder()
     {
+        if (!need_remove)
+            return;
         try
         {
             zookeeper.tryRemove(path);
@@ -322,7 +367,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
         }
     }
 
@@ -330,6 +375,7 @@ private:
     std::string path;
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
+    bool need_remove = true;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

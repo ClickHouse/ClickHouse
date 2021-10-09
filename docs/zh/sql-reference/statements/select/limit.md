@@ -14,7 +14,7 @@ toc_title: LIMIT
 
 ## LIMIT … WITH TIES 修饰符 {#limit-with-ties}
 
-如果为 `LIMIT n[,m]` 设置了 `WITH TIES` ，并且声明了 `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
+如果为 `LIMIT n[,m]` 设置了 `WITH TIES` ，并且声明了 `ORDER BY expr_list`, 除了得到无修饰符的结果（正常情况下的 `limit n`, 前n行数据), 还会返回与第`n`行具有相同排序字段的行(即如果第n+1行的字段与第n行 拥有相同的排序字段，同样返回该结果.
 
 此修饰符可以与： [ORDER BY … WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill) 组合使用.
 
@@ -38,7 +38,7 @@ SELECT * FROM (
 └───┘
 ```
 
-单子执行了 `WITH TIES` 修饰符后
+添加 `WITH TIES` 修饰符后
 
 ``` sql
 SELECT * FROM (
@@ -59,4 +59,8 @@ SELECT * FROM (
 └───┘
 ```
 
-cause row number 6 have same value “2” for field `n` as row number 5
+虽然指定了`LIMIT 5`, 但第6行的`n`字段值为2，与第5行相同，因此也作为满足条件的记录返回。
+简而言之，该修饰符可理解为是否增加“并列行”的数据。
+
+``` sql，
+``` sql

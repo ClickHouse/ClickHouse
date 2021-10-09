@@ -19,13 +19,13 @@ public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool yield_strings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
@@ -63,7 +63,7 @@ public:
     String getContentType() const override { return "application/json; charset=UTF-8"; }
 
 protected:
-    virtual void writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num);
+    virtual void writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num);
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     virtual void writeTotalsFieldDelimiter() { writeFieldDelimiter(); }
 

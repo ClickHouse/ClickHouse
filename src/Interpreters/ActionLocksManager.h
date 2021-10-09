@@ -1,9 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
-#include <Interpreters/StorageID.h>
+#include <base/types.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -12,17 +13,15 @@
 namespace DB
 {
 
-class Context;
-
 /// Holds ActionLocks for tables
 /// Does not store pointers to tables
-class ActionLocksManager
+class ActionLocksManager : WithContext
 {
 public:
-    ActionLocksManager(const Context & context);
+    explicit ActionLocksManager(ContextPtr context);
 
     /// Adds new locks for each table
-    void add(StorageActionBlockType action_type, const Context & context);
+    void add(StorageActionBlockType action_type, ContextPtr context);
     /// Add new lock for a table if it has not been already added
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
@@ -43,7 +42,6 @@ private:
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
-    const Context & global_context;
 };
 
 }

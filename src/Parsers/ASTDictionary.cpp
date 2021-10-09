@@ -1,5 +1,8 @@
 #include <Parsers/ASTDictionary.h>
 #include <Poco/String.h>
+#include <IO/Operators.h>
+#include <Common/FieldVisitorToString.h>
+
 
 namespace DB
 {
@@ -64,7 +67,7 @@ ASTPtr ASTDictionaryLayout::clone() const
 {
     auto res = std::make_shared<ASTDictionaryLayout>();
     res->layout_type = layout_type;
-    res->set(res->parameters, parameters->clone());
+    if (parameters) res->set(res->parameters, parameters->clone());
     res->has_brackets = has_brackets;
     return res;
 }
@@ -85,7 +88,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     if (has_brackets)
         settings.ostr << "(";
 
-    parameters->formatImpl(settings, state, frame);
+    if (parameters) parameters->formatImpl(settings, state, frame);
 
     if (has_brackets)
         settings.ostr << ")";

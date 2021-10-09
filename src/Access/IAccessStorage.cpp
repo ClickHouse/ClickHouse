@@ -1,9 +1,12 @@
 #include <Access/IAccessStorage.h>
+#include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -13,6 +16,9 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
+    extern const int WRONG_PASSWORD;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
+    extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -91,7 +97,7 @@ namespace
 
         bool errors() const { return exception.has_value(); }
 
-        void showErrors(const char * format, const std::function<String(size_t)> & get_name_function)
+        void showErrors(const char * format, Fn<String(size_t)> auto && get_name_function)
         {
             if (!exception)
                 return;
@@ -192,6 +198,16 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+        res.emplace_back(readName(id));
+    return res;
+}
+
+
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
     String name;
@@ -199,6 +215,19 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
     if (!tryCall(func))
         return {};
     return name;
+}
+
+
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+    {
+        if (auto name = tryReadName(id))
+            res.emplace_back(std::move(name).value());
+    }
+    return res;
 }
 
 
@@ -372,21 +401,21 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(id, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
-    ext::scope_guard subscriptions;
+    scope_guard subscriptions;
     for (const auto & id : ids)
         subscriptions.join(subscribeForChangesImpl(id, handler));
     return subscriptions;
@@ -409,6 +438,82 @@ void IAccessStorage::notify(const Notifications & notifications)
 {
     for (const auto & [fn, id, new_entity] : notifications)
         fn(id, new_entity);
+}
+
+
+UUID IAccessStorage::login(
+    const Credentials & credentials,
+    const Poco::Net::IPAddress & address,
+    const ExternalAuthenticators & external_authenticators,
+    bool replace_exception_with_cannot_authenticate) const
+{
+    try
+    {
+        return loginImpl(credentials, address, external_authenticators);
+    }
+    catch (...)
+    {
+        if (!replace_exception_with_cannot_authenticate)
+            throw;
+
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        throwCannotAuthenticate(credentials.getUserName());
+    }
+}
+
+
+UUID IAccessStorage::loginImpl(
+    const Credentials & credentials,
+    const Poco::Net::IPAddress & address,
+    const ExternalAuthenticators & external_authenticators) const
+{
+    if (auto id = find<User>(credentials.getUserName()))
+    {
+        if (auto user = tryRead<User>(*id))
+        {
+            if (!isAddressAllowedImpl(*user, address))
+                throwAddressNotAllowed(address);
+
+            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+                throwInvalidCredentials();
+
+            return *id;
+        }
+    }
+    throwNotFound(EntityType::USER, credentials.getUserName());
+}
+
+
+bool IAccessStorage::areCredentialsValidImpl(
+    const User & user,
+    const Credentials & credentials,
+    const ExternalAuthenticators & external_authenticators) const
+{
+    if (!credentials.isReady())
+        return false;
+
+    if (credentials.getUserName() != user.getName())
+        return false;
+
+    return user.authentication.areCredentialsValid(credentials, external_authenticators);
+}
+
+
+bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const
+{
+    return user.allowed_client_hosts.contains(address);
+}
+
+
+UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
+{
+    return getIDOfLoggedUserImpl(user_name);
+}
+
+
+UUID IAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    return getID<User>(user_name);
 }
 
 
@@ -500,4 +605,22 @@ void IAccessStorage::throwReadonlyCannotRemove(EntityType type, const String & n
         "Cannot remove " + outputEntityTypeAndName(type, name) + " from " + getStorageName() + " because this storage is readonly",
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
+
+void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
+{
+    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+}
+
+void IAccessStorage::throwInvalidCredentials()
+{
+    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+}
+
+void IAccessStorage::throwCannotAuthenticate(const String & user_name)
+{
+    /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
+    /// only the log will show the exact reason.
+    throw Exception(user_name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+}
+
 }

@@ -77,6 +77,13 @@ struct RowRefList : RowRef
             return &batch->row_refs[position];
         }
 
+        const RowRef * operator * () const
+        {
+            if (first)
+                return root;
+            return &batch->row_refs[position];
+        }
+
         void operator ++ ()
         {
             if (first)
@@ -228,7 +235,8 @@ public:
         Entry<Float64>::LookupPtr,
         Entry<Decimal32>::LookupPtr,
         Entry<Decimal64>::LookupPtr,
-        Entry<Decimal128>::LookupPtr>;
+        Entry<Decimal128>::LookupPtr,
+        Entry<DateTime64>::LookupPtr>;
 
     AsofRowRefs() {}
     AsofRowRefs(TypeIndex t);

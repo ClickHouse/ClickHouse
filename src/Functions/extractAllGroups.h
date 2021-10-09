@@ -1,11 +1,14 @@
+#pragma once
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <memory>
 #include <string>
@@ -13,12 +16,14 @@
 
 #include <Core/iostream_debug_helpers.h>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -44,15 +49,23 @@ enum class ExtractAllGroupsResultKind
 template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
+    ContextPtr context;
+
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractAllGroups>(); }
+    FunctionExtractAllGroups(ContextPtr context_)
+        : context(context_)
+    {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -60,8 +73,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
-            {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
+            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -69,12 +82,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_haystack = arguments[0].column;
+        const ColumnPtr column_needle = arguments[1].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -144,11 +157,14 @@ public:
         }
         else
         {
-            std::vector<StringPiece> all_matches;
-            // number of times RE matched on each row of haystack column.
-            std::vector<size_t> number_of_matches_per_row;
+            /// Additional limit to fail fast on supposedly incorrect usage.
+            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
-            // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
+            PODArray<StringPiece, 0> all_matches;
+            /// Number of times RE matched on each row of haystack column.
+            PODArray<size_t, 0> number_of_matches_per_row;
+
+            /// We expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
             all_matches.reserve(input_rows_count * groups_count * 8);
             number_of_matches_per_row.reserve(input_rows_count);
 
@@ -169,9 +185,13 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
-
                     ++matches_per_row;
+                    if (matches_per_row > max_matches_per_row)
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too many matches per row (> {}) in the result of function {}",
+                                max_matches_per_row, getName());
+
+                    pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
                 }
 
                 number_of_matches_per_row.push_back(matches_per_row);
@@ -233,7 +253,7 @@ public:
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
-        block.getByPosition(result).column = std::move(root_array_col);
+        return root_array_col;
     }
 };
 

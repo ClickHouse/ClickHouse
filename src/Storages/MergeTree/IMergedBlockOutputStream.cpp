@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <IO/createWriteBufferFromFileBase.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
@@ -13,25 +12,6 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
 {
-}
-
-Block IMergedBlockOutputStream::getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
-{
-    Block result;
-    for (size_t i = 0, size = names.size(); i < size; ++i)
-    {
-        const auto & name = names[i];
-        result.insert(i, block.getByName(name));
-
-        /// Reorder primary key columns in advance and add them to `primary_key_columns`.
-        if (permutation)
-        {
-            auto & column = result.getByPosition(i);
-            column.column = column.column->permute(*permutation, 0);
-        }
-    }
-
-    return result;
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
@@ -50,10 +30,11 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const NameAndTypePair & column : columns)
     {
-        column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path)
+        auto serialization = data_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
+            [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
             },
             {});
     }
@@ -62,9 +43,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+        auto column_with_type = columns.tryGetByName(column_name);
+        if (!column_with_type)
+           continue;
+
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -72,10 +57,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
                 remove_files.emplace(stream_name + mrk_extension);
             }
         };
-        IDataType::SubstreamPath stream_path;
-        auto column_with_type = columns.tryGetByName(column_name);
-        if (column_with_type)
-            column_with_type->type->enumerateStreams(callback, stream_path);
+
+        auto serialization = data_part->getSerializationForColumn(*column_with_type);
+        serialization->enumerateStreams(callback);
     }
 
     /// Remove files on disk and checksums
@@ -83,7 +67,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            data_part->volume->getDisk()->remove(data_part->getFullRelativePath() + removed_file);
+            data_part->volume->getDisk()->removeFile(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }

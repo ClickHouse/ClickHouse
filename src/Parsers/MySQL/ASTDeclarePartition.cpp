@@ -107,7 +107,7 @@ bool ParserDeclarePartition::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     partition_declare->less_than = less_than;
     partition_declare->in_expression = in_expression;
     partition_declare->subpartitions = subpartitions;
-    partition_declare->partition_name = partition_name->as<ASTIdentifier>()->name;
+    partition_declare->partition_name = partition_name->as<ASTIdentifier>()->name();
 
     if (options)
     {

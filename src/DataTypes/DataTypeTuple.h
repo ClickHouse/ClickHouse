@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -16,69 +16,26 @@ namespace DB
   *
   * All tuples with same size and types of elements are equivalent for expressions, regardless to names of elements.
   */
-class DataTypeTuple final : public DataTypeWithSimpleSerialization
+class DataTypeTuple final : public IDataType
 {
 private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
+    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names);
+    DataTypeTuple(const DataTypes & elems, const Strings & names, bool serialize_names_ = true);
+
+    static bool canBeCreatedWithNames(const Strings & names);
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
-
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-    /// Tuples in CSV format will be serialized as separate columns (that is, losing their nesting in the tuple).
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    /** Each sub-column in a tuple is serialized in separate stream.
-      */
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
-
-    void serializeBinaryBulkStatePrefix(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkStateSuffix(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkStatePrefix(
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkWithMultipleStreams(
-            const IColumn & column,
-            size_t offset,
-            size_t limit,
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkWithMultipleStreams(
-            IColumn & column,
-            size_t limit,
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
-
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -95,12 +52,28 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+
+    SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
+
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
+
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
+    bool serializeNames() const { return serialize_names; }
+
+private:
+    template <typename OnSuccess, typename OnContinue>
+    auto getSubcolumnEntity(const String & subcolumn_name,
+        const OnSuccess & on_success, const OnContinue & on_continue) const;
 };
 
 }

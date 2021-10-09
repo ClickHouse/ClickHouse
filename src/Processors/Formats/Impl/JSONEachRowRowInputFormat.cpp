@@ -5,7 +5,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -96,7 +96,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
-    if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
+    if (nested_prefix_length == 0 && !buf.eof() && buf.position() + 1 < buf.buffer().end())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
@@ -128,7 +128,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(const StringRef & name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-    skipJSONField(in, name_ref);
+    skipJSONField(*in, name_ref);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -140,61 +140,62 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
+        const auto & serialization = serializations[index];
 
         if (yield_strings)
         {
             String str;
-            readJSONString(str, in);
+            readJSONString(str, *in);
 
             ReadBufferFromString buf(str);
 
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
             else
-                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
         }
         else
         {
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], *in, format_settings, serialization);
             else
-                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+                serialization->deserializeTextJSON(*columns[index], *in, format_settings);
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " + columnName(index) + ")");
+        e.addMessage("(while reading the value of key " + columnName(index) + ")");
         throw;
     }
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
 {
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(*in);
 
-    if (in.eof())
-        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
-    else if (*in.position() == '}')
+    if (in->eof())
+        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    else if (*in->position() == '}')
     {
-        ++in.position();
+        ++in->position();
         return false;
     }
 
     if (key_index > 0)
     {
-        assertChar(',', in);
-        skipWhitespaceIfAny(in);
+        assertChar(',', *in);
+        skipWhitespaceIfAny(*in);
     }
     return true;
 }
 
 void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
 {
-    assertChar('{', in);
+    assertChar('{', *in);
 
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
-        StringRef name_ref = readColumnName(in);
+        StringRef name_ref = readColumnName(*in);
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -206,7 +207,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             current_column_name.assign(name_ref.data, name_ref.size);
             name_ref = StringRef(current_column_name);
 
-            skipColonDelimeter(in);
+            skipColonDelimeter(*in);
 
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
@@ -217,7 +218,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         }
         else
         {
-            skipColonDelimeter(in);
+            skipColonDelimeter(*in);
             readField(column_index, columns);
         }
     }
@@ -237,7 +238,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 {
     if (!allow_new_rows)
         return false;
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(*in);
 
     /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
@@ -246,25 +247,25 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
-    if (!in.eof())
+    if (!in->eof())
     {
         /// There may be optional ',' (but not before the first row)
-        if (!is_first_row && *in.position() == ',')
-            ++in.position();
-        else if (!data_in_square_brackets && *in.position() == ';')
+        if (!is_first_row && *in->position() == ',')
+            ++in->position();
+        else if (!data_in_square_brackets && *in->position() == ';')
         {
             /// ';' means the end of query (but it cannot be before ']')
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *in.position() == ']')
+        else if (data_in_square_brackets && *in->position() == ']')
         {
             /// ']' means the end of query
             return allow_new_rows = false;
         }
     }
 
-    skipWhitespaceIfAny(in);
-    if (in.eof())
+    skipWhitespaceIfAny(*in);
+    if (in->eof())
         return false;
 
     size_t num_columns = columns.size();
@@ -289,7 +290,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 void JSONEachRowRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(in);
+    skipToUnescapedNextLineOrEOF(*in);
 }
 
 void JSONEachRowRowInputFormat::resetParser()
@@ -304,30 +305,30 @@ void JSONEachRowRowInputFormat::resetParser()
 void JSONEachRowRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
+    skipBOMIfExists(*in);
 
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == '[')
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == '[')
     {
-        ++in.position();
+        ++in->position();
         data_in_square_brackets = true;
     }
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(*in);
     if (data_in_square_brackets)
     {
-        assertChar(']', in);
-        skipWhitespaceIfAny(in);
+        assertChar(']', *in);
+        skipWhitespaceIfAny(*in);
     }
-    if (!in.eof() && *in.position() == ';')
+    if (!in->eof() && *in->position() == ';')
     {
-        ++in.position();
-        skipWhitespaceIfAny(in);
+        ++in->position();
+        skipWhitespaceIfAny(*in);
     }
-    assertEOF(in);
+    assertEOF(*in);
 }
 
 
@@ -356,6 +357,12 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
     factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
+}
+
+void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
+{
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 }

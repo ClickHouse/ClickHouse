@@ -1,3 +1,4 @@
+-- Tags: long
 
 SELECT 'Trivial case';
 
@@ -1937,4 +1938,16 @@ INSERT INTO multi_if_check(col1) VALUES (10398),(221),(975),(80),(162),(28051),(
 INSERT INTO multi_if_check(col1) VALUES (10418),(235),(25),(179),(26030),(28381),(11091),(27398),(11108),(968),(10300),(11469),(35393),(10733),(11283),(11202);
 
 SELECT DISTINCT col1, multiIf(col1 != 213, 'Москва', 'Мир') AS k FROM multi_if_check LIMIT 10;
+DROP TABLE IF EXISTS multi_if_check;
+
+SELECT 'Constant result';
+
+CREATE TABLE multi_if_check(value String) ENGINE=TinyLog;
+INSERT INTO multi_if_check VALUES ('1');
+
+SELECT multiIf(2 > 1, 'Value', 'ElseValue') as a, isConstant(a) FROM multi_if_check;
+SELECT multiIf(2 > 1, 'Value', value) as a, isConstant(a) FROM multi_if_check;
+SELECT multiIf(value == '1', 'ValueFirst', 2 > 1, 'ValueSecond', 'ElseValue') as a, isConstant(a) FROM multi_if_check;
+SELECT multiIf(1 > 2, 'Value', 'ElseValue') as a, isConstant(a);
+
 DROP TABLE IF EXISTS multi_if_check;

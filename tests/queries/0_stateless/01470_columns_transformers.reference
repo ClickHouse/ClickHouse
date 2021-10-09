@@ -1,4 +1,5 @@
 220	18	347
+220	18	347
 110	9	173.5
 1970-04-11	1970-01-11	1970-11-21
 2	3
@@ -6,6 +7,12 @@
 18	347
 110	173.5
 1970-04-11	1970-01-11	1970-11-21
+10	324
+8	23
+324
+23
+101	10	324
+121	8	23
 222	18	347
 111	11	173.5
 1970-04-11	1970-01-11	1970-11-21
@@ -20,9 +27,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     length(toString(j)),
@@ -37,9 +44,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     sum(i + 1 AS i),
@@ -52,9 +59,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     (i + 1) + 1 AS i,
@@ -66,4 +73,20 @@ SELECT
     sum(i),
     sum(j),
     sum(k)
+FROM columns_transformers
+100	10	100	10	324	10
+120	8	120	8	23	8
+SELECT
+    i,
+    j,
+    toFloat64(i),
+    toFloat64(j),
+    toFloat64(k),
+    j
+FROM columns_transformers
+[110]	[9]	[173.5]
+SELECT
+    quantiles(0.5)(i),
+    quantiles(0.5)(j),
+    quantiles(0.5)(k)
 FROM columns_transformers

@@ -1,3 +1,9 @@
+---
+toc_priority: 46
+toc_title: UUID
+---
+
+
 # UUID {#uuid-data-type}
 
 Универсальный уникальный идентификатор (UUID) - это 16-байтовое число, используемое для идентификации записей. Подробнее про UUID читайте на [Википедии](https://en.wikipedia.org/wiki/Universally_unique_identifier).
@@ -69,4 +75,4 @@ SELECT * FROM t_uuid
 
 Тип данных UUID не поддерживается арифметическими операциями (например, [abs](../../sql-reference/data-types/uuid.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../../sql-reference/data-types/uuid.md#agg_function-sum) и [avg](../../sql-reference/data-types/uuid.md#agg_function-avg).
 
-[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

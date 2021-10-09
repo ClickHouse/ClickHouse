@@ -12,7 +12,7 @@ API_URL = 'https://api.github.com/repos/ClickHouse/ClickHouse/'
 
 def _reverse_dict_with_list(source):
     result = {}
-    for key, value in source.items():
+    for key, value in list(source.items()):
         for elem in value:
             result[elem] = key
     return result
@@ -48,14 +48,14 @@ def set_labels_for_pr(pull_request_number, labels, headers):
             response.raise_for_status()
             break
         except Exception as ex:
-            print("Exception", ex)
+            print(("Exception", ex))
             time.sleep(0.2)
 
 
 def get_required_labels_from_desc(description, current_labels):
     result = set([])
     # find first matching category
-    for marker, labels in MARKER_TO_LABEL.items():
+    for marker, labels in list(MARKER_TO_LABEL.items()):
         if marker in description:
             if not any(label in current_labels for label in labels):
                 result.add(labels[0])
@@ -282,9 +282,9 @@ class ClickHouseInserter(object):
                 response.raise_for_status()
                 break
             except Exception as ex:
-                print("Cannot insert with exception %s", str(ex))
+                print(("Cannot insert with exception %s", str(ex)))
                 if response:
-                    print("Response text %s", response.text)
+                    print(("Response text %s", response.text))
                 time.sleep(0.1)
         else:
             raise Exception("Cannot insert data into clickhouse")

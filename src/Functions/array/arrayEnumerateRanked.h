@@ -1,3 +1,4 @@
+#pragma once
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -6,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -89,12 +90,13 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context & /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -115,7 +117,7 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -141,15 +143,15 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }
 
 
 template <typename Derived>
-void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -157,12 +159,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Columns array_holders;
     ColumnPtr offsets_column;
 
-    ColumnsWithTypeAndName args;
-
-    for (size_t i = 0; i < arguments.size(); ++i)
-        args.emplace_back(block.getByPosition(arguments[i]));
-
-    const ArraysDepths arrays_depths = getArraysDepths(args);
+    const ArraysDepths arrays_depths = getArraysDepths(arguments);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
@@ -185,7 +182,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const auto * array = get_array_column(block.getByPosition(arguments[i]).column.get());
+        const auto * array = get_array_column(arguments[i].column.get());
         if (!array)
             continue;
 
@@ -257,7 +254,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
-    block.getByPosition(result).column = result_nested_array;
+    return result_nested_array;
 }
 
 /*
@@ -308,10 +305,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const size_t depth_to_look = arrays_depths.max_array_depth;
     const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
-    using Map = ClearableHashMapWithStackMemory<UInt128, UInt32,
+    using Container = ClearableHashMapWithStackMemory<UInt128, UInt32,
         UInt128TrivialHash, INITIAL_SIZE_DEGREE>;
 
-    Map indices;
+    Container indices;
 
     std::vector<size_t> indices_by_depth(depth_to_look);
     std::vector<size_t> current_offset_n_by_depth(depth_to_look);

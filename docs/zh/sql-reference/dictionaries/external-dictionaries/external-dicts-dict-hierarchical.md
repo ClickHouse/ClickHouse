@@ -27,7 +27,7 @@ ClickHouse支持分层字典与 [数字键](external-dicts-dict-structure.md#ext
 
 这种层次结构可以表示为下面的字典表。
 
-| region\_id | parent\_region | region\_name |
+| region_id | parent_region | region_name |
 |------------|----------------|--------------|
 | 1          | 0              | 俄罗斯       |
 | 2          | 1              | 莫斯科       |
@@ -67,4 +67,4 @@ ClickHouse支持 [等级](external-dicts-dict-structure.md#hierarchical-dict-att
 </dictionary>
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

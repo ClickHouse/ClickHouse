@@ -1,13 +1,22 @@
 #!/bin/bash
 set -e
 
+echo "Configure to use Yandex dockerhub-proxy"
+mkdir -p /etc/docker/
+cat > /etc/docker/daemon.json << EOF
+{
+    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
+    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+}
+EOF
+
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &>/var/log/somefile &
 
 set +e
 reties=0
 while true; do
     docker info &>/dev/null && break
-    reties=$[$reties+1]
+    reties=$((reties+1))
     if [[ $reties -ge 100 ]]; then # 10 sec max
         echo "Can't start docker daemon, timeout exceeded." >&2
         exit 1;

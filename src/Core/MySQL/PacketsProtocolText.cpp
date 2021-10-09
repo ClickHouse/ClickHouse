@@ -12,7 +12,7 @@ namespace MySQLProtocol
 namespace ProtocolText
 {
 
-ResultSetRow::ResultSetRow(const DataTypes & data_types, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_)
     : columns(columns_), row_num(row_num_)
 {
     for (size_t i = 0; i < columns.size(); i++)
@@ -25,7 +25,7 @@ ResultSetRow::ResultSetRow(const DataTypes & data_types, const Columns & columns
         else
         {
             WriteBufferFromOwnString ostr;
-            data_types[i]->serializeAsText(*columns[i], row_num, ostr, FormatSettings());
+            serializations[i]->serializeText(*columns[i], row_num, ostr, FormatSettings());
             payload_size += getLengthEncodedStringSize(ostr.str());
             serialized.push_back(std::move(ostr.str()));
         }
@@ -62,10 +62,10 @@ ColumnDefinition::ColumnDefinition()
 
 ColumnDefinition::ColumnDefinition(
     String schema_, String table_, String org_table_, String name_, String org_name_, uint16_t character_set_, uint32_t column_length_,
-    ColumnType column_type_, uint16_t flags_, uint8_t decimals_)
+    ColumnType column_type_, uint16_t flags_, uint8_t decimals_, bool with_defaults_)
     : schema(std::move(schema_)), table(std::move(table_)), org_table(std::move(org_table_)), name(std::move(name_)),
       org_name(std::move(org_name_)), character_set(character_set_), column_length(column_length_), column_type(column_type_),
-      flags(flags_), decimals(decimals_)
+      flags(flags_), decimals(decimals_), is_comm_field_list_response(with_defaults_)
 {
 }
 
@@ -77,8 +77,15 @@ ColumnDefinition::ColumnDefinition(
 
 size_t ColumnDefinition::getPayloadSize() const
 {
-    return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
-            getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name) + getLengthEncodedNumberSize(next_length);
+    return 12 +
+           getLengthEncodedStringSize("def") +
+           getLengthEncodedStringSize(schema) +
+           getLengthEncodedStringSize(table) +
+           getLengthEncodedStringSize(org_table) +
+           getLengthEncodedStringSize(name) +
+           getLengthEncodedStringSize(org_name) +
+           getLengthEncodedNumberSize(next_length) +
+           is_comm_field_list_response;
 }
 
 void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
@@ -96,7 +103,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
     payload.readStrict(reinterpret_cast<char *>(&column_length), 4);
     payload.readStrict(reinterpret_cast<char *>(&column_type), 1);
     payload.readStrict(reinterpret_cast<char *>(&flags), 2);
-    payload.readStrict(reinterpret_cast<char *>(&decimals), 2);
+    payload.readStrict(reinterpret_cast<char *>(&decimals), 1);
     payload.ignore(2);
 }
 
@@ -113,8 +120,15 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(reinterpret_cast<const char *>(&column_length), 4);
     buffer.write(reinterpret_cast<const char *>(&column_type), 1);
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
-    buffer.write(reinterpret_cast<const char *>(&decimals), 2);
+    buffer.write(reinterpret_cast<const char *>(&decimals), 1);
     writeChar(0x0, 2, buffer);
+    if (is_comm_field_list_response)
+    {
+        /// We should write length encoded int with string size
+        /// followed by string with some "default values" (possibly it's column defaults).
+        /// But we just send NULL for simplicity.
+        writeChar(0xfb, buffer);
+    }
 }
 
 ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)

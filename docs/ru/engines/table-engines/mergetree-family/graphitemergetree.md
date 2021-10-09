@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GraphiteMergeTree
+---
+
 # GraphiteMergeTree {#graphitemergetree}
 
 Движок предназначен для прореживания и агрегирования/усреднения (rollup) данных [Graphite](http://graphite.readthedocs.io/en/latest/index.html). Он может быть интересен разработчикам, которые хотят использовать ClickHouse как хранилище данных для Graphite.
@@ -33,9 +38,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 -   Значение метрики. Тип данных: любой числовой.
 
--   Версия метрики. Тип данных: любой числовой.
-
-        ClickHouse сохраняет строки с последней версией или последнюю записанную строку, если версии совпадают. Другие строки удаляются при слиянии кусков данных.
+-   Версия метрики. Тип данных: любой числовой (ClickHouse сохраняет строки с последней версией или последнюю записанную строку, если версии совпадают. Другие строки удаляются при слиянии кусков данных).
 
 Имена этих столбцов должны быть заданы в конфигурации rollup.
 
@@ -74,7 +77,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация Rollup {#rollup-configuration}
 
-Настройки прореживания данных задаются параметром [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 
@@ -129,7 +132,7 @@ default
 -   `regexp` – шаблон имени метрики.
 -   `age` – минимальный возраст данных в секундах.
 -   `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
--   `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
+-   `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`. Допустимые функции: min/max/any/avg. Avg вычисляется неточно, как среднее от средних.
 
 ### Пример конфигурации {#configuration-example}
 
@@ -166,4 +169,6 @@ default
 </graphite_rollup>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->
+
+!!! warning "Внимание"
+    Прореживание данных производится во время слияний. Обычно для старых партиций слияния не запускаются, поэтому для прореживания надо инициировать незапланированное слияние используя [optimize](../../../sql-reference/statements/optimize.md). Или использовать дополнительные инструменты, например [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).

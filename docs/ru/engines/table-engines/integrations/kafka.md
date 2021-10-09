@@ -1,3 +1,8 @@
+---
+toc_priority: 8
+toc_title: Kafka
+---
+
 # Kafka {#kafka}
 
 Движок работает с [Apache Kafka](http://kafka.apache.org/).
@@ -26,21 +31,26 @@ SETTINGS
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_skip_broken_messages = N]
+    [kafka_commit_every_batch = 0,]
+    [kafka_thread_per_consumer = 0]
 ```
 
 Обязательные параметры:
 
--   `kafka_broker_list` – перечень брокеров, разделенный запятыми (`localhost:9092`).
--   `kafka_topic_list` – перечень необходимых топиков Kafka.
--   `kafka_group_name` – группа потребителя Kafka. Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
--   `kafka_format` – формат сообщений. Названия форматов должны быть теми же, что можно использовать в секции `FORMAT`, например, `JSONEachRow`. Подробнее читайте в разделе [Форматы](../../../interfaces/formats.md).
+-   `kafka_broker_list` — перечень брокеров, разделенный запятыми (`localhost:9092`).
+-   `kafka_topic_list` — перечень необходимых топиков Kafka.
+-   `kafka_group_name` — группа потребителя Kafka. Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
+-   `kafka_format` — формат сообщений. Названия форматов должны быть теми же, что можно использовать в секции `FORMAT`, например, `JSONEachRow`. Подробнее читайте в разделе [Форматы](../../../interfaces/formats.md).
 
 Опциональные параметры:
 
--   `kafka_row_delimiter` – символ-разделитель записей (строк), которым завершается сообщение.
--   `kafka_schema` – опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap’n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
--   `kafka_num_consumers` – количество потребителей (consumer) на таблицу. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
--   `kafka_skip_broken_messages` – максимальное количество некорректных сообщений в блоке. Если `kafka_skip_broken_messages = N`, то движок отбрасывает `N` сообщений Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
+-   `kafka_row_delimiter` — символ-разделитель записей (строк), которым завершается сообщение.
+-   `kafka_schema` — опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap’n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
+-   `kafka_num_consumers` — количество потребителей (consumer) на таблицу. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
+-   `kafka_max_block_size` — максимальный размер пачек (в сообщениях) для poll (по умолчанию `max_block_size`).
+-   `kafka_skip_broken_messages` — максимальное количество некорректных сообщений в блоке. Если `kafka_skip_broken_messages = N`, то движок отбрасывает `N` сообщений Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
+-   `kafka_commit_every_batch` — включает или отключает режим записи каждой принятой и обработанной пачки по отдельности вместо единой записи целого блока (по умолчанию `0`).
+-   `kafka_thread_per_consumer` — включает или отключает предоставление отдельного потока каждому потребителю (по умолчанию `0`). При включенном режиме каждый потребитель сбрасывает данные независимо и параллельно, при отключённом — строки с данными от нескольких потребителей собираются в один блок.
 
 Примеры
 
@@ -123,7 +133,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Для улучшения производительности полученные сообщения группируются в блоки размера [max\_insert\_block\_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream\_flush\_interval\_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
+Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
@@ -154,6 +164,22 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
 
+### Поддержка Kerberos {#kafka-kerberos-support}
+
+Чтобы начать работу с Kafka с поддержкой Kerberos, добавьте дочерний элемент `security_protocol` со значением `sasl_plaintext`. Этого будет достаточно, если получен тикет на получение тикета (ticket-granting ticket) Kerberos и он кэшируется средствами ОС.
+ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` и `sasl.kerberos.kinit.cmd`.
+
+Пример:
+
+``` xml
+  <!-- Kerberos-aware Kafka -->
+  <kafka>
+    <security_protocol>SASL_PLAINTEXT</security_protocol>
+	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+  </kafka>
+```
+
 ## Виртуальные столбцы {#virtualnye-stolbtsy}
 
 -   `_topic` — топик Kafka.
@@ -167,4 +193,3 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/kafka/) <!--hide-->

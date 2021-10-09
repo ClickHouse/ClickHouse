@@ -10,13 +10,13 @@ namespace DB
 
 /// Visits AST tree in depth, call functions for nodes according to Matcher type data.
 /// You need to define Data, visit() and needChildVisit() in Matcher class.
-template <typename Matcher, bool _top_to_bottom, typename T = ASTPtr>
+template <typename Matcher, bool _top_to_bottom, bool need_child_accept_data = false, typename T = ASTPtr>
 class InDepthNodeVisitor
 {
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitor(Data & data_, std::ostream * ostr_ = nullptr)
+    explicit InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
@@ -29,7 +29,15 @@ public:
         if constexpr (!_top_to_bottom)
             visitChildren(ast);
 
-        Matcher::visit(ast, data);
+        try
+        {
+            Matcher::visit(ast, data);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While processing {}", ast->formatForErrorMessage());
+            throw;
+        }
 
         if constexpr (_top_to_bottom)
             visitChildren(ast);
@@ -38,18 +46,26 @@ public:
 private:
     Data & data;
     size_t visit_depth;
-    std::ostream * ostr;
+    WriteBuffer * ostr;
 
     void visitChildren(T & ast)
     {
         for (auto & child : ast->children)
-            if (Matcher::needChildVisit(ast, child))
+        {
+            bool need_visit_child = false;
+            if constexpr (need_child_accept_data)
+                need_visit_child = Matcher::needChildVisit(ast, child, data);
+            else
+                need_visit_child = Matcher::needChildVisit(ast, child);
+
+            if (need_visit_child)
                 visit(child);
+        }
     }
 };
 
-template <typename Matcher, bool top_to_bottom>
-using ConstInDepthNodeVisitor = InDepthNodeVisitor<Matcher, top_to_bottom, const ASTPtr>;
+template <typename Matcher, bool top_to_bottom, bool need_child_accept_data = false>
+using ConstInDepthNodeVisitor = InDepthNodeVisitor<Matcher, top_to_bottom, need_child_accept_data, const ASTPtr>;
 
 struct NeedChild
 {
@@ -60,11 +76,11 @@ struct NeedChild
 };
 
 /// Simple matcher for one node type. Use need_child function for complex traversal logic.
-template <typename Data_, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
+template <typename DataImpl, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
 class OneTypeMatcher
 {
 public:
-    using Data = Data_;
+    using Data = DataImpl;
     using TypeToVisit = typename Data::TypeToVisit;
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child) { return need_child(node, child); }

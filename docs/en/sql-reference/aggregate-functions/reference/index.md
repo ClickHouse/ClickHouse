@@ -50,8 +50,6 @@ ClickHouse-specific aggregate functions:
 -   [skewPop](../../../sql-reference/aggregate-functions/reference/skewpop.md)
 -   [kurtSamp](../../../sql-reference/aggregate-functions/reference/kurtsamp.md)
 -   [kurtPop](../../../sql-reference/aggregate-functions/reference/kurtpop.md)
--   [timeSeriesGroupSum](../../../sql-reference/aggregate-functions/reference/timeseriesgroupsum.md)
--   [timeSeriesGroupRateSum](../../../sql-reference/aggregate-functions/reference/timeseriesgroupratesum.md)
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md)
@@ -68,9 +66,11 @@ ClickHouse-specific aggregate functions:
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
+-   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

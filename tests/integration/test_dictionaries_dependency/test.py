@@ -13,14 +13,17 @@ def start_cluster():
         cluster.start()
         for node in nodes:
             node.query("CREATE DATABASE IF NOT EXISTS test")
+            # Different internal dictionary name with Atomic
+            node.query("CREATE DATABASE IF NOT EXISTS test_ordinary ENGINE=Ordinary")
             node.query("CREATE DATABASE IF NOT EXISTS atest")
             node.query("CREATE DATABASE IF NOT EXISTS ztest")
             node.query("CREATE TABLE test.source(x UInt64, y UInt64) ENGINE=Log")
             node.query("INSERT INTO test.source VALUES (5,6)")
 
-            node.query("CREATE DICTIONARY test.dict(x UInt64, y UInt64) PRIMARY KEY x " \
-                       "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'source' DB 'test')) " \
-                       "LAYOUT(FLAT()) LIFETIME(0)")
+            for db in ("test", "test_ordinary"):
+                node.query("CREATE DICTIONARY {}.dict(x UInt64, y UInt64) PRIMARY KEY x " \
+                           "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'source' DB 'test')) " \
+                           "LAYOUT(FLAT()) LIFETIME(0)".format(db))
         yield cluster
 
     finally:
@@ -33,6 +36,8 @@ def cleanup_after_test():
         yield
     finally:
         for node in nodes:
+            for i in range(4):
+                node.query("DROP DICTIONARY IF EXISTS test.other_{}".format(i))
             node.query("DROP DICTIONARY IF EXISTS test.adict")
             node.query("DROP DICTIONARY IF EXISTS test.zdict")
             node.query("DROP DICTIONARY IF EXISTS atest.dict")
@@ -91,18 +96,21 @@ def test_dependency_via_explicit_table(node):
 def test_dependency_via_dictionary_database(node):
     node.query("CREATE DATABASE dict_db ENGINE=Dictionary")
 
-    d_names = ["test.adict", "test.zdict", "atest.dict", "ztest.dict"]
+    d_names = ["test_ordinary.adict", "test_ordinary.zdict", "atest.dict", "ztest.dict"]
     for d_name in d_names:
         node.query("CREATE DICTIONARY {}(x UInt64, y UInt64) PRIMARY KEY x " \
-                   "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'test.dict' DB 'dict_db')) " \
+                   "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'test_ordinary.dict' DB 'dict_db')) " \
                    "LAYOUT(FLAT()) LIFETIME(0)".format(d_name))
 
     def check():
         for d_name in d_names:
             assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
-    check()
+
+    for d_name in d_names:
+        assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
     # Restart must not break anything.
     node.restart_clickhouse()
-    check()
+    for d_name in d_names:
+        assert node.query_with_retry("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"

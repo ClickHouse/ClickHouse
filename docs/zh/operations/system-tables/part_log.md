@@ -3,9 +3,9 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。part\_log {#system_tables-part-log}
+# 系统。part_log {#system_tables-part-log}
 
-该 `system.part_log` 表只有当创建 [part\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) 指定了服务器设置。
+该 `system.part_log` 表只有当创建 [part_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) 指定了服务器设置。
 
 此表包含与以下情况发生的事件有关的信息 [数据部分](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) 在 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 家庭表，例如添加或合并数据。
 

@@ -20,7 +20,7 @@ The `FixedString` type is efficient when data has the length of precisely `N` by
 Examples of the values that can be efficiently stored in `FixedString`-typed columns:
 
 -   The binary representation of IP addresses (`FixedString(16)` for IPv6).
--   Language codes (ru\_RU, en\_US … ).
+-   Language codes (ru_RU, en_US … ).
 -   Currency codes (USD, RUB … ).
 -   Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
@@ -58,4 +58,4 @@ This behaviour differs from MySQL for the `CHAR` type (where strings are padded 
 
 Note that the length of the `FixedString(N)` value is constant. The [length](../../sql-reference/functions/array-functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
 
-[Original article](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

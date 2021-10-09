@@ -29,12 +29,16 @@ if (NOT USE_INTERNAL_ZLIB_LIBRARY)
 endif ()
 
 if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
+    # https://github.com/zlib-ng/zlib-ng/pull/733
+    # This is disabed by default
+    add_compile_definitions(Z_TLS=__thread)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
     set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}" "${ClickHouse_BINARY_DIR}/contrib/${INTERNAL_ZLIB_NAME}" CACHE INTERNAL "") # generated zconf.h
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
     set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
+    set (ZLIB_LIBRARY_NAME ${ZLIB_LIBRARIES}) # for cassandra
     set (ZLIB_NAME "${INTERNAL_ZLIB_NAME}")
 endif ()
 

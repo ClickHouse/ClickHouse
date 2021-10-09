@@ -163,7 +163,7 @@ Mode引数は、toWeek()のmode引数とまったく同じように動作しま�
 
 日付を時刻とともに切り捨てて、十分間隔の開始まで切り捨てます。
 
-## トスタートオフインターバル(time\_or\_data,区間x単位\[,time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## トスタートオフインターバル(time_or_data,区間x単位\[,time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 これは、名前付きの他の関数の一般化です `toStartOf*`. 例えば,
 `toStartOfInterval(t, INTERVAL 1 year)` と同じを返します `toStartOfYear(t)`,
@@ -447,4 +447,4 @@ Function formats a Time according given Format string. N.B.: Format is a constan
 | %Y     | 年                                              | 2018       |
 | %%     | %記号                                           | %          |
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

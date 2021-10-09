@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stateless-unbundled-test .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/stateless-unbundled-test .
+FROM clickhouse/test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -8,14 +8,13 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             alien \
             brotli \
+            zstd \
             cmake \
             devscripts \
             expect \
             gdb  \
             gperf \
-            gperf \
             heimdal-multidev \
-            intel-opencl-icd \
             libboost-filesystem-dev \
             libboost-iostreams-dev \
             libboost-program-options-dev \
@@ -43,21 +42,22 @@ RUN apt-get --allow-unauthenticated update -y \
             libreadline-dev \
             libsasl2-dev \
             libzstd-dev \
+            librocksdb-dev \
+            libgflags-dev \
             lsof \
             moreutils \
             ncdu \
             netcat-openbsd \
-            ocl-icd-libopencl1 \
             odbcinst \
-            opencl-headers \
             openssl \
             perl \
             pigz \
             pkg-config \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
+            python3 \
+            python3-lxml \
+            python3-requests \
+            python3-termcolor \
+            python3-pip \
             qemu-user-static \
             sudo \
             telnet \
@@ -66,9 +66,9 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev \
-            zookeeper \
-            zookeeperd
+            zlib1g-dev
+
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -77,8 +77,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Moscow
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
+

@@ -1,16 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
-
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
 
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
@@ -34,13 +28,13 @@ try
     std::string s2 = "qwertyuiop";
     std::string s3 = "asdfghjkl;";
     std::string s4 = "zxcvbnm,./";
-    DB::ReadBufferFromString b1(s1);
-    DB::ReadBufferFromString b2(s2);
-    DB::ReadBufferFromString b3(s3);
-    DB::ReadBufferFromString b4(s4);
 
-    DB::ConcatReadBuffer concat({&b1, &b2, &b3, &b4});
-    DB::PeekableReadBuffer peekable(concat, 0, 16);
+    DB::ConcatReadBuffer concat;
+    concat.appendBuffer(std::make_unique<DB::ReadBufferFromString>(s1));
+    concat.appendBuffer(std::make_unique<DB::ReadBufferFromString>(s2));
+    concat.appendBuffer(std::make_unique<DB::ReadBufferFromString>(s3));
+    concat.appendBuffer(std::make_unique<DB::ReadBufferFromString>(s4));
+    DB::PeekableReadBuffer peekable(concat, 0);
 
     ASSERT_TRUE(!peekable.eof());
     assertAvailable(peekable, "0123456789");
@@ -48,18 +42,7 @@ try
         DB::PeekableReadBufferCheckpoint checkpoint{peekable};
         readAndAssert(peekable, "01234");
     }
-    bool exception = false;
-    try
-    {
-        peekable.rollbackToCheckpoint();
-    }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != DB::ErrorCodes::LOGICAL_ERROR)
-            throw;
-        exception = true;
-    }
-    ASSERT_TRUE(exception);
+
     assertAvailable(peekable, "56789");
 
     readAndAssert(peekable, "56");
@@ -70,19 +53,10 @@ try
     peekable.dropCheckpoint();
     assertAvailable(peekable, "789");
 
-    exception = false;
-    try
     {
         DB::PeekableReadBufferCheckpoint checkpoint{peekable, true};
-        peekable.ignore(30);
+        peekable.ignore(20);
     }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            throw;
-        exception = true;
-    }
-    ASSERT_TRUE(exception);
     assertAvailable(peekable, "789qwertyuiop");
 
     readAndAssert(peekable, "789qwertyu");

@@ -3,9 +3,9 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。graphite\_retentions {#system-graphite-retentions}
+# 系统。graphite_retentions {#system-graphite-retentions}
 
-包含有关参数的信息 [graphite\_rollup](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 这是在表中使用 [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) 引擎
+包含有关参数的信息 [graphite_rollup](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 这是在表中使用 [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) 引擎
 
 列:
 

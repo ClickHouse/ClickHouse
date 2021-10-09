@@ -34,7 +34,7 @@ def started_cluster():
 
         for current_node in nodes:
             current_node.query('''
-                CREATE DATABASE mydb ENGINE=Ordinary;
+                CREATE DATABASE mydb;
 
                 CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);
@@ -103,21 +103,32 @@ def test_join():
 
 
 def test_cannot_trick_row_policy_with_keyword_with():
-    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
-    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1") == TSV([[0, 0], [0, 1]])
     assert node.query("WITH 0 AS a SELECT a FROM mydb.filtered_table1") == TSV([[0], [0]])
     assert node.query("WITH 0 AS a SELECT b FROM mydb.filtered_table1") == TSV([[0], [1]])
 
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1")                              == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 WHERE a >= 0 AND b >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a >= 0 AND b >= 0")   == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE a >= 0 WHERE b >= 0") == TSV([[1, 0], [1, 1]])
+    assert node.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1 PREWHERE b >= 0 WHERE a >= 0") == TSV([[1, 0], [1, 1]])
 
-def test_prewhere_not_supported():
-    expected_error = "PREWHERE is not supported if the table is filtered by row-level security"
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table1 PREWHERE 1")
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE 1")
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table3 PREWHERE 1")
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1")                              == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 WHERE a >= 0 AND b >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a >= 0 AND b >= 0")   == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE a >= 0 WHERE b >= 0") == TSV([[0, 0], [0, 1]])
+    assert node.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1 PREWHERE b >= 0 WHERE a >= 0") == TSV([[0, 0], [0, 1]])
 
-    # However PREWHERE should still work for user without filtering.
-    assert node.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == TSV(
-        [[0, 0], [0, 1], [1, 0], [1, 1]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3")                              == TSV([[0, 1], [1, 0]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 1], [1, 0]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 1], [1, 0]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1], [1, 0]])
+    assert node.query("WITH 0 AS c SELECT * FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1], [1, 0]])
+
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3")                              == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 WHERE c >= 0 AND a >= 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 AND a >= 0")   == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE c >= 0 WHERE a >= 0") == TSV([[0, 1, 0], [1, 0, 0]])
+    assert node.query("WITH 0 AS c SELECT a, b, c FROM mydb.filtered_table3 PREWHERE a >= 0 WHERE c >= 0") == TSV([[0, 1, 0], [1, 0, 0]])
 
 
 def test_policy_from_users_xml_affects_only_user_assigned():
@@ -130,6 +141,57 @@ def test_policy_from_users_xml_affects_only_user_assigned():
 
     assert node.query("SELECT * FROM mydb.local") == TSV([[1, 0], [1, 1], [2, 0], [2, 1]])
     assert node.query("SELECT * FROM mydb.local", user="another") == TSV([[1, 0], [1, 1]])
+
+
+def test_with_prewhere():
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[4, 3, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[4]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0") == TSV([[4, 3]])
+    assert node.query("SELECT b, c FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0") == TSV([[3, 2]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 WHERE a > 1 SETTINGS optimize_move_to_prewhere = 0")    == TSV([[1]])
+
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[4, 3, 2, 1]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[4]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[4, 3]])
+    assert node.query("SELECT b, c FROM mydb.filtered_table2 PREWHERE a > 1") == TSV([[3, 2]])
+    assert node.query("SELECT d FROM mydb.filtered_table2 PREWHERE a > 1")    == TSV([[1]])
+
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 2, 3, 4]])
+    assert node.query("SELECT a FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1]])
+    assert node.query("SELECT b FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[2]])
+    assert node.query("SELECT a, b FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 2]])
+    assert node.query("SELECT a, c FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[1, 3]])
+    assert node.query("SELECT b, d FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[2, 4]])
+    assert node.query("SELECT c, d FROM mydb.filtered_table2 PREWHERE a < 4 WHERE b < 10") == TSV([[3, 4]])
+
+
+def test_throwif_error_in_where_with_same_condition_as_filter():
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a > 0, 'expected') = 0 SETTINGS optimize_move_to_prewhere = 0")
+
+
+def test_throwif_error_in_prewhere_with_same_condition_as_filter():
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE throwIf(a > 0, 'expected') = 0")
+
+
+def test_throwif_in_where_doesnt_expose_restricted_data():
+    copy_policy_xml('no_filters.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'expected') = 0 SETTINGS optimize_move_to_prewhere = 0")
+
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert node.query("SELECT * FROM mydb.filtered_table2 WHERE throwIf(a = 0, 'pwned') = 0 SETTINGS optimize_move_to_prewhere = 0") == TSV([
+        [1, 2, 3, 4], [4, 3, 2, 1]])
+
+
+def test_throwif_in_prewhere_doesnt_expose_restricted_data():
+    copy_policy_xml('no_filters.xml')
+    assert 'expected' in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE throwIf(a = 0, 'expected') = 0")
+
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert node.query("SELECT * FROM mydb.filtered_table2 PREWHERE throwIf(a = 0, 'pwned') = 0") == TSV([
+        [1, 2, 3, 4], [4, 3, 2, 1]])
 
 
 def test_change_of_users_xml_changes_row_policies():
@@ -153,6 +215,11 @@ def test_change_of_users_xml_changes_row_policies():
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
     assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 0, 0], [0, 0, 6, 0]])
     assert node.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 1], [1, 0]])
+
+    copy_policy_xml('normal_filter2_table2.xml')
+    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[1, 2, 3, 4], [4, 3, 2, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
 
     copy_policy_xml('no_filters.xml')
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
@@ -342,32 +409,31 @@ def test_tags_with_db_and_table_names():
 
 
 def test_miscellaneous_engines():
-    copy_policy_xml('normal_filters.xml')
+    node.query("CREATE ROW POLICY OR REPLACE pC ON mydb.other_table FOR SELECT USING a = 1 TO default")
+    assert node.query("SHOW ROW POLICIES ON mydb.other_table") == "pC\n"
 
     # ReplicatedMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query(
-        "CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
+    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 0), (0, 1), (1, 0), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 0], [1, 1]])
 
     # CollapsingMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 1], [1, 1]])
+    node.query("DROP TABLE mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 1], [1, 1]])
 
     # ReplicatedCollapsingMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query(
-        "CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 1], [1, 1]])
+    node.query("DROP TABLE mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-01/filtered_table1', 'replica1', b) ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 1], [1, 1]])
+
+    node.query("DROP ROW POLICY pC ON mydb.other_table")
 
     # DistributedMergeTree
-    node.query("DROP TABLE IF EXISTS mydb.not_filtered_table")
-    node.query(
-        "CREATE TABLE mydb.not_filtered_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
-    assert node.query("SELECT * FROM mydb.not_filtered_table", user="another") == TSV([[1, 0], [1, 1], [1, 0], [1, 1]])
-    assert node.query("SELECT sum(a), b FROM mydb.not_filtered_table GROUP BY b ORDER BY b", user="another") == TSV(
-        [[2, 0], [2, 1]])
+    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
+    assert node.query("SELECT * FROM mydb.other_table", user="another") == TSV([[1, 0], [1, 1], [1, 0], [1, 1]])
+    assert node.query("SELECT sum(a), b FROM mydb.other_table GROUP BY b ORDER BY b", user="another") == TSV([[2, 0], [2, 1]])

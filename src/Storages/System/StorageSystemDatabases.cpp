@@ -17,25 +17,37 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
+        {"comment", std::make_shared<DataTypeString>()}
     };
 }
 
-void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
 {
-    const auto access = context.getAccess();
+    return {
+        {"database", std::make_shared<DataTypeString>(), "name"}
+    };
+}
+
+void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+{
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
-    auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & database : databases)
+    const auto databases = DatabaseCatalog::instance().getDatabases();
+    for (const auto & [database_name, database] : databases)
     {
-        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database.first))
+        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
-        res_columns[0]->insert(database.first);
-        res_columns[1]->insert(database.second->getEngineName());
-        res_columns[2]->insert(context.getPath() + database.second->getDataPath());
-        res_columns[3]->insert(database.second->getMetadataPath());
-        res_columns[4]->insert(database.second->getUUID());
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue; /// We don't want to show the internal database for temporary tables in system.databases
+
+        res_columns[0]->insert(database_name);
+        res_columns[1]->insert(database->getEngineName());
+        res_columns[2]->insert(context->getPath() + database->getDataPath());
+        res_columns[3]->insert(database->getMetadataPath());
+        res_columns[4]->insert(database->getUUID());
+        res_columns[5]->insert(database->getDatabaseComment());
    }
 }
 

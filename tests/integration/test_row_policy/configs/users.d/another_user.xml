@@ -1,5 +1,10 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
+    <profiles>
+        <default>
+            <optimize_on_insert>0</optimize_on_insert>
+        </default>
+    </profiles>
     <users>
         <another>
             <password/>
@@ -10,4 +15,4 @@
             <quota>default</quota>
         </another>
     </users>
-</yandex>
+</clickhouse>

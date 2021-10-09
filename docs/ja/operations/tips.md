@@ -59,7 +59,7 @@ RAID-10を作成するときは、 `far` レイアウト。
 予算が許せば、RAID-10を選択します。
 
 4つ以上のディスクがある場合は、RAID-6(優先)またはRAID-50を使用してください。
-RAID-5、RAID-6、またはRAID-50を使用する場合は、常にstripe\_cache\_sizeを増やしてください。
+RAID-5、RAID-6、またはRAID-50を使用する場合は、常にstripe_cache_sizeを増やしてください。
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -248,4 +248,4 @@ script
 end script
 ```
 
-{## [元の記事](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/operations/tips/) ##}

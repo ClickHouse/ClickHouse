@@ -14,7 +14,10 @@ Second run checks PR from previous run to be merged or at least being mergeable.
 Third run creates PR from backport branch (with merged previous PR) to release branch.
 '''
 
-from clickhouse.utils.github.query import Query as RemoteRepo
+try:
+    from clickhouse.utils.github.query import Query as RemoteRepo
+except:
+    from .query import Query as RemoteRepo
 
 import argparse
 from enum import Enum
@@ -111,7 +114,7 @@ class CherryPick:
             'Merge it only if you intend to backport changes to the target branch, otherwise just close it.\n'
         )
 
-        git_prefix = ['git', '-C', repo_path, '-c', 'user.email=robot-clickhouse@yandex-team.ru', '-c', 'user.name=robot-clickhouse']
+        git_prefix = ['git', '-C', repo_path, '-c', 'user.email=robot-clickhouse@clickhouse.com', '-c', 'user.name=robot-clickhouse']
 
         pr_title = 'Backport #{number} to {target}: {title}'.format(
             number=self._pr['number'], target=self.target_branch,

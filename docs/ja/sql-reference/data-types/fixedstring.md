@@ -22,7 +22,7 @@ toc_title: "\u56FA\u5B9A\u6587\u5B57\u5217(N)"
 効率的に格納できる値の例 `FixedString`-型指定された列:
 
 -   IPアドレスのバイナリ表現 (`FixedString(16)` IPv6の場合）。
--   Language codes (ru\_RU, en\_US … ).
+-   Language codes (ru_RU, en_US … ).
 -   Currency codes (USD, RUB … ).
 -   ハッシュのバイナリ表現 (`FixedString(16)` MD5の場合, `FixedString(32)` SHA256）のため。
 
@@ -60,4 +60,4 @@ WHERE a = 'b\0'
 
 の長さに注意してください。 `FixedString(N)` 値は一定です。 その [長さ](../../sql-reference/functions/array-functions.md#array_functions-length) 関数の戻り値 `N` たとえ `FixedString(N)` 値はnullバイトのみで埋められますが、 [空](../../sql-reference/functions/string-functions.md#empty) 関数の戻り値 `1` この場合。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

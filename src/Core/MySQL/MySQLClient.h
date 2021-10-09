@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
@@ -29,10 +28,12 @@ public:
     void disconnect();
     void ping();
 
+    void setBinlogChecksum(const String & binlog_checksum);
+
     /// Start replication stream by GTID.
     /// replicate_db: replication database schema, events from other databases will be ignored.
     /// gtid: executed gtid sets format like 'hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh:x-y'.
-    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid);
+    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid, const String & binlog_checksum);
 
     BinlogEventPtr readOneBinlogEvent(UInt64 milliseconds = 0);
     Position getPosition() const { return replication.getPosition(); }
@@ -44,9 +45,9 @@ private:
     String password;
 
     bool connected = false;
-    UInt32 client_capability_flags = 0;
+    uint8_t sequence_id = 0;
+    uint32_t client_capabilities = 0;
 
-    uint8_t seq = 0;
     const UInt8 charset_utf8 = 33;
     const String mysql_native_password = "mysql_native_password";
 

@@ -26,6 +26,8 @@ public:
     std::vector<Interval> intervals;
 
     void tryMerge(size_t i);
+
+    static void tryShrink(GTIDSet & set, unsigned int i, Interval & current);
 };
 
 class GTIDSets

@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
    <dictionary>
       <name>dict0</name>
       <source>
          <mysql >
             <db>test</db>
-            <host>mysql1</host>
+            <host>mysql57</host>
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
@@ -41,7 +41,7 @@
       <source>
          <mysql >
             <db>test</db>
-            <host>mysql1</host>
+            <host>mysql57</host>
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
@@ -72,4 +72,4 @@
       </structure>
       <lifetime>0</lifetime>
    </dictionary>
-</yandex>
+</clickhouse>

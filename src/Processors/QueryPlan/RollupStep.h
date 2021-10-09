@@ -16,7 +16,7 @@ public:
 
     String getName() const override { return "Rollup"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     AggregatingTransformParamsPtr params;

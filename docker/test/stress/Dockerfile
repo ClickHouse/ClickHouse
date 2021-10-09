@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stress-test .
-FROM yandex/clickhouse-stateful-test
+# docker build -t clickhouse/stress-test .
+FROM clickhouse/stateful-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -10,10 +10,10 @@ RUN apt-get update -y \
             debhelper \
             parallel \
             expect \
-            python \
-            python-lxml \
-            python-termcolor \
-            python-requests \
+            python3 \
+            python3-lxml \
+            python3-termcolor \
+            python3-requests \
             curl \
             sudo \
             openssl \

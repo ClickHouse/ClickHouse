@@ -3,9 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/ThreadPool.h>
-#include <common/phdr_cache.h>
+#include <base/phdr_cache.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <thread>
@@ -131,7 +131,10 @@ TEST(Common, RWLockRecursive)
 
             auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
+#ifndef ABORT_ON_LOGICAL_ERROR
+            /// It throws LOGICAL_ERROR
             EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
+#endif
         }
 
         fifo_lock->getLock(RWLockImpl::Write, "q2");

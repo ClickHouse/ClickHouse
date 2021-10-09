@@ -7,11 +7,22 @@
 #endif
 
 #include <mysqlxx/Pool.h>
-
-#include <common/sleep.h>
-
-#include <Poco/Util/Application.h>
+#include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <ctime>
+
+
+namespace
+{
+
+inline uint64_t clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
+{
+    struct timespec ts;
+    clock_gettime(clock_type, &ts);
+    return uint64_t(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+}
+
+}
 
 
 namespace mysqlxx
@@ -21,28 +32,29 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
-    ++data->ref_count;
-    if (data->ref_count == 1)
+    /// First reference, initialize thread
+    if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
 }
+
 
 void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-    if (data->ref_count > 0)
-    {
-        --data->ref_count;
-        if (data->ref_count == 0)
-            mysql_thread_end();
-    }
+
+    /// We were the last user of this thread, deinitialize it
+    if (data->ref_count.fetch_sub(1) == 1)
+        mysql_thread_end();
 }
 
 
 Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
      unsigned default_connections_, unsigned max_connections_,
      const char * parent_config_name_)
-    : default_connections(default_connections_), max_connections(max_connections_)
+    : logger(Poco::Logger::get("mysqlxx::Pool"))
+    , default_connections(default_connections_)
+    , max_connections(max_connections_)
 {
     server = cfg.getString(config_name + ".host");
 
@@ -79,6 +91,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
+
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
+            cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
     }
     else
     {
@@ -97,6 +112,8 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
+
+        opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -119,27 +136,48 @@ Pool::~Pool()
 }
 
 
-Pool::Entry Pool::get()
+Pool::Entry Pool::get(uint64_t wait_timeout)
 {
     std::unique_lock<std::mutex> lock(mutex);
+
+    uint64_t deadline = 0;
+    /// UINT64_MAX -- wait indefinitely
+    if (wait_timeout && wait_timeout != UINT64_MAX)
+        deadline = clock_gettime_ns() + wait_timeout * 1'000'000'000;
 
     initialize();
     for (;;)
     {
+        logger.trace("(%s): Iterating through existing MySQL connections", getDescription());
+
         for (auto & connection : connections)
         {
             if (connection->ref_count == 0)
                 return Entry(connection, this);
         }
 
+        logger.trace("(%s): Trying to allocate a new connection.", getDescription());
         if (connections.size() < static_cast<size_t>(max_connections))
         {
             Connection * conn = allocConnection();
             if (conn)
                 return Entry(conn, this);
+
+            logger.trace("(%s): Unable to create a new connection: Allocation failed.", getDescription());
+        }
+        else
+        {
+            logger.trace("(%s): Unable to create a new connection: Max number of connections has been reached.", getDescription());
         }
 
+        if (!wait_timeout)
+            throw Poco::Exception("mysqlxx::Pool is full (wait is disabled, see connection_wait_timeout setting)");
+
+        if (deadline && clock_gettime_ns() >= deadline)
+            throw Poco::Exception("mysqlxx::Pool is full (connection_wait_timeout is exceeded)");
+
         lock.unlock();
+        logger.trace("(%s): Sleeping for %d seconds.", getDescription(), MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         lock.lock();
     }
@@ -152,30 +190,44 @@ Pool::Entry Pool::tryGet()
 
     initialize();
 
-    /// Searching for connection which was established but wasn't used.
-    for (auto & connection : connections)
+    /// Try to pick an idle connection from already allocated
+    for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
-        if (connection->ref_count == 0)
+        Connection * connection_ptr = *connection_it;
+        /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
+        if (connection_ptr->ref_count == 0)
         {
-            Entry res(connection, this);
-            return res.tryForceConnected() ? res : Entry();
+            {
+                Entry res(connection_ptr, this);
+                if (res.tryForceConnected())  /// Tries to reestablish connection as well
+                    return res;
+            }
+
+            logger.debug("(%s): Idle connection to MySQL server cannot be recovered, dropping it.", getDescription());
+
+            /// This one is disconnected, cannot be reestablished and so needs to be disposed of.
+            connection_it = connections.erase(connection_it);
+            ::delete connection_ptr;  /// TODO: Manual memory management is awkward (matches allocConnection() method)
         }
+        else
+            ++connection_it;
     }
 
-    /// Throws if pool is overflowed.
     if (connections.size() >= max_connections)
         throw Poco::Exception("mysqlxx::Pool is full");
 
-    /// Allocates new connection.
-    Connection * conn = allocConnection(true);
-    if (conn)
-        return Entry(conn, this);
+    Connection * connection_ptr = allocConnection(true);
+    if (connection_ptr)
+        return {connection_ptr, this};
 
-    return Entry();
+    return {};
 }
+
 
 void Pool::removeConnection(Connection* connection)
 {
+    logger.trace("(%s): Removing connection.", getDescription());
+
     std::lock_guard<std::mutex> lock(mutex);
     if (connection)
     {
@@ -200,19 +252,15 @@ void Pool::Entry::forceConnected() const
     if (data == nullptr)
         throw Poco::RuntimeException("Tried to access NULL database connection.");
 
-    Poco::Util::Application & app = Poco::Util::Application::instance();
-    if (data->conn.ping())
-        return;
-
     bool first = true;
-    do
+    while (!tryForceConnected())
     {
         if (first)
             first = false;
         else
             sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
-        app.logger().information("MYSQL: Reconnecting to " + pool->description);
+        pool->logger.debug("Entry: Reconnecting to MySQL server %s", pool->description);
         data->conn.connect(
             pool->db.c_str(),
             pool->server.c_str(),
@@ -225,9 +273,33 @@ void Pool::Entry::forceConnected() const
             pool->ssl_key.c_str(),
             pool->connect_timeout,
             pool->rw_timeout,
-            pool->enable_local_infile);
+            pool->enable_local_infile,
+            pool->opt_reconnect);
     }
-    while (!data->conn.ping());
+}
+
+
+bool Pool::Entry::tryForceConnected() const
+{
+    auto * const mysql_driver = data->conn.getDriver();
+    const auto prev_connection_id = mysql_thread_id(mysql_driver);
+
+    pool->logger.trace("Entry(connection %lu): sending PING to check if it is alive.", prev_connection_id);
+    if (data->conn.ping())  /// Attempts to reestablish lost connection
+    {
+        const auto current_connection_id = mysql_thread_id(mysql_driver);
+        if (prev_connection_id != current_connection_id)
+        {
+            pool->logger.debug("Entry(connection %lu): Reconnected to MySQL server. Connection id changed: %lu -> %lu",
+                                current_connection_id, prev_connection_id, current_connection_id);
+        }
+
+        pool->logger.trace("Entry(connection %lu): PING ok.", current_connection_id);
+        return true;
+    }
+
+    pool->logger.trace("Entry(connection %lu): PING failed.", prev_connection_id);
+    return false;
 }
 
 
@@ -247,15 +319,13 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    Poco::Util::Application & app = Poco::Util::Application::instance();
-
-    std::unique_ptr<Connection> conn(new Connection);
+    std::unique_ptr conn_ptr = std::make_unique<Connection>();
 
     try
     {
-        app.logger().information("MYSQL: Connecting to " + description);
+        logger.debug("Connecting to %s", description);
 
-        conn->conn.connect(
+        conn_ptr->conn.connect(
             db.c_str(),
             server.c_str(),
             user.c_str(),
@@ -267,29 +337,29 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_key.c_str(),
             connect_timeout,
             rw_timeout,
-            enable_local_infile);
+            enable_local_infile,
+            opt_reconnect);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
+        logger.error(e.what());
+
         if ((!was_successful && !dont_throw_if_failed_first_time)
             || e.errnum() == ER_ACCESS_DENIED_ERROR
             || e.errnum() == ER_DBACCESS_DENIED_ERROR
             || e.errnum() == ER_BAD_DB_ERROR)
         {
-            app.logger().error(e.what());
             throw;
         }
         else
         {
-            app.logger().error(e.what());
             return nullptr;
         }
     }
 
+    connections.push_back(conn_ptr.get());
     was_successful = true;
-    auto * connection = conn.release();
-    connections.push_back(connection);
-    return connection;
+    return conn_ptr.release();
 }
 
 }

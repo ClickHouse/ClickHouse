@@ -4,7 +4,7 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -49,33 +49,33 @@ void JSONCompactEachRowRowInputFormat::resetParser()
 void JSONCompactEachRowRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
+    skipBOMIfExists(*in);
 
     if (with_names)
     {
         size_t num_columns = getPort().getHeader().columns();
         read_columns.assign(num_columns, false);
 
-        assertChar('[', in);
+        assertChar('[', *in);
         do
         {
-            skipWhitespaceIfAny(in);
+            skipWhitespaceIfAny(*in);
             String column_name;
-            readJSONString(column_name, in);
+            readJSONString(column_name, *in);
             addInputColumn(column_name);
-            skipWhitespaceIfAny(in);
+            skipWhitespaceIfAny(*in);
         }
-        while (checkChar(',', in));
-        assertChar(']', in);
+        while (checkChar(',', *in));
+        assertChar(']', *in);
         skipEndOfLine();
 
         /// Type checking
-        assertChar('[', in);
+        assertChar('[', *in);
         for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
         {
-            skipWhitespaceIfAny(in);
+            skipWhitespaceIfAny(*in);
             String data_type;
-            readJSONString(data_type, in);
+            readJSONString(data_type, *in);
 
             if (column_indexes_for_input_fields[i] &&
                 data_types[*column_indexes_for_input_fields[i]]->getName() != data_type)
@@ -89,10 +89,10 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
             }
 
             if (i != column_indexes_for_input_fields.size() - 1)
-                assertChar(',', in);
-            skipWhitespaceIfAny(in);
+                assertChar(',', *in);
+            skipWhitespaceIfAny(*in);
         }
-        assertChar(']', in);
+        assertChar(']', *in);
     }
     else
     {
@@ -149,14 +149,14 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
 {
     skipEndOfLine();
 
-    if (in.eof())
+    if (in->eof())
         return false;
 
     size_t num_columns = columns.size();
 
     read_columns.assign(num_columns, false);
 
-    assertChar('[', in);
+    assertChar('[', *in);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & table_column = column_indexes_for_input_fields[file_column];
@@ -166,19 +166,19 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         }
         else
         {
-            skipJSONField(in, StringRef(names_of_columns[file_column]));
+            skipJSONField(*in, StringRef(names_of_columns[file_column]));
         }
 
-        skipWhitespaceIfAny(in);
-        if (in.eof())
-            throw Exception("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        skipWhitespaceIfAny(*in);
+        if (in->eof())
+            throw ParsingException("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
         if (file_column + 1 != column_indexes_for_input_fields.size())
         {
-            assertChar(',', in);
-            skipWhitespaceIfAny(in);
+            assertChar(',', *in);
+            skipWhitespaceIfAny(*in);
         }
     }
-    assertChar(']', in);
+    assertChar(']', *in);
 
     for (const auto & name : not_seen_columns)
         columns[name]->insertDefault();
@@ -189,11 +189,11 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
 
 void JSONCompactEachRowRowInputFormat::skipEndOfLine()
 {
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
-        ++in.position();
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
+        ++in->position();
 
-    skipWhitespaceIfAny(in);
+    skipWhitespaceIfAny(*in);
 }
 
 void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -202,37 +202,38 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
     {
         read_columns[index] = true;
         const auto & type = data_types[index];
+        const auto & serialization = serializations[index];
 
         if (yield_strings)
         {
             String str;
-            readJSONString(str, in);
+            readJSONString(str, *in);
 
             ReadBufferFromString buf(str);
 
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
             else
-                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
         }
         else
         {
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], *in, format_settings, serialization);
             else
-                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+                serialization->deserializeTextJSON(*columns[index], *in, format_settings);
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while reading the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
 }
 
 void JSONCompactEachRowRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(in);
+    skipToUnescapedNextLineOrEOF(*in);
 }
 
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)

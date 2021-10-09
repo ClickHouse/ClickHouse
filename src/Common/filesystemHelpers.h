@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 #include <filesystem>
@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_STATVFS;
-}
 
 using TemporaryFile = Poco::TemporaryFile;
 
@@ -31,12 +27,27 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
 
-inline struct statvfs getStatVFS(const String & path)
-{
-    struct statvfs fs;
-    if (statvfs(path.c_str(), &fs) != 0)
-        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
-    return fs;
+struct statvfs getStatVFS(const String & path);
+
+/// Returns true if path starts with prefix path
+bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
+
+/// Returns true if path starts with prefix path
+bool pathStartsWith(const String & path, const String & prefix_path);
+
+/// Returns true if symlink starts with prefix path
+bool symlinkStartsWith(const String & path, const String & prefix_path);
+
 }
 
+namespace FS
+{
+bool createFile(const std::string & path);
+
+bool canRead(const std::string & path);
+bool canWrite(const std::string & path);
+
+time_t getModificationTime(const std::string & path);
+Poco::Timestamp getModificationTimestamp(const std::string & path);
+void setModificationTime(const std::string & path, time_t time);
 }

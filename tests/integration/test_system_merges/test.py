@@ -21,7 +21,7 @@ node2 = cluster.add_instance('node2',
 def started_cluster():
     try:
         cluster.start()
-        node1.query('CREATE DATABASE test ENGINE=Ordinary')
+        node1.query('CREATE DATABASE test ENGINE=Ordinary') # Different paths with Atomic
         node2.query('CREATE DATABASE test ENGINE=Ordinary')
         yield cluster
 
@@ -134,7 +134,9 @@ def test_mutation_simple(started_cluster, replicated):
         result_part = "all_{}_{}_0_{}".format(starting_block, starting_block, starting_block + 1)
 
         def alter():
-            node1.query("ALTER TABLE {name} UPDATE a = 42 WHERE sleep(2) OR 1".format(name=name))
+            node1.query("ALTER TABLE {name} UPDATE a = 42 WHERE sleep(2) OR 1".format(name=name), settings={
+                'mutations_sync': 1,
+            })
 
         t = threading.Thread(target=alter)
         t.start()
@@ -158,8 +160,6 @@ def test_mutation_simple(started_cluster, replicated):
             ],
         ]
         t.join()
-
-        time.sleep(1.5)
 
         assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=table_name)) == ""
 

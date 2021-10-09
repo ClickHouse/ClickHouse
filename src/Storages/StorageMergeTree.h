@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -12,10 +12,13 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
+
 #include <Disks/StoragePolicy.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
-#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -23,9 +26,9 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
-    friend struct ext::shared_ptr_helper<StorageMergeTree>;
+    friend struct shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -40,16 +43,27 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
+    std::optional<UInt64> totalBytes(const Settings &) const override;
+
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -59,15 +73,10 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Context & context) override;
+        const Names & deduplicate_by_columns,
+        ContextPtr context) override;
 
-    Pipe alterPartition(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /* metadata_snapshot */,
-        const PartitionCommands & commands,
-        const Context & context) override;
-
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -75,15 +84,23 @@ public:
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
-    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+
+    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
 private:
 
@@ -95,11 +112,15 @@ private:
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
-    /// For block numbers.
-    SimpleIncrement increment{0};
+    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
-    /// For clearOldParts, clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup;
+    /// For block numbers.
+    SimpleIncrement increment;
+
+    /// For clearOldParts
+    AtomicStopwatch time_after_previous_cleanup_parts;
+    /// For clearOldTemporaryDirectories.
+    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
@@ -116,21 +137,24 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-    /// Task handler for merges, mutations and moves.
-    BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
-    BackgroundProcessingPool::TaskHandle moving_task_handle;
-
+private:
     void loadMutations();
+
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, const Names & deduplicate_by_columns, String * out_disable_reason = nullptr, bool optimize_skip_merged_partitions = false);
 
+    /// Make part state outdated and queue it to remove without timeout
+    /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
+    /// If not force, then take merges selector and check that part is not participating in background operations.
+    MergeTreeDataPartPtr outdatePart(const String & part_name, bool force);
     ActionLock stopMergesAndWait();
-
-    BackgroundProcessingPoolTaskResult movePartsTask();
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
@@ -138,10 +162,23 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, const String & file_name);
 
-    /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
-    bool tryMutatePart();
+    friend struct CurrentlyMergingPartsTagger;
 
-    BackgroundProcessingPoolTaskResult mergeMutateTask();
+
+    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
+        const StorageMetadataPtr & metadata_snapshot,
+        bool aggressive,
+        const String & partition_id,
+        bool final,
+        String * disable_reason,
+        TableLockHolder & table_lock_holder,
+        std::unique_lock<std::mutex> & lock,
+        bool optimize_skip_merged_partitions = false,
+        SelectPartsDecision * select_decision_out = nullptr);
+
+
+    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
+    bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
@@ -150,16 +187,19 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPart(const String & part_name, bool detach, ContextPtr context) override;
+    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
     /// in mutation entries.
-    void updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message);
+    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message);
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
@@ -171,9 +211,14 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
-    friend class MergeTreeBlockOutputStream;
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
+
+    friend class MergeTreeProjectionBlockOutputStream;
+    friend class MergeTreeSink;
     friend class MergeTreeData;
-    friend struct CurrentlyMergingPartsTagger;
+    friend class MergePlainMergeTreeTask;
+    friend class MutatePlainMergeTreeTask;
+
 
 protected:
 
@@ -188,13 +233,13 @@ protected:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
-        Context & context_,
+        ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

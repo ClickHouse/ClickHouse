@@ -16,7 +16,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 {
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
-    out << "  { node [shape = box]\n";
+    out << "  { node [shape = rect]\n";
 
     auto get_proc_id = [](const IProcessor & proc) -> UInt64
     {

@@ -76,6 +76,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -85,6 +86,27 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
+        },
+        {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
+        },
+        {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+            "prefer_not_to_merge": 1,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -94,6 +116,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -103,6 +126,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -112,6 +136,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -121,6 +146,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -130,6 +156,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -139,6 +166,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -148,6 +176,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -157,6 +186,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -166,6 +196,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -175,6 +206,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -184,6 +216,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -193,6 +226,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
     ]
 
@@ -210,7 +244,7 @@ def test_query_parser(start_cluster):
     try:
         with pytest.raises(QueryRuntimeException):
             node1.query("""
-                CREATE TABLE table_with_absent_policy (
+                CREATE TABLE IF NOT EXISTS table_with_absent_policy (
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
@@ -219,7 +253,7 @@ def test_query_parser(start_cluster):
 
         with pytest.raises(QueryRuntimeException):
             node1.query("""
-                CREATE TABLE table_with_absent_policy (
+                CREATE TABLE IF NOT EXISTS table_with_absent_policy (
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
@@ -227,7 +261,7 @@ def test_query_parser(start_cluster):
             """)
 
         node1.query("""
-                CREATE TABLE table_with_normal_policy (
+                CREATE TABLE IF NOT EXISTS table_with_normal_policy (
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
@@ -252,17 +286,17 @@ def test_query_parser(start_cluster):
             node1.query(
                 "ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy='moving_jbod_with_external'")
     finally:
-        node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
+        node1.query("DROP TABLE IF EXISTS table_with_normal_policy SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("test_alter_policy", "MergeTree()"),
-    ("replicated_test_alter_policy", "ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')",),
+    pytest.param("test_alter_policy", "MergeTree()", id="mt"),
+    pytest.param("replicated_test_alter_policy", "ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')", id="replicated"),
 ])
 def test_alter_policy(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 d UInt64
             ) ENGINE = {engine}
             ORDER BY d
@@ -280,7 +314,7 @@ def test_alter_policy(start_cluster, name, engine):
         assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(
             name=name)) == "small_jbod_with_external\n"
 
-        node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='jbods_with_external'""".format(name=name))
+        node1.query_with_retry("""ALTER TABLE {name} MODIFY SETTING storage_policy='jbods_with_external'""".format(name=name))
 
         assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(
             name=name)) == "jbods_with_external\n"
@@ -293,7 +327,7 @@ def test_alter_policy(start_cluster, name, engine):
             name=name)) == "jbods_with_external\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def get_random_string(length):
@@ -301,10 +335,13 @@ def get_random_string(length):
 
 
 def get_used_disks_for_table(node, table_name):
-    return node.query(
+    return tuple(node.query(
         "select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(
-            table_name)).strip().split('\n')
+            table_name)).strip().split('\n'))
 
+
+def get_used_parts_for_table(node, table_name):
+    return node.query("SELECT name FROM system.parts WHERE table = '{}' AND active = 1 ORDER BY modification_time".format(table_name)).splitlines()
 
 def test_no_warning_about_zero_max_data_part_size(start_cluster):
     def get_log(node):
@@ -312,15 +349,13 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
 
     for node in (node1, node2):
         node.query("""
-            CREATE TABLE default.test_warning_table (
+            CREATE TABLE IF NOT EXISTS default.test_warning_table (
                 s String
             ) ENGINE = MergeTree
             ORDER BY tuple()
             SETTINGS storage_policy='small_jbod_with_external'
         """)
-        node.query("""
-            DROP TABLE default.test_warning_table
-        """)
+        node.query("DROP TABLE IF EXISTS default.test_warning_table SYNC")
         log = get_log(node)
         assert not re.search("Warning.*Volume.*special_warning_zero_volume", log)
         assert not re.search("Warning.*Volume.*special_warning_default_volume", log)
@@ -329,13 +364,13 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_on_jbod", "MergeTree()"),
-    ("replicated_mt_on_jbod", "ReplicatedMergeTree('/clickhouse/replicated_mt_on_jbod', '1')",),
+    pytest.param("mt_on_jbod", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_on_jbod", "ReplicatedMergeTree('/clickhouse/replicated_mt_on_jbod', '1')", id="replicated"),
 ])
 def test_round_robin(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 d UInt64
             ) ENGINE = {engine}
             ORDER BY d
@@ -343,17 +378,17 @@ def test_round_robin(start_cluster, name, engine):
         """.format(name=name, engine=engine))
 
         # first should go to the jbod1
-        node1.query("insert into {} select * from numbers(10000)".format(name))
+        node1.query_with_retry("insert into {} select * from numbers(10000)".format(name))
         used_disk = get_used_disks_for_table(node1, name)
         assert len(used_disk) == 1, 'More than one disk used for single insert'
 
-        node1.query("insert into {} select * from numbers(10000, 10000)".format(name))
+        node1.query_with_retry("insert into {} select * from numbers(10000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
 
         assert len(used_disks) == 2, 'Two disks should be used for two parts'
         assert used_disks[0] != used_disks[1], "Should write to different disks"
 
-        node1.query("insert into {} select * from numbers(20000, 10000)".format(name))
+        node1.query_with_retry("insert into {} select * from numbers(20000, 10000)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
 
         # jbod1 -> jbod2 -> jbod1 -> jbod2 ... etc
@@ -361,17 +396,19 @@ def test_round_robin(start_cluster, name, engine):
         assert used_disks[0] != used_disks[1]
         assert used_disks[2] == used_disks[0]
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_with_huge_part", "MergeTree()"),
-    ("replicated_mt_with_huge_part", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_huge_part', '1')",),
+    pytest.param("mt_with_huge_part", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_with_huge_part", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_huge_part', '1')", id="replicated"),
 ])
 def test_max_data_part_size(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        assert int(*node1.query("""SELECT max_data_part_size FROM system.storage_policies WHERE policy_name = 'jbods_with_external' AND volume_name = 'main'""").splitlines()) == 10*1024*1024
+
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
@@ -381,87 +418,89 @@ def test_max_data_part_size(start_cluster, name, engine):
         for i in range(10):
             data.append(get_random_string(1024 * 1024))  # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
         assert len(used_disks) == 1
         assert used_disks[0] == 'external'
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mt_with_overflow", "MergeTree()"),
-    ("replicated_mt_with_overflow", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')",),
+    pytest.param("mt_with_overflow", "MergeTree()", id="mt"),
+    pytest.param("replicated_mt_with_overflow", "ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')", id="replicated"),
 ])
 def test_jbod_overflow(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query("SYSTEM STOP MERGES")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
             data = []  # 5MB in total
             for i in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
-            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert all(disk == 'jbod1' for disk in used_disks)
+        assert used_disks == tuple('jbod1' for _ in used_disks)
 
         # should go to the external disk (jbod is overflown)
         data = []  # 10MB in total
         for i in range(10):
             data.append(get_random_string(1024 * 1024))  # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
 
         assert used_disks[-1] == 'external'
 
-        node1.query("SYSTEM START MERGES")
+        node1.query(f"SYSTEM START MERGES {name}")
         time.sleep(1)
 
-        node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+        node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
         time.sleep(2)
 
-        disks_for_merges = node1.query(
+        disks_for_merges = tuple(node1.query(
             "SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 and active = 1 ORDER BY modification_time".format(
-                name)).strip().split('\n')
+                name)).strip().split('\n'))
 
-        assert all(disk == 'external' for disk in disks_for_merges)
+        assert disks_for_merges == tuple('external' for _ in disks_for_merges)
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("moving_mt", "MergeTree()"),
-    ("moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/moving_replicated_mt', '1')",),
+    pytest.param("moving_mt", "MergeTree()", id="mt"),
+    pytest.param("moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/moving_replicated_mt', '1')", id="replicated"),
 ])
 def test_background_move(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
+        node1.query(f"SYSTEM STOP MERGES {name}")
+
         for i in range(5):
             data = []  # 5MB in total
             for i in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # small jbod size is 40MB, so lets insert 5MB batch 5 times
-            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -484,26 +523,28 @@ def test_background_move(start_cluster, name, engine):
         # first (oldest) part was moved to external
         assert path.startswith("/external")
 
+        node1.query(f"SYSTEM START MERGES {name}")
+
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("stopped_moving_mt", "MergeTree()"),
-    ("stopped_moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')",),
+    pytest.param("stopped_moving_mt", "MergeTree()", id="mt"),
+    pytest.param("stopped_moving_replicated_mt", "ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')", id="replicated"),
 ])
 def test_start_stop_moves(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query("INSERT INTO {} VALUES ('HELLO')".format(name))
-        node1.query("INSERT INTO {} VALUES ('WORLD')".format(name))
+        node1.query_with_retry("INSERT INTO {} VALUES ('HELLO')".format(name))
+        node1.query_with_retry("INSERT INTO {} VALUES ('WORLD')".format(name))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert all(d == "jbod1" for d in used_disks), "All writes shoud go to jbods"
@@ -530,7 +571,7 @@ def test_start_stop_moves(start_cluster, name, engine):
 
         assert disk == "external"
 
-        node1.query("TRUNCATE TABLE {}".format(name))
+        node1.query_with_retry("TRUNCATE TABLE {}".format(name))
 
         node1.query("SYSTEM STOP MOVES {}".format(name))
         node1.query("SYSTEM STOP MERGES {}".format(name))
@@ -540,7 +581,7 @@ def test_start_stop_moves(start_cluster, name, engine):
             for i in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # jbod size is 40MB, so lets insert 5MB batch 7 times
-            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -572,7 +613,7 @@ def test_start_stop_moves(start_cluster, name, engine):
         assert used_disks[0] == 'external'
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def get_path_for_part_from_part_log(node, table, part_name):
@@ -592,14 +633,14 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("altering_mt", "MergeTree()"),
+    pytest.param("altering_mt", "MergeTree()", id="mt"),
     # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
     # SYSTEM STOP MERGES doesn't disable merges assignments
 ])
 def test_alter_move(start_cluster, name, engine):
     try:
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -660,7 +701,7 @@ def test_alter_move(start_cluster, name, engine):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "4\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("volume_or_disk", [
@@ -672,7 +713,7 @@ def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
     engine = "MergeTree()"
     try:
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -709,7 +750,7 @@ def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("volume_or_disk", [
@@ -721,7 +762,7 @@ def test_alter_double_move_partition(start_cluster, volume_or_disk):
     engine = "MergeTree()"
     try:
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -753,7 +794,7 @@ def test_alter_double_move_partition(start_cluster, volume_or_disk):
                                                                                                      volume_or_disk=volume_or_disk))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def produce_alter_move(node, name):
@@ -786,14 +827,14 @@ def produce_alter_move(node, name):
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("concurrently_altering_mt", "MergeTree()"),
-    ("concurrently_altering_replicated_mt",
-     "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",),
+    pytest.param("concurrently_altering_mt", "MergeTree()", id="mt"),
+    pytest.param("concurrently_altering_replicated_mt",
+     "ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_move(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -809,7 +850,7 @@ def test_concurrent_alter_move(start_cluster, name, engine):
                 day = random.randint(11, 30)
                 value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
-                node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
+                node1.query_with_retry("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
         def alter_move(num):
             for i in range(num):
@@ -821,7 +862,7 @@ def test_concurrent_alter_move(start_cluster, name, engine):
 
         def optimize_table(num):
             for i in range(num):
-                node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+                node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
 
         p = Pool(15)
         tasks = []
@@ -832,23 +873,23 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             tasks.append(p.apply_async(optimize_table, (100,)))
 
         for task in tasks:
-            task.get(timeout=120)
+            task.get(timeout=240)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("concurrently_dropping_mt", "MergeTree()"),
-    ("concurrently_dropping_replicated_mt",
-     "ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')",),
+    pytest.param("concurrently_dropping_mt", "MergeTree()", id="mt"),
+    pytest.param("concurrently_dropping_replicated_mt",
+     "ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
     try:
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -864,7 +905,7 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
                 day = random.randint(11, 30)
                 value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
-                node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
+                node1.query_with_retry("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
         def alter_move(num):
             for i in range(num):
@@ -885,22 +926,22 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
             tasks.append(p.apply_async(alter_drop, (100,)))
 
         for task in tasks:
-            task.get(timeout=60)
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("detach_attach_mt", "MergeTree()"),
-    ("replicated_detach_attach_mt", "ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')",),
+    pytest.param("detach_attach_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_detach_attach_mt", "ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')", id="replicated"),
 ])
 def test_detach_attach(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
@@ -910,7 +951,7 @@ def test_detach_attach(start_cluster, name, engine):
         data = []  # 5MB in total
         for i in range(5):
             data.append(get_random_string(1024 * 1024))  # 1MB row
-        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         node1.query("ALTER TABLE {} DETACH PARTITION tuple()".format(name))
         assert node1.query("SELECT count() FROM {}".format(name)).strip() == "0"
@@ -921,17 +962,17 @@ def test_detach_attach(start_cluster, name, engine):
         assert node1.query("SELECT count() FROM {}".format(name)).strip() == "5"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("mutating_mt", "MergeTree()"),
-    ("replicated_mutating_mt", "ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
+    pytest.param("mutating_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_mutating_mt", "ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')", id="replicated"),
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
@@ -942,7 +983,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
             data = []  # 5MB in total
             for i in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
-            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query_with_retry("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
 
@@ -954,8 +995,8 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
         if node1.query("SELECT latest_fail_reason FROM system.mutations WHERE table = '{}'".format(name)) == "":
             assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
         else:  # mutation failed, let's try on another disk
-            print "Mutation failed"
-            node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+            print("Mutation failed")
+            node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
             node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
             retry = 20
             while node1.query("SELECT * FROM system.mutations WHERE is_done = 0") != "" and retry > 0:
@@ -967,17 +1008,17 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
-    ("alter_modifying_mt", "MergeTree()"),
-    ("replicated_alter_modifying_mt", "ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')",),
+    pytest.param("alter_modifying_mt", "MergeTree()", id="mt"),
+    pytest.param("replicated_alter_modifying_mt", "ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')", id="replicated"),
 ])
 def test_concurrent_alter_modify(start_cluster, name, engine):
     try:
-        node1.query("""
-            CREATE TABLE {name} (
+        node1.query_with_retry("""
+            CREATE TABLE IF NOT EXISTS {name} (
                 EventDate Date,
                 number UInt64
             ) ENGINE = {engine}
@@ -993,7 +1034,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
                 day = random.randint(11, 30)
                 value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
-                node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
+                node1.query_with_retry("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
         def alter_move(num):
             for i in range(num):
@@ -1025,14 +1066,14 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_simple_replication_and_moves(start_cluster):
     try:
         for i, node in enumerate([node1, node2]):
-            node.query("""
-                CREATE TABLE replicated_table_for_moves (
+            node.query_with_retry("""
+                CREATE TABLE IF NOT EXISTS replicated_table_for_moves (
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_moves', '{}')
                 ORDER BY tuple()
@@ -1045,13 +1086,13 @@ def test_simple_replication_and_moves(start_cluster):
                 data = []  # 1MB in total
                 for i in range(2):
                     data.append(get_random_string(512 * 1024))  # 500KB value
-                node.query("INSERT INTO replicated_table_for_moves VALUES {}".format(
+                node.query_with_retry("INSERT INTO replicated_table_for_moves VALUES {}".format(
                     ','.join(["('" + x + "')" for x in data])))
 
         def optimize(num):
             for i in range(num):
                 node = random.choice([node1, node2])
-                node.query("OPTIMIZE TABLE replicated_table_for_moves FINAL")
+                node.query_with_retry("OPTIMIZE TABLE replicated_table_for_moves FINAL")
 
         p = Pool(60)
         tasks = []
@@ -1061,8 +1102,8 @@ def test_simple_replication_and_moves(start_cluster):
         for task in tasks:
             task.get(timeout=60)
 
-        node1.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
-        node2.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
+        node1.query_with_retry("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
+        node2.query_with_retry("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
 
         node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
         node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
@@ -1075,9 +1116,9 @@ def test_simple_replication_and_moves(start_cluster):
         node1.query("SYSTEM STOP MERGES")
         node2.query("SYSTEM STOP MERGES")
 
-        node1.query(
+        node1.query_with_retry(
             "INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
-        node2.query(
+        node2.query_with_retry(
             "INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
 
         time.sleep(3)  # nothing was moved
@@ -1092,14 +1133,14 @@ def test_simple_replication_and_moves(start_cluster):
         set(disks2) == set(["jbod1", "external"])
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS replicated_table_for_moves")
+            node.query("DROP TABLE IF EXISTS replicated_table_for_moves SYNC")
 
 
 def test_download_appropriate_disk(start_cluster):
     try:
         for i, node in enumerate([node1, node2]):
-            node.query("""
-                CREATE TABLE replicated_table_for_download (
+            node.query_with_retry("""
+                CREATE TABLE IF NOT EXISTS replicated_table_for_download (
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_download', '{}')
                 ORDER BY tuple()
@@ -1109,13 +1150,13 @@ def test_download_appropriate_disk(start_cluster):
         data = []
         for i in range(50):
             data.append(get_random_string(1024 * 1024))  # 1MB value
-        node1.query(
+        node1.query_with_retry(
             "INSERT INTO replicated_table_for_download VALUES {}".format(','.join(["('" + x + "')" for x in data])))
 
         for _ in range(10):
             try:
-                print "Syncing replica"
-                node2.query("SYSTEM SYNC REPLICA replicated_table_for_download")
+                print("Syncing replica")
+                node2.query_with_retry("SYSTEM SYNC REPLICA replicated_table_for_download")
                 break
             except:
                 time.sleep(0.5)
@@ -1126,13 +1167,13 @@ def test_download_appropriate_disk(start_cluster):
 
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS replicated_table_for_download")
+            node.query_with_retry("DROP TABLE IF EXISTS replicated_table_for_download SYNC")
 
 
 def test_rename(start_cluster):
     try:
         node1.query("""
-            CREATE TABLE default.renaming_table (
+            CREATE TABLE IF NOT EXISTS default.renaming_table (
                 s String
             ) ENGINE = MergeTree
             ORDER BY tuple()
@@ -1163,15 +1204,15 @@ def test_rename(start_cluster):
             node1.query("SELECT COUNT() FROM default.renaming_table1")
 
     finally:
-        node1.query("DROP TABLE IF EXISTS default.renaming_table")
-        node1.query("DROP TABLE IF EXISTS default.renaming_table1")
-        node1.query("DROP TABLE IF EXISTS test.renaming_table2")
+        node1.query("DROP TABLE IF EXISTS default.renaming_table SYNC")
+        node1.query("DROP TABLE IF EXISTS default.renaming_table1 SYNC")
+        node1.query("DROP TABLE IF EXISTS test.renaming_table2 SYNC")
 
 
 def test_freeze(start_cluster):
     try:
         node1.query("""
-            CREATE TABLE default.freezing_table (
+            CREATE TABLE IF NOT EXISTS default.freezing_table (
                 d Date,
                 s String
             ) ENGINE = MergeTree
@@ -1199,7 +1240,7 @@ def test_freeze(start_cluster):
         node1.exec_in_container(["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"])
 
     finally:
-        node1.query("DROP TABLE IF EXISTS default.freezing_table")
+        node1.query("DROP TABLE IF EXISTS default.freezing_table SYNC")
         node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
 
 
@@ -1208,7 +1249,7 @@ def test_kill_while_insert(start_cluster):
         name = "test_kill_while_insert"
 
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 s String
             ) ENGINE = MergeTree
             ORDER BY tuple()
@@ -1224,8 +1265,14 @@ def test_kill_while_insert(start_cluster):
         disks = get_used_disks_for_table(node1, name)
         assert set(disks) == {"jbod1"}
 
+        def ignore_exceptions(f, *args):
+            try:
+                f(*args)
+            except:
+                """(っಠ‿ಠ)っ"""
+
         start_time = time.time()
-        long_select = threading.Thread(target=node1.query, args=("SELECT sleep(3) FROM {name}".format(name=name),))
+        long_select = threading.Thread(target=ignore_exceptions, args=(node1.query, "SELECT sleep(3) FROM {name}".format(name=name)))
         long_select.start()
 
         time.sleep(0.5)
@@ -1243,7 +1290,7 @@ def test_kill_while_insert(start_cluster):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+            node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
         except:
             """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
@@ -1253,7 +1300,7 @@ def test_move_while_merge(start_cluster):
         name = "test_move_while_merge"
 
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 n Int64
             ) ENGINE = MergeTree
             ORDER BY sleep(2)
@@ -1263,8 +1310,7 @@ def test_move_while_merge(start_cluster):
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
 
-        parts = node1.query(
-            "SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        parts = get_used_parts_for_table(node1, name)
         assert len(parts) == 2
 
         def optimize():
@@ -1305,7 +1351,7 @@ def test_move_while_merge(start_cluster):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["2"]
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_move_across_policies_does_not_work(start_cluster):
@@ -1313,7 +1359,7 @@ def test_move_across_policies_does_not_work(start_cluster):
         name = "test_move_across_policies_does_not_work"
 
         node1.query("""
-            CREATE TABLE {name} (
+            CREATE TABLE IF NOT EXISTS {name} (
                 n Int64
             ) ENGINE = MergeTree
             ORDER BY tuple()
@@ -1321,7 +1367,7 @@ def test_move_across_policies_does_not_work(start_cluster):
         """.format(name=name))
 
         node1.query("""
-            CREATE TABLE {name}2 (
+            CREATE TABLE IF NOT EXISTS {name}2 (
                 n Int64
             ) ENGINE = MergeTree
             ORDER BY tuple()
@@ -1329,7 +1375,10 @@ def test_move_across_policies_does_not_work(start_cluster):
         """.format(name=name))
 
         node1.query("""INSERT INTO {name} VALUES (1)""".format(name=name))
-        node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        try:
+            node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        except QueryRuntimeException:
+            """All parts of partition 'all' are already on disk 'jbod2'."""
 
         with pytest.raises(QueryRuntimeException, match='.*because disk does not belong to storage policy.*'):
             node1.query("""ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(name=name))
@@ -1343,5 +1392,162 @@ def test_move_across_policies_does_not_work(start_cluster):
         assert node1.query("""SELECT * FROM {name}""".format(name=name)).splitlines() == ["1"]
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
-        node1.query("DROP TABLE IF EXISTS {name}2".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node1.query(f"DROP TABLE IF EXISTS {name}2 SYNC")
+
+
+def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
+    try:
+        node.query("""
+            CREATE TABLE IF NOT EXISTS {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            TTL now()-1 TO VOLUME 'external'
+            SETTINGS storage_policy='{policy}'
+        """.format(name=name, policy=policy))
+
+        for i in range(parts):
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+
+        disks = get_used_disks_for_table(node, name)
+        assert set(disks) == {"external"}
+
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == parts_before_cmds
+
+        for cmd in cmds:
+            node.query(cmd)
+
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == parts_after_cmds
+
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def _check_merges_are_working(node, storage_policy, volume, shall_work):
+    try:
+        name = "_check_merges_are_working_{storage_policy}_{volume}".format(storage_policy=storage_policy, volume=volume)
+
+        node.query("""
+            CREATE TABLE IF NOT EXISTS {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            SETTINGS storage_policy='{storage_policy}'
+        """.format(name=name, storage_policy=storage_policy))
+
+        created_parts = 24
+
+        for i in range(created_parts):
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+            try:
+                node.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO VOLUME '{volume}' """.format(name=name, volume=volume))
+            except:
+                """Ignore 'nothing to move'."""
+
+        expected_disks = set(node.query("""
+            SELECT disks FROM system.storage_policies ARRAY JOIN disks WHERE volume_name = '{volume_name}'
+        """.format(volume_name=volume)).splitlines())
+
+        disks = get_used_disks_for_table(node, name)
+        assert set(disks) <= expected_disks
+
+        node.query("""OPTIMIZE TABLE {name} FINAL""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == 1 if shall_work else created_parts
+
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def _get_prefer_not_to_merge_for_storage_policy(node, storage_policy):
+    return list(map(int, node.query("SELECT prefer_not_to_merge FROM system.storage_policies WHERE policy_name = '{}' ORDER BY volume_priority".format(storage_policy)).splitlines()))
+
+
+def test_simple_merge_tree_merges_are_disabled(start_cluster):
+    _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+
+
+def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
+    try:
+        name = "test_no_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external_no_merges"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy)
+            ], 2, 1)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+    finally:
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
+    try:
+        name = "test_no_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external_no_merges"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy),
+                "SYSTEM RELOAD CONFIG"
+            ], 2, 1)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+    finally:
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
+    try:
+        name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
+                "INSERT INTO {name} VALUES (2)".format(name=name)
+            ], 1, 2)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+    finally:
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
+    try:
+        name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
+                "INSERT INTO {name} VALUES (2)".format(name=name),
+                "SYSTEM RELOAD CONFIG"
+            ], 1, 2)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+    finally:
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))

@@ -31,7 +31,7 @@ DateTime([timezone])
 
 ClickHouseは、次の値を出力します `YYYY-MM-DD hh:mm:ss` デフォルトのテキスト形式。 出力を変更するには [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) 機能。
 
-ClickHouseにデータを挿入するときは、データの値に応じて、日付と時刻の文字列の異なる形式を使用できます。 [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) 設定。
+ClickHouseにデータを挿入するときは、データの値に応じて、日付と時刻の文字列の異なる形式を使用できます。 [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) 設定。
 
 ## 例 {#examples}
 
@@ -126,4 +126,4 @@ FROM dt
 -   [日付と時刻を操作する演算子](../../sql-reference/operators/index.md#operators-datetime)
 -   [その `Date` データ型](date.md)
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->

@@ -1,3 +1,4 @@
+#pragma once
 #include <Disks/IDisk.h>
 #include <Storages/MarkCache.h>
 

@@ -3,6 +3,7 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -72,9 +73,18 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (!IdentifierSemantic::getColumnName(node))
         return;
 
+    if (data.settings.prefer_column_name_to_alias)
+    {
+        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
+            return;
+    }
+
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-    auto it_alias = data.aliases.find(node.name);
-    if (it_alias != data.aliases.end() && current_alias != node.name)
+    auto it_alias = data.aliases.find(node.name());
+    if (!data.allow_self_aliases && current_alias == node.name())
+        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias", backQuote(current_alias), backQuote(node.name()));
+
+    if (it_alias != data.aliases.end() && current_alias != node.name())
     {
         if (!IdentifierSemantic::canBeAlias(node))
             return;
@@ -89,7 +99,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         String node_alias = ast->tryGetAlias();
 
         if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
-            || (node.name == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
+            || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
         /// Let's replace it with the corresponding tree node.
@@ -97,7 +107,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         {
             /// Avoid infinite recursion here
             auto opt_name = IdentifierSemantic::getColumnName(alias_node);
-            bool is_cycle = opt_name && *opt_name == node.name;
+            bool is_cycle = opt_name && *opt_name == node.name();
 
             if (!is_cycle)
             {
@@ -131,8 +141,10 @@ static bool needVisitChild(const ASTPtr & child)
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     for (auto & child : select.children)
+    {
         if (needVisitChild(child))
             visit(child, data);
+    }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
@@ -148,9 +160,9 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
+void QueryNormalizer::visitChildren(IAST * node, Data & data)
 {
-    if (const auto * func_node = node->as<ASTFunction>())
+    if (auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
         {
@@ -159,19 +171,50 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
             /// Don't go into query argument.
             return;
         }
+
+        /// For lambda functions we need to avoid replacing lambda parameters with external aliases, for example,
+        /// Select 1 as x, arrayMap(x -> x + 2, [1, 2, 3])
+        /// shouldn't be replaced with Select 1 as x, arrayMap(x -> **(1 as x)** + 2, [1, 2, 3])
+        Aliases extracted_aliases;
+        if (func_node->name == "lambda")
+        {
+            Names lambda_aliases = RequiredSourceColumnsMatcher::extractNamesFromLambda(*func_node);
+            for (const auto & name : lambda_aliases)
+            {
+                auto it = data.aliases.find(name);
+                if (it != data.aliases.end())
+                {
+                    extracted_aliases.insert(data.aliases.extract(it));
+                }
+            }
+        }
+
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
         size_t first_pos = 0;
         if (func_node->name == "lambda")
             first_pos = 1;
 
-        auto & func_children = func_node->arguments->children;
-
-        for (size_t i = first_pos; i < func_children.size(); ++i)
+        if (func_node->arguments)
         {
-            auto & child = func_children[i];
+            auto & func_children = func_node->arguments->children;
 
-            if (needVisitChild(child))
-                visit(child, data);
+            for (size_t i = first_pos; i < func_children.size(); ++i)
+            {
+                auto & child = func_children[i];
+
+                if (needVisitChild(child))
+                    visit(child, data);
+            }
+        }
+
+        if (func_node->window_definition)
+        {
+            visitChildren(func_node->window_definition.get(), data);
+        }
+
+        for (auto & it : extracted_aliases)
+        {
+            data.aliases.insert(it);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -213,15 +256,20 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
         throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    else if (auto * node_function = ast->as<ASTFunction>())
+        if (node_function->parameters)
+            visit(node_function->parameters, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast, data);
+        visitChildren(ast.get(), data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
+    if (data.ignore_alias && !ast->tryGetAlias().empty())
+        ast->setAlias("");
     finished_asts[initial_ast] = ast;
 
     /// @note can not place it in CheckASTDepth dtor cause of exception.

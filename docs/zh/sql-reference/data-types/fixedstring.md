@@ -15,7 +15,7 @@
 可以有效存储在`FixedString`类型的列中的值的示例：
 
 -   二进制表示的IP地址（IPv6使用`FixedString(16)`）
--   语言代码（ru\_RU, en\_US … ）
+-   语言代码（ru_RU, en_US … ）
 -   货币代码（USD, RUB … ）
 -   二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
 
@@ -53,4 +53,4 @@ WHERE a = 'b\0'
 
 请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[length](../../sql-reference/functions/array-functions.md#array_functions-length)返回值为`N`,而函数[empty](../../sql-reference/functions/string-functions.md#empty)的返回值为`1`。
 
-[来源文章](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

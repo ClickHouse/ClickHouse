@@ -5,6 +5,9 @@ toc_title: Custom Partitioning Key
 
 # Custom Partitioning Key {#custom-partitioning-key}
 
+!!! warning "Warning"
+    In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
+
 Partitioning is available for the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family tables (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables). [Materialized views](../../../engines/table-engines/special/materializedview.md#materializedview) based on MergeTree tables support partitioning, as well.
 
 A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible.
@@ -32,6 +35,8 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 ```
 
 In this example, we set partitioning by the event types that occurred during the current week.
+
+By default, the floating-point partition key is not supported. To use it enable the setting [allow_floating_point_partition_key](../../../operations/settings/merge-tree-settings.md#allow_floating_point_partition_key).
 
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
@@ -114,7 +119,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-The folders ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ and so on are the directories of the parts. Each part relates to a corresponding partition and contains data just for a certain month (the table in this example has partitioning by month).
+The folders ‘201901_1_1_0’, ‘201901_1_7_1’ and so on are the directories of the parts. Each part relates to a corresponding partition and contains data just for a certain month (the table in this example has partitioning by month).
 
 The `detached` directory contains parts that were detached from the table using the [DETACH](../../../sql-reference/statements/alter/partition.md#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
 
@@ -122,4 +127,4 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

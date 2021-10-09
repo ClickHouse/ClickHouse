@@ -1,3 +1,5 @@
+-- Tags: distributed, no-parallel
+
 set send_logs_level = 'error';
 
 create database if not exists shard_0;
@@ -23,3 +25,8 @@ select x, count() from ma_dist group by x order by x;
 
 drop table if exists shard_0.shard_01231_distributed_aggregation_memory_efficient;
 drop table if exists shard_1.shard_01231_distributed_aggregation_memory_efficient;
+
+drop table ma_dist;
+
+drop database shard_0;
+drop database shard_1;

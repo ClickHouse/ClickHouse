@@ -9,7 +9,6 @@ def _fill_nodes(nodes, shard):
         node.query(
             '''
                 CREATE DATABASE test;
-    
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
             '''.format(shard=shard, replica=node.name))
@@ -114,6 +113,32 @@ def test_different_credentials(different_credentials_cluster):
     assert node5.query("SELECT id FROM test_table order by id") == '111\n'
     assert node6.query("SELECT id FROM test_table order by id") == '222\n'
 
+    add_old = """
+    <clickhouse>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>222</password>
+            <old>
+                <user>root</user>
+                <password>111</password>
+            </old>
+            <old>
+                <user>aaa</user>
+                <password>333</password>
+            </old>
+        </interserver_http_credentials>
+    </clickhouse>
+    """
+
+    node5.replace_config("/etc/clickhouse-server/config.d/credentials1.xml", add_old)
+
+    node5.query("SYSTEM RELOAD CONFIG")
+    node5.query("INSERT INTO test_table values('2017-06-21', 333, 1)")
+    node6.query("SYSTEM SYNC REPLICA test_table", timeout=10)
+
+    assert node6.query("SELECT id FROM test_table order by id") == '111\n222\n333\n'
+
 
 node7 = cluster.add_instance('node7', main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'],
                              with_zookeeper=True)
@@ -146,3 +171,23 @@ def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
 
     assert node7.query("SELECT id FROM test_table order by id") == '111\n'
     assert node8.query("SELECT id FROM test_table order by id") == '222\n'
+
+    allow_empty = """
+    <clickhouse>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>222</password>
+            <allow_empty>true</allow_empty>
+        </interserver_http_credentials>
+    </clickhouse>
+    """
+
+    # change state: Flip node7 to mixed auth/non-auth (allow node8)
+    node7.replace_config("/etc/clickhouse-server/config.d/credentials1.xml",
+                         allow_empty)
+
+    node7.query("SYSTEM RELOAD CONFIG")
+    node7.query("insert into test_table values ('2017-06-22', 333, 1)")
+    node8.query("SYSTEM SYNC REPLICA test_table", timeout=10)
+    assert node8.query("SELECT id FROM test_table order by id") == '111\n222\n333\n'

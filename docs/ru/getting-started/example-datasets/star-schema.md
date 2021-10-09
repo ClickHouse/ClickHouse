@@ -1,3 +1,8 @@
+---
+toc_priority: 16
+toc_title: Star Schema Benchmark
+---
+
 # Star Schema Benchmark {#star-schema-benchmark}
 
 Компиляция dbgen:
@@ -360,4 +365,4 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

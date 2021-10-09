@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
    <quotas>
         <myQuota>
             <interval>
@@ -8,10 +8,12 @@
 
                 <!-- Tiny limits. -->
                 <queries>1</queries>
+                <query_selects>1</query_selects>
+                <query_inserts>1</query_inserts>
                 <errors>1</errors>
                 <read_rows>1</read_rows>
                 <result_rows>1</result_rows>
             </interval>
         </myQuota>
     </quotas>
-</yandex>
+</clickhouse>

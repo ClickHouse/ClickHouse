@@ -3,12 +3,14 @@ import os.path as p
 import time
 
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/graphite_rollup.xml'])
+                                main_configs=['configs/graphite_rollup.xml'],
+                                user_configs=["configs/users.xml"])
 q = instance.query
 
 
@@ -301,7 +303,7 @@ CREATE TABLE test.graphite2
                       "AND table='graphite2'"))
         if parts == 1:
             break
-        print('Parts', parts)
+        print(('Parts', parts))
 
     assert TSV(
         q("SELECT value, timestamp, date, updated FROM test.graphite2")
@@ -441,3 +443,20 @@ SELECT * FROM test.graphite;
 ''')
 
     assert TSV(result) == TSV(expected)
+
+
+def test_wrong_rollup_config(graphite_table):
+    with pytest.raises(QueryRuntimeException) as exc:
+        q('''
+CREATE TABLE test.graphite_not_created
+    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+    ENGINE = GraphiteMergeTree('graphite_rollup_wrong_age_precision')
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (metric, timestamp)
+    SETTINGS index_granularity=1;
+        ''')
+
+    # The order of retentions is not guaranteed
+    assert ("age and precision should only grow up: " in str(exc.value))
+    assert ("36000:600" in str(exc.value))
+    assert ("72000:300" in str(exc.value))

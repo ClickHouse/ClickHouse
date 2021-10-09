@@ -16,10 +16,10 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context)
+ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context)
     : columns(array_joined_columns_)
     , is_left(array_join_is_left)
-    , is_unaligned(context.getSettingsRef().enable_unaligned_array_join)
+    , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
 {
     if (columns.empty())
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
@@ -35,11 +35,13 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool arr
 }
 
 
-void ArrayJoinAction::prepare(Block & sample_block)
+void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
 {
-    for (const auto & name : columns)
+    for (auto & current : sample)
     {
-        ColumnWithTypeAndName & current = sample_block.getByName(name);
+        if (columns.count(current.name) == 0)
+            continue;
+
         const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
         if (!array_type)
             throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -66,7 +68,7 @@ void ArrayJoinAction::execute(Block & block)
         /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
         auto rows = block.rows();
         auto uint64 = std::make_shared<DataTypeUInt64>();
-        ColumnWithTypeAndName column_of_max_length;
+        ColumnWithTypeAndName column_of_max_length{{}, uint64, {}};
         if (is_left)
             column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
         else
@@ -76,22 +78,19 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto & src_col = block.getByName(name);
 
-            Block tmp_block{src_col, {{}, uint64, {}}};
-            function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
+            ColumnsWithTypeAndName tmp_block{src_col}; //, {{}, uint64, {}}};
+            auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
 
-            Block tmp_block2{
-                column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
-            function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
-            column_of_max_length = tmp_block2.safeGetByPosition(2);
+            ColumnsWithTypeAndName tmp_block2{column_of_max_length, {len_col, uint64, {}}};
+            column_of_max_length.column = function_greatest->build(tmp_block2)->execute(tmp_block2, uint64, rows);
         }
 
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);
 
-            Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
-            function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
-            src_col.column = tmp_block.safeGetByPosition(2).column;
+            ColumnsWithTypeAndName tmp_block{src_col, column_of_max_length};
+            src_col.column = function_arrayResize->build(tmp_block)->execute(tmp_block, src_col.type, rows);
             any_array_ptr = src_col.column->convertToFullColumnIfConst();
         }
 
@@ -103,10 +102,9 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto src_col = block.getByName(name);
 
-            Block tmp_block{src_col, {{}, src_col.type, {}}};
+            ColumnsWithTypeAndName tmp_block{src_col};
 
-            function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size());
-            non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
+            non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, src_col.type, src_col.column->size());
         }
 
         any_array_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();

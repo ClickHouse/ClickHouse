@@ -5,32 +5,53 @@
 #    include <cstdio>
 #    include <mntent.h>
 #endif
-#include <Poco/File.h>
-#include <Poco/Path.h>
+#include <cerrno>
 #include <Poco/Version.h>
+#include <Poco/Timestamp.h>
+#include <filesystem>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <utime.h>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_STATVFS;
+    extern const int PATH_ACCESS_DENIED;
+    extern const int CANNOT_CREATE_FILE;
 }
+
+
+struct statvfs getStatVFS(const String & path)
+{
+    struct statvfs fs;
+    while (statvfs(path.c_str(), &fs) != 0)
+    {
+        if (errno == EINTR)
+            continue;
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    }
+    return fs;
+}
+
 
 bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
-#if POCO_VERSION >= 0x01090000
-    auto free_space = Poco::File(path).freeSpace();
+    auto free_space = fs::space(path).free;
     return data_size <= free_space;
-#else
-    return true;
-#endif
 }
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
-    Poco::File(path).createDirectories();
+    fs::create_directories(path);
 
     /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);
@@ -46,7 +67,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     const auto get_device_id = [](const std::filesystem::path & p)
     {
         struct stat st;
-        if (stat(p.c_str(), &st))
+        if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
         return st.st_dev;
     };
@@ -61,7 +82,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
         if (device_id != parent_device_id)
             return absolute_path;
         absolute_path = parent;
-        device_id = parent_device_id;
     }
 
     return absolute_path;
@@ -91,4 +111,110 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #endif
 }
 
+bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+{
+    String absolute_path = std::filesystem::weakly_canonical(path);
+    String absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
+    return absolute_path.starts_with(absolute_prefix_path);
+}
+
+bool symlinkStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+{
+    /// Differs from pathStartsWith in how `path` is normalized before comparison.
+    /// Make `path` absolute if it was relative and put it into normalized form: remove
+    /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
+    /// not be a path of a symlink itself.
+
+    String absolute_path = std::filesystem::absolute(path);
+    absolute_path = fs::path(absolute_path).lexically_normal(); /// Normalize path.
+    String absolute_prefix_path = std::filesystem::absolute(prefix_path);
+    absolute_prefix_path = fs::path(absolute_prefix_path).lexically_normal(); /// Normalize path.
+    return absolute_path.starts_with(absolute_prefix_path);
+}
+
+bool pathStartsWith(const String & path, const String & prefix_path)
+{
+    auto filesystem_path = std::filesystem::path(path);
+    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
+
+    return pathStartsWith(filesystem_path, filesystem_prefix_path);
+}
+
+bool symlinkStartsWith(const String & path, const String & prefix_path)
+{
+    auto filesystem_path = std::filesystem::path(path);
+    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
+
+    return symlinkStartsWith(filesystem_path, filesystem_prefix_path);
+}
+}
+
+
+/// Copied from Poco::File
+namespace FS
+{
+
+bool createFile(const std::string & path)
+{
+    int n = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    if (n != -1)
+    {
+        close(n);
+        return true;
+    }
+    DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
+}
+
+bool canRead(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IRUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IRGRP) != 0;
+        else
+            return (st.st_mode & S_IROTH) != 0 || geteuid() == 0;
+    }
+    DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+
+bool canWrite(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IWUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IWGRP) != 0;
+        else
+            return (st.st_mode & S_IWOTH) != 0 || geteuid() == 0;
+    }
+    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+time_t getModificationTime(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+        return st.st_mtime;
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+Poco::Timestamp getModificationTimestamp(const std::string & path)
+{
+    return Poco::Timestamp::fromEpochTime(getModificationTime(path));
+}
+
+void setModificationTime(const std::string & path, time_t time)
+{
+    struct utimbuf tb;
+    tb.actime  = time;
+    tb.modtime = time;
+    if (utime(path.c_str(), &tb) != 0)
+        DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
 }

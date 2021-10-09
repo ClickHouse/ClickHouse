@@ -1,5 +1,5 @@
 ---
-toc_folder_title: External Dictionaries
+toc_folder_title: "Внешние словари"
 toc_priority: 37
 ---
 

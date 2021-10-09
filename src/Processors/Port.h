@@ -378,7 +378,7 @@ public:
 ///   * If you finish port, it isFinished().
 ///   * If port isFinished(), you can do nothing with it.
 ///   * If port not isNeeded(), you can only finish() it.
-///   * You can hush only if port doesn't hasData().
+///   * You can push only if port doesn't hasData().
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &);
@@ -394,7 +394,7 @@ public:
         pushData({.chunk = std::move(chunk), .exception = {}});
     }
 
-    void ALWAYS_INLINE push(std::exception_ptr exception)
+    void ALWAYS_INLINE pushException(std::exception_ptr exception)
     {
         pushData({.chunk = {}, .exception = std::move(exception)});
     }

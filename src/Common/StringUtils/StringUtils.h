@@ -67,10 +67,19 @@ inline bool isASCII(char c)
     return static_cast<unsigned char>(c) < 0x80;
 }
 
+inline bool isLowerAlphaASCII(char c)
+{
+    return (c >= 'a' && c <= 'z');
+}
+
+inline bool isUpperAlphaASCII(char c)
+{
+    return (c >= 'A' && c <= 'Z');
+}
+
 inline bool isAlphaASCII(char c)
 {
-    return (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z');
+    return isLowerAlphaASCII(c) || isUpperAlphaASCII(c);
 }
 
 inline bool isNumericASCII(char c)
@@ -111,6 +120,12 @@ inline bool isWhitespaceASCII(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+/// Since |isWhiteSpaceASCII()| is used inside algorithms it's easier to implement another function than add extra argument.
+inline bool isWhitespaceASCIIOneLine(char c)
+{
+    return c == ' ' || c == '\t' || c == '\f' || c == '\v';
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
@@ -122,9 +137,23 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
+inline bool isPunctuationASCII(char c)
+{
+    uint8_t uc = c;
+    return (uc >= 33 && uc <= 47)
+        || (uc >= 58 && uc <= 64)
+        || (uc >= 91 && uc <= 96)
+        || (uc >= 123 && uc <= 125);
+}
+
+
 inline bool isValidIdentifier(const std::string_view & str)
 {
-    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+    return !str.empty()
+        && isValidIdentifierBegin(str[0])
+        && std::all_of(str.begin() + 1, str.end(), isWordCharASCII)
+        /// NULL is not a valid identifier in SQL, any case.
+        && !(str.size() == strlen("null") && 0 == strncasecmp(str.data(), "null", strlen("null")));
 }
 
 /// Works assuming isAlphaASCII.
@@ -247,14 +276,30 @@ inline void trimLeft(std::string_view & str, char c = ' ')
         str.remove_prefix(1);
 }
 
+inline void trimLeft(std::string & str, char c = ' ')
+{
+    str.erase(0, str.find_first_not_of(c));
+}
+
 inline void trimRight(std::string_view & str, char c = ' ')
 {
     while (str.ends_with(c))
         str.remove_suffix(1);
 }
 
+inline void trimRight(std::string & str, char c = ' ')
+{
+    str.erase(str.find_last_not_of(c) + 1);
+}
+
 inline void trim(std::string_view & str, char c = ' ')
 {
     trimLeft(str, c);
     trimRight(str, c);
+}
+
+inline void trim(std::string & str, char c = ' ')
+{
+    trimRight(str, c);
+    trimLeft(str, c);
 }

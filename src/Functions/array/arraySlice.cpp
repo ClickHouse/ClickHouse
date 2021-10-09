@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -34,12 +34,14 @@ class FunctionArraySlice : public IFunction
 {
 public:
     static constexpr auto name = "arraySlice";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArraySlice>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -69,19 +71,14 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
-        const auto & return_type = block.getByPosition(result).type;
-
         if (return_type->onlyNull())
-        {
-            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto & array_column = block.getByPosition(arguments[0]).column;
-        const auto & offset_column = block.getByPosition(arguments[1]).column;
-        const auto & length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
+        auto array_column = arguments[0].column;
+        const auto & offset_column = arguments[1].column;
+        const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -105,8 +102,7 @@ public:
         {
             if (!length_column || length_column->onlyNull())
             {
-                block.getByPosition(result).column = array_column;
-                return;
+                return array_column;
             }
             else if (isColumnConst(*length_column))
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));
@@ -125,7 +121,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, static_cast<size_t>(-offset));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
             }
             else if (isColumnConst(*length_column))
             {
@@ -133,7 +129,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, static_cast<size_t>(-offset), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
@@ -146,7 +142,7 @@ public:
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
         }
 
-        block.getByPosition(result).column = std::move(sink);
+        return sink;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

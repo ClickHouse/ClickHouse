@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE DATABASE IF NOT EXISTS db_01455_rank_correlation;
 USE db_01455_rank_correlation;
 DROP TABLE IF EXISTS moons;
@@ -7,7 +9,7 @@ SELECT '1';
 SELECT rankCorr(number, number) FROM numbers(100);
 
 SELECT '-1';
-SELECT rankCorr(number, -1 * number) FROM numbers(100);
+SELECT rankCorr(number, -1 * CAST(number AS Int64)) FROM numbers(100);
 
 SELECT '-0.037';
 SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);

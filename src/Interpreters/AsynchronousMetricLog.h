@@ -12,8 +12,8 @@
 namespace DB
 {
 
-typedef double AsynchronousMetricValue;
-typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMetricValues;
+using AsynchronousMetricValue = double;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 /** AsynchronousMetricLog is a log of metric values measured at regular time interval.
   */
@@ -22,12 +22,13 @@ struct AsynchronousMetricLogElement
 {
     UInt16 event_date;
     time_t event_time;
-    UInt64 event_time_microseconds;
+    Decimal64 event_time_microseconds;
     std::string metric_name;
     double value;
 
     static std::string name() { return "AsynchronousMetricLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-void PingHandler::handleRequest(Poco::Net::HTTPServerRequest & /*request*/, Poco::Net::HTTPServerResponse & response)
+void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
 {
     try
     {

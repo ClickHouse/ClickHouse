@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
-
 import datetime
 import decimal
 import os
-import subprocess
 import sys
 import time
 import uuid
@@ -14,7 +11,7 @@ import docker
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 psycopg2.extras.register_uuid()
 
@@ -41,10 +38,10 @@ def server_address():
 
 @pytest.fixture(scope='module')
 def psql_client():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql.yml')
-    subprocess.check_call(
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgresql.yml')
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
-    yield docker.from_env().containers.get(cluster.project_name + '_psql_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=600).containers.get(cluster.project_name + '_psql_1')
 
 
 @pytest.fixture(scope='module')
@@ -65,10 +62,10 @@ def psql_server(psql_client):
 
 @pytest.fixture(scope='module')
 def java_container():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql_java_client.yml')
-    subprocess.check_call(
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgresql_java_client.yml')
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
-    yield docker.from_env().containers.get(cluster.project_name + '_java_1')
+    yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=600).containers.get(cluster.project_name + '_java_1')
 
 
 def test_psql_is_ready(psql_server):
@@ -81,10 +78,10 @@ def test_psql_client(psql_client, server_address):
     cmd_prefix += "--no-align --field-separator=' ' "
 
     code, (stdout, stderr) = psql_client.exec_run(cmd_prefix + '-c "SELECT 1 as a"', demux=True)
-    assert stdout == '\n'.join(['a', '1', '(1 row)', ''])
+    assert stdout.decode() == '\n'.join(['a', '1', '(1 row)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(cmd_prefix + '''-c "SELECT 'колонка' as a"''', demux=True)
-    assert stdout == '\n'.join(['a', 'колонка', '(1 row)', ''])
+    assert stdout.decode() == '\n'.join(['a', 'колонка', '(1 row)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(
         cmd_prefix + '-c ' +
@@ -98,7 +95,7 @@ def test_psql_client(psql_client, server_address):
         ''',
         demux=True
     )
-    assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', '(6 rows)', ''])
+    assert stdout.decode() == '\n'.join(['column', '0', '0', '1', '1', '5', '5', '(6 rows)', ''])
 
     code, (stdout, stderr) = psql_client.exec_run(
         cmd_prefix + '-c ' +
@@ -110,7 +107,7 @@ def test_psql_client(psql_client, server_address):
         ''',
         demux=True
     )
-    assert stdout == '\n'.join(['tmp_column', '0', '1', '(2 rows)', ''])
+    assert stdout.decode() == '\n'.join(['tmp_column', '0', '1', '(2 rows)', ''])
 
 
 def test_python_client(server_address):
@@ -120,7 +117,7 @@ def test_python_client(server_address):
         cur.execute('select name from tables;')
 
     assert exc_info.value.args == (
-        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist.\nSSL connection has been closed unexpectedly\n",)
+        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist\nSSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(host=server_address, port=server_port, user='default', password='123', database='')
     cur = ch.cursor()
@@ -157,4 +154,4 @@ def test_java_client(server_address, java_container):
         'default'.format(host=server_address, port=server_port), demux=True)
     print(stdout, stderr, file=sys.stderr)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference

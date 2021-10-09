@@ -3,8 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
-#include <ext/range.h>
+#include <Functions/IFunction.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
@@ -33,6 +33,8 @@ public:
     {
         return name;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 
 private:
@@ -55,10 +57,10 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const auto & column = block.getByPosition(arguments[0]).column;
-        const auto & column_char = block.getByPosition(arguments[1]).column;
+        const auto & column = arguments[0].column;
+        const auto & column_char = arguments[1].column;
 
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception{"Second argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
@@ -85,14 +87,14 @@ private:
             ColumnString::Offset src_offset{};
             ColumnString::Offset dst_offset{};
 
-            for (const auto i : ext::range(0, size))
+            for (const auto i : collections::range(0, size))
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);
                 src_offset = src_offsets[i];
                 dst_offset += src_length;
 
-                if (src_length > 1 && dst_data[dst_offset - 2] != trailing_char_str.front())
+                if (src_length > 1 && dst_data[dst_offset - 2] != UInt8(trailing_char_str.front()))
                 {
                     dst_data[dst_offset - 1] = trailing_char_str.front();
                     dst_data[dst_offset] = 0;
@@ -103,10 +105,10 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
-            block.getByPosition(result).column = std::move(col_res);
+            return col_res;
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+            throw Exception{"Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };

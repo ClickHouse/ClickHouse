@@ -209,10 +209,10 @@ SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 
 **入力値**
 
--   longitudie\_min-最小の経度、範囲内の浮動小数点値 `[-180°, 180°]`
--   latitude\_min-最小緯度、範囲内の浮動小数点値 `[-90°, 90°]`
+-   longitudie_min-最小の経度、範囲内の浮動小数点値 `[-180°, 180°]`
+-   latitude_min-最小緯度、範囲内の浮動小数点値 `[-90°, 90°]`
 -   縦方向max-最大経度、範囲内の浮動小数点値 `[-180°, 180°]`
--   latitude\_max-最大緯度、範囲内の浮動小数点値 `[-90°, 90°]`
+-   latitude_max-最大緯度、範囲内の浮動小数点値 `[-90°, 90°]`
 -   精度-ジオハッシュ精度, `UInt8` 範囲内 `[1, 12]`
 
 すべての座標パラメータは同じタイプでなければなりません。 `Float32` または `Float64`.
@@ -507,4 +507,4 @@ SELECT h3GetResolution(617420388352917503) as res
 └─────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/geo/) <!--hide-->

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Columns/ColumnVector.h>
 
 
@@ -25,5 +25,7 @@ using ColumnInt256 = ColumnVector<Int256>;
 
 using ColumnFloat32 = ColumnVector<Float32>;
 using ColumnFloat64 = ColumnVector<Float64>;
+
+using ColumnUUID = ColumnVector<UUID>;
 
 }

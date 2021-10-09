@@ -1,9 +1,0 @@
-<yandex>
-    <storage_configuration>
-        <disks>
-            <disk_memory>
-                <type>memory</type>
-            </disk_memory>
-        </disks>
-    </storage_configuration>
-</yandex>

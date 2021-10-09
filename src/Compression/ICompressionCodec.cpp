@@ -3,10 +3,11 @@
 #include <cassert>
 
 #include <Parsers/ASTFunction.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Compression/CompressionCodecMultiple.h>
 
 
 namespace DB
@@ -25,7 +26,7 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
     std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
     result->name = "CODEC";
 
-    /// Special case for codec Multiple, which doens't have name. It's just list
+    /// Special case for codec Multiple, which doesn't have name. It's just list
     /// of other codecs.
     if (codec_name.empty())
     {
@@ -62,7 +63,6 @@ ASTPtr ICompressionCodec::getFullCodecDesc() const
 
 ASTPtr ICompressionCodec::getCodecDesc() const
 {
-
     auto arguments = getFullCodecDesc()->as<ASTFunction>()->arguments;
     /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
@@ -98,7 +98,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: the compressed data size ({}), this should include header size) is less than the header size ({})", source_size, size_t(header_size));
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})", source_size, static_cast<size_t>(header_size));
 
     uint8_t our_method = getMethodByte();
     uint8_t method = source[0];
@@ -113,13 +113,19 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
 {
-    return unalignedLoad<UInt32>(&source[1]);
+    UInt32 compressed_block_size = unalignedLoad<UInt32>(&source[1]);
+    if (compressed_block_size == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with compressed block size 0");
+    return compressed_block_size;
 }
 
 
 UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source)
 {
-    return unalignedLoad<UInt32>(&source[5]);
+    UInt32 decompressed_block_size = unalignedLoad<UInt32>(&source[5]);
+    if (decompressed_block_size == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with decompressed block size 0");
+    return decompressed_block_size;
 }
 
 

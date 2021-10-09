@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
 #include <functional>
-#include <Interpreters/Context.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
+#include <Interpreters/Session.h>
+#include <base/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
@@ -257,6 +255,7 @@ class FirstMessage : public FrontMessage
 {
 public:
     Int32 payload_size;
+
     FirstMessage() = delete;
     FirstMessage(int payload_size_) : payload_size(payload_size_) {}
 };
@@ -264,8 +263,9 @@ public:
 class CancelRequest : public FirstMessage
 {
 public:
-    Int32 process_id;
-    Int32 secret_key;
+    Int32 process_id = 0;
+    Int32 secret_key = 0;
+
     CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override
@@ -722,8 +722,9 @@ public:
     Int32 size() const override
     {
         Int32 sz = 4 + 2; // size of message + number of fields
+        /// If values is NULL, field size is -1 and data not added.
         for (const std::shared_ptr<ISerializable> & field : row)
-            sz += 4 + field->size();
+            sz += 4 + (field->size() > 0 ? field->size() : 0);
         return sz;
     }
 
@@ -797,15 +798,16 @@ namespace PGAuthentication
 class AuthenticationMethod
 {
 protected:
-    void setPassword(
+    static void setPassword(
         const String & user_name,
         const String & password,
-        Context & context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        try {
-            context.setUser(user_name, password, address);
+        try
+        {
+            session.authenticate(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -819,7 +821,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        Context & context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -832,10 +834,13 @@ class NoPasswordAuth : public AuthenticationMethod
 {
 public:
     void authenticate(
-        const String & /* user_name */,
-        Context & /* context */,
-        Messaging::MessageTransport & /* mt */,
-        const Poco::Net::SocketAddress & /* address */) override {}
+        const String & user_name,
+        Session & session,
+        Messaging::MessageTransport & mt,
+        const Poco::Net::SocketAddress & address) override
+    {
+        return setPassword(user_name, "", session, mt, address);
+    }
 
     Authentication::Type getType() const override
     {
@@ -848,7 +853,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        Context & context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -858,7 +863,7 @@ public:
         if (type == Messaging::FrontMessageType::PASSWORD_MESSAGE)
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
-            setPassword(user_name, password->password, context, mt, address);
+            return setPassword(user_name, password->password, session, mt, address);
         }
         else
             throw Exception(
@@ -891,18 +896,16 @@ public:
 
     void authenticate(
         const String & user_name,
-        Context & context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        auto user = context.getAccessControlManager().read<User>(user_name);
-        Authentication::Type user_auth_type = user->authentication.getType();
-
+        const Authentication::Type user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
         if (type_to_method.find(user_auth_type) != type_to_method.end())
         {
-            type_to_method[user_auth_type]->authenticate(user_name, context, mt, address);
+            type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);
             mt.send(Messaging::AuthenticationOk(), true);
-            LOG_INFO(log, "Authentication for user {} was successful.", user_name);
+            LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
             return;
         }
 

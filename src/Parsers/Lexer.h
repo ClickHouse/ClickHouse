@@ -33,6 +33,9 @@ namespace DB
     \
     M(Asterisk)               /** Could be used as multiplication operator or on it's own: "SELECT *" */ \
     \
+    M(HereDoc) \
+    \
+    M(DollarSign) \
     M(Plus) \
     M(Minus) \
     M(Slash) \
@@ -40,6 +43,7 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
+    M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \
     M(Less) \

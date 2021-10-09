@@ -30,7 +30,7 @@ IOutputFormat::Status IOutputFormat::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_chunk = input.pull();
+        current_chunk = input.pull(true);
         current_block_kind = kind;
         has_input = true;
         return Status::Ready;
@@ -117,4 +117,3 @@ void IOutputFormat::write(const Block & block)
 }
 
 }
-

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Tags: race, shard
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d 'SELECT a' | wc -l

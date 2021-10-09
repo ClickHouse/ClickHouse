@@ -4,7 +4,7 @@
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
@@ -48,11 +48,21 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
     switch (quota->key_type)
     {
         case KeyType::NONE:
+        {
             return "";
+        }
         case KeyType::USER_NAME:
+        {
             return params.user_name;
+        }
         case KeyType::IP_ADDRESS:
+        {
             return params.client_address.toString();
+        }
+        case KeyType::FORWARDED_IP_ADDRESS:
+        {
+            return params.forwarded_address;
+        }
         case KeyType::CLIENT_KEY:
         {
             if (!params.client_key.empty())
@@ -114,7 +124,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         if (limits.randomize_interval)
             end_of_interval += randomDuration(limits.duration);
         interval.end_of_interval = end_of_interval.time_since_epoch();
-        for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
             if (limits.max[resource_type])
                 interval.max[resource_type] = *limits.max[resource_type];
@@ -149,7 +159,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
             const auto & current_interval = *lower_bound;
-            for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
                 new_interval.used[resource_type].store(current_interval.used[resource_type].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
@@ -170,7 +180,7 @@ QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & forwarded_address, const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -180,6 +190,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
     params.user_name = user_name;
     params.enabled_roles = enabled_roles;
     params.client_address = client_address;
+    params.forwarded_address = forwarded_address;
     params.client_key = client_key;
     auto it = enabled_quotas.find(params);
     if (it != enabled_quotas.end())

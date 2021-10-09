@@ -13,7 +13,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 struct IArraySource
 {
@@ -30,6 +29,8 @@ struct IArraySource
         throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+#pragma GCC visibility push(hidden)
 
 template <typename Derived>
 class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};

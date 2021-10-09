@@ -14,7 +14,7 @@ from .cluster import ClickHouseClusterWithDDLHelpers
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def test_cluster(request):
-    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param)
+    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param, request.param)
 
     try:
         cluster.prepare()
@@ -27,7 +27,7 @@ def test_cluster(request):
 
         # Check query log to ensure that DDL queries are not executed twice
         time.sleep(1.5)
-        for instance in cluster.instances.values():
+        for instance in list(cluster.instances.values()):
             cluster.ddl_check_there_are_no_dublicates(instance)
 
         cluster.pm_random_drops.heal_all()
@@ -53,6 +53,7 @@ def test_default_database(test_cluster):
 
 def test_create_view(test_cluster):
     instance = test_cluster.instances['ch3']
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test.super_simple_view ON CLUSTER 'cluster'")
     test_cluster.ddl_check_query(instance,
                                  "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers FORMAT TSV")
     test_cluster.ddl_check_query(instance,
@@ -76,7 +77,7 @@ def test_on_server_fail(test_cluster):
 
     kill_instance.get_docker_handle().stop()
     request = instance.get_query_request("CREATE TABLE test.test_server_fail ON CLUSTER 'cluster' (i Int8) ENGINE=Null",
-                                         timeout=30)
+                                         timeout=180)
     kill_instance.get_docker_handle().start()
 
     test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test.__nope__ ON CLUSTER 'cluster'")
@@ -90,27 +91,6 @@ def test_on_server_fail(test_cluster):
     assert TSV(contents) == TSV("ch1\nch2\nch3\nch4\n")
 
     test_cluster.ddl_check_query(instance, "DROP TABLE test.test_server_fail ON CLUSTER 'cluster'")
-
-
-def _test_on_connection_losses(test_cluster, zk_timeout):
-    instance = test_cluster.instances['ch1']
-    kill_instance = test_cluster.instances['ch2']
-
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(kill_instance)
-        request = instance.get_query_request("DROP TABLE IF EXISTS test.__nope__ ON CLUSTER 'cluster'", timeout=10)
-        time.sleep(zk_timeout)
-        pm.restore_instance_zk_connections(kill_instance)
-
-    test_cluster.check_all_hosts_successfully_executed(request.get_answer())
-
-
-def test_on_connection_loss(test_cluster):
-    _test_on_connection_losses(test_cluster, 1.5)  # connection loss will occur only (3 sec ZK timeout in config)
-
-
-def test_on_session_expired(test_cluster):
-    _test_on_connection_losses(test_cluster, 4)  # session should be expired (3 sec ZK timeout in config)
 
 
 def test_simple_alters(test_cluster):
@@ -133,12 +113,12 @@ CREATE TABLE IF NOT EXISTS all_merge_64 ON CLUSTER '{cluster}' (p Date, i Int64,
 ENGINE = Distributed('{cluster}', default, merge, i)
 """)
 
-    for i in xrange(0, 4, 2):
+    for i in range(0, 4, 2):
         k = (i / 2) * 2
         test_cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (i) VALUES ({})({})".format(k, k + 1))
 
     assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(
-        ''.join(['{}\n'.format(x) for x in xrange(4)]))
+        ''.join(['{}\n'.format(x) for x in range(4)]))
 
     time.sleep(5)
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' MODIFY COLUMN i Int64")
@@ -147,19 +127,19 @@ ENGINE = Distributed('{cluster}', default, merge, i)
                                  "ALTER TABLE merge ON CLUSTER '{cluster}' ADD COLUMN s String DEFAULT toString(i) FORMAT TSV")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
-    for i in xrange(0, 4, 2):
+    for i in range(0, 4, 2):
         k = (i / 2) * 2 + 4
         test_cluster.instances['ch{}'.format(i + 1)].query(
             "INSERT INTO merge (p, i) VALUES (31, {})(31, {})".format(k, k + 1))
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(8)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(8)]))
 
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' DETACH PARTITION 197002")
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
     test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER '{cluster}'")
     test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER '{cluster}'")
@@ -170,7 +150,7 @@ def test_macro(test_cluster):
     instance = test_cluster.instances['ch2']
     test_cluster.ddl_check_query(instance, "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory")
 
-    for i in xrange(4):
+    for i in range(4):
         test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
                                      "INSERT INTO tab VALUES ({})".format(i))
 
@@ -190,7 +170,7 @@ def test_implicit_macros(test_cluster):
 
     instance = test_cluster.instances['ch2']
 
-    test_cluster.ddl_check_query(instance, "DROP DATABASE IF EXISTS test_db ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(instance, "DROP DATABASE IF EXISTS test_db ON CLUSTER '{cluster}' SYNC")
     test_cluster.ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER '{cluster}'")
 
     test_cluster.ddl_check_query(instance, """
@@ -271,6 +251,15 @@ def test_rename(test_cluster):
     instance = test_cluster.instances['ch1']
     rules = test_cluster.pm_random_drops.pop_rules()
     test_cluster.ddl_check_query(instance,
+                                 "DROP TABLE IF EXISTS rename_shard ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance,
+                                 "DROP TABLE IF EXISTS rename_new ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance,
+                                 "DROP TABLE IF EXISTS rename_old ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance,
+                                 "DROP TABLE IF EXISTS rename ON CLUSTER cluster SYNC")
+
+    test_cluster.ddl_check_query(instance,
                                  "CREATE TABLE rename_shard ON CLUSTER cluster (id Int64, sid String DEFAULT concat('old', toString(id))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/staging/test_shard', '{replica}') ORDER BY (id)")
     test_cluster.ddl_check_query(instance,
                                  "CREATE TABLE rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)")
@@ -326,26 +315,48 @@ def test_socket_timeout(test_cluster):
 def test_replicated_without_arguments(test_cluster):
     rules = test_cluster.pm_random_drops.pop_rules()
     instance = test_cluster.instances['ch1']
-    test_cluster.ddl_check_query(instance, "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic",
-                                 settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test_atomic.rmt ON CLUSTER cluster SYNC")
+    test_cluster.ddl_check_query(instance, "DROP DATABASE IF EXISTS test_atomic ON CLUSTER cluster SYNC")
+
+    test_cluster.ddl_check_query(instance, "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic")
+    assert "are supported only for ON CLUSTER queries with Atomic database engine" in \
+           instance.query_and_get_error("CREATE TABLE test_atomic.rmt (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
     test_cluster.ddl_check_query(instance,
-                                 "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
-                                 settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
-    test_cluster.ddl_check_query(instance, "DROP TABLE test_atomic.rmt ON CLUSTER cluster")
+                                 "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree() ORDER BY n")
+    test_cluster.ddl_check_query(instance, "DROP TABLE test_atomic.rmt ON CLUSTER cluster SYNC")
     test_cluster.ddl_check_query(instance,
-                                 "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
-                                 settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
+                                 "CREATE TABLE test_atomic.rmt UUID '12345678-0000-4000-8000-000000000001' ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    assert instance.query("SHOW CREATE test_atomic.rmt FORMAT TSVRaw") == \
+           "CREATE TABLE test_atomic.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree('/clickhouse/tables/12345678-0000-4000-8000-000000000001/{shard}', '{replica}')\nORDER BY n\nSETTINGS index_granularity = 8192\n"
     test_cluster.ddl_check_query(instance, "RENAME TABLE test_atomic.rmt TO test_atomic.rmt_renamed ON CLUSTER cluster")
     test_cluster.ddl_check_query(instance,
-                                 "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
-                                 settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
+                                 "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') ORDER BY n")
     test_cluster.ddl_check_query(instance,
                                  "EXCHANGE TABLES test_atomic.rmt AND test_atomic.rmt_renamed ON CLUSTER cluster")
+    assert instance.query("SELECT countDistinct(uuid) from clusterAllReplicas('cluster', 'system', 'databases') WHERE uuid != '00000000-0000-0000-0000-000000000000' AND name='test_atomic'") == "1\n"
+    assert instance.query("SELECT countDistinct(uuid) from clusterAllReplicas('cluster', 'system', 'tables') WHERE uuid != '00000000-0000-0000-0000-000000000000' AND name='rmt'") == "1\n"
+    test_cluster.ddl_check_query(instance,
+                                 "CREATE TABLE test_atomic.rrmt ON CLUSTER cluster (n UInt64, m UInt64) ENGINE=ReplicatedReplacingMergeTree(m) ORDER BY n")
+    test_cluster.ddl_check_query(instance,
+                                 "CREATE TABLE test_atomic.rsmt ON CLUSTER cluster (n UInt64, m UInt64, k UInt64) ENGINE=ReplicatedSummingMergeTree((m, k)) ORDER BY n")
+    test_cluster.ddl_check_query(instance,
+                                 "CREATE TABLE test_atomic.rvcmt ON CLUSTER cluster (n UInt64, m Int8, k UInt64) ENGINE=ReplicatedVersionedCollapsingMergeTree(m, k) ORDER BY n")
+    test_cluster.ddl_check_query(instance, "DROP DATABASE test_atomic ON CLUSTER cluster SYNC")
+
+    test_cluster.ddl_check_query(instance, "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary")
+    assert "are supported only for ON CLUSTER queries with Atomic database engine" in \
+           instance.query_and_get_error("CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    assert "are supported only for ON CLUSTER queries with Atomic database engine" in \
+           instance.query_and_get_error("CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{uuid}/', '{replica}') ORDER BY n")
+    test_cluster.ddl_check_query(instance, "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{table}/', '{replica}') ORDER BY n")
+    assert instance.query("SHOW CREATE test_ordinary.rmt FORMAT TSVRaw") == \
+           "CREATE TABLE test_ordinary.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree('/{shard}/rmt/', '{replica}')\nORDER BY n\nSETTINGS index_granularity = 8192\n"
+    test_cluster.ddl_check_query(instance, "DROP DATABASE test_ordinary ON CLUSTER cluster SYNC")
     test_cluster.pm_random_drops.push_rules(rules)
 
 
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:
-        for name, instance in ctx_cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(ctx_cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

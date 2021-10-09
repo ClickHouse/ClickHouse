@@ -27,10 +27,10 @@ ClickHouseでは、クエリの処理に必要なデータをSELECTクエリと�
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Stdinから取得できるのは単一のテーブルのみです。
 
-次のパラメータは省略可能です: **–name**– Name of the table. If omitted, \_data is used.
+次のパラメータは省略可能です: **–name**– Name of the table. If omitted, _data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-次のいずれかのパラメータが必要です:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
+次のいずれかのパラメータが必要です:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. 列名と型を定義します。
 
 で指定されたファイル ‘file’ に指定された形式で解析されます。 ‘format’ で指定されたデータ型を使用します ‘types’ または ‘structure’. のテーブルがアップロードサーバへのアクセスが一時テーブルの名前 ‘name’.
@@ -48,7 +48,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-HTTPインターフェイスを使用する場合、外部データはmultipart/form-data形式で渡されます。 各テーブルは別々のファイルとして送信されます。 テーブル名は、ファイル名から取得されます。 その ‘query\_string’ パラメータが渡されます ‘name\_format’, ‘name\_types’,and ‘name\_structure’,ここで ‘name’ これらのパラメーターが対応するテーブルの名前を指定します。 パラメーターの意味は、コマンドラインクライアントを使用する場合と同じです。
+HTTPインターフェイスを使用する場合、外部データはmultipart/form-data形式で渡されます。 各テーブルは別々のファイルとして送信されます。 テーブル名は、ファイル名から取得されます。 その ‘query_string’ パラメータが渡されます ‘name_format’, ‘name_types’,and ‘name_structure’,ここで ‘name’ これらのパラメーターが対応するテーブルの名前を指定します。 パラメーターの意味は、コマンドラインクライアントを使用する場合と同じです。
 
 例:
 
@@ -65,4 +65,4 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 
 分散クエリ処理では、一時テーブルがすべてのリモートサーバーに送信されます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/external_data/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/external_data/) <!--hide-->

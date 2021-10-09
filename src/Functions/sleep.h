@@ -1,13 +1,21 @@
+#pragma once
 #include <unistd.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <common/sleep.h>
+#include <base/sleep.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
+namespace ProfileEvents
+{
+extern const Event SleepFunctionCalls;
+extern const Event SleepFunctionMicroseconds;
+}
 
 namespace DB
 {
@@ -20,7 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/** sleep(seconds) - the specified number of seconds sleeps each block.
+/** sleep(seconds) - the specified number of seconds sleeps each columns.
   */
 
 enum class FunctionSleepVariant
@@ -34,7 +42,7 @@ class FunctionSleep : public IFunction
 {
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSleep<variant>>();
     }
@@ -56,6 +64,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
@@ -68,33 +78,36 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const IColumn * col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0)
-            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+        if (seconds < 0 || !std::isfinite(seconds))
+            throw Exception("Cannot sleep infinite or negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
 
         size_t size = col->size();
 
-        /// We do not sleep if the block is empty.
+        /// We do not sleep if the columns is empty.
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            UInt64 microseconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
+            UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
+            UInt64 microseconds = seconds * count * 1e6;
             sleepForMicroseconds(microseconds);
+            ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
+            ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
         }
 
-        /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
+        /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each columns.
+        return result_type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
     }
 };
 

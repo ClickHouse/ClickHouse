@@ -1,8 +1,8 @@
-SET(AWS_S3_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3)
-SET(AWS_CORE_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core)
-SET(AWS_CHECKSUMS_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-checksums)
-SET(AWS_COMMON_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-c-common)
-SET(AWS_EVENT_STREAM_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream)
+SET(AWS_S3_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3")
+SET(AWS_CORE_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core")
+SET(AWS_CHECKSUMS_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-checksums")
+SET(AWS_COMMON_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-common")
+SET(AWS_EVENT_STREAM_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream")
 
 OPTION(USE_AWS_MEMORY_MANAGEMENT "Aws memory management" OFF)
 configure_file("${AWS_CORE_LIBRARY_DIR}/include/aws/core/SDKConfig.h.in"

@@ -12,9 +12,10 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -27,7 +28,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -36,7 +38,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     ASTs & args = args_func.at(0)->children;
 
-    const size_t max_args = is_cluster_function ? 3 : 5;
+    const size_t max_args = is_cluster_function ? 4 : 6;
     if (args.size() < 2 || args.size() > max_args)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -44,22 +46,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     String cluster_description;
     String remote_database;
     String remote_table;
-    ASTPtr remote_table_function_ptr;
     String username;
     String password;
 
     size_t arg_num = 0;
 
-    auto get_string_literal = [](const IAST & node, const char * description)
+    auto get_string_literal = [](const IAST & node, String & res)
     {
         const auto * lit = node.as<ASTLiteral>();
         if (!lit)
-            throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+            return false;
 
         if (lit->value.getType() != Field::Types::String)
-            throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+            return false;
 
-        return safeGet<const String &>(lit->value);
+        res = safeGet<const String &>(lit->value);
+        return true;
     };
 
     if (is_cluster_function)
@@ -70,7 +72,10 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
-            cluster_description = get_string_literal(*args[arg_num], "Hosts pattern");
+        {
+            if (!get_string_literal(*args[arg_num], cluster_description))
+                throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
+        }
     }
     ++arg_num;
 
@@ -88,14 +93,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
         ++arg_num;
 
-        size_t dot = remote_database.find('.');
-        if (dot != String::npos)
-        {
-            /// NOTE Bad - do not support identifiers in backquotes.
-            remote_table = remote_database.substr(dot + 1);
-            remote_database = remote_database.substr(0, dot);
-        }
-        else
+        auto qualified_name = QualifiedTableName::parseFromString(remote_database);
+        if (qualified_name.database.empty())
         {
             if (arg_num >= args.size())
             {
@@ -103,11 +102,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             }
             else
             {
+                std::swap(qualified_name.database, qualified_name.table);
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+                qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }
+
+        remote_database = std::move(qualified_name.database);
+        remote_table = std::move(qualified_name.table);
+    }
+
+    /// Cluster function may have sharding key for insert
+    if (is_cluster_function && arg_num < args.size())
+    {
+        sharding_key = args[arg_num];
+        ++arg_num;
     }
 
     /// Username and password parameters are prohibited in cluster version of the function
@@ -115,15 +125,26 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     {
         if (arg_num < args.size())
         {
-            username = get_string_literal(*args[arg_num], "Username");
+            if (!get_string_literal(*args[arg_num], username))
+            {
+                username = "default";
+                sharding_key = args[arg_num];
+            }
             ++arg_num;
         }
-        else
-            username = "default";
 
-        if (arg_num < args.size())
+        if (arg_num < args.size() && !sharding_key)
         {
-            password = get_string_literal(*args[arg_num], "Password");
+            if (!get_string_literal(*args[arg_num], password))
+            {
+                sharding_key = args[arg_num];
+            }
+            ++arg_num;
+        }
+
+        if (arg_num < args.size() && !sharding_key)
+        {
+            sharding_key = args[arg_num];
             ++arg_num;
         }
     }
@@ -131,24 +152,19 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
-    /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto ast : args)
-        setIdentifierSpecial(ast);
-
-    ClusterPtr cluster;
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context.getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context.getCluster(cluster_name)->getClusterWithReplicasAsShards(context.getSettings());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
     }
     else
     {
         /// Create new cluster from the scratch
-        size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
+        size_t max_addresses = context->getSettingsRef().table_function_remote_max_addresses;
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
@@ -159,7 +175,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-        auto maybe_secure_port = context.getTCPPortSecure();
+        auto maybe_secure_port = context->getTCPPortSecure();
 
         /// Check host and port on affiliation allowed hosts.
         for (const auto & hosts : names)
@@ -168,62 +184,92 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context.getRemoteHostFilter().checkHostAndPort(
+                    context->getRemoteHostFilter().checkHostAndPort(
                         host,
-                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort())));
                 else
-                    context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+                    context->getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
         cluster = std::make_shared<Cluster>(
-            context.getSettings(),
+            context->getSettings(),
             names,
             username,
             password,
-            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
-            false,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+            treat_local_as_remote,
+            treat_local_port_as_remote,
             secure);
     }
 
     if (!remote_table_function_ptr && remote_table.empty())
         throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    auto remote_table_id = StorageID::createEmpty();
     remote_table_id.database_name = remote_database;
     remote_table_id.table_name = remote_table;
-    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+}
 
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const
+{
+    /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
+    /// without additional conversion in StorageTableFunctionProxy
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(context);
+
+    assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? StorageDistributed::createWithOwnCluster(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            structure_remote_table,
+            cached_columns,
+            ConstraintsDescription{},
             remote_table_function_ptr,
-            cluster,
-            context)
-        : StorageDistributed::createWithOwnCluster(
+            String{},
+            context,
+            sharding_key,
+            String{},
+            String{},
+            DistributedSettings{},
+            false,
+            cluster)
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            structure_remote_table,
-            remote_database,
-            remote_table,
-            cluster,
-            context);
+            cached_columns,
+            ConstraintsDescription{},
+            String{},
+            remote_table_id.database_name,
+            remote_table_id.table_name,
+            String{},
+            context,
+            sharding_key,
+            String{},
+            String{},
+            DistributedSettings{},
+            false,
+            cluster);
 
     res->startup();
     return res;
 }
 
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context) const
+{
+    assert(cluster);
+    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+}
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-
-    std::stringstream ss;
-    ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
-       << ": <addresses pattern or cluster name>, <name of remote database>, <name of remote table>"
-       << (is_cluster_function ? "" : ", [username, [password]].");
-    help_message = ss.str();
+    help_message = fmt::format(
+        "Table function '{}' requires from 2 to {} parameters: "
+        "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
+        name,
+        is_cluster_function ? 4 : 6,
+        is_cluster_function ? " [, sharding_key]" : " [, username[, password], sharding_key]");
 }
 
 

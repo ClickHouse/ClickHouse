@@ -21,17 +21,7 @@ public:
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size = false);
 
-    MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list_,
-        const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec_,
-        const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
-        size_t aio_threshold,
-        bool blocks_are_granules_size = false);
-
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;
@@ -41,9 +31,8 @@ public:
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
-    void writeSuffix() override;
-
-    /// Finilize writing part and fill inner structures
+    /// Finalize writing part and fill inner structures
+    /// If part is new and contains projections, they should be added before invoking this method.
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
             bool sync = false,
@@ -62,11 +51,12 @@ private:
             MergeTreeData::DataPart::Checksums & checksums,
             bool sync);
 
-private:
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
 };
+
+using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;
 
 }

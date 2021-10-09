@@ -17,7 +17,7 @@ MapReduceのようなシステムは、reduce操作が分散ソートに基づ�
 
 ## になっているのでしょうか？しているのでエンコーディング利用の場合OracleをODBC? {#oracle-odbc-encodings}
 
-外部ディクショナリのソースとしてODBCドライバを介してOracleを使用する場合は、外部ディクショナリの正しい値を設定する必要が `NLS_LANG` 環境変数in `/etc/default/clickhouse`. 詳細については、を参照してください [Oracle NLS\_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+外部ディクショナリのソースとしてODBCドライバを介してOracleを使用する場合は、外部ディクショナリの正しい値を設定する必要が `NLS_LANG` 環境変数in `/etc/default/clickhouse`. 詳細については、を参照してください [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **例**
 
@@ -57,4 +57,4 @@ $ clickhouse-client --query "SELECT * from table" --format FormatName > result.t
 
 見る [clickhouse-クライアント](../interfaces/cli.md).
 
-{## [元の記事](https://clickhouse.tech/docs/en/faq/general/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/faq/general/) ##}

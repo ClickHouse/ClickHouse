@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
    <quotas>
         <myQuota>
             <interval>
@@ -8,10 +8,12 @@
 
                 <!-- No limits. Just calculate resource usage for time interval. -->
                 <queries>0</queries>
+                <query_selects>0</query_selects>
+                <query_inserts>0</query_inserts>
                 <errors>0</errors>
                 <read_rows>0</read_rows>
                 <result_rows>0</result_rows>
             </interval>
         </myQuota>
     </quotas>
-</yandex>
+</clickhouse>

@@ -128,7 +128,7 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/profile {#user-nameprofile}
+### user_name/profile {#user-nameprofile}
 
 您可以为用户分配设置配置文件。 设置配置文件在单独的部分配置 `users.xml` 文件 有关详细信息，请参阅 [设置配置文件](settings-profiles.md).
 
@@ -161,4 +161,4 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 
 该 `filter` 可以是导致任何表达式 [UInt8](../../sql-reference/data-types/int-uint.md)-键入值。 它通常包含比较和逻辑运算符。 从行 `database_name.table1` 其中，不会为此用户返回为0的筛选结果。 过滤是不兼容的 `PREWHERE` 操作和禁用 `WHERE→PREWHERE` 优化。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

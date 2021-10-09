@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,13 +22,13 @@ namespace
 {
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
-/// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
+/// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
 class FunctionIsDecimalOverflow : public IFunction
 {
 public:
     static constexpr auto name = "isDecimalOverflow";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIsDecimalOverflow>();
     }
@@ -36,6 +36,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -60,16 +61,16 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & src_column = block.getByPosition(arguments[0]);
+        const auto & src_column = arguments[0];
         if (!src_column.column)
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         UInt32 precision = 0;
         if (arguments.size() == 2)
         {
-            const auto & precision_column = block.getByPosition(arguments[1]);
+            const auto & precision_column = arguments[1];
             if (!precision_column.column)
                 throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -85,7 +86,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types) -> bool //-V657
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
@@ -112,7 +113,7 @@ public:
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result_pos).column = std::move(result_column);
+        return result_column;
     }
 
 private:
@@ -127,13 +128,12 @@ private:
             dst_data[i] = outOfDigits<T>(src_data[i], precision);
     }
 
-    template <typename T>
+    template <is_decimal T>
     static bool outOfDigits(T dec, UInt32 precision)
     {
-        static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
-        if (precision > DecimalUtils::maxPrecision<T>())
+        if (precision > DecimalUtils::max_precision<T>)
             return false;
 
         NativeT pow10 = intExp10OfSize<NativeT>(precision);

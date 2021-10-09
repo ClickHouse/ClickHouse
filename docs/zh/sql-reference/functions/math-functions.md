@@ -76,7 +76,7 @@ SELECT erf(3 / sqrt(2))
 
 返回x的三角余弦值。
 
-## 谭(x) {#tanx}
+## tan(x) {#tanx}
 
 返回x的三角正切值。
 
@@ -88,7 +88,7 @@ SELECT erf(3 / sqrt(2))
 
 返回x的反三角余弦值。
 
-## 阿坦(x) {#atanx}
+## atan(x) {#atanx}
 
 返回x的反三角正切值。
 
@@ -104,4 +104,4 @@ SELECT erf(3 / sqrt(2))
 
 接受一个数值类型的参数并返回它的10的x次幂（UInt64）。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/math_functions/) <!--hide-->

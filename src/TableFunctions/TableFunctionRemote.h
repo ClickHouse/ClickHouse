@@ -1,6 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -16,18 +18,29 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-    TableFunctionRemote(const std::string & name_, bool secure_ = false);
+    explicit TableFunctionRemote(const std::string & name_, bool secure_ = false);
 
     std::string getName() const override { return name; }
 
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
+    bool needStructureConversion() const override { return false; }
+
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::string name;
     bool is_cluster_function;
     std::string help_message;
     bool secure;
+
+    ClusterPtr cluster;
+    StorageID remote_table_id = StorageID::createEmpty();
+    ASTPtr remote_table_function_ptr;
+    ASTPtr sharding_key = nullptr;
 };
 
 }

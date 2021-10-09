@@ -192,10 +192,10 @@ SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 
 **输入值**
 
--   longitude\_min - 最小经度。其值应在`[-180°，180°]`范围内
--   latitude\_min - 最小纬度。其值应在`[-90°，90°]`范围内
--   longitude\_max - 最大经度。其值应在`[-180°，180°]`范围内
--   latitude\_max - 最大纬度。其值应在`[-90°，90°]`范围内
+-   longitude_min - 最小经度。其值应在`[-180°，180°]`范围内
+-   latitude_min - 最小纬度。其值应在`[-90°，90°]`范围内
+-   longitude_max - 最大经度。其值应在`[-180°，180°]`范围内
+-   latitude_max - 最大纬度。其值应在`[-90°，90°]`范围内
 -   precision - geohash的精度。其值应在`[1, 12]`内的`UInt8`类型的数字
 
 请注意，上述所有的坐标参数必须同为`Float32`或`Float64`中的一种类型。
@@ -219,4 +219,4 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 └─────────────────────────────────────────────┘
 ```
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/geo/) <!--hide-->

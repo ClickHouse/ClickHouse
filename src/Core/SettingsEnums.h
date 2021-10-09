@@ -83,6 +83,7 @@ DECLARE_SETTING_ENUM(DistributedProductMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 enum class LogsLevel
 {
@@ -93,6 +94,7 @@ enum class LogsLevel
     information,
     debug,
     trace,
+    test,
 };
 
 DECLARE_SETTING_ENUM(LogsLevel)
@@ -127,5 +129,43 @@ enum class MySQLDataTypesSupport
 };
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
+
+enum class UnionMode
+{
+    Unspecified = 0, // Query UNION without UnionMode will throw exception
+    ALL, // Query UNION without UnionMode -> SELECT ... UNION ALL SELECT ...
+    DISTINCT // Query UNION without UnionMode -> SELECT ... UNION DISTINCT SELECT ...
+};
+
+DECLARE_SETTING_ENUM(UnionMode)
+
+enum class DistributedDDLOutputMode
+{
+    NONE,
+    THROW,
+    NULL_STATUS_ON_TIMEOUT,
+    NEVER_THROW,
+};
+
+DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
+
+enum class HandleKafkaErrorMode
+{
+    DEFAULT = 0, // Ignore errors whit threshold.
+    STREAM, // Put errors to stream in the virtual column named ``_error.
+    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
+    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
+};
+
+DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
+
+enum class ShortCircuitFunctionEvaluation
+{
+    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
+    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
+    DISABLE, // Disable short-circuit function evaluation.
+};
+
+DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 import os
 import sys
 from contextlib import contextmanager
@@ -119,6 +118,6 @@ def test_async_inserts_into_local_shard(started_cluster):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

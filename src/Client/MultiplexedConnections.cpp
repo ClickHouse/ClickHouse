@@ -1,5 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -12,11 +13,12 @@ namespace ErrorCodes
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
     extern const int NO_AVAILABLE_REPLICA;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
 
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
     connection.setThrottler(throttler);
 
@@ -27,10 +29,23 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
     active_connection_count = 1;
 }
 
+
+MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> connection_ptr_, const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
+    , connection_ptr(connection_ptr_)
+{
+    connection_ptr->setThrottler(throttler);
+
+    ReplicaState replica_state;
+    replica_state.connection = connection_ptr.get();
+    replica_states.push_back(replica_state);
+
+    active_connection_count = 1;
+}
+
 MultiplexedConnections::MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    std::vector<IConnectionPool::Entry> && connections, const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
     /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.
@@ -139,10 +154,34 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
+void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendIgnoredPartUUIDs(uuids);
+    }
+}
+
+
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendReadTaskResponse(response);
+}
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({}, false /* is_draining */);
     return packet;
 }
 
@@ -190,10 +229,12 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked(DrainCallback{drain_timeout}, true /* is_draining */);
 
         switch (packet.type)
         {
+            case Protocol::Server::ReadTaskRequest:
+            case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -222,36 +263,57 @@ std::string MultiplexedConnections::dumpAddresses() const
 std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
-    std::ostringstream os;
+    WriteBufferFromOwnString buf;
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;
         if (connection)
         {
-            os << (is_first ? "" : "; ") << connection->getDescription();
+            buf << (is_first ? "" : "; ") << connection->getDescription();
             is_first = false;
         }
     }
 
-    return os.str();
+    return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback, bool is_draining)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
     if (!hasActiveConnections())
         throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-    ReplicaState & state = getReplicaForReading();
+    ReplicaState & state = getReplicaForReading(is_draining);
     current_connection = state.connection;
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket();
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+
+        try
+        {
+            packet = current_connection->receivePacket();
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+            {
+                /// Exception may happen when packet is received, e.g. when got unknown packet.
+                /// In this case, invalidate replica, so that we would not read from it anymore.
+                current_connection->disconnect();
+                invalidateReplica(state);
+            }
+            throw;
+        }
+    }
 
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
+        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:
@@ -274,9 +336,10 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     return packet;
 }
 
-MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
+MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading(bool is_draining)
 {
-    if (replica_states.size() == 1)
+    /// Fast path when we only focus on one replica and are not draining the connection.
+    if (replica_states.size() == 1 && !is_draining)
         return replica_states[0];
 
     Poco::Net::Socket::SocketList read_list;
@@ -304,15 +367,31 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
                 read_list.push_back(*connection->socket);
         }
 
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.receive_timeout);
+        int n = Poco::Net::Socket::select(
+            read_list,
+            write_list,
+            except_list,
+            is_draining ? drain_timeout : receive_timeout);
 
-        if (n == 0)
-            throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
+        /// We treat any error as timeout for simplicity.
+        /// And we also check if read_list is still empty just in case.
+        if (n <= 0 || read_list.empty())
+        {
+            auto err_msg = fmt::format("Timeout exceeded while reading from {}", dumpAddressesUnlocked());
+            for (ReplicaState & state : replica_states)
+            {
+                Connection * connection = state.connection;
+                if (connection != nullptr)
+                {
+                    connection->disconnect();
+                    invalidateReplica(state);
+                }
+            }
+            throw Exception(err_msg, ErrorCodes::TIMEOUT_EXCEEDED);
+        }
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
-    /// This code path is disabled by default.
-
+    /// TODO Motivation of rand is unclear.
     auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {

@@ -1,4 +1,9 @@
-<test max_ignored_relative_change="0.3">
-    <query>select number from (select number from numbers(10000000) order by -number) limit 10</query>
-    <query>select number from (select number from numbers_mt(100000000) order by -number) limit 10</query>
+<test>
+    <create_query>CREATE VIEW numbers_view AS SELECT number from numbers_mt(100000000) order by number desc</create_query>
+
+    <!-- This must have been an EXPLAIN test. -->
+    <query>select number from (select number from numbers(500000000) order by -number) limit 10</query>
+    <query>select number from (select number from numbers_mt(1500000000) order by -number) limit 10</query>
+
+    <query short="1">select number from numbers_view limit 100</query>
 </test>

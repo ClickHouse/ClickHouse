@@ -174,7 +174,7 @@ MODIFY ORDER BY new_expression
 该操作仅支持 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 系列表 (含 [replicated](../../engines/table-engines/mergetree-family/replication.md) 表)。
 下列操作是允许的：
 
--   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - 在表的元数据中增加索引说明
+-   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]` - 在表的元数据中增加索引说明
 
 -   `ALTER TABLE [db].name DROP INDEX name` - 从表的元数据中删除索引描述，并从磁盘上删除索引文件
 
@@ -208,7 +208,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) —   从表中复制数据分区到其它表.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) —  重置分区中某个列的值
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) —  重置分区中指定的二级索引
--   [FREEZE PARTITION](#alter_freeze-partition) —  创建分区的备份 
+-   [FREEZE PARTITION](#alter_freeze-partition) —  创建分区的备份
 -   [FETCH PARTITION](#alter_fetch-partition) —  从其它服务器上下载分
 -   [MOVE PARTITION\|PART](#alter_move-partition) —  将分区/数据块移动到另外的磁盘/卷
 
@@ -380,7 +380,7 @@ ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
 从另一服务器上下载分区数据。仅支持可复制引擎表。
 该操作做了如下步骤：
 1.  从指定数据分片上下载分区。在 path-in-zookeeper 这一参数你必须设置Zookeeper中该分片的path值。
-2.  然后将已下载的数据放到 `table_name` 表的 `detached` 目录下。通过 [ATTACH PARTITION\|PART](#alter_attach-partition)将数据加载到表中。 
+2.  然后将已下载的数据放到 `table_name` 表的 `detached` 目录下。通过 [ATTACH PARTITION\|PART](#alter_attach-partition)将数据加载到表中。
 
 示例:
 
@@ -426,7 +426,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 -   `system.parts`表  `partition`列的某个值，例如， `ALTER TABLE visits DETACH PARTITION 201901`
 -   表的列表达式。支持常量及常量表达式。例如， `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`
 -   使用分区ID。分区ID是字符串变量（可能的话有较好的可读性），在文件系统和ZooKeeper中作为分区名称。分区ID必须配置在 `PARTITION ID`中，用单引号包含，例如， `ALTER TABLE visits DETACH PARTITION ID '201901'`
--   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached\_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
+-   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
 
 
 设置分区时，引号使用要看分区表达式的类型。例如，对于 `String`类型，需要设置用引号(`'`)包含的名称。对于 `Date` 和 `Int*`引号就不需要了。
@@ -586,4 +586,4 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->

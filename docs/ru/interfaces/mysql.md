@@ -1,6 +1,11 @@
+---
+toc_priority: 20
+toc_title: "MySQL-интерфейс"
+---
+
 # MySQL-интерфейс {#mysql-interface}
 
-ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) в конфигурационном файле:
+ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) в конфигурационном файле:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -38,3 +43,9 @@ mysql>
 -   не поддерживаются подготовленные запросы
 
 -   некоторые типы данных отправляются как строки
+
+Чтобы прервать долго выполняемый запрос, используйте запрос `KILL QUERY connection_id` (во время выполнения он будет заменен на `KILL QUERY WHERE query_id = connection_id`). Например:
+
+``` bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

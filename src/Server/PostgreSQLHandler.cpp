@@ -2,9 +2,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
+#include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
@@ -32,7 +35,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , connection_context(server.context())
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , authentication_manager(auth_methods_)
@@ -49,8 +51,11 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    connection_context.makeSessionContext();
-    connection_context.setDefaultFormat("PostgreSQLWire");
+    setThreadName("PostgresHandler");
+    ThreadStatus thread_status;
+
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
+    SCOPE_EXIT({ session.reset(); });
 
     try
     {
@@ -68,7 +73,7 @@ void PostgreSQLHandler::run()
                     processQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
-                    LOG_INFO(log, "Client closed the connection");
+                    LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
@@ -112,24 +117,21 @@ bool PostgreSQLHandler::startup()
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
     {
-        LOG_INFO(log, "Client issued request canceling");
+        LOG_DEBUG(log, "Client issued request canceling");
         cancelRequest();
         return false;
     }
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
-    authentication_manager.authenticate(start_up_msg->user, connection_context, *message_transport, socket().peerAddress());
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    secret_key = dis(gen);
+    const auto & user_name = start_up_msg->user;
+    authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try
     {
+        session->makeSessionContext();
+        session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
-            connection_context.setCurrentDatabase(start_up_msg->database);
-        connection_context.setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            session->sessionContext()->setCurrentDatabase(start_up_msg->database);
     }
     catch (const Exception & exc)
     {
@@ -145,7 +147,7 @@ bool PostgreSQLHandler::startup()
     message_transport->send(
         PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
 
-    LOG_INFO(log, "Successfully finished Startup stage");
+    LOG_DEBUG(log, "Successfully finished Startup stage");
     return true;
 }
 
@@ -158,14 +160,14 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
-            LOG_INFO(log, "Client requested SSL");
+            LOG_DEBUG(log, "Client requested SSL");
             if (ssl_enabled)
                 makeSecureConnectionSSL();
             else
                 message_transport->send('N', true);
             break;
         case PostgreSQLProtocol::Messaging::FrontMessageType::GSSENC_REQUEST:
-            LOG_INFO(log, "Client requested GSSENC");
+            LOG_DEBUG(log, "Client requested GSSENC");
             message_transport->send('N', true);
             break;
         default:
@@ -209,19 +211,15 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
 
 void PostgreSQLHandler::cancelRequest()
 {
-    connection_context.setCurrentQueryId("");
-    connection_context.setDefaultFormat("Null");
-
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
-    executeQuery(
-        replacement, *out, true, connection_context,
-        [](const String &, const String &, const String &, const String &) {}
-    );
+    auto query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    executeQuery(replacement, *out, true, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -240,7 +238,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
         throw;
     }
 
-    LOG_INFO(log, "Successfully received Startup message");
+    LOG_DEBUG(log, "Successfully received Startup message");
     return message;
 }
 
@@ -267,16 +265,25 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        const auto & settings = connection_context.getSettingsRef();
+        const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
         auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
         if (!parse_res.second)
             throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
+
         for (const auto & spl_query : queries)
         {
+            secret_key = dis(gen);
+            auto query_context = session->makeQueryContext();
+            query_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+
+            CurrentThread::QueryScope query_scope{query_context};
             ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, true, connection_context, {});
+            executeQuery(read_buf, *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);

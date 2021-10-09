@@ -116,7 +116,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-フォルダ ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ そして、部品のディレクトリです。 各部に関する対応する分割データが含まれまで一定の月のテーブルこの例では、分割による。
+フォルダ ‘201901_1_1_0’, ‘201901_1_7_1’ そして、部品のディレクトリです。 各部に関する対応する分割データが含まれまで一定の月のテーブルこの例では、分割による。
 
 その `detached` ディレクトリに含まれる部品のこともあったかを使って、テーブル [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) クエリ。 破損した部分も、削除されるのではなく、このディレクトリに移動されます。 サーバーは、サーバーからの部品を使用しません。 `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) クエリ。
 
@@ -124,4 +124,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouseでは、パーティションの削除、テーブル間のコピー、またはバックアップの作成などの操作を実行できます。 セクションのすべての操作の一覧を参照してください [パーティションとパーツの操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

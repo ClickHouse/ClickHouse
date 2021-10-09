@@ -7,8 +7,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -67,10 +67,10 @@ void XMLRowOutputFormat::writePrefix()
         writeCString("\t\t\t<column>\n", *ostr);
 
         writeCString("\t\t\t\t<name>", *ostr);
-        writeXMLString(field.name, *ostr);
+        writeXMLStringForTextElement(field.name, *ostr);
         writeCString("</name>\n", *ostr);
         writeCString("\t\t\t\t<type>", *ostr);
-        writeXMLString(field.type->getName(), *ostr);
+        writeXMLStringForTextElement(field.type->getName(), *ostr);
         writeCString("</type>\n", *ostr);
 
         writeCString("\t\t\t</column>\n", *ostr);
@@ -82,12 +82,12 @@ void XMLRowOutputFormat::writePrefix()
 }
 
 
-void XMLRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void XMLRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeCString("\t\t\t<", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">", *ostr);
-    type.serializeAsTextXML(column, row_num, *ostr, format_settings);
+    serialization.serializeTextXML(column, row_num, *ostr, format_settings);
     writeCString("</", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">\n", *ostr);
@@ -132,7 +132,7 @@ void XMLRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
         writeCString("\t\t<", *ostr);
         writeString(field_tag_names[i], *ostr);
         writeCString(">", *ostr);
-        column.type->serializeAsTextXML(*columns[i], row_num, *ostr, format_settings);
+        column.type->getDefaultSerialization()->serializeTextXML(*columns[i], row_num, *ostr, format_settings);
         writeCString("</", *ostr);
         writeString(field_tag_names[i], *ostr);
         writeCString(">\n", *ostr);
@@ -181,7 +181,7 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
         writeCString("\t\t\t<", *ostr);
         writeString(field_tag_names[i], *ostr);
         writeCString(">", *ostr);
-        column.type->serializeAsTextXML(*columns[i], row_num, *ostr, format_settings);
+        column.type->getDefaultSerialization()->serializeTextXML(*columns[i], row_num, *ostr, format_settings);
         writeCString("</", *ostr);
         writeString(field_tag_names[i], *ostr);
         writeCString(">\n", *ostr);
@@ -245,10 +245,10 @@ void registerOutputFormatProcessorXML(FormatFactory & factory)
     factory.registerOutputFormatProcessor("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

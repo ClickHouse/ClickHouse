@@ -7,7 +7,7 @@ toc_title: "MySQL\u30A4\u30F3\u30BF"
 
 # MySQLインタ {#mysql-interface}
 
-ClickHouseはMySQL wire protocolをサポートしています。 で有効にすることができる [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) 設定ファイルでの設定:
+ClickHouseはMySQL wire protocolをサポートしています。 で有効にすることができる [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) 設定ファイルでの設定:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -46,4 +46,4 @@ mysql>
 
 -   一部のデータ型は文字列として送信されます
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->

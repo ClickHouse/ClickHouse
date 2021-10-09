@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -20,6 +20,8 @@ struct PartitionCommand
 {
     enum Type
     {
+        UNKNOWN,
+
         ATTACH_PARTITION,
         MOVE_PARTITION,
         DROP_PARTITION,
@@ -27,10 +29,12 @@ struct PartitionCommand
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
+        UNFREEZE_ALL_PARTITIONS,
+        UNFREEZE_PARTITION,
         REPLACE_PARTITION,
     };
 
-    Type type;
+    Type type = UNKNOWN;
 
     ASTPtr partition;
 
@@ -52,7 +56,7 @@ struct PartitionCommand
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_zookeeper_path;
 
-    /// For FREEZE PARTITION
+    /// For FREEZE PARTITION and UNFREEZE
     String with_name;
 
     enum MoveDestinationType
@@ -60,6 +64,7 @@ struct PartitionCommand
         DISK,
         VOLUME,
         TABLE,
+        SHARD,
     };
 
     std::optional<MoveDestinationType> move_destination_type;

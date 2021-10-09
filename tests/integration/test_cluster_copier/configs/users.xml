@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <log_queries>1</log_queries>
@@ -17,10 +17,18 @@
             <profile>default</profile>
             <quota>default</quota>
         </default>
+        <dbuser>
+            <password>12345678</password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </dbuser>
     </users>
 
     <quotas>
         <default>
         </default>
     </quotas>
-</yandex>
+</clickhouse>

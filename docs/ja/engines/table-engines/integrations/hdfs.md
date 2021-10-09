@@ -73,12 +73,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  HDFS上に次のUriを持つTSV形式のファイルがいくつかあるとします:
 
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 1.  あはいくつかの方法が考えられているテーブルの構成は、すべてのファイル:
 
@@ -120,4 +120,4 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 -   [仮想列](../index.md#table_engines-virtual_columns)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/hdfs/) <!--hide-->

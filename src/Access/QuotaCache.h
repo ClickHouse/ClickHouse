@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledQuota.h>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 #include <memory>
 #include <mutex>
 #include <map>
@@ -20,7 +20,14 @@ public:
     QuotaCache(const AccessControlManager & access_control_manager_);
     ~QuotaCache();
 
-    std::shared_ptr<const EnabledQuota> getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key);
+    std::shared_ptr<const EnabledQuota> getEnabledQuota(
+        const UUID & user_id,
+        const String & user_name,
+        const boost::container::flat_set<UUID> & enabled_roles,
+        const Poco::Net::IPAddress & address,
+        const String & forwarded_address,
+        const String & client_key);
+
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
 private:
@@ -53,7 +60,7 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
-    ext::scope_guard subscription;
+    scope_guard subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;
 };
 }

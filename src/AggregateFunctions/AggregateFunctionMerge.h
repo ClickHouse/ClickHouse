@@ -9,6 +9,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -27,15 +29,15 @@ private:
     AggregateFunctionPtr nested_func;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, nested_->getParameters())
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_)
         , nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
 
-        if (!data_type || data_type->getFunctionName() != nested_func->getName())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
     }
 
     String getName() const override
@@ -48,12 +50,17 @@ public:
         return nested_func->getReturnType();
     }
 
-    void create(AggregateDataPtr place) const override
+    DataTypePtr getStateType() const override
+    {
+        return nested_func->getStateType();
+    }
+
+    void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
     }
@@ -73,27 +80,27 @@ public:
         return nested_func->alignOfData();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         nested_func->merge(place, assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         nested_func->serialize(place, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
     }
@@ -102,6 +109,8 @@ public:
     {
         return nested_func->allocatesMemoryInArena();
     }
+
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }

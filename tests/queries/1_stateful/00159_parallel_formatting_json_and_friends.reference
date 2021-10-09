@@ -1,0 +1,12 @@
+JSONEachRow, false
+7251839681e559f5a92db107571bb357  -
+JSONEachRow, true
+7251839681e559f5a92db107571bb357  -
+JSONCompactEachRow, false
+ba1081a754a06ef6563840b2d8d4d327  -
+JSONCompactEachRow, true
+ba1081a754a06ef6563840b2d8d4d327  -
+JSONCompactStringsEachRowWithNamesAndTypes, false
+31ded3cd9971b124450fb5a44a8bce63  -
+JSONCompactStringsEachRowWithNamesAndTypes, true
+31ded3cd9971b124450fb5a44a8bce63  -

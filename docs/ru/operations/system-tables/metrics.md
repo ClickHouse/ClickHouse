@@ -8,7 +8,7 @@
 -   `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — значение метрики.
 -   `description` ([String](../../sql-reference/data-types/string.md)) — описание метрики.
 
-Список поддержанных метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
+Список поддерживаемых метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
 **Пример**
 
@@ -33,9 +33,8 @@ SELECT * FROM system.metrics LIMIT 10
 
 **Смотрите также**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+-   [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
--   [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+-   [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/metrics) <!--hide-->

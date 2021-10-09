@@ -2,8 +2,7 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
 
@@ -304,7 +303,7 @@ template <typename Traits_>
 void BaseSettings<Traits_>::resetToDefault()
 {
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i : ext::range(accessor.size()))
+    for (size_t i : collections::range(accessor.size()))
     {
         if (accessor.isValueChanged(*this, i))
             accessor.resetValueToDefault(*this, i);
@@ -390,13 +389,21 @@ String BaseSettings<Traits_>::valueToStringUtil(const std::string_view & name, c
 template <typename Traits_>
 Field BaseSettings<Traits_>::stringToValueUtil(const std::string_view & name, const String & str)
 {
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        return accessor.stringToValueUtil(index, str);
-    if constexpr (Traits::allow_custom_settings)
-        return Field::restoreFromDump(str);
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    try
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+            return accessor.stringToValueUtil(index, str);
+        if constexpr (Traits::allow_custom_settings)
+            return Field::restoreFromDump(str);
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
+        throw;
+    }
 }
 
 template <typename Traits_>
@@ -812,7 +819,7 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
             constexpr int IMPORTANT = 1; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
-            for (size_t i : ext::range(res.field_infos.size())) \
+            for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \

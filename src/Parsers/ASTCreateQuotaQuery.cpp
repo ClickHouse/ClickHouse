@@ -2,7 +2,8 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
-#include <ext/range.h>
+#include <base/range.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -92,7 +93,7 @@ namespace
         else
         {
             bool limit_found = false;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
                     limit_found = true;
@@ -101,7 +102,7 @@ namespace
             {
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
                 bool need_comma = false;
-                for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+                for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
                 {
                     if (limits.max[resource_type])
                     {
@@ -184,10 +185,10 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 }
 
 
-void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
+void ASTCreateQuotaQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
     if (roles)
-        roles->replaceCurrentUserTagWithName(current_user_name);
+        roles->replaceCurrentUserTag(current_user_name);
 }
 
 }

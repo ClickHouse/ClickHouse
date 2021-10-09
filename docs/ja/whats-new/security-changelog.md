@@ -53,7 +53,7 @@ unixODBC許容荷重任意の共有オブジェクトからのファイルシス
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-“remote” テーブル関数で任意のシンボルを許可 “user”, “password” と “default\_database” 分野を横断プロトコルの要求偽造攻撃であった。
+“remote” テーブル関数で任意のシンボルを許可 “user”, “password” と “default_database” 分野を横断プロトコルの要求偽造攻撃であった。
 
 クレジット：Yandexの情報セキュリティチームのアンドレイKrasichkov
 
@@ -73,4 +73,4 @@ Debパッケージ内の不適切な構成は、データベースの不正使�
 
 クレジット：英国の国立サイバーセキュリティセンター（NCSC)
 
-{## [元の記事](https://clickhouse.tech/docs/en/security_changelog/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/security_changelog/) ##}

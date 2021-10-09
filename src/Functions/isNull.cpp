@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,7 +18,7 @@ class FunctionIsNull : public IFunction
 public:
     static constexpr auto name = "isNull";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIsNull>();
     }
@@ -31,6 +31,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -38,19 +39,19 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & elem = arguments[0];
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Merely return the embedded null map.
-            block.getByPosition(result).column = nullable->getNullMapColumnPtr();
+            return nullable->getNullMapColumnPtr();
         }
         else
         {
             /// Since no element is nullable, return a zero-constant column representing
             /// a zero-filled null map.
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
         }
     }
 };
@@ -59,7 +60,7 @@ public:
 
 void registerFunctionIsNull(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIsNull>();
+    factory.registerFunction<FunctionIsNull>(FunctionFactory::CaseInsensitive);
 }
 
 }

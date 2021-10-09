@@ -53,12 +53,12 @@ Constructions with `{}` are similar to the [remote table function](../../sql-ref
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 2.  Query the amount of rows in these files:
 
@@ -97,6 +97,5 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 **See Also**
 
--   [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/hdfs/) <!--hide-->

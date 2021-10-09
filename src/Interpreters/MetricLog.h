@@ -18,14 +18,15 @@ namespace DB
 struct MetricLogElement
 {
     time_t event_time{};
-    UInt64 event_time_microseconds{};
+    Decimal64 event_time_microseconds{};
     UInt64 milliseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;
     std::vector<CurrentMetrics::Metric> current_metrics;
 
     static std::string name() { return "MetricLog"; }
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 

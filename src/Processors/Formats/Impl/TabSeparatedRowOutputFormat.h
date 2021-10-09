@@ -23,12 +23,12 @@ public:
         const Block & header_,
         bool with_names_,
         bool with_types_,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeBeforeTotals() override;

@@ -24,7 +24,7 @@ HTTPまたはHTTPSを使用します。 これは必要ありません
 それぞれ。 処理のため `POST` 要求は、リモートサーバーが
 [チャンク転送エンコード](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-HTTP GETリダイレクトホップの最大数を制限するには [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) 設定。
+HTTP GETリダイレクトホップの最大数を制限するには [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) 設定。
 
 **例:**
 
@@ -79,4 +79,4 @@ SELECT * FROM url_engine_table
     -   インデックス。
     -   複製。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

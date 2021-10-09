@@ -11,3 +11,6 @@ def argparser(parser):
         type=str, dest="clickhouse_binary_path",
         help="path to ClickHouse binary, default: /usr/bin/clickhouse", metavar="path",
         default=os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse"))
+
+    parser.add_argument("--stress", action="store_true", default=False,
+        help="enable stress testing (might take a long time)")

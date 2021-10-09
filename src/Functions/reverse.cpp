@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <ext/map.h>
+#include <base/map.h>
 
 
 namespace DB
@@ -57,7 +57,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -72,10 +72,12 @@ public:
         return 1;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -89,59 +91,59 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const ColumnPtr column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
-            block.getByPosition(result).column = std::move(col_res);
+            return col_res;
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
             ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
-            block.getByPosition(result).column = std::move(col_res);
+            return col_res;
         }
         else
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver : public IFunctionOverloadResolverImpl
+class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ReverseOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(const Context & context_) : context(context_) {}
+    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayReverse", context)).buildImpl(arguments);
+            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
         else
-            return std::make_unique<DefaultFunction>(
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionReverse::create(context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.at(0);
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

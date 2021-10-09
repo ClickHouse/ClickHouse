@@ -16,12 +16,12 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
--   [テーブルを\<table\_function()\>として作成](../statements/create.md#create-table-query) クエリ。
+-   [テーブルを\<table_function()\>として作成](../statements/create.md#create-table-query) クエリ。
 
         It's one of the methods of creating a table.
 
 !!! warning "警告"
-    テーブル関数を使用することはできません。 [allow\_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) 設定は無効です。
+    テーブル関数を使用することはできません。 [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) 設定は無効です。
 
 | 関数                  | 説明                                                                                                                                   |
 |-----------------------|----------------------------------------------------------------------------------------------------------------------------------------|
@@ -35,4 +35,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 | [odbc](odbc.md)       | を作成します。 [ODBC](../../engines/table-engines/integrations/odbc.md)-エンジンテーブル。                                             |
 | [hdfs](hdfs.md)       | を作成します。 [HDFS](../../engines/table-engines/integrations/hdfs.md)-エンジンテーブル。                                             |
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/) <!--hide-->

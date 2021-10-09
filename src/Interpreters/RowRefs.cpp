@@ -1,7 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/typeid_cast.h>
 #include <Common/ColumnsHashing.h>
 #include <Columns/IColumn.h>
@@ -39,6 +39,7 @@ void callWithType(TypeIndex which, F && f)
         case TypeIndex::Decimal32: return f(Decimal32());
         case TypeIndex::Decimal64: return f(Decimal64());
         case TypeIndex::Decimal128: return f(Decimal128());
+        case TypeIndex::DateTime64: return f(DateTime64());
         default:
             break;
     }
@@ -68,7 +69,7 @@ void AsofRowRefs::insert(TypeIndex type, const IColumn & asof_column, const Bloc
         using T = std::decay_t<decltype(t)>;
         using LookupPtr = typename Entry<T>::LookupPtr;
 
-        using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+        using ColumnType = ColumnVectorOrDecimal<T>;
         const auto & column = typeid_cast<const ColumnType &>(asof_column);
 
         T key = column.getElement(row_num);
@@ -92,7 +93,7 @@ const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality
         using EntryType = Entry<T>;
         using LookupPtr = typename EntryType::LookupPtr;
 
-        using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+        using ColumnType = ColumnVectorOrDecimal<T>;
         const auto & column = typeid_cast<const ColumnType &>(asof_column);
         T key = column.getElement(row_num);
         auto & typed_lookup = std::get<LookupPtr>(lookups);
@@ -152,6 +153,9 @@ std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, s
             return idx;
         case TypeIndex::Decimal128:
             size = sizeof(Decimal128);
+            return idx;
+        case TypeIndex::DateTime64:
+            size = sizeof(DateTime64);
             return idx;
         default:
             break;

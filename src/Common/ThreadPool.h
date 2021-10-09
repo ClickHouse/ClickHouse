@@ -8,10 +8,13 @@
 #include <queue>
 #include <list>
 #include <optional>
+#include <atomic>
+
+#include <boost/heap/priority_queue.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-
+#include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -67,9 +70,14 @@ public:
     /// Returns number of running and scheduled jobs.
     size_t active() const;
 
+    /// Returns true if the pool already terminated
+    /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
+    bool finished() const;
+
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -98,10 +106,9 @@ private:
         }
     };
 
-    std::priority_queue<JobWithPriority> jobs;
+    boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
-
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -151,31 +158,34 @@ public:
 class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() {}
+    ThreadFromGlobalPool() = default;
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
+        , thread_id(std::make_shared<std::thread::id>())
     {
         /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
+            thread_id = thread_id,
             state = state,
             func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            try
-            {
-                /// Thread status holds raw pointer on query context, thus it always must be destroyed
-                /// before sending signal that permits to join this thread.
-                DB::ThreadStatus thread_status;
-                std::apply(func, args);
-            }
-            catch (...)
-            {
-                state->set();
-                throw;
-            }
-            state->set();
+            auto event = std::move(state);
+            SCOPE_EXIT(event->set());
+
+            thread_id = std::make_shared<std::thread::id>(std::this_thread::get_id());
+
+            /// This moves are needed to destroy function and arguments before exit.
+            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
+            auto function = std::move(func);
+            auto arguments = std::move(args);
+
+            /// Thread status holds raw pointer on query context, thus it always must be destroyed
+            /// before sending signal that permits to join this thread.
+            DB::ThreadStatus thread_status;
+            std::apply(function, arguments);
         });
     }
 
@@ -187,21 +197,22 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            std::terminate();
+            abort();
         state = std::move(rhs.state);
+        thread_id = std::move(rhs.thread_id);
         return *this;
     }
 
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-            std::terminate();
+            abort();
     }
 
     void join()
     {
         if (!joinable())
-            std::terminate();
+            abort();
 
         state->wait();
         state.reset();
@@ -210,18 +221,24 @@ public:
     void detach()
     {
         if (!joinable())
-            std::terminate();
+            abort();
         state.reset();
     }
 
     bool joinable() const
     {
-        return state != nullptr;
+        if (!state)
+            return false;
+        /// Thread cannot join itself.
+        if (*thread_id == std::this_thread::get_id())
+            return false;
+        return true;
     }
 
 private:
     /// The state used in this object and inside the thread job.
     std::shared_ptr<Poco::Event> state;
+    std::shared_ptr<std::thread::id> thread_id;
 };
 
 

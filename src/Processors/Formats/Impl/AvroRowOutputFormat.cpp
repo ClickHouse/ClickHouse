@@ -41,6 +41,7 @@
 #include <avro/ValidSchema.hh>
 #include <avro/Writer.hh>
 
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -48,7 +49,31 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
+
+class AvroSerializerTraits
+{
+public:
+    explicit AvroSerializerTraits(const FormatSettings & settings_)
+        : string_to_string_regexp(settings_.avro.string_column_pattern)
+    {
+        if (!string_to_string_regexp.ok())
+            throw DB::Exception(
+                "Avro: cannot compile re2: " + settings_.avro.string_column_pattern + ", error: " + string_to_string_regexp.error()
+                    + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    }
+
+    bool isStringAsString(const String & column_name)
+    {
+        return RE2::PartialMatch(column_name, string_to_string_regexp);
+    }
+
+private:
+    const RE2 string_to_string_regexp;
+};
+
 
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
@@ -75,7 +100,7 @@ private:
 };
 
 
-AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment)
+AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment, const String & column_name)
 {
     ++type_name_increment;
 
@@ -161,11 +186,20 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             }};
         }
         case TypeIndex::String:
-            return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-            {
-                const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
-            }};
+            if (traits->isStringAsString(column_name))
+                return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                    {
+                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        encoder.encodeString(s.toString());
+                    }
+                };
+            else
+                return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                    {
+                        const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
+                    }
+                };
         case TypeIndex::FixedString:
         {
             auto size = data_type->getSizeOfValueInMemory();
@@ -223,7 +257,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment);
+            auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name);
             auto schema = avro::ArraySchema(nested_mapping.schema);
             return {schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
@@ -249,7 +283,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Nullable:
         {
             auto nested_type = removeNullable(data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment);
+            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
             if (nested_type->getTypeId() == TypeIndex::Nothing)
             {
                 return nested_mapping;
@@ -278,7 +312,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::LowCardinality:
         {
             const auto & nested_type = removeLowCardinality(data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment);
+            auto nested_mapping = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
             return {nested_mapping.schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & col = assert_cast<const ColumnLowCardinality &>(column);
@@ -294,7 +328,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 }
 
 
-AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
+AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_)
+    : traits(std::move(traits_))
 {
     avro::RecordSchema record_schema("row");
 
@@ -303,7 +338,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
     {
         try
         {
-            auto field_mapping = createSchemaWithSerializeFn(column.type, type_name_increment);
+            auto field_mapping = createSchemaWithSerializeFn(column.type, type_name_increment, column.name);
             serialize_fns.push_back(field_mapping.serialize);
             //TODO: verify name starts with A-Za-z_
             record_schema.addField(column.name, field_mapping.schema);
@@ -314,7 +349,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
             throw;
         }
     }
-    schema.setSchema(record_schema);
+    valid_schema.setSchema(record_schema);
 }
 
 void AvroSerializer::serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder)
@@ -347,10 +382,10 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, callback)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_, params_)
     , settings(settings_)
-    , serializer(header_.getColumnsWithTypeAndName())
+    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
     , file_writer(
         std::make_unique<OutputStreamWriteBufferAdapter>(out_),
         serializer.getSchema(),
@@ -383,10 +418,10 @@ void registerOutputFormatProcessorAvro(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

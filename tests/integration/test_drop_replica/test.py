@@ -49,7 +49,6 @@ def fill_nodes(nodes, shard):
 
 
 cluster = ClickHouseCluster(__file__)
-
 node_1_1 = cluster.add_instance('node_1_1', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 node_1_2 = cluster.add_instance('node_1_2', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 node_1_3 = cluster.add_instance('node_1_3', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
@@ -65,19 +64,18 @@ def start_cluster():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
 
 
 def test_drop_replica(start_cluster):
-    for i in range(100):
-        node_1_1.query("INSERT INTO test.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test1.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test2.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test3.test_table VALUES (1, {})".format(i))
-        node_1_1.query("INSERT INTO test4.test_table VALUES (1, {})".format(i))
+    node_1_1.query("INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test1.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test2.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test3.test_table SELECT number, toString(number) FROM numbers(100)")
+    node_1_1.query("INSERT INTO test4.test_table SELECT number, toString(number) FROM numbers(100)")
 
     zk = cluster.get_kazoo_client('zoo1')
     assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1'")
@@ -103,53 +101,52 @@ def test_drop_replica(start_cluster):
     assert "does not look like a table path" in \
            node_1_3.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test'")
 
-    with PartitionManager() as pm:
-        ## make node_1_1 dead
-        pm.drop_instance_zk_connections(node_1_1)
-        time.sleep(10)
+    node_1_1.query("DETACH DATABASE test")
+    for i in range(1, 5):
+        node_1_1.query("DETACH DATABASE test{}".format(i))
 
-        assert "doesn't exist" in node_1_3.query_and_get_error(
-            "SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
+    assert "doesn't exist" in node_1_3.query_and_get_error(
+        "SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
 
-        assert "doesn't exist" in node_1_3.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
+    assert "doesn't exist" in node_1_3.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
 
-        node_1_3.query("SYSTEM DROP REPLICA 'node_1_1'")
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                               replica='node_1_1'))
-        assert (exists_replica_1_1 != None)
+    node_1_3.query("SYSTEM DROP REPLICA 'node_1_1'")
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                           replica='node_1_1'))
+    assert (exists_replica_1_1 != None)
 
-        ## If you want to drop a inactive/stale replicate table that does not have a local replica, you can following syntax(ZKPATH):
-        node_1_3.query(
-            "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test2/{shard}/replicated/test_table'".format(
-                shard=1))
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test2/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                               replica='node_1_1'))
-        assert (exists_replica_1_1 == None)
+    ## If you want to drop a inactive/stale replicate table that does not have a local replica, you can following syntax(ZKPATH):
+    node_1_3.query(
+        "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test2/{shard}/replicated/test_table'".format(
+            shard=1))
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test2/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                           replica='node_1_1'))
+    assert (exists_replica_1_1 == None)
 
-        node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                              replica='node_1_1'))
-        assert (exists_replica_1_1 == None)
+    node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                          replica='node_1_1'))
+    assert (exists_replica_1_1 == None)
 
-        node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test1/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                               replica='node_1_1'))
-        assert (exists_replica_1_1 == None)
+    node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test1")
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test1/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                           replica='node_1_1'))
+    assert (exists_replica_1_1 == None)
 
-        node_1_3.query(
-            "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test3/{shard}/replicated/test_table'".format(
-                shard=1))
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                               replica='node_1_1'))
-        assert (exists_replica_1_1 == None)
+    node_1_3.query(
+        "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test3/{shard}/replicated/test_table'".format(
+            shard=1))
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                           replica='node_1_1'))
+    assert (exists_replica_1_1 == None)
 
-        node_1_2.query("SYSTEM DROP REPLICA 'node_1_1'")
-        exists_replica_1_1 = zk.exists(
-            "/clickhouse/tables/test4/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
-                                                                                               replica='node_1_1'))
-        assert (exists_replica_1_1 == None)
+    node_1_2.query("SYSTEM DROP REPLICA 'node_1_1'")
+    exists_replica_1_1 = zk.exists(
+        "/clickhouse/tables/test4/{shard}/replicated/test_table/replicas/{replica}".format(shard=1,
+                                                                                           replica='node_1_1'))
+    assert (exists_replica_1_1 == None)

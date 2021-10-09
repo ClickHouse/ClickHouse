@@ -8,47 +8,32 @@
 namespace DB
 {
 
-using Scalars = std::map<String, Block>;
-
 namespace ClusterProxy
 {
 
 class SelectStreamFactory final : public IStreamFactory
 {
 public:
-    /// Database in a query.
     SelectStreamFactory(
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
-        StorageID main_table_,
-        const Scalars & scalars_,
-        bool has_virtual_shard_num_column_,
-        const Tables & external_tables);
-
-    /// TableFunction in a query.
-    SelectStreamFactory(
-        const Block & header_,
-        QueryProcessingStage::Enum processed_stage_,
-        ASTPtr table_func_ptr_,
-        const Scalars & scalars_,
-        bool has_virtual_shard_num_column_,
-        const Tables & external_tables_);
+        bool has_virtual_shard_num_column_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
-        const String & query, const ASTPtr & query_ast,
-        const Context & context, const ThrottlerPtr & throttler,
-        const SelectQueryInfo & query_info,
-        Pipes & pipes) override;
+        const ASTPtr & query_ast,
+        const StorageID & main_table,
+        const ASTPtr & table_func_ptr,
+        ContextPtr context,
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards,
+        UInt32 shard_count) override;
 
 private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
-    StorageID main_table = StorageID::createEmpty();
-    ASTPtr table_func_ptr;
-    Scalars scalars;
+
     bool has_virtual_shard_num_column = false;
-    Tables external_tables;
 };
 
 }

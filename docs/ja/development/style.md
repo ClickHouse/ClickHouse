@@ -356,7 +356,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.** の名前 `define`sおよびグローバル定数を使用ALL\_CAPSをアンダースコア(\_).
+**9.** の名前 `define`sおよびグローバル定数を使用ALL_CAPSをアンダースコア(_).
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** の定数に対して `enum`、大文字でキャメルケースを使用します。 ALL\_CAPSも許容されます。 もし `enum` は非ローカルである。 `enum class`.
+**14.** の定数に対して `enum`、大文字でキャメルケースを使用します。 ALL_CAPSも許容されます。 もし `enum` は非ローカルである。 `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -579,7 +579,7 @@ Forkは並列化には使用されません。
 
 **14.** 戻り値。
 
-ほとんどの場合、 `return`. 書かない `[return std::move(res)]{.strike}`.
+ほとんどの場合、 `return`. 書かない `return std::move(res)`.
 
 関数がオブジェクトをヒープに割り当てて返す場合は、次のようにします `shared_ptr` または `unique_ptr`.
 
@@ -673,7 +673,7 @@ Loader() {}
 **24.** 使用しない `trailing return type` 必要がない限り機能のため。
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** 変数の宣言と初期化。
@@ -709,7 +709,7 @@ auto s = std::string{"Hello"};
 
 **4.**OS：LinuxのUbuntuの、正確よりも古いではありません。
 
-**5.**コードはx86\_64CPUアーキテクチャ用に書かれている。
+**5.**コードはx86_64CPUアーキテクチャ用に書かれている。
 
 CPU命令セットは、サーバー間でサポートされる最小のセットです。 現在、SSE4.2です。
 
@@ -749,19 +749,11 @@ CPU命令セットは、サーバー間でサポートされる最小のセッ�
 
 ## 図書館 {#libraries}
 
-**1.** C++20標準ライブラリが使用されています（実験的な拡張が許可されています）。 `boost` と `Poco` フレームワーク
+**1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** 必要に応じて、OSパッケージで利用可能な既知のライブラリを使用できます。
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse.
 
-すでに利用可能な良い解決策がある場合は、別のライブラリをインストールする必要がある場合でも、それを使用してください。
-
-(が準備をしておいてくださ去の悪い図書館からのコードです。)
-
-**3.** パッケージに必要なものがない場合や、古いバージョンや間違った種類のコンパイルがある場合は、パッケージにないライブラリをインストールできます。
-
-**4.** ライブラリが小さく、独自の複雑なビルドシステムがない場合は、ソースファイルを `contrib` フォルダ。
-
-**5.** すでに使用されているライブラリが優先されます。
+**3.** Preference is always given to libraries that are already in use.
 
 ## 一般的な推奨事項 {#general-recommendations-1}
 
@@ -838,4 +830,4 @@ function(
       size_t limit)
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/development/style/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/development/style/) <!--hide-->

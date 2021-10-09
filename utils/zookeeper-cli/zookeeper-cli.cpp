@@ -3,8 +3,8 @@
 #include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/LineReader.h>
-#include <common/logger_useful.h>
+#include <base/LineReader.h>
+#include <base/logger_useful.h>
 
 #include <iostream>
 #include <sstream>
@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
 
             try
             {
-                std::stringstream ss(line);
+                std::stringstream ss(line);     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 
                 std::string cmd;
                 ss >> cmd;

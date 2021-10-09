@@ -75,7 +75,7 @@ def test_replication_after_partition(both_https_cluster):
     closing_pool = Pool(1)
     inserting_pool = Pool(5)
     cres = closing_pool.map_async(close, [random.randint(1, 3) for _ in range(10)])
-    ires = inserting_pool.map_async(insert_data_and_check, range(100))
+    ires = inserting_pool.map_async(insert_data_and_check, list(range(100)))
 
     cres.wait()
     ires.wait()
@@ -84,10 +84,8 @@ def test_replication_after_partition(both_https_cluster):
     assert_eq_with_retry(node2, "SELECT count() FROM test_table", '100')
 
 
-node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'],
-                             with_zookeeper=True)
-node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'],
-                             with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -117,8 +115,10 @@ def test_both_http(both_http_cluster):
 
 node5 = cluster.add_instance('node5',
                              main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
-                                           "configs/server.key", "configs/dhparam.pem"], with_zookeeper=True)
-node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'],
+                                           "configs/server.key", "configs/dhparam.pem"],
+                             with_zookeeper=True)
+node6 = cluster.add_instance('node6',
+                             main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'],
                              with_zookeeper=True)
 
 

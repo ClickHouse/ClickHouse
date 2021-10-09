@@ -2,31 +2,34 @@
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 namespace DB
 {
 
-class IMergedBlockOutputStream : public IBlockOutputStream
+class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_);
 
+    virtual ~IMergedBlockOutputStream() = default;
+
     using WrittenOffsetColumns = std::set<std::string>;
 
-    const MergeTreeIndexGranularity & getIndexGranularity()
+    virtual void write(const Block & block) = 0;
+
+    const MergeTreeIndexGranularity & getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
 protected:
-    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    // using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
+    // ISerialization::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
@@ -35,16 +38,15 @@ protected:
         NamesAndTypesList & columns,
         MergeTreeData::DataPart::Checksums & checksums);
 
-protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
     VolumePtr volume;
     String part_path;
 
-    static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
-
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };
+
+using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;
 
 }

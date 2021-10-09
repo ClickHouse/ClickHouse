@@ -9,10 +9,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
+#include <Functions/hyperscanRegexpChecker.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <optional>
 
@@ -27,26 +28,33 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, size_t LimitArgs>
+template <typename Impl, size_t LimitArgs>
 class FunctionsMultiStringFuzzySearch : public IFunction
 {
     static_assert(LimitArgs > 0);
 
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(ContextPtr context)
     {
-        if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
+        if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
             throw Exception(
                 "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
-        return std::make_shared<FunctionsMultiStringFuzzySearch>();
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(
+            context->getSettingsRef().max_hyperscan_regexp_length, context->getSettingsRef().max_hyperscan_regexp_total_length);
+    }
+
+    FunctionsMultiStringFuzzySearch(size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
+        : max_hyperscan_regexp_length(max_hyperscan_regexp_length_), max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
+    {
     }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -66,15 +74,15 @@ public:
         return Impl::getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_haystack = arguments[0].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        const ColumnPtr & num_ptr = block.getByPosition(arguments[1]).column;
+        const ColumnPtr & num_ptr = arguments[1].column;
         const ColumnConst * col_const_num = nullptr;
         UInt32 edit_distance = 0;
 
@@ -86,17 +94,17 @@ public:
             edit_distance = col_const_num->getValue<UInt32>();
         else
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                "Illegal column " + arguments[1].column->getName()
                     + ". The number is not const or does not fit in UInt32",
                 ErrorCodes::ILLEGAL_COLUMN);
 
 
-        const ColumnPtr & arr_ptr = block.getByPosition(arguments[2]).column;
+        const ColumnPtr & arr_ptr = arguments[2].column;
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[2]).column->getName() + ". The array is not const",
+                "Illegal column " + arguments[2].column->getName() + ". The array is not const",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
@@ -113,6 +121,9 @@ public:
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 
+        if (Impl::is_using_hyperscan)
+            checkRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -124,13 +135,17 @@ public:
             Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance);
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         if constexpr (Impl::is_column_array)
-            block.getByPosition(result).column = ColumnArray::create(std::move(col_res), std::move(col_offsets));
+            return ColumnArray::create(std::move(col_res), std::move(col_offsets));
         else
-            block.getByPosition(result).column = std::move(col_res);
+            return col_res;
     }
+
+private:
+    size_t max_hyperscan_regexp_length;
+    size_t max_hyperscan_regexp_total_length;
 };
 
 }

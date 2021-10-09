@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -22,7 +22,7 @@ class FunctionArrayEnumerate : public IFunction
 public:
     static constexpr auto name = "arrayEnumerate";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionArrayEnumerate>();
     }
@@ -34,6 +34,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -45,9 +46,9 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
         {
             const ColumnArray::Offsets & offsets = array->getOffsets();
 
@@ -63,11 +64,11 @@ public:
                 prev_off = off;
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
+            return ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }

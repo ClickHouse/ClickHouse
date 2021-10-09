@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <!-- How many simualteneous workers are posssible -->
     <max_workers>1</max_workers>
 
@@ -28,7 +28,7 @@
 
             <!-- Engine of destination tables -->
             <engine>ENGINE=
-                ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/test_block_size', '{replica}')
+                ReplicatedMergeTree
                 ORDER BY d PARTITION BY partition
             </engine>
 
@@ -99,4 +99,4 @@
     </shard_0_0>
     </remote_servers>
 
-</yandex>
+</clickhouse>

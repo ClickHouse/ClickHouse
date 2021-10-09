@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -29,6 +29,9 @@ namespace DB
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
   * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
+  * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
+  * countSubstringsCaseInsensitive(haystack, needle)
+  *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
   * - the zero subpattern (the match part, otherwise);
@@ -43,16 +46,18 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Impl, typename Name>
+template <typename Impl>
 class FunctionsStringSearch : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearch>(); }
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return Impl::supports_start_pos; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
@@ -75,7 +80,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception("Number of arguments for function " + String(Name::name) + " doesn't match: passed "
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be 2 or 3.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -97,16 +102,16 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & column_needle = arguments[1].column;
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)
-            column_start_pos = block.getByPosition(arguments[2]).column;
+            column_start_pos = arguments[2].column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -127,12 +132,9 @@ public:
                     vec_res);
 
                 if (is_col_start_pos_const)
-                    block.getByPosition(result).column
-                        = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
+                    return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
                 else
-                    block.getByPosition(result).column = std::move(col_res);
-
-                return;
+                    return col_res;
             }
         }
 
@@ -175,11 +177,11 @@ public:
                 vec_res);
         else
             throw Exception(
-                "Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
-                    + block.getByPosition(arguments[1]).column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + arguments[0].column->getName() + " and "
+                    + arguments[1].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = std::move(col_res);
+        return col_res;
     }
 };
 

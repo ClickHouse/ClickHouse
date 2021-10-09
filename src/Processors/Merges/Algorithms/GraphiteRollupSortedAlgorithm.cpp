@@ -1,7 +1,9 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <base/DateLUTImpl.h>
+#include <base/DateLUT.h>
+#include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -15,6 +17,8 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     def.time_column_num = header.getPositionByName(params.time_column_name);
     def.value_column_num = header.getPositionByName(params.value_column_name);
     def.version_column_num = header.getPositionByName(params.version_column_name);
+
+    def.time_column_type = header.getByPosition(def.time_column_num).type;
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
@@ -122,8 +126,8 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   * In this case, the date should not change. The date is calculated using the local time zone.
   *
   * If the rounding value is less than an hour,
-  *  then, assuming that time zones that differ from UTC by a non-integer number of hours are not supported,
-  *  just simply round the unix timestamp down to a multiple of 3600.
+  *  then, assuming that time zones that differ from UTC by a multiple of 15-minute intervals
+  *  (that is true for all modern timezones but not true for historical timezones).
   * And if the rounding value is greater,
   *  then we will round down the number of seconds from the beginning of the day in the local time zone.
   *
@@ -131,7 +135,7 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   */
 static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UInt32 precision)
 {
-    if (precision <= 3600)
+    if (precision <= 900)
     {
         return time / precision * precision;
     }
@@ -145,7 +149,10 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 {
-    const DateLUTImpl & date_lut = DateLUT::instance();
+    /// Timestamp column can be DateTime or UInt32. If it is DateTime, we can use its timezone for calculations.
+    const TimezoneMixin * timezone = dynamic_cast<const TimezoneMixin *>(columns_definition.time_column_type.get());
+
+    const DateLUTImpl & date_lut = timezone ? timezone->getTimeZone() : DateLUT::instance();
 
     /// Take rows in needed order and put them into `merged_data` until we get `max_block_size` rows.
     ///
@@ -164,12 +171,12 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->pos);
+        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
 
-        time_t next_row_time = current->all_columns[columns_definition.time_column_num]->getUInt(current->pos);
+        time_t next_row_time = current->all_columns[columns_definition.time_column_num]->getUInt(current->getRow());
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 
@@ -227,7 +234,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
         /// and for rows with same maximum version - only last row.
         if (is_new_key
             || current->all_columns[columns_definition.version_column_num]->compareAt(
-                current->pos, current_subgroup_newest_row.row_num,
+                current->getRow(), current_subgroup_newest_row.row_num,
                 *(*current_subgroup_newest_row.all_columns)[columns_definition.version_column_num],
                 /* nan_direction_hint = */ 1) >= 0)
         {
@@ -263,7 +270,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
 void GraphiteRollupSortedAlgorithm::startNextGroup(SortCursor & cursor, Graphite::RollupRule next_rule)
 {
-    merged_data.startNextGroup(cursor->all_columns, cursor->pos, next_rule, columns_definition);
+    merged_data.startNextGroup(cursor->all_columns, cursor->getRow(), next_rule, columns_definition);
 }
 
 void GraphiteRollupSortedAlgorithm::finishCurrentGroup()

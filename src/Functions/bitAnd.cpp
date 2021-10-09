@@ -17,11 +17,12 @@ struct BitAndImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static constexpr const bool allow_fixed_string = true;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return bigint_cast<Result>(a) & bigint_cast<Result>(b);
+        return static_cast<Result>(a) & static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -37,7 +38,7 @@ struct BitAndImpl
 };
 
 struct NameBitAnd { static constexpr auto name = "bitAnd"; };
-using FunctionBitAnd = BinaryArithmeticOverloadResolver<BitAndImpl, NameBitAnd, true>;
+using FunctionBitAnd = BinaryArithmeticOverloadResolver<BitAndImpl, NameBitAnd, true, false>;
 
 }
 

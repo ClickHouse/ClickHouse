@@ -12,7 +12,7 @@
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
@@ -58,21 +58,24 @@ namespace Regexps
       * You must hold the ownership while using the object.
       * In destructor, it returns the object back to the Pool for further reuse.
       */
-    template <bool like, bool no_capture>
-    inline Pool::Pointer get(const std::string & pattern, int flags = 0)
+    template <bool like, bool no_capture, bool case_insensitive = false>
+    inline Pool::Pointer get(const std::string & pattern)
     {
-        /// C++11 has thread-safe function-local statics on most modern compilers.
+        /// C++11 has thread-safe function-local static on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
-        return known_regexps.get(pattern, [flags, &pattern]
+        return known_regexps.get(pattern, [&pattern]
         {
-            int flags_final = flags | OptimizedRegularExpression::RE_DOT_NL;
+            int flags = OptimizedRegularExpression::RE_DOT_NL;
 
             if (no_capture)
-                flags_final |= OptimizedRegularExpression::RE_NO_CAPTURE;
+                flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+
+            if (case_insensitive)
+                flags |= Regexps::Regexp::RE_CASELESS;
 
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
-            return new Regexp{createRegexp<like>(pattern, flags_final)};
+            return new Regexp{createRegexp<like>(pattern, flags)};
         });
     }
 }
@@ -110,12 +113,34 @@ namespace MultiRegexps
         ScratchPtr scratch;
     };
 
+    class RegexpsConstructor
+    {
+    public:
+        RegexpsConstructor() = default;
+
+        void setConstructor(std::function<Regexps()> constructor_) { constructor = std::move(constructor_); }
+
+        Regexps * operator()()
+        {
+            std::unique_lock lock(mutex);
+            if (regexp)
+                return &*regexp;
+            regexp = constructor();
+            return &*regexp;
+        }
+
+    private:
+        std::function<Regexps()> constructor;
+        std::optional<Regexps> regexp;
+        std::mutex mutex;
+    };
+
     struct Pool
     {
         /// Mutex for finding in map.
         std::mutex mutex;
         /// Patterns + possible edit_distance to database and scratch.
-        std::map<std::pair<std::vector<String>, std::optional<UInt32>>, Regexps> storage;
+        std::map<std::pair<std::vector<String>, std::optional<UInt32>>, RegexpsConstructor> storage;
     };
 
     template <bool save_indices, bool CompileForEditDistance>
@@ -164,7 +189,6 @@ namespace MultiRegexps
         }
         hs_database_t * db = nullptr;
         hs_compile_error_t * compile_error;
-
 
         std::unique_ptr<unsigned int[]> ids;
 
@@ -233,7 +257,7 @@ namespace MultiRegexps
     template <bool save_indices, bool CompileForEditDistance>
     inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
     {
-        /// C++11 has thread-safe function-local statics on most modern compilers.
+        /// C++11 has thread-safe function-local static on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
         std::vector<String> str_patterns;
@@ -248,15 +272,19 @@ namespace MultiRegexps
 
         /// If not found, compile and let other threads wait.
         if (known_regexps.storage.end() == it)
+        {
             it = known_regexps.storage
-                     .emplace(
-                         std::pair{str_patterns, edit_distance},
-                         constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance))
+                     .emplace(std::piecewise_construct, std::make_tuple(std::move(str_patterns), edit_distance), std::make_tuple())
                      .first;
-        /// If found, unlock and return the database.
-        lock.unlock();
+            it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
+            {
+                return constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance);
+            });
+        }
 
-        return &it->second;
+        /// Unlock before possible construction.
+        lock.unlock();
+        return it->second();
     }
 }
 

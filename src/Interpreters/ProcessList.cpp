@@ -5,12 +5,14 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/queryNormalization.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
 
 
@@ -59,18 +61,12 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::ProcessList(size_t max_size_)
-    : max_size(max_size_)
-{
-}
-
-
-ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, Context & query_context)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextPtr query_context)
 {
     EntryPtr res;
 
-    const ClientInfo & client_info = query_context.getClientInfo();
-    const Settings & settings = query_context.getSettingsRef();
+    const ClientInfo & client_info = query_context->getClientInfo();
+    const Settings & settings = query_context->getSettingsRef();
 
     if (client_info.current_query_id.empty())
         throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
@@ -87,6 +83,34 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+
+        {
+            /**
+             * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
+             * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
+             * hard limit is reached it is impossible to connect to the server to run queries for investigation.
+             *
+             * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
+             * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
+             * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
+             * the default profile (or 0 for unlimited).
+             *
+             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+             * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
+             * exporters).
+             *
+             * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
+             * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
+             * once is already processing 50+ concurrent queries (including analysts or any other users).
+             */
+
+            if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
+                && processes.size() >= settings.max_concurrent_queries_for_all_users)
+                throw Exception(
+                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
+                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
+                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
         /** Why we use current user?
@@ -151,11 +175,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_, client_info, priorities.insert(settings.priority));
+            query_context, query_, client_info, priorities.insert(settings.priority));
 
         res = std::make_shared<Entry>(*this, process_it);
-
-        process_it->query_context = &query_context;
 
         ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
         user_process_list.queries.emplace(client_info.current_query_id, &res->get());
@@ -173,14 +195,14 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             thread_group->query = process_it->query;
+            thread_group->normalized_query_hash = normalizedQueryHash<false>(process_it->query);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
 
-            if (query_context.hasTraceCollector())
+            if (query_context->hasTraceCollector())
             {
                 /// Set up memory profiling
-                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
@@ -215,9 +237,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
-    /// Destroy all streams to avoid long lock of ProcessList
-    it->releaseQueryStreams();
-
     std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
@@ -266,84 +285,46 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    const String & query_,
-    const ClientInfo & client_info_,
-    QueryPriorities::Handle && priority_handle_)
-    :
-    query(query_),
-    client_info(client_info_),
-    priority_handle(std::move(priority_handle_)),
-    num_queries_increment{CurrentMetrics::Query}
+    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_)
+    : WithContext(context_)
+    , query(query_)
+    , client_info(client_info_)
+    , priority_handle(std::move(priority_handle_))
+    , num_queries_increment{CurrentMetrics::Query}
 {
 }
 
-QueryStatus::~QueryStatus() = default;
-
-void QueryStatus::setQueryStreams(const BlockIO & io)
+QueryStatus::~QueryStatus()
 {
-    std::lock_guard lock(query_streams_mutex);
-
-    query_stream_in = io.in;
-    query_stream_out = io.out;
-    query_streams_status = QueryStreamsStatus::Initialized;
+    assert(executors.empty());
 }
 
-void QueryStatus::releaseQueryStreams()
+CancellationCode QueryStatus::cancelQuery(bool)
 {
-    BlockInputStreamPtr in;
-    BlockOutputStreamPtr out;
-
-    {
-        std::lock_guard lock(query_streams_mutex);
-
-        query_streams_status = QueryStreamsStatus::Released;
-        in = std::move(query_stream_in);
-        out = std::move(query_stream_out);
-    }
-
-    /// Destroy streams outside the mutex lock
-}
-
-bool QueryStatus::streamsAreReleased()
-{
-    std::lock_guard lock(query_streams_mutex);
-
-    return query_streams_status == QueryStreamsStatus::Released;
-}
-
-bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
-{
-    std::lock_guard lock(query_streams_mutex);
-
-    if (query_streams_status != QueryStreamsStatus::Initialized)
-        return false;
-
-    in = query_stream_in;
-    out = query_stream_out;
-    return true;
-}
-
-CancellationCode QueryStatus::cancelQuery(bool kill)
-{
-    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
-    if (streamsAreReleased())
+    if (is_killed.load())
         return CancellationCode::CancelSent;
 
-    BlockInputStreamPtr input_stream;
-    BlockOutputStreamPtr output_stream;
-
-    if (tryGetQueryStreams(input_stream, output_stream))
-    {
-        if (input_stream)
-        {
-            input_stream->cancel(kill);
-            return CancellationCode::CancelSent;
-        }
-        return CancellationCode::CancelCannotBeSent;
-    }
-    /// Query is not even started
     is_killed.store(true);
+
+    std::lock_guard lock(executors_mutex);
+    for (auto * e : executors)
+        e->cancel();
+
     return CancellationCode::CancelSent;
+}
+
+void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+{
+    std::lock_guard lock(executors_mutex);
+    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
+    executors.push_back(e);
+}
+
+void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+{
+    std::lock_guard lock(executors_mutex);
+    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
+    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
 }
 
 
@@ -401,7 +382,7 @@ void ProcessList::killAllQueries()
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    QueryStatusInfo res;
+    QueryStatusInfo res{};
 
     res.query             = query;
     res.client_info       = client_info;
@@ -430,8 +411,11 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && query_context)
-        res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
+    if (get_settings && getContext())
+    {
+        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
+        res.current_database = getContext()->getCurrentDatabase();
+    }
 
     return res;
 }

@@ -2,30 +2,25 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-
+#include <Parsers/ASTExplainQuery.h>
 
 namespace DB
 {
 
-class Context;
-
 /// Returns single row with explain results
-class InterpreterExplainQuery : public IInterpreter
+class InterpreterExplainQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterExplainQuery(const ASTPtr & query_, const Context & context_)
-        : query(query_), context(context_)
-    {}
+    InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_) : WithContext(context_), query(query_) { }
 
     BlockIO execute() override;
 
-    static Block getSampleBlock();
+    static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
 
 private:
     ASTPtr query;
-    const Context & context;
 
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
 };
 
 

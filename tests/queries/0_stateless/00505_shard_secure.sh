@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Tags: shard, no-unbundled, no-parallel, no-fasttest
 
 # set -x
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM remoteSecure('127.0.0.{1,2}', system.one);"

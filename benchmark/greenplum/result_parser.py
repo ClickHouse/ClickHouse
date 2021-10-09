@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import print_function
+
 import sys
 import json
 
@@ -99,7 +99,7 @@ def gen_html_json(options, arguments):
     tuples = read_stats_file(options, arguments[1])
     print('{')
     print('"system:       GreenPlum(x2),')
-    print('"version":      "%s",' % '4.3.9.1')
+    print(('"version":      "%s",' % '4.3.9.1'))
     print('"data_size":    10000000,')
     print('"time":         "",')
     print('"comments":     "",')

@@ -6,6 +6,8 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <base/defines.h>
+
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
 #endif
@@ -57,8 +59,27 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column (" + toString(s) + ")",
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    return ColumnConst::create(data, countBytesInFilter(filt));
+    size_t new_size = countBytesInFilter(filt);
+    return ColumnConst::create(data, new_size);
 }
+
+void ColumnConst::expand(const Filter & mask, bool inverted)
+{
+    if (mask.size() < s)
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    size_t bytes_count = countBytesInFilter(mask);
+    if (inverted)
+        bytes_count = mask.size() - bytes_count;
+
+    if (bytes_count < s)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+    else if (bytes_count > s)
+        throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+    s = mask.size();
+}
+
 
 ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
@@ -72,15 +93,7 @@ ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 
 ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
 {
-    if (limit == 0)
-        limit = s;
-    else
-        limit = std::min(s, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation (" + toString(perm.size()) + ") is less than required (" + toString(limit) + ")",
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
+    limit = getLimitForPermutation(size(), perm.size(), limit);
     return ColumnConst::create(data, limit);
 }
 
@@ -134,6 +147,14 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 
     for (auto & value : hash.getData())
         value = intHashCRC32(data_hash, value);
+}
+
+void ColumnConst::compareColumn(
+    const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
+    const
+{
+    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
 }

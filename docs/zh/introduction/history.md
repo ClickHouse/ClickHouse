@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: ClickHouse历史
+---
+
 # ClickHouse历史 {#clickhouseli-shi}
 
 ClickHouse最初是为 [YandexMetrica](https://metrica.yandex.com/) [世界第二大Web分析平台](http://w3techs.com/technologies/overview/traffic_analysis/all) 而开发的。多年来一直作为该系统的核心组件被该系统持续使用着。目前为止，该系统在ClickHouse中有超过13万亿条记录，并且每天超过200多亿个事件被处理。它允许直接从原始数据中动态查询并生成报告。本文简要介绍了ClickHouse在其早期发展阶段的目标。
@@ -46,4 +51,4 @@ OLAPServer可以很好的工作在非聚合数据上，但是它有诸多限制�
 
 为了消除OLAPServer的这些局限性，解决所有报表使用非聚合数据的问题，我们开发了ClickHouse数据库管理系统。
 
-[来源文章](https://clickhouse.tech/docs/en/introduction/ya_metrika_task/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/introduction/ya_metrika_task/) <!--hide-->

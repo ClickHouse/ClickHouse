@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <atomic>
 
 
@@ -8,9 +8,7 @@
   */
 struct SimpleIncrement
 {
-    std::atomic<UInt64> value;
-
-    SimpleIncrement(UInt64 start = 0) : value(start) {}
+    std::atomic<UInt64> value{0};
 
     void set(UInt64 new_value)
     {

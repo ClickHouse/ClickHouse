@@ -5,6 +5,9 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Common/IntervalKind.h>
 
 namespace DB
 {
@@ -73,6 +76,40 @@ private:
     char result_separator;
 };
 
+class ParserUnionList : public IParserBase
+{
+public:
+    template <typename ElemFunc, typename SepFunc>
+    static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
+    {
+        Pos begin = pos;
+        if (!parse_element())
+        {
+            pos = begin;
+            return false;
+        }
+
+        while (true)
+        {
+            begin = pos;
+            if (!parse_separator() || !parse_element())
+            {
+                pos = begin;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    auto getUnionModes() const { return union_modes; }
+
+protected:
+    const char * getName() const override { return "list of union elements"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    ASTSelectWithUnionQuery::UnionModes union_modes;
+};
 
 /** An expression with an infix binary left-associative operator.
   * For example, a + b - c + d.
@@ -81,14 +118,24 @@ class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
     Operators_t operators;
+    Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
+    /// =, !=, <, > ALL (subquery) / ANY (subquery)
+    bool allow_any_all_operators = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
       */
     ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_)
         : operators(operators_), first_elem_parser(std::move(first_elem_parser_))
+    {
+    }
+
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
+            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool allow_any_all_operators_ = false)
+        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
+          first_elem_parser(std::move(first_elem_parser_)), allow_any_all_operators(allow_any_all_operators_)
     {
     }
 
@@ -151,6 +198,20 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// CAST operator "::". This parser is used if left argument
+/// of operator cannot be read as simple literal from text of query.
+/// Example: "[1, 1 + 1, 1 + 2]::Array(UInt8)"
+class ParserCastExpression : public IParserBase
+{
+private:
+    ParserExpressionElement elem_parser;
+
+protected:
+    const char * getName() const override { return "CAST expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserArrayElementExpression : public IParserBase
 {
@@ -176,14 +237,14 @@ protected:
 };
 
 
-class ParserUnaryMinusExpression : public IParserBase
+class ParserUnaryExpression : public IParserBase
 {
 private:
     static const char * operators[];
     ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
 
 protected:
-    const char * getName() const override { return "unary minus expression"; }
+    const char * getName() const override { return "unary expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -193,7 +254,7 @@ class ParserMultiplicativeExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryMinusExpression>()};
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryExpression>()};
 
 protected:
     const char * getName() const  override { return "multiplicative expression"; }
@@ -232,6 +293,9 @@ protected:
 
     const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    static bool parseArgumentAndIntervalKind(Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected);
 };
 
 class ParserAdditiveExpression : public IParserBase
@@ -280,7 +344,9 @@ class ParserComparisonExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserBetweenExpression>()};
+    static const char * overlapping_operators_to_skip[];
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators,
+        overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>(), true};
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }
@@ -290,7 +356,6 @@ protected:
         return operator_parser.parse(pos, node, expected);
     }
 };
-
 
 /** Parser for nullity checking with IS (NOT) NULL.
   */
@@ -378,13 +443,26 @@ protected:
 };
 
 
+// It's used to parse expressions in table function.
+class ParserTableFunctionExpression : public IParserBase
+{
+private:
+    ParserLambdaExpression elem_parser;
+
+protected:
+    const char * getName() const override { return "table function expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 using ParserExpression = ParserLambdaExpression;
 
 
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword);
+    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function = false);
 protected:
     ParserPtr impl;
 
@@ -401,11 +479,12 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 public:
-    ParserExpressionList(bool allow_alias_without_as_keyword_)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    explicit ParserExpressionList(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
+    bool is_table_function; // This expression list is used by a table function
 
     const char * getName() const override { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -415,7 +494,7 @@ protected:
 class ParserNotEmptyExpressionList : public IParserBase
 {
 public:
-    ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
+    explicit ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
         : nested_parser(allow_alias_without_as_keyword) {}
 private:
     ParserExpressionList nested_parser;

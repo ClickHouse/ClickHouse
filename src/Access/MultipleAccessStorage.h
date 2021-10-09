@@ -18,6 +18,7 @@ public:
     using ConstStoragePtr = std::shared_ptr<const Storage>;
 
     MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    ~MultipleAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -43,10 +44,12 @@ protected:
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
+    UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
+    UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     using Storages = std::vector<StoragePtr>;
@@ -56,7 +59,7 @@ private:
     std::shared_ptr<const Storages> nested_storages;
     mutable LRUCache<UUID, Storage> ids_cache;
     mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
-    mutable std::unordered_map<StoragePtr, ext::scope_guard> subscriptions_to_nested_storages[static_cast<size_t>(EntityType::MAX)];
+    mutable std::unordered_map<StoragePtr, scope_guard> subscriptions_to_nested_storages[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };
 

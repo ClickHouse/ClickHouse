@@ -7,9 +7,9 @@ toc_title: DateTime64
 
 # Datetime64 {#data_type-datetime64}
 
-允许存储时间instant间，可以表示为日历日期和一天中的时间，具有定义的亚秒精度
+此类型允许以日期（date）加时间（time）的形式来存储一个时刻的时间值，具有定义的亚秒精度
 
-刻度尺寸（精度）：10<sup>-精度</sup> 秒
+时间刻度大小（精度）：10<sup>-精度</sup> 秒
 
 语法:
 
@@ -17,11 +17,11 @@ toc_title: DateTime64
 DateTime64(precision, [timezone])
 ```
 
-在内部，存储数据作为一些 ‘ticks’ 自纪元开始(1970-01-01 00:00:00UTC)作为Int64. 刻度分辨率由precision参数确定。 此外，该 `DateTime64` 类型可以存储时区是相同的整个列，影响如何的值 `DateTime64` 类型值以文本格式显示，以及如何解析指定为字符串的值 (‘2020-01-01 05:00:01.000’). 时区不存储在表的行中（或resultset中），而是存储在列元数据中。 查看详细信息 [日期时间](datetime.md).
+在内部，此类型以Int64类型将数据存储为自Linux纪元开始(1970-01-01 00:00:00UTC)的时间刻度数（ticks）。时间刻度的分辨率由precision参数确定。此外，`DateTime64` 类型可以像存储其他数据列一样存储时区信息，时区会影响 `DateTime64` 类型的值如何以文本格式显示，以及如何解析以字符串形式指定的时间数据 (‘2020-01-01 05:00:01.000’)。时区不存储在表的行中（也不在resultset中），而是存储在列的元数据中。详细信息请参考 [DateTime](datetime.md) 数据类型.
 
-## 例 {#examples}
+## 示例 {#examples}
 
-**1.** 创建一个表 `DateTime64`-输入列并将数据插入其中:
+**1.** 创建一个具有 `DateTime64` 类型列的表，并向其中插入数据:
 
 ``` sql
 CREATE TABLE dt
@@ -47,10 +47,10 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   将日期时间作为整数插入时，将其视为适当缩放的Unix时间戳(UTC)。 `1546300800000` （精度为3）表示 `'2019-01-01 00:00:00'` UTC. 然而，作为 `timestamp` 列有 `Europe/Moscow` （UTC+3）指定的时区，当输出为字符串时，该值将显示为 `'2019-01-01 03:00:00'`
--   当插入字符串值作为日期时间时，它被视为处于列时区。 `'2019-01-01 00:00:00'` 将被视为 `Europe/Moscow` 时区并存储为 `1546290000000`.
+-   将日期时间作为integer类型插入时，它会被视为适当缩放的Unix时间戳(UTC)。`1546300800000` （精度为3）表示 `'2019-01-01 00:00:00'` UTC. 不过，因为 `timestamp` 列指定了 `Europe/Moscow` （UTC+3）的时区，当作为字符串输出时，它将显示为 `'2019-01-01 03:00:00'`
+-   当把字符串作为日期时间插入时，它会被赋予时区信息。 `'2019-01-01 00:00:00'` 将被认为处于 `Europe/Moscow` 时区并被存储为 `1546290000000`.
 
-**2.** 过滤 `DateTime64` 值
+**2.** 过滤 `DateTime64` 类型的值
 
 ``` sql
 SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
@@ -62,9 +62,9 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 └─────────────────────────┴──────────┘
 ```
 
-不像 `DateTime`, `DateTime64` 值不转换为 `String` 自动
+与 `DateTime` 不同, `DateTime64` 类型的值不会自动从 `String` 类型的值转换过来
 
-**3.** 获取一个时区 `DateTime64`-类型值:
+**3.** 获取 `DateTime64` 类型值的时区信息:
 
 ``` sql
 SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -97,8 +97,9 @@ FROM dt
 -   [类型转换函数](../../sql-reference/functions/type-conversion-functions.md)
 -   [用于处理日期和时间的函数](../../sql-reference/functions/date-time-functions.md)
 -   [用于处理数组的函数](../../sql-reference/functions/array-functions.md)
--   [该 `date_time_input_format` 设置](../../operations/settings/settings.md#settings-date_time_input_format)
--   [该 `timezone` 服务器配置参数](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [使用日期和时间的操作员](../../sql-reference/operators/index.md#operators-datetime)
+-   [`date_time_input_format` 配置](../../operations/settings/settings.md#settings-date_time_input_format)
+-   [`date_time_output_format` 配置](../../operations/settings/settings.md#settings-date_time_output_format)
+-   [`timezone` 服务器配置参数](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+-   [用于处理日期和时间的算子](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` 数据类型](date.md)
 -   [`DateTime` 数据类型](datetime.md)

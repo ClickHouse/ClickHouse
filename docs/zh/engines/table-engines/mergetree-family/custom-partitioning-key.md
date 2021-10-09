@@ -109,7 +109,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-‘201901\_1\_1\_0’，‘201901\_1\_7\_1’ 等文件夹是数据片段的目录。每个片段都与一个对应的分区相关，并且只包含这个月的数据（本例中的表按月分区）。
+‘201901_1_1_0’，‘201901_1_7_1’ 等文件夹是数据片段的目录。每个片段都与一个对应的分区相关，并且只包含这个月的数据（本例中的表按月分区）。
 
 `detached` 目录存放着使用 [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) 语句从表中卸载的片段。损坏的片段不会被删除而是也会移到该目录下。服务器不会去使用`detached`目录中的数据片段。因此你可以随时添加，删除或修改此目录中的数据 – 在运行 [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) 语句前，服务器不会感知到。
 
@@ -117,4 +117,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse 支持对分区执行这些操作：删除分区，将分区从一个表复制到另一个表，或创建备份。了解分区的所有操作，请参阅 [分区和片段的操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions) 一节。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

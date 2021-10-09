@@ -11,9 +11,10 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
+#include <memory>
 
-#include <ext/bit_cast.h>
-#include <common/extended_types.h>
+#include <base/bit_cast.h>
+#include <base/extended_types.h>
 #include <Core/Defines.h>
 
 
@@ -34,16 +35,16 @@
 
 /** Used as a template parameter. See below.
   */
-struct RadixSortMallocAllocator
+struct RadixSortAllocator
 {
     void * allocate(size_t size)
     {
-        return malloc(size);
+        return ::operator new(size);
     }
 
-    void deallocate(void * ptr, size_t /*size*/)
+    void deallocate(void * ptr, size_t size)
     {
-        return free(ptr);
+        ::operator delete(ptr, size);
     }
 };
 
@@ -99,7 +100,7 @@ struct RadixSortFloatTraits
     /// An object with the functions allocate and deallocate.
     /// Can be used, for example, to allocate memory for a temporary array on the stack.
     /// To do this, the allocator itself is created on the stack.
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
@@ -138,7 +139,7 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -172,7 +173,7 @@ struct RadixSortIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -186,7 +187,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integer_v<T>,
+    is_integer<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 
@@ -210,8 +211,8 @@ private:
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
 
 
-    static KeyBits keyToBits(Key x) { return ext::bit_cast<KeyBits>(x); }
-    static Key bitsToKey(KeyBits x) { return ext::bit_cast<Key>(x); }
+    static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
+    static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {

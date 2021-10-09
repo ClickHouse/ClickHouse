@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,7 +13,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard.h>
+#include <base/scope_guard_safe.h>
 
 
 namespace DB
@@ -35,24 +35,27 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges : public IFunction
+class FunctionArrayReduceInRanges : public IFunction, private WithContext
 {
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReduceInRanges>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduceInRanges>(context_); }
+    explicit FunctionArrayReduceInRanges(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// lazy initialization in getReturnTypeImpl
@@ -113,7 +116,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
@@ -123,9 +126,10 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
 }
 
 
-void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionArrayReduceInRanges::executeImpl(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    IAggregateFunction & agg_func = *aggregate_function;
+    const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
@@ -133,7 +137,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
 
     /// Handling ranges
 
-    const IColumn * ranges_col_array = block.getByPosition(arguments[1]).column.get();
+    const IColumn * ranges_col_array = arguments[1].column.get();
     const IColumn * ranges_col_tuple = nullptr;
     const ColumnArray::Offsets * ranges_offsets = nullptr;
     if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(ranges_col_array))
@@ -164,7 +168,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = block.getByPosition(arguments[i + 2]).column.get();
+        const IColumn * col = arguments[i + 2].column.get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -192,7 +196,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
 
     /// Handling results
 
-    MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
+    MutableColumnPtr result_holder = result_type->createColumn();
     ColumnArray * result_arr = static_cast<ColumnArray *>(result_holder.get());
     IColumn & result_data = result_arr->getData();
 
@@ -203,7 +207,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     /// Perform the aggregation
 
@@ -252,14 +256,14 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
             }
         }
 
-        SCOPE_EXIT({
+        SCOPE_EXIT_MEMORY_SAFE({
             for (size_t j = 0; j < place_total; ++j)
                 agg_func.destroy(places[j]);
         });
 
-        auto * true_func = &agg_func;
+        const auto * true_func = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto * func = typeid_cast<AggregateFunctionState *>(true_func))
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(true_func))
             true_func = func->getNestedFunction().get();
 
         /// Pre-aggregate to the initial level
@@ -331,7 +335,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
             AggregateDataPtr place = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
             agg_func.create(place);
 
-            SCOPE_EXIT({
+            SCOPE_EXIT_MEMORY_SAFE({
                 agg_func.destroy(place);
             });
 
@@ -383,7 +387,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
         }
     }
 
-    block.getByPosition(result).column = std::move(result_holder);
+    return result_holder;
 }
 
 

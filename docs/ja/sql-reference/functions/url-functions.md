@@ -125,11 +125,11 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### パスフル {#pathfull}
 
-上記と同じですが、クエリ文字列とフラグメントを含みます。 例:/top/news.html?ページ=2\#コメント
+上記と同じですが、クエリ文字列とフラグメントを含みます。 例:/top/news.html?ページ=2#コメント
 
 ### クエリ文字列 {#querystring}
 
-クエリ文字列を返します。 例:ページ=1&lr=213. query-stringには、最初の疑問符だけでなく、\#と\#の後のすべても含まれていません。
+クエリ文字列を返します。 例:ページ=1&lr=213. query-stringには、最初の疑問符だけでなく、#と#の後のすべても含まれていません。
 
 ### 断片 {#fragment}
 
@@ -137,7 +137,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### queryStringAndFragment {#querystringandfragment}
 
-クエリ文字列とフラグメント識別子を返します。 例:ページ=1\#29390.
+クエリ文字列とフラグメント識別子を返します。 例:ページ=1#29390.
 
 ### extractURLParameter(URL,名前) {#extracturlparameterurl-name}
 
@@ -206,4 +206,4 @@ URLに類似のものがない場合、URLは変更されません。
 
 を削除します。 ‘name’ URLパラメータが存在する場合。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/url_functions/) <!--hide-->

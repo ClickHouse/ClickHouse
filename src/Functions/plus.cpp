@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -10,6 +10,7 @@ struct PlusImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
     static const constexpr bool is_commutative = true;
 
     template <typename Result = ResultType>
@@ -21,7 +22,7 @@ struct PlusImpl
             using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
             using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
-            return bigint_cast<Result>(bigint_cast<CastA>(a)) + bigint_cast<Result>(bigint_cast<CastB>(b));
+            return static_cast<Result>(static_cast<CastA>(a)) + static_cast<Result>(static_cast<CastB>(b));
         }
         else
             return static_cast<Result>(a) + b;

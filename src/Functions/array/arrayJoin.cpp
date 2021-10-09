@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
@@ -20,7 +20,7 @@ class FunctionArrayJoin : public IFunction
 {
 public:
     static constexpr auto name = "arrayJoin";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionArrayJoin>();
     }
@@ -45,6 +45,8 @@ public:
         return false;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -54,7 +56,7 @@ public:
         return arr->getNestedType();
     }
 
-    void executeImpl(Block &, const ColumnNumbers &, size_t, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
     }

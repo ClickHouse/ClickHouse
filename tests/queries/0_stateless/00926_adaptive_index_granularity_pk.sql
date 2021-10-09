@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET send_logs_level = 'fatal';
 SELECT '----00489----';
 DROP TABLE IF EXISTS pk;
@@ -21,11 +23,11 @@ SELECT toUInt32(x), y, z FROM pk WHERE x = toDateTime(1);
 
 -- Index works on interval 00:01:00 - 00:01:59
 SET max_rows_to_read = 4;
-SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(60) AND toDateTime(119) AND y = 11;
+SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(119)) AND y = 11;
 
 -- Cannot read less rows as PK is coarser on interval 00:01:00 - 00:02:00
 SET max_rows_to_read = 5;
-SELECT toUInt32(x), y, z FROM pk WHERE x BETWEEN toDateTime(60) AND toDateTime(120) AND y = 11;
+SELECT toUInt32(x), y, z FROM pk WHERE (x BETWEEN toDateTime(60) AND toDateTime(120)) AND y = 11;
 
 DROP TABLE pk;
 

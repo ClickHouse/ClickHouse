@@ -7,7 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -336,7 +336,7 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
         "Wide\t2\n")
 
     assert node1.contains_in_log(
-        "<Warning> default.non_adaptive_table: Table can't create parts with adaptive granularity")
+        "<Warning> default.non_adaptive_table ([0-9a-f-]*): Table can't create parts with adaptive granularity")
 
 
 def test_in_memory(start_cluster):
@@ -376,69 +376,6 @@ def test_in_memory(start_cluster):
         "Wide\t1\n")
 
 
-def test_in_memory_wal(start_cluster):
-    # Merges are disabled in config
-
-    for i in range(5):
-        insert_random_data('wal_table', node11, 50)
-    node12.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
-
-    def check(node, rows, parts):
-        node.query("SELECT count() FROM wal_table") == "{}\n".format(rows)
-        node.query(
-            "SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == "{}\n".format(
-            parts)
-
-    check(node11, 250, 5)
-    check(node12, 250, 5)
-
-    # WAL works at inserts
-    node11.restart_clickhouse(kill=True)
-    check(node11, 250, 5)
-
-    # WAL works at fetches
-    node12.restart_clickhouse(kill=True)
-    check(node12, 250, 5)
-
-    insert_random_data('wal_table', node11, 50)
-    node12.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
-
-    # Disable replication
-    with PartitionManager() as pm:
-        pm.partition_instances(node11, node12)
-        check(node11, 300, 6)
-
-        wal_file = os.path.join(node11.path, "database/data/default/wal_table/wal.bin")
-        # Corrupt wal file
-        open(wal_file, 'rw+').truncate(os.path.getsize(wal_file) - 10)
-        node11.restart_clickhouse(kill=True)
-
-        # Broken part is lost, but other restored successfully
-        check(node11, 250, 5)
-        # WAL with blocks from 0 to 4
-        broken_wal_file = os.path.join(node11.path, "database/data/default/wal_table/wal_0_4.bin")
-        assert os.path.exists(broken_wal_file)
-
-    # Fetch lost part from replica
-    node11.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
-    check(node11, 300, 6)
-
-    # Check that new data is written to new wal, but old is still exists for restoring
-    assert os.path.getsize(wal_file) > 0
-    assert os.path.exists(broken_wal_file)
-
-    # Data is lost without WAL
-    node11.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
-    with PartitionManager() as pm:
-        pm.partition_instances(node11, node12)
-
-        insert_random_data('wal_table', node11, 50)
-        check(node11, 350, 7)
-
-        node11.restart_clickhouse(kill=True)
-        check(node11, 300, 6)
-
-
 def test_in_memory_wal_rotate(start_cluster):
     # Write every part to single wal
     node11.query("ALTER TABLE restore_table MODIFY SETTING write_ahead_log_max_bytes = 10")
@@ -446,8 +383,8 @@ def test_in_memory_wal_rotate(start_cluster):
         insert_random_data('restore_table', node11, 50)
 
     for i in range(5):
-        wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal_{0}_{0}.bin".format(i))
-        assert os.path.exists(wal_file)
+        # Check file exists
+        node11.exec_in_container(['bash', '-c', 'test -f /var/lib/clickhouse/data/default/restore_table/wal_{0}_{0}.bin'.format(i)])
 
     for node in [node11, node12]:
         node.query(
@@ -459,19 +396,21 @@ def test_in_memory_wal_rotate(start_cluster):
     node11.restart_clickhouse(kill=True)
 
     for i in range(5):
-        wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal_{0}_{0}.bin".format(i))
-        assert not os.path.exists(wal_file)
+        # check file doesn't exist
+        node11.exec_in_container(['bash', '-c', 'test ! -e /var/lib/clickhouse/data/default/restore_table/wal_{0}_{0}.bin'.format(i)])
 
     # New wal file was created and ready to write part to it
-    wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal.bin")
-    assert os.path.exists(wal_file)
-    assert os.path.getsize(wal_file) == 0
+    # Check file exists
+    node11.exec_in_container(['bash', '-c', 'test -f /var/lib/clickhouse/data/default/restore_table/wal.bin'])
+    # Chech file empty
+    node11.exec_in_container(['bash', '-c', 'test ! -s /var/lib/clickhouse/data/default/restore_table/wal.bin'])
 
 
 def test_in_memory_deduplication(start_cluster):
     for i in range(3):
-        node9.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
-        node10.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+        # table can be in readonly node
+        exec_query_with_retry(node9, "INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+        exec_query_with_retry(node10, "INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
 
     node9.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
     node10.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
@@ -492,10 +431,10 @@ def test_in_memory_alters(start_cluster):
     node9.restart_clickhouse(kill=True)
 
     expected = "1\tab\t0\n2\tcd\t0\n"
-    assert node9.query("SELECT id, s, col1 FROM alters_table") == expected
+    assert node9.query("SELECT id, s, col1 FROM alters_table ORDER BY id") == expected
     check_parts_type(1)
-
-    node9.query("INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
+    # After hard restart table can be in readonly mode
+    exec_query_with_retry(node9, "INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
     node9.query("ALTER TABLE alters_table MODIFY COLUMN col1 String")
     node9.query("ALTER TABLE alters_table DROP COLUMN s")
     node9.restart_clickhouse(kill=True)
@@ -504,24 +443,27 @@ def test_in_memory_alters(start_cluster):
     with pytest.raises(Exception):
         node9.query("SELECT id, s, col1 FROM alters_table")
 
-    expected = expected = "1\t0_foo\n2\t0_foo\n3\t100_foo\n"
-    assert node9.query("SELECT id, col1 || '_foo' FROM alters_table")
+    # Values of col1 was not materialized as integers, so they have
+    # default string values after alter
+    expected = "1\t_foo\n2\t_foo\n3\t100_foo\n"
+    assert node9.query("SELECT id, col1 || '_foo' FROM alters_table ORDER BY id") == expected
 
 
 def test_polymorphic_parts_index(start_cluster):
+    node1.query('CREATE DATABASE test_index ENGINE=Ordinary')   # Different paths with Atomic
     node1.query('''
-        CREATE TABLE index_compact(a UInt32, s String)
+        CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
         SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100''')
 
-    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(100)")
-    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(30)")
-    node1.query("OPTIMIZE TABLE index_compact FINAL")
+    node1.query("INSERT INTO test_index.index_compact SELECT number, toString(number) FROM numbers(100)")
+    node1.query("INSERT INTO test_index.index_compact SELECT number, toString(number) FROM numbers(30)")
+    node1.query("OPTIMIZE TABLE test_index.index_compact FINAL")
 
     assert node1.query("SELECT part_type FROM system.parts WHERE table = 'index_compact' AND active") == "Compact\n"
     assert node1.query("SELECT marks FROM system.parts WHERE table = 'index_compact' AND active") == "2\n"
 
-    index_path = os.path.join(node1.path, "database/data/default/index_compact/all_1_2_1/primary.idx")
+    index_path = os.path.join(node1.path, "database/data/test_index/index_compact/all_1_2_1/primary.idx")
     f = open(index_path, 'rb')
 
     assert os.path.getsize(index_path) == 8

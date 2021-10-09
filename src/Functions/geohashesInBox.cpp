@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GeoHash.h>
@@ -29,7 +29,7 @@ class FunctionGeohashesInBox : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashesInBox>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -60,6 +60,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
     void execute(
@@ -159,19 +161,21 @@ public:
         result = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
-        const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
-        const IColumn * lon_max = block.getByPosition(arguments[2]).column.get();
-        const IColumn * lat_max = block.getByPosition(arguments[3]).column.get();
-        const IColumn * precision = block.getByPosition(arguments[4]).column.get();
-        ColumnPtr & res = block.getByPosition(result).column;
+        const IColumn * lon_min = arguments[0].column.get();
+        const IColumn * lat_min = arguments[1].column.get();
+        const IColumn * lon_max = arguments[2].column.get();
+        const IColumn * lat_max = arguments[3].column.get();
+        const IColumn * precision = arguments[4].column.get();
+        ColumnPtr res;
 
         if (checkColumn<ColumnVector<Float32>>(lon_min))
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
+
+        return res;
     }
 };
 

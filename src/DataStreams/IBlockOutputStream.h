@@ -21,7 +21,7 @@ struct Progress;
 class IBlockOutputStream : private boost::noncopyable
 {
 public:
-    IBlockOutputStream() {}
+    IBlockOutputStream() = default;
 
     /** Get data structure of the stream in a form of "header" block (it is also called "sample block").
       * Header block contains column names, data types, columns of size 0. Constant columns must have corresponding values.
@@ -57,7 +57,7 @@ public:
       */
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
-    virtual ~IBlockOutputStream() {}
+    virtual ~IBlockOutputStream() = default;
 
     /** Don't let to alter table while instance of stream is alive.
       */

@@ -1,9 +1,18 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#if defined(__linux__)
+    #include <sys/prctl.h>
+#endif
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -12,19 +21,15 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <sys/resource.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/TaskManager.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
@@ -33,12 +38,12 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/argsToConfig.h>
-#include <common/getThreadId.h>
-#include <common/coverage.h>
-#include <common/sleep.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/argsToConfig.h>
+#include <base/getThreadId.h>
+#include <base/coverage.h>
+#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -53,6 +58,10 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/getExecutablePath.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Elf.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -64,6 +73,7 @@
 #endif
 #include <ucontext.h>
 
+namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -75,16 +85,6 @@ static void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
     raise(sig);
-}
-
-const char * msan_strsignal(int sig)
-{
-    // Apparently strsignal is not instrumented by MemorySanitizer, so we
-    // have to unpoison it to avoid msan reports inside fmt library when we
-    // print it.
-    const char * signal_name = strsignal(sig);
-    __msan_unpoison_string(signal_name);
-    return signal_name;
 }
 
 static constexpr size_t max_query_id_size = 127;
@@ -116,11 +116,13 @@ static void writeSignalIDtoSignalPipe(int sig)
 /** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
 static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
@@ -129,6 +131,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
@@ -153,7 +156,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(10);
+        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
         call_default_signal_handler(sig);
     }
 
@@ -231,10 +234,10 @@ public:
             }
             else
             {
-                siginfo_t info;
-                ucontext_t context;
+                siginfo_t info{};
+                ucontext_t context{};
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num;
+                UInt32 thread_num{};
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 
@@ -260,10 +263,25 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(const std::string & message, UInt32 thread_num) const
+    void onTerminate(std::string_view message, UInt32 thread_num) const
     {
+        size_t pos = message.find('\n');
+
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
+
+        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
+        while (pos != std::string_view::npos)
+        {
+            ++pos;
+            size_t next_pos = message.find('\n', pos);
+            size_t size = next_pos;
+            if (next_pos != std::string_view::npos)
+                size = next_pos - pos;
+
+            LOG_FATAL(log, "{}", message.substr(pos, size));
+            pos = next_pos;
+        }
     }
 
     void onFault(
@@ -291,13 +309,13 @@ private:
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, msan_strsignal(sig), sig);
+                thread_num, strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, msan_strsignal(sig), sig);
+                thread_num, query_id, strsignal(sig), sig);
         }
 
         String error_message;
@@ -312,7 +330,8 @@ private:
         if (stack_trace.getSize())
         {
             /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
 
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
@@ -324,6 +343,32 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+#if defined(OS_LINUX)
+        /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+        if (daemon.stored_binary_hash.empty())
+        {
+            LOG_FATAL(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+        }
+        else
+        {
+            LOG_FATAL(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                " to the reference checksum stored in the binary ({1})."
+                " It may indicate one of the following:"
+                " - the file was changed just after startup;"
+                " - the file is damaged on disk due to faulty hardware;"
+                " - the loaded executable is damaged in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - logical error in code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
+        }
+#endif
 
         /// Write crash to system.crash_log table if available.
         if (collectCrashLog)
@@ -390,7 +435,9 @@ static void sanitizerDeathCallback()
     else
         log_message = "Terminate called without an active exception";
 
-    static const size_t buf_size = 1024;
+    /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
+    /// And the buffer should not be too small because our exception messages can be large.
+    static constexpr size_t buf_size = PIPE_BUF;
 
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
@@ -409,11 +456,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(file).makeParent();
-    if (path.toString().empty())
+    fs::path path = fs::path(file).parent_path();
+    if (path.empty())
         return "";
-    Poco::File(path).createDirectories();
-    return path.toString();
+    fs::create_directories(path);
+    return path;
 };
 
 
@@ -421,7 +468,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        Poco::File(path).createDirectories();
+        fs::create_directories(path);
         return true;
     }
     catch (...)
@@ -440,9 +487,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -470,7 +517,6 @@ BaseDaemon::~BaseDaemon()
 
 void BaseDaemon::terminate()
 {
-    getTaskManager().cancelAll();
     if (::raise(SIGTERM) != 0)
         throw Poco::SystemException("cannot terminate process");
 }
@@ -478,20 +524,10 @@ void BaseDaemon::terminate()
 void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
-    pid.reset();
-    if (::raise(SIGKILL) != 0)
-        throw Poco::SystemException("cannot kill process");
-}
-
-void BaseDaemon::sleep(double seconds)
-{
-    wakeup_event.reset();
-    wakeup_event.tryWait(seconds * 1000);
-}
-
-void BaseDaemon::wakeup()
-{
-    wakeup_event.set();
+    pid_file.reset();
+    /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+    /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+    _exit(128 + SIGKILL);
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
@@ -499,21 +535,28 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
+}
+
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    Poco::File proc_path{"/dev/fd"};
+    fs::path proc_path{"/dev/fd"};
 #else
-    Poco::File proc_path{"/proc/self/fd"};
+    fs::path proc_path{"/proc/self/fd"};
 #endif
-    if (proc_path.isDirectory()) /// Hooray, proc exists
+    if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        std::vector<std::string> fds;
-        /// in /proc/self/fd directory filenames are numeric file descriptors
-        proc_path.list(fds);
-        for (const auto & fd_str : fds)
+        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
+        std::vector<int> fds;
+        for (const auto & path : fs::directory_iterator(proc_path))
+            fds.push_back(DB::parse<int>(path.path().filename()));
+
+        for (const auto & fd : fds)
         {
-            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -547,6 +590,7 @@ void debugIncreaseOOMScore()
     {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
+        buf.close();
     }
     catch (const Poco::Exception & e)
     {
@@ -564,7 +608,6 @@ void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
 
-    task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -575,7 +618,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
+        std::string path = fs::path(config().getString("application.path")).replace_filename("");
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -623,7 +666,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = Poco::Path(log_path).setFileName("").toString();
+        log_path = fs::path(log_path).replace_filename("");
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -648,10 +691,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
     }
 
-    /// Create pid file.
-    if (config().has("pid"))
-        pid.emplace(config().getString("pid"), DB::StatusFile::write_pid);
-
     /// Change path for logging.
     if (!log_path.empty())
     {
@@ -667,8 +706,16 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    // sensitive data masking rules are not used here
+    /// sensitive data masking rules are not used here
     buildLoggers(config(), logger(), self.commandName());
+
+    /// After initialized loggers but before initialized signal handling.
+    if (should_setup_watchdog)
+        setupWatchdog();
+
+    /// Create pid file.
+    if (config().has("pid"))
+        pid_file.emplace(config().getString("pid"), DB::StatusFile::write_pid);
 
     if (is_daemon)
     {
@@ -682,8 +729,7 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        Poco::File cores = core_path;
-        if (!(cores.exists() && cores.isDirectory()))
+        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);
@@ -704,54 +750,71 @@ void BaseDaemon::initialize(Application & self)
 }
 
 
+static void addSignalHandler(const std::vector<int> & signals, signal_function handler, std::vector<int> * out_handled_signals)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = handler;
+    sa.sa_flags = SA_SIGINFO;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sa.sa_mask);
+    for (auto signal : signals)
+        sigaddset(&sa.sa_mask, signal);
+#else
+    if (sigemptyset(&sa.sa_mask))
+        throw Poco::Exception("Cannot set signal handler.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sa.sa_mask, signal))
+            throw Poco::Exception("Cannot set signal handler.");
+#endif
+
+    for (auto signal : signals)
+        if (sigaction(signal, &sa, nullptr))
+            throw Poco::Exception("Cannot set signal handler.");
+
+    if (out_handled_signals)
+        std::copy(signals.begin(), signals.end(), std::back_inserter(*out_handled_signals));
+};
+
+
+static void blockSignals(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+#endif
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+        throw Poco::Exception("Cannot block signal.");
+};
+
+
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
-    {
-        sigset_t sig_set;
-        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-            throw Poco::Exception("Cannot block signal.");
-    }
+    blockSignals({SIGPIPE});
 
     /// Setup signal handlers.
-    auto add_signal_handler =
-        [this](const std::vector<int> & signals, signal_function handler)
-        {
-            struct sigaction sa;
-            memset(&sa, 0, sizeof(sa));
-            sa.sa_sigaction = handler;
-            sa.sa_flags = SA_SIGINFO;
-
-            {
-#if defined(OS_DARWIN)
-                sigemptyset(&sa.sa_mask);
-                for (auto signal : signals)
-                    sigaddset(&sa.sa_mask, signal);
-#else
-                if (sigemptyset(&sa.sa_mask))
-                    throw Poco::Exception("Cannot set signal handler.");
-
-                for (auto signal : signals)
-                    if (sigaddset(&sa.sa_mask, signal))
-                        throw Poco::Exception("Cannot set signal handler.");
-#endif
-
-                for (auto signal : signals)
-                    if (sigaction(signal, &sa, nullptr))
-                        throw Poco::Exception("Cannot set signal handler.");
-
-                std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
-            }
-        };
-
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
-    add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
-    add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
@@ -761,14 +824,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_pipe.setNonBlocking();
+    signal_pipe.setNonBlockingWrite();
     signal_pipe.tryIncreaseSize(1 << 20);
 
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    String build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+    String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
     else
@@ -776,31 +839,21 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #else
     build_id_info = "no build id";
 #endif
+
+#if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+
+    if (!executable_path.empty())
+        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
+#endif
 }
 
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " with revision " + std::to_string(ClickHouseRevision::get())
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
-}
-
-/// Makes server shutdown if at least one Poco::Task have failed.
-void BaseDaemon::exitOnTaskError()
-{
-    Poco::Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
-    getTaskManager().addObserver(obs);
-}
-
-/// Used for exitOnTaskError()
-void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
-{
-    task_failed = true;
-    Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
-    Poco::Logger * lg = &(logger());
-    LOG_ERROR(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
-    ServerApplication::terminate();
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
@@ -852,24 +905,161 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
         LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
-        kill();
+        call_default_signal_handler(signal_id);
+        /// If the above did not help.
+        _exit(128 + signal_id);
     }
 }
 
 
 void BaseDaemon::waitForTerminationRequest()
 {
+    /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+}
+
+
+void BaseDaemon::shouldSetupWatchdog(char * argv0_)
+{
+    should_setup_watchdog = true;
+    argv0 = argv0_;
+}
+
+
+void BaseDaemon::setupWatchdog()
+{
+    /// Initialize in advance to avoid double initialization in forked processes.
+    DateLUT::instance();
+
+    std::string original_process_name;
+    if (argv0)
+        original_process_name = argv0;
+
+    while (true)
+    {
+        static pid_t pid = -1;
+        pid = fork();
+
+        if (-1 == pid)
+            throw Poco::Exception("Cannot fork");
+
+        if (0 == pid)
+        {
+            logger().information("Forked a child process to watch");
+#if defined(__linux__)
+            if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
+                logger().warning("Cannot do prctl to ask termination with parent.");
+#endif
+            return;
+        }
+
+        /// Change short thread name and process name.
+        setThreadName("clckhouse-watch");   /// 15 characters
+
+        if (argv0)
+        {
+            const char * new_process_name = "clickhouse-watchdog";
+            memset(argv0, 0, original_process_name.size());
+            memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
+        }
+
+        logger().information(fmt::format("Will watch for the process with pid {}", pid));
+
+        /// Forward signals to the child process.
+        addSignalHandler(
+            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
+            [](int sig, siginfo_t *, void *)
+            {
+                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                /// and we process double delivery of this signal as immediate termination.
+                if (sig == SIGINT)
+                    return;
+
+                const char * error_message = "Cannot forward signal to the child process.\n";
+                if (0 != ::kill(pid, sig))
+                {
+                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                    (void)res;
+                }
+            },
+            nullptr);
+
+        int status = 0;
+        do
+        {
+            if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
+            {
+                if (WIFSTOPPED(status))
+                    logger().warning(fmt::format("Child process was stopped by signal {}.", WSTOPSIG(status)));
+                else if (WIFCONTINUED(status))
+                    logger().warning(fmt::format("Child process was continued."));
+                else
+                    break;
+            }
+            else if (errno != EINTR)
+                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
+        } while (true);
+
+        if (errno == ECHILD)
+        {
+            logger().information("Child process no longer exists.");
+            _exit(WEXITSTATUS(status));
+        }
+
+        if (WIFEXITED(status))
+        {
+            logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
+            _exit(WEXITSTATUS(status));
+        }
+
+        if (WIFSIGNALED(status))
+        {
+            int sig = WTERMSIG(status);
+
+            if (sig == SIGKILL)
+            {
+                logger().fatal(fmt::format("Child process was terminated by signal {} (KILL)."
+                    " If it is not done by 'forcestop' command or manually,"
+                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).", sig));
+            }
+            else
+            {
+                logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
+
+                if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
+                    _exit(128 + sig);
+            }
+        }
+        else
+        {
+            logger().fatal("Child process was not exited normally by unknown reason.");
+        }
+
+        /// Automatic restart is not enabled but you can play with it.
+#if 1
+        _exit(WEXITSTATUS(status));
+#else
+        logger().information("Will restart.");
+        if (argv0)
+            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+#endif
+    }
+}
+
+
+String BaseDaemon::getStoredBinaryHash() const
+{
+    return stored_binary_hash;
 }

@@ -147,8 +147,6 @@ ENGINE = <Engine>
 ...
 ```
 
-コーデックが指定されている場合、既定のコーデックは適用されません。 コーデックはパイプラインで結合できます。, `CODEC(Delta, ZSTD)`. の選定と大型ブリッジダイオードコーデックの組み合わせますプロジェクト、ベンチマークと同様に記載のAltinity [ClickHouseの効率を改善する新しい符号化](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) 記事だ
-
 !!! warning "警告"
     できない解凍ClickHouseデータベースファイルを外部の事のように `lz4`. 代わりに、特別な [clickhouse-コンプレッサー](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) ユーティリティ
 
@@ -291,7 +289,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 作成 [外部辞書](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) 与えられたと [構造](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [ソース](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [レイアウト](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) と [生涯](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
@@ -499,4 +497,4 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_na
 CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/create/) <!--hide-->

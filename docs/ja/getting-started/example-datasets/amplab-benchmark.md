@@ -8,7 +8,7 @@ toc_title: "AMPLab Big Data ベンチマーク"
 https://amplab.cs.berkeley.edu/benchmark/ を参照して下さい。
 
 https://aws.amazon.com で無料アカウントにサインアップしてください。クレジットカード、電子メール、電話番号が必要です。
-https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential で新しいアクセスキーを取得します。
+https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential で新しいアクセスキーを取得します。
 
 
 コンソールで以下を実行します:
@@ -126,4 +126,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

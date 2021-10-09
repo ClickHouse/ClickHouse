@@ -1,6 +1,9 @@
 #!/bin/bash
 set -ex
 
+CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
+export CHPC_CHECK_START_TIMESTAMP
+
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
@@ -97,13 +100,10 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
-    git -C right/ch diff --name-only "$base" pr | tee changed-tests.txt
-    if grep -vq '^tests/performance' changed-tests.txt
-    then
-        # Have some other changes besides the tests, so truncate the test list,
-        # meaning, run all tests.
-        : > changed-tests.txt
-    fi
+    git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
+    git -C right/ch diff --name-only "$base" pr -- tests/performance | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only "$base" pr -- docker/test/performance-comparison | tee changed-test-scripts.txt
+    git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
 # Set python output encoding so that we can print queries with Russian letters.
@@ -124,6 +124,18 @@ set +e
 PATH="$(readlink -f right/)":"$PATH"
 export PATH
 
+export REF_PR
+export REF_SHA
+
+# Try to collect some core dumps. I've seen two patterns in Sandbox:
+# 1) |/home/zomb-sandbox/venv/bin/python /home/zomb-sandbox/client/sandbox/bin/coredumper.py %e %p %g %u %s %P %c
+#    Not sure what this script does (puts them to sandbox resources, logs some messages?),
+#    and it's not accessible from inside docker anyway.
+# 2) something like %e.%p.core.dmp. The dump should end up in the workspace directory.
+# At least we remove the ulimit and then try to pack some common file names into output.
+ulimit -c unlimited
+cat /proc/sys/kernel/core_pattern
+
 # Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
@@ -141,8 +153,11 @@ done
 
 dmesg -T > dmesg.log
 
+ls -lath
+
 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    report analyze benchmark metrics
+    report analyze benchmark metrics \
+    ./*.core.dmp ./*.core
 
 cp compare.log /output

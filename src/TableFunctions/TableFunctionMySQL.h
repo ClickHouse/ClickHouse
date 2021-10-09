@@ -1,6 +1,12 @@
 #pragma once
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
+#if USE_MYSQL
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+#include <mysqlxx/Pool.h>
 
 
 namespace DB
@@ -19,8 +25,16 @@ public:
         return name;
     }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    mutable std::optional<mysqlxx::PoolWithFailover> pool;
+    std::optional<StorageMySQLConfiguration> configuration;
 };
 
 }
+
+#endif

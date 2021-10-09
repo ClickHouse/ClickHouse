@@ -1,1 +1,1 @@
-# Fortunately, we have no suppressions!
+# We have no suppressions!

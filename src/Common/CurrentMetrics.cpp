@@ -9,7 +9,9 @@
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
-    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches, or replication queue bookkeeping)") \
+    M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
+    M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
+    M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -29,18 +31,13 @@
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
+    M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(SendScalars, "Number of connections that are sending data for scalars to remote servers.") \
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingInBackgroundProcessingPool, "Total amount of memory (bytes) allocated in background processing pool (that is dedicated for background merges, mutations and fetches). Note that this value may include a drift when the memory was allocated in a context of background processing pool and freed in other context or vice-versa. This happens naturally due to caches for tables indexes and doesn't indicate memory leaks.") \
-    M(MemoryTrackingInBackgroundMoveProcessingPool, "Total amount of memory (bytes) allocated in background processing pool (that is dedicated for background moves). Note that this value may include a drift when the memory was allocated in a context of background processing pool and freed in other context or vice-versa. This happens naturally due to caches for tables indexes and doesn't indicate memory leaks.") \
-    M(MemoryTrackingInBackgroundSchedulePool, "Total amount of memory (bytes) allocated in background schedule pool (that is dedicated for bookkeeping tasks of Replicated tables).") \
-    M(MemoryTrackingInBackgroundBufferFlushSchedulePool, "Total amount of memory (bytes) allocated in background buffer flushes pool (that is dedicated for background buffer flushes).") \
-    M(MemoryTrackingInBackgroundDistributedSchedulePool, "Total amount of memory (bytes) allocated in background distributed schedule pool (that is dedicated for distributed sends).") \
-    M(MemoryTrackingInBackgroundMessageBrokerSchedulePool, "Total amount of memory (bytes) allocated in background message broker pool (that is dedicated for background message streaming).") \
-    M(MemoryTrackingForMerges, "Total amount of memory (bytes) allocated for background merges. Included in MemoryTrackingInBackgroundProcessingPool. Note that this value may include a drift when the memory was allocated in a context of background processing pool and freed in other context or vice-versa. This happens naturally due to caches for tables indexes and doesn't indicate memory leaks.") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
@@ -58,9 +55,29 @@
     M(RWLockActiveWriters, "Number of threads holding write lock in a table RWLock.") \
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
-    M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
+    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
     M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
+    M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
+    M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
+    M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
+    M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
+    M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
+    M(PartsPreCommitted, "The part is in data_parts, but not used for SELECTs.") \
+    M(PartsCommitted, "Active data part, used by current and upcoming SELECTs.") \
+    M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
+    M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
+    M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
+    M(PartsWide, "Wide parts.") \
+    M(PartsCompact, "Compact parts.") \
+    M(PartsInMemory, "In-memory parts.") \
+    M(MMappedFiles, "Total number of mmapped files.") \
+    M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
+    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
+    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
+    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
+    M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
 
 namespace CurrentMetrics
 {

@@ -18,27 +18,29 @@ class Context;
 class DatabaseLazy final : public DatabaseOnDisk
 {
 public:
-    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_);
 
     String getEngineName() const override { return "Lazy"; }
 
-    void loadStoredObjects(
-        Context & context,
-        bool has_force_restore_data_flag, bool force_attach) override;
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
 
     void createTable(
-        const Context & context,
+        ContextPtr context,
         const String & table_name,
         const StoragePtr & table,
         const ASTPtr & query) override;
 
     void dropTable(
-        const Context & context,
+        ContextPtr context,
         const String & table_name,
         bool no_delay) override;
 
     void renameTable(
-        const Context & context,
+        ContextPtr context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
@@ -46,21 +48,21 @@ public:
         bool dictionary) override;
 
     void alterTable(
-        const Context & context,
+        ContextPtr context,
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
-    bool isTableExist(const String & table_name, const Context &) const override { return isTableExist(table_name); }
+    bool isTableExist(const String & table_name, ContextPtr) const override { return isTableExist(table_name); }
     bool isTableExist(const String & table_name) const;
 
-    StoragePtr tryGetTable(const String & table_name, const Context &) const override { return tryGetTable(table_name); }
+    StoragePtr tryGetTable(const String & table_name, ContextPtr) const override { return tryGetTable(table_name); }
     StoragePtr tryGetTable(const String & table_name) const;
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
@@ -115,7 +117,7 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
     DatabaseLazyIterator(
-        DatabaseLazy & database_,
+        const DatabaseLazy & database_,
         Strings && table_names_);
 
     void next() override;

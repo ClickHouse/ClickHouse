@@ -1,11 +1,13 @@
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10
@@ -25,9 +27,9 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const String & sign_column,
     bool only_positive_sign_,
     size_t max_block_size,
+    Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes,
-    Poco::Logger * log_)
+    bool use_average_block_sizes)
     : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , sign_column_number(header.getPositionByName(sign_column))
@@ -41,7 +43,7 @@ void CollapsingSortedAlgorithm::reportIncorrectData()
     if (!log)
         return;
 
-    std::stringstream s;
+    WriteBufferFromOwnString s;
     auto & sort_columns = *last_row.sort_columns;
     for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
     {
@@ -65,13 +67,15 @@ void CollapsingSortedAlgorithm::insertRow(RowRef & row)
     merged_data.insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 }
 
-void CollapsingSortedAlgorithm::insertRows()
+std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 {
     if (count_positive == 0 && count_negative == 0)
     {
         /// No input rows have been read.
-        return;
+        return {};
     }
+
+    std::optional<Chunk> res;
 
     if (last_is_positive || count_positive != count_negative)
     {
@@ -85,6 +89,9 @@ void CollapsingSortedAlgorithm::insertRows()
 
         if (count_positive >= count_negative)
         {
+            if (merged_data.hasEnoughRows())
+                res = merged_data.pull();
+
             insertRow(last_positive_row);
 
             if (out_row_sources_buf)
@@ -106,10 +113,16 @@ void CollapsingSortedAlgorithm::insertRows()
         out_row_sources_buf->write(
                 reinterpret_cast<const char *>(current_row_sources.data()),
                 current_row_sources.size() * sizeof(RowSourcePart));
+
+    return res;
 }
 
 IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 {
+    /// Rare case, which may happen when index_granularity is 1, but we needed to insert 2 rows inside insertRows().
+    if (merged_data.hasEnoughRows())
+        return Status(merged_data.pull());
+
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
     while (queue.isValid())
     {
@@ -122,7 +135,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
+        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
 
         RowRef current_row;
         setRowRef(current_row, current);
@@ -131,15 +144,14 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             setRowRef(last_row, current);
 
         bool key_differs = !last_row.hasEqualSortColumnsWith(current_row);
-
-        /// if there are enough rows and the last one is calculated completely
-        if (key_differs && merged_data.hasEnoughRows())
-            return Status(merged_data.pull());
-
         if (key_differs)
         {
+            /// if there are enough rows and the last one is calculated completely
+            if (merged_data.hasEnoughRows())
+                return Status(merged_data.pull());
+
             /// We write data for the previous primary key.
-            insertRows();
+            auto res = insertRows();
 
             current_row.swap(last_row);
 
@@ -150,6 +162,12 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             first_negative_pos = 0;
             last_positive_pos = 0;
             current_row_sources.resize(0);
+
+            /// Here we can return ready chunk.
+            /// Next iteration, last_row == current_row, and all the counters are zeroed.
+            /// So, current_row should be correctly processed.
+            if (res)
+                return Status(std::move(*res));
         }
 
         /// Initially, skip all rows. On insert, unskip "corner" rows.
@@ -193,7 +211,15 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         }
     }
 
-    insertRows();
+    if (auto res = insertRows())
+    {
+        /// Queue is empty, and we have inserted all the rows.
+        /// Set counter to zero so that insertRows() will return immediately next time.
+        count_positive = 0;
+        count_negative = 0;
+        return Status(std::move(*res));
+    }
+
     return Status(merged_data.pull(), true);
 }
 

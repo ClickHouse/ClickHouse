@@ -1,3 +1,4 @@
+#pragma once
 /**
   * This file implements template methods of IColumn that depend on other types
   * we don't want to include.
@@ -5,10 +6,10 @@
   * implementation.
   */
 
-#pragma once
-
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <base/sort.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -126,6 +127,117 @@ void IColumn::doCompareColumn(const Derived & rhs, size_t rhs_row_num,
         else
             compareImpl<Derived, false, false>(rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
+}
+
+template <typename Derived>
+bool IColumn::hasEqualValuesImpl() const
+{
+    size_t num_rows = size();
+    for (size_t i = 1; i < num_rows; ++i)
+    {
+        if (compareAt(i, 0, static_cast<const Derived &>(*this), false) != 0)
+            return false;
+    }
+    return true;
+}
+
+template <typename Comparator>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Comparator cmp) const
+{
+    updatePermutationImpl(
+        limit, res, equal_ranges,
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) < 0; },
+        [&cmp](size_t lhs, size_t rhs) { return cmp(lhs, rhs) == 0; },
+        [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); },
+        [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); });
+}
+
+template <typename Less, typename Equals, typename Sort, typename PartialSort>
+void IColumn::updatePermutationImpl(
+    size_t limit,
+    Permutation & res,
+    EqualRanges & equal_ranges,
+    Less less,
+    Equals equals,
+    Sort full_sort,
+    PartialSort partial_sort) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit > equal_ranges.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_ranges[i];
+        full_sort(res.begin() + first, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (!equals(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+        {
+            equal_ranges = std::move(new_ranges);
+            return;
+        }
+
+        /// Since then we are working inside the interval.
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (!equals(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (equals(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
+
+    equal_ranges = std::move(new_ranges);
 }
 
 }

@@ -1,7 +1,9 @@
-#  docker build -t yandex/clickhouse-fasttest .
-FROM ubuntu:19.10
+#  docker build -t clickhouse/fasttest .
+FROM clickhouse/test-util
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -11,7 +13,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -27,7 +29,7 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
@@ -45,23 +47,27 @@ RUN apt-get update \
         curl \
         expect \
         fakeroot \
+        gdb \
         git \
         gperf \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
+        lsof \
         moreutils \
         ninja-build \
         psmisc \
-        python \
-        python-lxml \
-        python-requests \
-        python-termcolor \
-        qemu-user-static \
+        python3 \
+        python3-lxml \
+        python3-pip \
+        python3-requests \
+        python3-termcolor \
         rename \
         software-properties-common \
         tzdata \
         unixodbc \
        --yes --no-install-recommends
+
+RUN pip3 install numpy scipy pandas Jinja2 pandas clickhouse_driver
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -80,6 +86,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
+ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
