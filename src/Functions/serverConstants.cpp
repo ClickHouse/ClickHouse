@@ -99,12 +99,12 @@ namespace
     };
 
 #if defined(OS_LINUX)
-    class FunctionOSKernelVersion : public FunctionConstantBase<FunctionOSKernelVersion, String, DataTypeString>
+    class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
-        static constexpr auto name = "OSKernelVersion";
-        explicit FunctionOSKernelVersion(ContextPtr context) : FunctionConstantBase(context, Poco::Environment::osName() + " " + Poco::Environment::osVersion()) {}
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOSKernelVersion>(context); }
+        static constexpr auto name = "getOSKernelVersion";
+        explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(context, Poco::Environment::osName() + " " + Poco::Environment::osVersion()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 #endif
 
@@ -156,10 +156,10 @@ void registerFunctionZooKeeperSessionUptime(FunctionFactory & factory)
 }
 
 
-void registerFunctionOSKernelVersion(FunctionFactory & factory)
+void registerFunctionGetOSKernelVersion([[maybe_unused]] FunctionFactory & factory)
 {
 #if defined(OS_LINUX)
-    factory.registerFunction<FunctionOSKernelVersion>();
+    factory.registerFunction<FunctionGetOSKernelVersion>();
 #endif
 }
 
