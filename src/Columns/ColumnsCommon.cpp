@@ -258,7 +258,7 @@ namespace
             }
             else
             {
-                while(mask)
+                while (mask)
                 {
                     size_t index = __builtin_ctz(mask);
                     copy_array(offsets_pos + index);
