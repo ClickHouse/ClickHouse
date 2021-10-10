@@ -112,13 +112,13 @@ namespace detail
 
         ReadSettings settings;
 
-        std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
+        std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri_.getPath().empty())
                 uri_.setPath("/");
 
-            Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+            Poco::Net::HTTPRequest request(method, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
 
             if (out_stream_callback)
@@ -162,37 +162,6 @@ namespace detail
             }
         }
 
-        std::optional<size_t> getTotalSizeToRead()
-        {
-            if (total_bytes_to_read)
-                return total_bytes_to_read;
-
-            Poco::Net::HTTPResponse response;
-            call(uri, response, Poco::Net::HTTPRequest::HTTP_HEAD);
-
-            while (isRedirect(response.getStatus()))
-            {
-                Poco::URI uri_redirect(response.get("Location"));
-                remote_host_filter.checkURL(uri_redirect);
-
-                session->updateSession(uri_redirect);
-
-                istr = call(uri_redirect, response, method);
-            }
-
-            /// If it is the very first initialization.
-            if (!bytes_read && !total_bytes_to_read)
-            {
-                /// If we do not know total size, disable retries in the middle of reading.
-                if (response.hasContentLength())
-                    total_bytes_to_read = response.getContentLength();
-                else
-                    settings.http_retriable_read = false;
-            }
-
-            return total_bytes_to_read;
-        }
-
     private:
         bool use_external_buffer;
 
@@ -223,39 +192,29 @@ namespace detail
             , settings {settings_}
             , use_external_buffer {use_external_buffer_}
         {
-            initialize();
-        }
-
-        void initialize()
-        {
             /**
              *  Get first byte from `bytes=offset-`, `bytes=offset-end`.
              *  Now there are two places, where it can be set: 1. in DiskWeb (offset), 2. via config as part of named-collection.
              *  Also header can be `bytes=-k` (read last k bytes), for this case retries in the middle of reading are disabled.
              */
-            auto range_header = std::find_if(http_header_entries.begin(), http_header_entries.end(),
+            auto range_header = std::find_if(http_header_entries_.begin(), http_header_entries_.end(),
                 [&](const HTTPHeaderEntry & header) { return std::get<0>(header) == "Range"; });
-            if (range_header != http_header_entries.end())
+            if (range_header != http_header_entries_.end())
             {
-                auto & value = std::get<1>(*range_header);
-                auto range = value.substr(std::strlen("bytes="));
+                auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
                 auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
                 if (ec != std::errc())
                     settings.http_retriable_read = false;
-
-                if (settings.remote_read_max_bytes)
-                {
-                    auto file_size = total_bytes_to_read ? total_bytes_to_read.value() : getTotalSizeToRead();
-                    if (file_size)
-                    {
-                        value = fmt::format("Range={}-{}", start_byte, std::min(settings.remote_read_max_bytes, *file_size));
-                        std::cerr << "\n\nRange header: " << value << std::endl;
-                    }
-                }
             }
 
+            initialize();
+        }
+
+        void initialize()
+        {
+
             Poco::Net::HTTPResponse response;
-            istr = call(uri, response, method);
+            istr = call(uri, response);
 
             while (isRedirect(response.getStatus()))
             {
@@ -264,7 +223,7 @@ namespace detail
 
                 session->updateSession(uri_redirect);
 
-                istr = call(uri_redirect, response, method);
+                istr = call(uri_redirect, response);
             }
 
             /// If it is the very first initialization.
@@ -357,13 +316,13 @@ namespace detail
                         successful_read = true;
                         break;
                     }
-                    catch (const Poco::Exception & e)
+                    catch (const Poco::Exception &)
                     {
                         if (i == settings.http_max_tries - 1
                             || (bytes_read && !settings.http_retriable_read))
                             throw;
 
-                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), e.what());
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                         impl.reset();
 
                         sleepForMilliseconds(milliseconds_to_wait);
