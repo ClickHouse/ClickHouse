@@ -2313,3 +2313,65 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0
 └─────────┘
 ```
 
+## shardNum {#shard-num}
+
+Возвращает индекс шарда, который обрабатывает часть данных распределенного запроса. Индексы начинаются с `1`.
+Если запрос не распределенный, то возвращается константное значение `0`.
+
+**Синтаксис**
+
+``` sql
+shardNum()
+```
+
+**Возвращаемое значение**
+
+-   индекс шарда или константа `0`.
+
+Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+В примере ниже используется конфигурация с двумя шардами. На каждом шарде выполняется запрос к таблице [system.one](../../operations/system-tables/one.md).
+
+Запрос:
+
+``` sql
+CREATE TABLE shard_num_example (dummy UInt8) 
+    ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
+```
+
+Результат:
+
+``` text
+┌─dummy─┬─shardNum()─┬─shardCount()─┐
+│     0 │          2 │            2 │
+│     0 │          1 │            2 │
+└───────┴────────────┴──────────────┘
+```
+
+**См. также**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+
+## shardCount {#shard-count}
+
+Возвращает общее количество шардов для распределенного запроса.
+Если запрос не распределенный, то возвращается константное значение `0`.
+
+**Синтаксис**
+
+``` sql
+shardCount()
+```
+
+**Возвращаемое значение**
+
+-   Общее количество шардов или `0`.
+
+Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**См. также**
+
+- Пример использования функции [shardNum()](#shard-num) также содержит вызов `shardCount()`.
