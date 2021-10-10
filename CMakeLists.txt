@@ -459,7 +459,7 @@ endif ()
 include(cmake/dbms_glob_sources.cmake)
 
 if (OS_LINUX OR OS_ANDROID)
-    #include(cmake/linux/default_libs.cmake)
+    include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
@@ -525,6 +525,7 @@ include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
+include (cmake/find/musl.cmake)
 include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)

@@ -145,10 +145,12 @@ target_include_directories(crtn PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/src/internal
     ${LIBRARY_DIR}/src/internal)
 
-#add_library(crt $<TARGET_OBJECTS:crti> $<TARGET_OBJECTS:crtn>)
+add_library(crt INTERFACE)
+target_link_libraries(crt INTERFACE -nostdinc -nodefaultlibs -nostartfiles --sysroot=/nonexistent $<TARGET_OBJECTS:crti> $<TARGET_OBJECTS:crtn>)
+target_link_libraries(c PUBLIC crt)
 
 target_compile_options(c PRIVATE -std=c99 -ffreestanding)
-target_compile_options(c PUBLIC -nostdinc)
+target_compile_options(c PUBLIC -nostdinc --sysroot "/nonexistent")
 
 target_compile_options(crti PRIVATE -std=c99 -ffreestanding)
 target_compile_options(crtn PRIVATE -std=c99 -ffreestanding)
@@ -158,23 +160,6 @@ if (COMPILER_CLANG)
     target_compile_options(crti PRIVATE -Wno-unused-command-line-argument)
     target_compile_options(crtn PRIVATE -Wno-unused-command-line-argument)
 endif ()
-
-
-add_custom_command(
-    OUTPUT
-        "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crti.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crtbeginT.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crtend.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crtn.o"
-    COMMAND
-        mkdir -p "${CMAKE_CURRENT_BINARY_DIR}/lib/x86_64-linux-gnu" && cp $<TARGET_OBJECTS:crti> $<TARGET_OBJECTS:crtn> "${CMAKE_CURRENT_BINARY_DIR}/lib/x86_64-linux-gnu"
-    COMMAND_EXPAND_LISTS)
-
-add_custom_target(copy_startfiles
-    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/crt1.o")
-
-add_dependencies(c copy_startfiles)
 
 
 add_custom_command(
@@ -189,5 +174,3 @@ add_executable(musl_test "${CMAKE_CURRENT_BINARY_DIR}/test.c")
 add_dependencies(musl_test musl_test_source)
 
 target_link_libraries(musl_test c)
-
-target_compile_options(musl_test PRIVATE --sysroot "${CMAKE_CURRENT_BINARY_DIR}")
