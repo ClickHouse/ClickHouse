@@ -31,13 +31,17 @@ namespace ErrorCodes
 
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
-    AsynchronousReaderPtr reader_, Int32 priority_,
-    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, size_t buf_size_)
+        AsynchronousReaderPtr reader_,
+        Int32 priority_,
+        std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
+        size_t buf_size_,
+        size_t min_bytes_for_seek_)
     : ReadBufferFromFileBase(buf_size_, nullptr, 0)
     , reader(reader_)
     , priority(priority_)
     , impl(impl_)
     , prefetch_buffer(buf_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
 {
 }
 
@@ -50,12 +54,21 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
     request.size = size;
     request.offset = absolute_position;
     request.priority = priority;
+
+    if (bytes_to_ignore)
+    {
+        request.ignore = bytes_to_ignore;
+        bytes_to_ignore = 0;
+    }
     return reader->submit(request);
 }
 
 
 void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 {
+    if (hasPendingData())
+        return;
+
     if (prefetch_future.valid())
         return;
 
@@ -156,7 +169,19 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     }
 
     pos = working_buffer.end();
-    impl->reset();
+
+    if (static_cast<off_t>(absolute_position) >= getPosition()
+        && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
+    {
+        /**
+         * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
+         */
+        bytes_to_ignore = absolute_position - getPosition();
+    }
+    else
+    {
+        impl->seek(absolute_position); /// SEEK_SET.
+    }
 
     return absolute_position;
 }
