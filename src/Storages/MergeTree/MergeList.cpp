@@ -82,7 +82,6 @@ MergeListElement::MergeListElement(
 
     memory_tracker.setDescription("Mutate/Merge");
     memory_tracker.setProfilerStep(memory_profiler_step);
-    memory_tracker.setOrRaiseProfilerLimit(memory_profiler_step);
     memory_tracker.setSampleProbability(memory_profiler_sample_probability);
 }
 
