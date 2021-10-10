@@ -186,6 +186,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
+            context,
             getSettings(config, config_prefix, context),
             getSettings);
 

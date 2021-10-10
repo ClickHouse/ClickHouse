@@ -132,12 +132,14 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
+    ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
+    , context(context_)
 {
 }
 
@@ -204,7 +206,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
         settings->client, bucket, metadata,
-        settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size, threadpool_read);
+        settings->s3_max_single_read_retries, read_settings, threadpool_read);
 
     if (threadpool_read)
     {
@@ -362,7 +364,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries,
-        DBMS_DEFAULT_BUFFER_SIZE);
+        context->getReadSettings());
 
     readIntText(version, buffer);
 
@@ -1017,9 +1019,9 @@ void DiskS3::onFreeze(const String & path)
     revision_file_buf.finalize();
 }
 
-void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
-    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
+    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context_);
 
     current_settings.set(std::move(new_settings));
 

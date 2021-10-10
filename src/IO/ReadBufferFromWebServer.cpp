@@ -41,9 +41,17 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
 
-    // read_settings.remote_read_max_bytes = 100000000;
-    headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
-    LOG_DEBUG(log, "Reading from offset: {}", offset);
+    auto right_offset = read_settings.remote_read_right_offset;
+    if (right_offset)
+    {
+        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-{}", offset, right_offset)));
+        LOG_DEBUG(log, "Reading with range: {}-{}", offset, right_offset);
+    }
+    else
+    {
+        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
+        LOG_DEBUG(log, "Reading from offset: {}", offset);
+    }
 
     const auto & settings = context->getSettingsRef();
     const auto & config = context->getConfigRef();
@@ -85,7 +93,7 @@ void ReadBufferFromWebServer::initializeWithRetry()
                 if (use_external_buffer)
                 {
                     /**
-                     * See comment at line 120.
+                     * See comment 30 lines lower.
                      */
                     impl->set(internal_buffer.begin(), internal_buffer.size());
                     assert(working_buffer.begin() != nullptr);

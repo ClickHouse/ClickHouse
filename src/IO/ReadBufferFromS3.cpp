@@ -32,13 +32,13 @@ namespace ErrorCodes
 
 ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_,
-    UInt64 max_single_read_retries_, size_t buffer_size_, bool use_external_buffer_)
+    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , max_single_read_retries(max_single_read_retries_)
-    , buffer_size(buffer_size_)
+    , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
 {
 }
@@ -158,19 +158,28 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
-
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetRange(fmt::format("bytes={}-", offset));
+
+    auto right_offset = read_settings.remote_read_right_offset;
+    if (right_offset)
+    {
+        req.SetRange(fmt::format("bytes={}-{}", offset, right_offset));
+        LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, right_offset);
+    }
+    else
+    {
+        req.SetRange(fmt::format("bytes={}-", offset));
+        LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+    }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), read_settings.remote_fs_buffer_size);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

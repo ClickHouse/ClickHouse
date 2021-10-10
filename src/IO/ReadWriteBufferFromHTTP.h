@@ -316,13 +316,13 @@ namespace detail
                         successful_read = true;
                         break;
                     }
-                    catch (const Poco::Exception &)
+                    catch (const Poco::Exception & e)
                     {
                         if (i == settings.http_max_tries - 1
                             || (bytes_read && !settings.http_retriable_read))
                             throw;
 
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), e.what());
                         impl.reset();
 
                         sleepForMilliseconds(milliseconds_to_wait);
