@@ -67,13 +67,13 @@ public:
         const String & bucket_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
-        size_t buf_size_,
+        const ReadSettings & settings_,
         bool threadpool_read_ = false)
         : ReadBufferFromRemoteFSGather(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
-        , buf_size(buf_size_)
+        , settings(settings_)
         , threadpool_read(threadpool_read_)
     {
     }
@@ -84,7 +84,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     UInt64 max_single_read_retries;
-    size_t buf_size;
+    ReadSettings settings;
     bool threadpool_read;
 };
 #endif

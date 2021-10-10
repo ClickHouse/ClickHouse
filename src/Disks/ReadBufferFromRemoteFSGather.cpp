@@ -29,7 +29,8 @@ namespace ErrorCodes
 #if USE_AWS_S3
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path) const
 {
-    return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size, threadpool_read);
+    return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
+        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read);
 }
 #endif
 
