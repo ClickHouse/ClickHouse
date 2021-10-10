@@ -17,22 +17,17 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int NETWORK_ERROR;
 }
-
-static const auto WAIT_MS = 10;
 
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
-    const String & url_, ContextPtr context_, size_t buf_size_,
-    size_t backoff_threshold_, size_t max_tries_, bool use_external_buffer_)
+    const String & url_, ContextPtr context_, const ReadSettings & settings_, bool use_external_buffer_)
     : SeekableReadBuffer(nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
-    , buf_size(buf_size_)
-    , backoff_threshold_ms(backoff_threshold_)
-    , max_tries(max_tries_)
+    , buf_size(settings_.remote_fs_buffer_size)
+    , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
 {
 }
@@ -60,15 +55,16 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
                            http_keep_alive_timeout),
         0,
         Poco::Net::HTTPBasicCredentials{},
-        buf_size, headers, context->getRemoteHostFilter(), use_external_buffer);
+        buf_size,
+        read_settings,
+        headers,
+        context->getRemoteHostFilter(),
+        use_external_buffer);
 }
 
 
 bool ReadBufferFromWebServer::nextImpl()
 {
-    bool next_result = false, successful_read = false;
-    UInt16 milliseconds_to_wait = WAIT_MS;
-
     if (impl)
     {
         if (use_external_buffer)
@@ -95,56 +91,19 @@ bool ReadBufferFromWebServer::nextImpl()
             assert(!impl->hasPendingData());
         }
     }
-
-    WriteBufferFromOwnString error_msg;
-    for (size_t i = 0; (i < max_tries) && !successful_read && !next_result; ++i)
+    else
     {
-        while (milliseconds_to_wait < backoff_threshold_ms)
-        {
-            try
-            {
-                if (!impl)
-                {
-                    impl = initialize();
-                    if (use_external_buffer)
-                    {
-                        impl->set(internal_buffer.begin(), internal_buffer.size());
-                        assert(working_buffer.begin() != nullptr);
-                        assert(!internal_buffer.empty());
-                    }
-                    next_result = impl->hasPendingData();
-                    if (next_result)
-                        break;
-                }
-
-                next_result = impl->next();
-                successful_read = true;
-                break;
-            }
-            catch (const Poco::Exception & e)
-            {
-                LOG_WARNING(log, "Read attempt failed for url: {}. Error: {}", url, e.what());
-                error_msg << fmt::format("Error: {}\n", e.what());
-
-                sleepForMilliseconds(milliseconds_to_wait);
-                milliseconds_to_wait *= 2;
-                impl.reset();
-            }
-        }
-        milliseconds_to_wait = WAIT_MS;
+        impl = initialize();
     }
 
-    if (!successful_read)
-        throw Exception(ErrorCodes::NETWORK_ERROR,
-                        "All read attempts failed for url: {}. Reason:\n{}", url, error_msg.str());
-
-    if (next_result)
+    auto result = impl->next();
+    if (result)
     {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
         offset += working_buffer.size();
     }
 
-    return next_result;
+    return result;
 }
 
 
