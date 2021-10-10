@@ -64,41 +64,6 @@ void setExtras()
         sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
 }
 
-void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
-{
-    auto * logger = &Poco::Logger::get("SentryWriter");
-    size_t size = 1024;
-    char buffer[size];
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-nonliteral"
-#endif
-    if (vsnprintf(buffer, size, message, args) >= 0)
-    {
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-        switch (level)
-        {
-            case SENTRY_LEVEL_DEBUG:
-                logger->debug(buffer);
-                break;
-            case SENTRY_LEVEL_INFO:
-                logger->information(buffer);
-                break;
-            case SENTRY_LEVEL_WARNING:
-                logger->warning(buffer);
-                break;
-            case SENTRY_LEVEL_ERROR:
-                logger->error(buffer);
-                break;
-            case SENTRY_LEVEL_FATAL:
-                logger->fatal(buffer);
-                break;
-        }
-    }
-}
-
 }
 
 
@@ -107,13 +72,13 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
     auto * logger = &Poco::Logger::get("SentryWriter");
+
     if (config.getBool("send_crash_reports.enabled", false))
     {
         if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
-        {
             enabled = true;
-        }
     }
+
     if (enabled)
     {
         server_data_path = config.getString("path", "");
@@ -126,7 +91,6 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        sentry_options_set_logger(options, &sentry_logger, nullptr);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
