@@ -36,7 +36,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path) const
 {
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, buf_size, backoff_threshold, max_tries, threadpool_read);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read);
 }
 
 

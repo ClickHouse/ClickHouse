@@ -41,9 +41,9 @@ private:
 
     off_t offset = 0;
 
-    bool use_external_buffer;
-
     ReadSettings read_settings;
+
+    bool use_external_buffer;
 };
 
 }

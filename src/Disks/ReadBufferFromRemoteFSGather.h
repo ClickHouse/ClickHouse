@@ -6,6 +6,7 @@
 
 #include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
 
 namespace Aws
 {
@@ -92,17 +93,13 @@ public:
             const String & uri_,
             RemoteMetadata metadata_,
             ContextPtr context_,
-            size_t buf_size_,
-            size_t backoff_threshold_,
-            size_t max_tries_,
-            size_t threadpool_read_)
+            size_t threadpool_read_,
+            const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(metadata_)
         , uri(uri_)
         , context(context_)
-        , buf_size(buf_size_)
-        , backoff_threshold(backoff_threshold_)
-        , max_tries(max_tries_)
         , threadpool_read(threadpool_read_)
+        , settings(settings_)
     {
     }
 
@@ -111,10 +108,8 @@ public:
 private:
     String uri;
     ContextPtr context;
-    size_t buf_size;
-    size_t backoff_threshold;
-    size_t max_tries;
     bool threadpool_read;
+    ReadSettings settings;
 };
 
 
