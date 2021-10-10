@@ -20,6 +20,8 @@ namespace ErrorCodes
 }
 
 
+static constexpr size_t HTTP_MAX_TRIES = 10;
+
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_, ContextPtr context_, const ReadSettings & settings_, bool use_external_buffer_)
     : SeekableReadBuffer(nullptr, 0)
@@ -93,7 +95,22 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        impl = initialize();
+        /// Initialize impl with retry.
+        auto num_tries = std::max(read_settings.http_max_tries, HTTP_MAX_TRIES);
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            try
+            {
+                impl = initialize();
+            }
+            catch (Poco::Exception &)
+            {
+                if (i == num_tries - 1)
+                    throw;
+
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     auto result = impl->next();
