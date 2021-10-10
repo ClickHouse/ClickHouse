@@ -66,8 +66,17 @@ endif ()
 set (SRCS)
 
 foreach (PATH ${SRC_DIRS})
-    file(GLOB NEW_FILES ${LIBRARY_DIR}/${PATH}/*.c ${LIBRARY_DIR}/${PATH}/${ARCH}/*.s ${LIBRARY_DIR}/${PATH}/${ARCH}/*.S)
-    list(APPEND SRCS ${NEW_FILES})
+    file(GLOB FILES_ARCH "${LIBRARY_DIR}/${PATH}/${ARCH}/*.s" "${LIBRARY_DIR}/${PATH}/${ARCH}/*.S")
+    file(GLOB FILES_GENERIC "${LIBRARY_DIR}/${PATH}/*.c")
+
+    # We should remove generic files with the same name as arch-specific files.
+    foreach (FILE ${FILES_ARCH})
+        get_filename_component(FILE_NAME "${FILE}" NAME_WE)
+        list (REMOVE_ITEM FILES_GENERIC "${LIBRARY_DIR}/${PATH}/${FILE_NAME}.c")
+    endforeach ()
+
+    list(APPEND SRCS ${FILES_ARCH})
+    list(APPEND SRCS ${FILES_GENERIC})
 endforeach ()
 
 add_custom_command(
@@ -136,12 +145,18 @@ target_include_directories(crtn PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/src/internal
     ${LIBRARY_DIR}/src/internal)
 
-add_library(crt $<TARGET_OBJECTS:crti> $<TARGET_OBJECTS:crtn>)
+#add_library(crt $<TARGET_OBJECTS:crti> $<TARGET_OBJECTS:crtn>)
+
+target_compile_options(c PRIVATE -std=c99 -ffreestanding)
+target_compile_options(c PUBLIC -nostdinc)
+
+target_compile_options(crti PRIVATE -std=c99 -ffreestanding)
+target_compile_options(crtn PRIVATE -std=c99 -ffreestanding)
 
 if (COMPILER_CLANG)
-    target_compile_options(c PRIVATE -std=c99 -ffreestanding -Os -Wno-unused-command-line-argument)
-    target_compile_options(crti PRIVATE -std=c99 -ffreestanding -Wno-unused-command-line-argument)
-    target_compile_options(crtn PRIVATE -std=c99 -ffreestanding -Wno-unused-command-line-argument)
+    target_compile_options(c PRIVATE -Wno-unused-command-line-argument)
+    target_compile_options(crti PRIVATE -Wno-unused-command-line-argument)
+    target_compile_options(crtn PRIVATE -Wno-unused-command-line-argument)
 endif ()
 
 
