@@ -18,6 +18,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
 
@@ -114,17 +115,16 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto in = interpreter->execute();
-        in->readPrefix();
+        auto pipeline = interpreter->execute();
+        PullingPipelineExecutor executor(pipeline);
 
-        while (const Block & block = in->read())
+        Block block;
+        while (executor.pull(block))
         {
             new_data->addJoinedBlock(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
-
-        in->readSuffix();
     }
 
     /// Now acquire exclusive lock and modify storage.

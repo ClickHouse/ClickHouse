@@ -461,7 +461,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
                 [this](const auto & arg) { return checkASTUseless(arg, true); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
-        return !atomic && literal->value.get<bool>();
+        return !atomic && literal->value.safeGet<bool>();
     else if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
     else
