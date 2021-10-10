@@ -30,7 +30,7 @@ struct ThreadPoolRemoteFSReader::RemoteFSFileDescriptor : public IFileDescriptor
 public:
     RemoteFSFileDescriptor(std::shared_ptr<ReadBufferFromRemoteFSGather> reader_) : reader(reader_) {}
 
-    size_t readInto(char * data, size_t size, size_t offset);
+    size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
 private:
     std::shared_ptr<ReadBufferFromRemoteFSGather> reader;

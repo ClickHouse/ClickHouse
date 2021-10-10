@@ -55,18 +55,28 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
 }
 
 
-size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset)
+size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
+    /**
+     * Set `data` to current working and internal buffers.
+     * Internal buffer with size `size`. Working buffer with size 0.
+     */
     set(data, size);
+
     absolute_position = offset;
+    bytes_to_ignore = ignore;
+
     auto result = nextImpl();
+    bytes_to_ignore = 0;
+
     if (result)
         return working_buffer.size();
+
     return 0;
 }
 
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::initialize()
+void ReadBufferFromRemoteFSGather::initialize()
 {
     /// One clickhouse file can be split into multiple files in remote fs.
     auto current_buf_offset = absolute_position;
@@ -77,14 +87,20 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::initialize()
 
         if (size > current_buf_offset)
         {
-            auto buf = createImplementationBuffer(file_path);
-            buf->seek(current_buf_offset, SEEK_SET);
-            return buf;
+            /// Do not create a new buffer if we already have what we need.
+            if (!current_buf || buf_idx != i)
+            {
+                current_buf = createImplementationBuffer(file_path);
+                buf_idx = i;
+            }
+
+            current_buf->seek(current_buf_offset, SEEK_SET);
+            return;
         }
 
         current_buf_offset -= size;
     }
-    return nullptr;
+    current_buf = nullptr;
 }
 
 
@@ -92,7 +108,7 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 {
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
-        current_buf = initialize();
+        initialize();
 
     /// If current buffer has remaining data - use it.
     if (current_buf)
@@ -119,13 +135,30 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
     swap(*current_buf);
+
+    /**
+     * Lazy seek is performed here.
+     * In asynchronous buffer when seeking to offset in range [pos, pos + min_bytes_for_seek]
+     * we save how many bytes need to be ignored (new_offset - position() bytes).
+     */
+    if (bytes_to_ignore)
+        current_buf->ignore(bytes_to_ignore);
+
     auto result = current_buf->next();
+
     swap(*current_buf);
 
     if (result)
         absolute_position += working_buffer.size();
 
     return result;
+}
+
+
+void ReadBufferFromRemoteFSGather::seek(off_t offset)
+{
+    absolute_position = offset;
+    initialize();
 }
 
 
