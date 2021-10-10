@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -23,17 +23,17 @@ namespace ErrorCodes
 }
 
 
-NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_)
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
     : istr(istr_), server_revision(server_revision_)
 {
 }
 
-NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
     : istr(istr_), header(header_), server_revision(server_revision_)
 {
 }
 
-NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
     IndexForNativeFormat::Blocks::const_iterator index_block_it_,
     IndexForNativeFormat::Blocks::const_iterator index_block_end_)
     : istr(istr_), server_revision(server_revision_),
@@ -57,21 +57,13 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
 }
 
 // also resets few vars from IBlockInputStream (I didn't want to propagate resetParser upthere)
-void NativeBlockInputStream::resetParser()
+void NativeReader::resetParser()
 {
     istr_concrete = nullptr;
     use_index = false;
-
-#ifndef NDEBUG
-    read_prefix_is_called = false;
-    read_suffix_is_called = false;
-#endif
-
-    is_cancelled.store(false);
-    is_killed.store(false);
 }
 
-void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -91,13 +83,13 @@ void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column
 }
 
 
-Block NativeBlockInputStream::getHeader() const
+Block NativeReader::getHeader() const
 {
     return header;
 }
 
 
-Block NativeBlockInputStream::readImpl()
+Block NativeReader::read()
 {
     Block res;
 
@@ -215,7 +207,7 @@ Block NativeBlockInputStream::readImpl()
     return res;
 }
 
-void NativeBlockInputStream::updateAvgValueSizeHints(const Block & block)
+void NativeReader::updateAvgValueSizeHints(const Block & block)
 {
     auto rows = block.rows();
     if (rows < 10)

@@ -12,6 +12,8 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include "IServer.h"
 
@@ -44,15 +46,15 @@ struct QueryState
     /// destroyed after input/output blocks, because they may contain other
     /// threads that use this queue.
     InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
+    std::unique_ptr<NativeWriter> logs_block_out;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    BlockInputStreamPtr block_in;
+    std::unique_ptr<NativeReader> block_in;
 
     /// Where to write result data.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
-    BlockOutputStreamPtr block_out;
+    std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
     /// Query text.

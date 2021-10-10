@@ -20,12 +20,9 @@
 #include "Processors/Merges/AggregatingSortedTransform.h"
 #include "Processors/Merges/VersionedCollapsingTransform.h"
 #include "Processors/Executors/PipelineExecutingBlockInputStream.h"
-#include "DataStreams/DistinctSortedBlockInputStream.h"
 #include "DataStreams/TTLBlockInputStream.h"
 #include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 
 namespace DB
 {
