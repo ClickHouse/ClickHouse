@@ -592,7 +592,15 @@ class TestCase:
                 client = make_clickhouse_client(args)
                 client.connection.force_connect()
                 with client.connection.timeout_setter(seconds_left):
-                    client.execute("DROP DATABASE " + database)
+                    # Retry in case of "New table appeared in database being dropped or detached" error.
+                    while True:
+                        try:
+                            client.execute("DROP DATABASE " + database)
+                            break
+                        except clickhouse_driver.errors.ServerException as e:
+                            if e.code == error_codes.DATABASE_NOT_EMPTY:
+                                pass
+                            raise
             except (TimeoutError, clickhouse_driver.errors.SocketTimeoutError):
                 total_time = (datetime.now() - start_time).total_seconds()
                 return None, "", f"Timeout dropping database {database} after test", total_time
