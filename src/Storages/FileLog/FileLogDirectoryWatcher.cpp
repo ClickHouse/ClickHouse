@@ -1,18 +1,10 @@
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Poco/Delegate.h>
-#include <Poco/DirectoryWatcher.h>
 
-FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_)
-    : path(path_), dw(std::make_unique<Poco::DirectoryWatcher>(path)), log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
+namespace DB
 {
-    /// DW_ITEM_MOVED_FROM and DW_ITEM_MOVED_TO events will only be reported on Linux.
-    /// On other platforms, a file rename or move operation will be reported via a
-    /// DW_ITEM_REMOVED and a DW_ITEM_ADDED event. The order of these two events is not defined.
-    dw->itemAdded += Poco::delegate(this, &FileLogDirectoryWatcher::onItemAdded);
-    dw->itemRemoved += Poco::delegate(this, &FileLogDirectoryWatcher::onItemRemoved);
-    dw->itemModified += Poco::delegate(this, &FileLogDirectoryWatcher::onItemModified);
-    dw->itemMovedFrom += Poco::delegate(this, &FileLogDirectoryWatcher::onItemMovedFrom);
-    dw->itemMovedTo += Poco::delegate(this, &FileLogDirectoryWatcher::onItemMovedTo);
+FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_)
+    : path(path_), dw(std::make_unique<DirectoryWatcherBase>(*this, path)), log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
+{
 }
 
 FileLogDirectoryWatcher::Events FileLogDirectoryWatcher::getEventsAndReset()
@@ -36,12 +28,12 @@ const std::string & FileLogDirectoryWatcher::getPath() const
     return path;
 }
 
-void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::DirectoryEvent& ev)
+void FileLogDirectoryWatcher::onItemAdded(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     EventInfo info{ev.event, "onItemAdded"};
-    std::string event_path = ev.item.path();
+    std::string event_path = ev.path;
 
     if (auto it = events.find(event_path); it != events.end())
     {
@@ -54,12 +46,12 @@ void FileLogDirectoryWatcher::onItemAdded(const Poco::DirectoryWatcher::Director
 }
 
 
-void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent& ev)
+void FileLogDirectoryWatcher::onItemRemoved(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     EventInfo info{ev.event, "onItemRemoved"};
-    std::string event_path = ev.item.path();
+    std::string event_path = ev.path;
 
     if (auto it = events.find(event_path); it != events.end())
     {
@@ -77,11 +69,11 @@ void FileLogDirectoryWatcher::onItemRemoved(const Poco::DirectoryWatcher::Direct
 /// So, if we record all of these events, it will use a lot of memory, and then we
 /// need to handle it one by one in StorageFileLog::updateFileInfos, this is unnecessary
 /// because it is equal to just record and handle one MODIY event
-void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev)
+void FileLogDirectoryWatcher::onItemModified(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto event_path = ev.item.path();
+    auto event_path = ev.path;
     EventInfo info{ev.event, "onItemModified"};
     /// Already have MODIFY event for this file
     if (auto it = events.find(event_path); it != events.end())
@@ -97,12 +89,12 @@ void FileLogDirectoryWatcher::onItemModified(const Poco::DirectoryWatcher::Direc
     }
 }
 
-void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent& ev)
+void FileLogDirectoryWatcher::onItemMovedFrom(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     EventInfo info{ev.event, "onItemMovedFrom"};
-    std::string event_path = ev.item.path();
+    std::string event_path = ev.path;
 
     if (auto it = events.find(event_path); it != events.end())
     {
@@ -114,12 +106,12 @@ void FileLogDirectoryWatcher::onItemMovedFrom(const Poco::DirectoryWatcher::Dire
     }
 }
 
-void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent& ev)
+void FileLogDirectoryWatcher::onItemMovedTo(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     EventInfo info{ev.event, "onItemMovedTo"};
-    std::string event_path = ev.item.path();
+    std::string event_path = ev.path;
 
     if (auto it = events.find(event_path); it != events.end())
     {
@@ -131,10 +123,11 @@ void FileLogDirectoryWatcher::onItemMovedTo(const Poco::DirectoryWatcher::Direct
     }
 }
 
-void FileLogDirectoryWatcher::onError(const Poco::Exception & e)
+void FileLogDirectoryWatcher::onError(const Exception & e)
 {
     std::lock_guard<std::mutex> lock(mutex);
     LOG_ERROR(log, "Error happened during watching directory {}: {}", path, error.error_msg);
     error.has_error = true;
     error.error_msg = e.message();
+}
 }
