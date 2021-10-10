@@ -8,9 +8,17 @@ namespace CurrentMetrics
 {
     extern const Metric AsynchronousReadWait;
 }
+
 namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
+    extern const Event RemoteFSSeeks;
+    extern const Event RemoteFSPrefetches;
+    extern const Event RemoteFSSeekCancelledPrefetches;
+    extern const Event RemoteFSUnusedCancelledPrefetches;
+    extern const Event RemoteFSPrefetchReads;
+    extern const Event RemoteFSAsyncBufferReads;
+    extern const Event RemoteFSAsyncBuffers;
 }
 
 namespace DB
@@ -52,15 +60,21 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
+    buffer_events += "-- Prefetch --";
 }
 
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
+    ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBufferReads);
     size_t size = 0;
 
     if (prefetch_future.valid())
     {
+        ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchReads);
+        buffer_events += "-- Read from prefetch --";
+
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
         {
@@ -78,6 +92,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
+        buffer_events += "-- Read without prefetch --";
         size = readInto(memory.data(), memory.size()).get();
         if (size)
         {
@@ -87,6 +102,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
     }
 
+    buffer_events += " + " + toString(size) + " + ";
     prefetch_future = {};
     return size;
 }
@@ -94,6 +110,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
 off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
 {
+    ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
+    buffer_events += "-- Seek to " + toString(offset_) + " --";
+
     if (whence == SEEK_CUR)
     {
         /// If position within current working buffer - shift pos.
@@ -131,6 +150,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     if (prefetch_future.valid())
     {
+        ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
     }
@@ -144,8 +164,11 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
 void AsynchronousReadIndirectBufferFromRemoteFS::finalize()
 {
+    std::cerr << "\n\n\nBuffer events: " << buffer_events << std::endl;
+
     if (prefetch_future.valid())
     {
+        ProfileEvents::increment(ProfileEvents::RemoteFSUnusedCancelledPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
     }
