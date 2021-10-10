@@ -64,6 +64,8 @@ private:
     size_t absolute_position = 0;
 
     Memory<> prefetch_buffer;
+
+    String buffer_events;
 };
 
 }
