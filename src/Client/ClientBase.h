@@ -32,11 +32,16 @@ enum MultiQueryProcessingStage
 
 void interruptSignalHandler(int signum);
 
+class InternalTextLogs;
+
 class ClientBase : public Poco::Util::Application
 {
 
 public:
     using Arguments = std::vector<String>;
+
+    ClientBase();
+    ~ClientBase() override;
 
     void init(int argc, char ** argv);
 
@@ -177,7 +182,7 @@ protected:
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
-    BlockOutputStreamPtr logs_out_stream;
+    std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

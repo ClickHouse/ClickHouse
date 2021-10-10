@@ -14,7 +14,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 
 namespace DB
 {
