@@ -107,7 +107,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
     auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 
