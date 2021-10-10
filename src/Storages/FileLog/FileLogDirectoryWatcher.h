@@ -1,20 +1,21 @@
 #pragma once
 
-#include <Poco/DirectoryWatcher.h>
-#include <Poco/Foundation.h>
-#include <Poco/Path.h>
+#include <Storages/FileLog/DirectoryWatcherBase.h>
 
 #include <base/logger_useful.h>
 
 #include <memory>
 #include <mutex>
 
+namespace DB
+{
+
 class FileLogDirectoryWatcher
 {
 public:
     struct EventInfo
     {
-        Poco::DirectoryWatcher::DirectoryEventType type;
+        DirectoryWatcherBase::DirectoryEventType type;
         std::string callback;
     };
 
@@ -35,13 +36,12 @@ public:
 
     const std::string & getPath() const;
 
-protected:
-    void onItemAdded(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-    void onItemRemoved(const Poco::DirectoryWatcher::DirectoryEvent & ev);
-    void onItemModified(const Poco::DirectoryWatcher::DirectoryEvent& ev);
-    void onItemMovedFrom(const Poco::DirectoryWatcher::DirectoryEvent & ev);
-    void onItemMovedTo(const Poco::DirectoryWatcher::DirectoryEvent & ev);
-    void onError(const Poco::Exception &);
+    void onItemAdded(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemRemoved(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemModified(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemMovedFrom(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onItemMovedTo(const DirectoryWatcherBase::DirectoryEvent & ev);
+    void onError(const Exception &);
 
 private:
     const std::string path;
@@ -53,7 +53,7 @@ private:
     /// running, it may access events during events destruction, leads to data race.
     Events events;
 
-    std::unique_ptr<Poco::DirectoryWatcher> dw;
+    std::unique_ptr<DirectoryWatcherBase> dw;
 
     Poco::Logger * log;
 
@@ -61,3 +61,4 @@ private:
 
     Error error;
 };
+}

@@ -798,7 +798,7 @@ bool StorageFileLog::updateFileInfos()
         {
             switch (event_info.type)
             {
-                case Poco::DirectoryWatcher::DW_ITEM_ADDED:
+                case DirectoryWatcherBase::DW_ITEM_ADDED:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                     /// Check if it is a regular file, and new file may be renamed or removed
@@ -821,7 +821,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 }
 
-                case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
+                case DirectoryWatcherBase::DW_ITEM_MODIFIED:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                     /// When new file added and appended, it has two event: DW_ITEM_ADDED
@@ -833,15 +833,15 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 }
 
-                case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
+                case DirectoryWatcherBase::DW_ITEM_REMOVED:
+                case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
                     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         it->second.status = FileStatus::REMOVED;
                     break;
                 }
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
+                case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
                 {
                     LOG_TRACE(log, "New event {} watched, path: {}", event_info.callback, event_path);
 

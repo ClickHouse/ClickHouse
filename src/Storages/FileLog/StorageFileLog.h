@@ -8,8 +8,6 @@
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
-#include <Poco/File.h>
-#include <Poco/Semaphore.h>
 #include <base/shared_ptr_helper.h>
 
 #include <atomic>
@@ -178,8 +176,6 @@ private:
     /// variable to records current unfinishing streams, then if have unfinishing streams,
     /// later select should forbid to execute.
     std::atomic<int> running_streams = 0;
-
-    using TaskThread = BackgroundSchedulePool::TaskHolder;
 
     void loadFiles();
 
