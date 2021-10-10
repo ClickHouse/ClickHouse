@@ -1159,7 +1159,6 @@ if (ThreadFuzzer::instance().isEffective())
         UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
         if (total_memory_profiler_step)
         {
-            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
 
