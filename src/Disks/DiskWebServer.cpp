@@ -169,8 +169,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
 
     auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, meta, getContext(),
-        read_settings.remote_fs_buffer_size,
-        read_settings.remote_fs_backoff_threshold, read_settings.remote_fs_backoff_max_tries,
+        read_settings,
         threadpool_read);
 
     if (threadpool_read)
