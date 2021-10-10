@@ -31,6 +31,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
+    /// Rightmost bound to read.
+    size_t right_bound = 0;
 
     for (const auto & mark_range : all_mark_ranges)
     {
@@ -53,6 +55,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         }
 
         size_t mark_range_bytes;
+        size_t current_right_offset;
 
         /// If there are no marks after the end of range, just use file size
         if (right_mark >= marks_count
@@ -60,14 +63,17 @@ MergeTreeReaderStream::MergeTreeReaderStream(
                 && marks_loader.getMark(right_mark).offset_in_compressed_file == marks_loader.getMark(mark_range.end).offset_in_compressed_file))
         {
             mark_range_bytes = file_size - (left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0);
+            current_right_offset = file_size;
         }
         else
         {
             mark_range_bytes = marks_loader.getMark(right_mark).offset_in_compressed_file - marks_loader.getMark(left_mark).offset_in_compressed_file;
+            current_right_offset = marks_loader.getMark(right_mark).offset_in_compressed_file;
         }
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
         sum_mark_range_bytes += mark_range_bytes;
+        right_bound = std::max(right_bound, current_right_offset);
     }
 
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
@@ -75,6 +81,9 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     ReadSettings read_settings = settings.read_settings;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
+
+    /// Set bound for reading from remote disk.
+    read_settings.remote_read_right_offset = right_bound;
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)

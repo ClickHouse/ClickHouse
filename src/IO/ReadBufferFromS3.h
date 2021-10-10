@@ -6,12 +6,14 @@
 
 #if USE_AWS_S3
 
-#    include <memory>
+#include <memory>
 
-#    include <IO/HTTPCommon.h>
-#    include <IO/ReadBuffer.h>
-#    include <aws/s3/model/GetObjectResult.h>
-#    include "SeekableReadBuffer.h"
+#include <IO/HTTPCommon.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadSettings.h>
+#include <IO/SeekableReadBuffer.h>
+
+#include <aws/s3/model/GetObjectResult.h>
 
 namespace Aws::S3
 {
@@ -30,7 +32,6 @@ private:
     String bucket;
     String key;
     UInt64 max_single_read_retries;
-    size_t buffer_size;
     off_t offset = 0;
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
@@ -43,7 +44,7 @@ public:
         const String & bucket_,
         const String & key_,
         UInt64 max_single_read_retries_,
-        size_t buffer_size_,
+        const ReadSettings & settings_,
         bool use_external_buffer = false);
 
     bool nextImpl() override;
@@ -53,6 +54,8 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
+
+    ReadSettings read_settings;
     bool use_external_buffer;
 };
 
