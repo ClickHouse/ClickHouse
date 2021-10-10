@@ -28,9 +28,9 @@ namespace CurrentMetrics
 namespace DB
 {
 
-size_t ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset)
+size_t ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
-    return reader->readInto(data, size, offset);
+    return reader->readInto(data, size, offset, ignore);
 }
 
 
@@ -49,7 +49,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
-        auto bytes_read = remote_fs_fd->readInto(request.buf, request.size, request.offset);
+        auto bytes_read = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());

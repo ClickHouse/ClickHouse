@@ -34,7 +34,8 @@ public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
         AsynchronousReaderPtr reader_, Int32 priority_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t min_bytes_for_seek = 1024 * 1024);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
@@ -66,6 +67,9 @@ private:
     Memory<> prefetch_buffer;
 
     String buffer_events;
+
+    size_t min_bytes_for_seek;
+    size_t bytes_to_ignore = 0;
 };
 
 }

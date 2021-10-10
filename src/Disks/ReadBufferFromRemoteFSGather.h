@@ -13,9 +13,7 @@ namespace Aws
 namespace S3
 {
 class S3Client;
-}
-}
-
+}}
 namespace DB
 {
 
@@ -31,8 +29,10 @@ public:
 
     void reset();
 
+    void seek(off_t offset); /// SEEK_SET only.
+
 protected:
-    size_t readInto(char * data, size_t size, size_t offset);
+    size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
     virtual SeekableReadBufferPtr createImplementationBuffer(const String & path) const = 0;
 
@@ -41,7 +41,7 @@ protected:
 private:
     bool nextImpl() override;
 
-    SeekableReadBufferPtr initialize();
+    void initialize();
 
     bool readImpl();
 
@@ -50,6 +50,10 @@ private:
     size_t current_buf_idx = 0;
 
     size_t absolute_position = 0;
+
+    size_t buf_idx = 0;
+
+    size_t bytes_to_ignore = 0;
 };
 
 
