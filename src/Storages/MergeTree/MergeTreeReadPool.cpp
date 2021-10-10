@@ -221,6 +221,10 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     {
         const auto & part = parts[i];
 
+        /// Turn off tasks stealing in case there is remote disk.
+        if (part.data_part->isStoredOnRemoteDisk())
+            do_not_steal_tasks = true;
+
         /// Read marks for every data part.
         size_t sum_marks = 0;
         for (const auto & range : part.ranges)
