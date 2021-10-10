@@ -1,4 +1,4 @@
-#include <DataStreams/DistinctSortedBlockInputStream.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 
 namespace DB
 {

@@ -4,10 +4,8 @@
 #include <Common/escapeForFileName.h>
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
