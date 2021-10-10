@@ -239,6 +239,16 @@ namespace detail
             try
             {
                 impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
+
+                if (use_external_buffer)
+                {
+                    /**
+                    * See comment 30 lines lower.
+                    */
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
             }
             catch (const Poco::Exception & e)
             {
@@ -255,28 +265,31 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (use_external_buffer)
+            if (impl)
             {
-                /**
-                * use_external_buffer -- means we read into the buffer which
-                * was passed to us from somewhere else. We do not check whether
-                * previously returned buffer was read or not, because this branch
-                * means we are prefetching data, each nextImpl() call we can fill
-                * a different buffer.
-                */
-                impl->set(internal_buffer.begin(), internal_buffer.size());
-                assert(working_buffer.begin() != nullptr);
-                assert(!internal_buffer.empty());
-            }
-            else
-            {
-                /**
-                * impl was initialized before, pass position() to it to make
-                * sure there is no pending data which was not read, becuase
-                * this branch means we read sequentially.
-                */
-                if (!working_buffer.empty())
-                    impl->position() = position();
+                if (use_external_buffer)
+                {
+                    /**
+                    * use_external_buffer -- means we read into the buffer which
+                    * was passed to us from somewhere else. We do not check whether
+                    * previously returned buffer was read or not, because this branch
+                    * means we are prefetching data, each nextImpl() call we can fill
+                    * a different buffer.
+                    */
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
+                else
+                {
+                    /**
+                    * impl was initialized before, pass position() to it to make
+                    * sure there is no pending data which was not read, becuase
+                    * this branch means we read sequentially.
+                    */
+                    if (!working_buffer.empty())
+                        impl->position() = position();
+                }
             }
 
             if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
