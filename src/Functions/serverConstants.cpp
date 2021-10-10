@@ -106,7 +106,7 @@ namespace
     {
     public:
         static constexpr auto name = "getOSKernelVersion";
-        explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(context, Poco::Environment::osName() + " " + Poco::Environment::osVersion()) {}
+        explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 #endif
