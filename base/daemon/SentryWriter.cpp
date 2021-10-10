@@ -13,6 +13,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
+#include <Common/hex.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
@@ -163,34 +164,34 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         if (stack_size > 0)
         {
             ssize_t offset = stack_trace.getOffset();
-            char instruction_addr[100];
+
+            char instruction_addr[19]
+            {
+                '0', 'x',
+                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+                '\0'
+            };
+
             StackTrace::Frames frames;
             StackTrace::symbolize(stack_trace.getFramePointers(), offset, stack_size, frames);
+
             for (ssize_t i = stack_size - 1; i >= offset; --i)
             {
                 const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
 
-                if (std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIx64, frame_ptr) >= 0)
-                {
-                    sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
-                }
+                writeHexUIntLowercase(frame_ptr, instruction_addr + 2);
+                sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
 
                 if (current_frame.symbol.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "function", sentry_value_new_string(current_frame.symbol.value().c_str()));
-                }
 
                 if (current_frame.file.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
-                }
 
                 if (current_frame.line.has_value())
-                {
                     sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
-                }
 
                 sentry_value_append(sentry_frames, sentry_frame);
             }
