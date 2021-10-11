@@ -1756,7 +1756,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
     }
 
     DataTypePtr getReturnType() const override
-    { return std::make_shared<ColumnFloat64>(); }
+    { return std::make_shared<DataTypeFloat64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
