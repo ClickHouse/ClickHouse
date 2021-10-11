@@ -56,8 +56,14 @@ void checkReadAccess(IDisk & disk)
 
 void checkRemoveAccess(IDisk & disk)
 {
+    // TODO: make this an assert (== true)
+    std::cout << disk.checkUniqueId(test_file) << "\n";
+
     // TODO: implement actually removing the file from Blob Storage cloud, now it seems only the metadata file is removed
     disk.removeFile(test_file);
+
+    // TODO: make this an assert (== false)
+    std::cout << disk.checkUniqueId(test_file) << "\n";
 }
 
 

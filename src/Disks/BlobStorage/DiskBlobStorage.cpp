@@ -129,8 +129,17 @@ bool DiskBlobStorage::supportZeroCopyReplication() const
 }
 
 
-bool DiskBlobStorage::checkUniqueId(const String &) const
+bool DiskBlobStorage::checkUniqueId(const String & id) const
 {
+    auto blobs_list_response = blob_container_client.ListBlobs();
+    auto blobs_list = blobs_list_response.Blobs;
+
+    for (auto blob : blobs_list)
+    {
+        if (id == blob.Name)
+            return true;
+    }
+
     return false;
 }
 
