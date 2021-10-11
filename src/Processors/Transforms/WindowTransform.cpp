@@ -1593,8 +1593,8 @@ struct RecurrentWindowFunction : public WindowFunction
 
 struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
 {
-    constexpr size_t ARGUMENT_VALUE = 0;
-    constexpr size_t ARGUMENT_TIME = 1;
+    static constexpr size_t ARGUMENT_VALUE = 0;
+    static constexpr size_t ARGUMENT_TIME = 1;
 
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1660,8 +1660,8 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
 
 struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
 {
-    constexpr size_t ARGUMENT_VALUE = 0;
-    constexpr size_t ARGUMENT_TIME = 1;
+    static constexpr size_t ARGUMENT_VALUE = 0;
+    static constexpr size_t ARGUMENT_TIME = 1;
 
     WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1727,7 +1727,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
 
 struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
 {
-    constexpr size_t ARGUMENT_TIME = 0;
+    static constexpr size_t ARGUMENT_TIME = 0;
 
     WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1783,8 +1783,8 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
 {
-    constexpr size_t ARGUMENT_VALUE = 0;
-    constexpr size_t ARGUMENT_TIME = 1;
+    static constexpr size_t ARGUMENT_VALUE = 0;
+    static constexpr size_t ARGUMENT_TIME = 1;
 
     WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
