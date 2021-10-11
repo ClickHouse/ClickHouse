@@ -310,7 +310,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
-
+    
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
 #if defined(__AVX512F__) && defined(__AVX512BW__)
     static constexpr size_t SIMD_BYTES = 64;
     const __m512i zero64 = _mm512_setzero_epi32();    
@@ -341,6 +346,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         filt_pos += SIMD_BYTES;
         data_pos += SIMD_BYTES;
     }
+
 #elif defined(__AVX2__)
     static constexpr size_t SIMD_BYTES = 32;
     const __m256i zero32 = _mm256_setzero_si256();   
@@ -371,13 +377,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         filt_pos += SIMD_BYTES;
         data_pos += SIMD_BYTES;
     }
-#elif defined(__SSE2__)
-    /** A slightly more optimized version.
-    * Based on the assumption that often pieces of consecutive values
-    *  completely pass or do not pass the filter.
-    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-    */
 
+#elif defined(__SSE2__)
     static constexpr size_t SIMD_BYTES = 16;
     const __m128i zero16 = _mm_setzero_si128();
     const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
