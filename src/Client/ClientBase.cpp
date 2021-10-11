@@ -38,16 +38,15 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Formats/FormatFactory.h>
+#include <Formats/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-
-#include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
@@ -233,7 +232,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     initBlockOutputStream(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
-    /// block_out_stream, do not output it.
+    /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
@@ -241,11 +240,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.clearProgressOutput();
 
-    block_out_stream->write(block);
+    output_format->write(block);
     written_first_block = true;
 
     /// Received data block is immediately displayed to the user.
-    block_out_stream->flush();
+    output_format->flush();
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
@@ -265,14 +264,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setTotals(block);
+    output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setExtremes(block);
+    output_format->setExtremes(block);
 }
 
 
@@ -286,19 +285,19 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 
 void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
 {
-    if (profile_info.hasAppliedLimit() && block_out_stream)
-        block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+    if (profile_info.hasAppliedLimit() && output_format)
+        output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 }
 
 
 void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 {
-    if (!block_out_stream)
+    if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
-            block_out_stream = std::make_shared<NullBlockOutputStream>(block);
+            output_format = std::make_shared<NullOutputFormat>(block);
             return;
         }
 
@@ -360,11 +359,11 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
         if (!need_render_progress)
-            block_out_stream = global_context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            block_out_stream = global_context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        block_out_stream->writePrefix();
+        output_format->doWritePrefix();
     }
 }
 
@@ -626,8 +625,8 @@ void ClientBase::onProgress(const Progress & value)
         return;
     }
 
-    if (block_out_stream)
-        block_out_stream->onProgress(value);
+    if (output_format)
+        output_format->onProgress(value);
 
     if (need_render_progress)
         progress_indication.writeProgress();
@@ -638,8 +637,8 @@ void ClientBase::onEndOfStream()
 {
     progress_indication.clearProgressOutput();
 
-    if (block_out_stream)
-        block_out_stream->writeSuffix();
+    if (output_format)
+        output_format->doWriteSuffix();
 
     resetOutput();
 
@@ -654,7 +653,7 @@ void ClientBase::onEndOfStream()
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    block_out_stream.reset();
+    output_format.reset();
     logs_out_stream.reset();
 
     if (pager_cmd)
@@ -848,7 +847,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    auto source = FormatFactory::instance().getInput(current_format, buf, sample, global_context, insert_format_max_block_size);
+    auto source = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())

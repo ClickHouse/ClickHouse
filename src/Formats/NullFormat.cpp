@@ -1,19 +1,22 @@
-#include <DataStreams/NullBlockOutputStream.h>
+#include <Formats/NullFormat.h>
 #include <Formats/FormatFactory.h>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB
 {
+
+WriteBuffer NullOutputFormat::empty_buffer(nullptr, 0);
 
 void registerOutputFormatNull(FormatFactory & factory)
 {
     factory.registerOutputFormat("Null", [](
         WriteBuffer &,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings &)
     {
-        return std::make_shared<NullBlockOutputStream>(sample);
+        return std::make_shared<NullOutputFormat>(sample);
     });
 }
 
