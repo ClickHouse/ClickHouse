@@ -1593,6 +1593,9 @@ struct RecurrentWindowFunction : public WindowFunction
 
 struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
 {
+    constexpr size_t ARGUMENT_VALUE = 0;
+    constexpr size_t ARGUMENT_TIME = 1;
+
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : RecurrentWindowFunction(name_, argument_types_, parameters_)
@@ -1610,18 +1613,20 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
                 "Function {} takes exactly two arguments", name_);
         }
 
-        if (!isNumber(argument_types[0]))
+        if (!isNumber(argument_types[ARGUMENT_VALUE]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument must be a number, '{}' given",
-                argument_types[0]->getName());
+                "Argument {} must be a number, '{}' given",
+                ARGUMENT_VALUE,
+                argument_types[ARGUMENT_VALUE]->getName());
         }
 
-        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Second argument must be DateTime or DateTime64, '{}' given",
-                argument_types[1]->getName());
+                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                ARGUMENT_TIME,
+                argument_types[ARGUMENT_TIME]->getName());
         }
     }
 
@@ -1638,12 +1643,12 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         const auto & current_block = transform->blockAt(current_row);
 
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
-        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         IColumn & to = *current_block.output_columns[function_index];
 
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
         Float64 c = exp((last_t-t)/decay_length);
         assert_cast<ColumnFloat64 &>(to).getData().push_back(x + c * last_val);
@@ -1655,6 +1660,9 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
 
 struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
 {
+    constexpr size_t ARGUMENT_VALUE = 0;
+    constexpr size_t ARGUMENT_TIME = 1;
+
     WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : RecurrentWindowFunction(name_, argument_types_, parameters_)
@@ -1672,18 +1680,20 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
                 "Function {} takes exactly two arguments", name_);
         }
 
-        if (!isNumber(argument_types[0]))
+        if (!isNumber(argument_types[ARGUMENT_VALUE]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument must be a number, '{}' given",
-                argument_types[0]->getName());
+                "Argument {} must be a number, '{}' given",
+                ARGUMENT_VALUE,
+                argument_types[ARGUMENT_VALUE]->getName());
         }
 
-        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Second argument must be DateTime or DateTime64, '{}' given",
-                argument_types[1]->getName());
+                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                ARGUMENT_TIME,
+                argument_types[ARGUMENT_TIME]->getName());
         }
     }
 
@@ -1700,12 +1710,12 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         const auto & current_block = transform->blockAt(current_row);
 
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
-        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         IColumn & to = *current_block.output_columns[function_index];
 
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
         Float64 c = exp((last_t-t)/decay_length);
         assert_cast<ColumnFloat64 &>(to).getData().push_back(std::max(x, c * last_val));
@@ -1717,6 +1727,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
 
 struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
 {
+    constexpr size_t ARGUMENT_TIME = 0;
+
     WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : RecurrentWindowFunction(name_, argument_types_, parameters_)
@@ -1734,11 +1746,12 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
                 "Function {} takes exactly one argument", name_);
         }
 
-        if (!isDateTime(argument_types[0]) && !isDateTime64(argument_types[0]))
+        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument must be DateTime or DateTime64, '{}' given",
-                argument_types[0]->getName());
+                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                ARGUMENT_TIME,
+                argument_types[ARGUMENT_TIME]->getName());
         }
     }
 
@@ -1754,11 +1767,11 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
 
-        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         IColumn & to = *current_block.output_columns[function_index];
 
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
         Float64 c = exp((last_t-t)/decay_length);
         assert_cast<ColumnFloat64 &>(to).getData().push_back(c);
@@ -1770,6 +1783,9 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
 {
+    constexpr size_t ARGUMENT_VALUE = 0;
+    constexpr size_t ARGUMENT_TIME = 1;
+
     WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : RecurrentWindowFunction(name_, argument_types_, parameters_)
@@ -1787,18 +1803,20 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
                 "Function {} takes exactly two arguments", name_);
         }
 
-        if (!isNumber(argument_types[0]))
+        if (!isNumber(argument_types[ARGUMENT_VALUE]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument must be a number, '{}' given",
-                argument_types[0]->getName());
+                "Argument {} must be a number, '{}' given",
+                ARGUMENT_VALUE,
+                argument_types[ARGUMENT_VALUE]->getName());
         }
 
-        if (!isDateTime(argument_types[1]) && !isDateTime64(argument_types[1]))
+        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Second argument must be DateTime or DateTime64, '{}' given",
-                argument_types[1]->getName());
+                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                ARGUMENT_TIME,
+                argument_types[ARGUMENT_TIME]->getName());
         }
     }
 
@@ -1815,12 +1833,12 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
         const auto & current_block = transform->blockAt(current_row);
 
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
-        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, 1);
+        Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         IColumn & to = *current_block.output_columns[function_index];
 
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[0]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[1]]).getFloat64(transform->current_row.row);
+        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
+        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
         Float64 c = exp((last_t-t)/decay_length);
         assert_cast<ColumnFloat64 &>(to).getData().push_back((x + c * last_val)/c);
