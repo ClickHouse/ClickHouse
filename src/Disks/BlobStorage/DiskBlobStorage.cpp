@@ -31,10 +31,14 @@ class BlobStoragePathKeeper : public RemoteFSPathKeeper
 public:
     BlobStoragePathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
 
-    void addPath(const String &) override
+    void addPath(const String & path) override
     {
-
+        paths.push_back(path);
     }
+
+// TODO: maybe introduce a getter?
+// private:
+    std::vector<String> paths;
 };
 
 
@@ -144,9 +148,17 @@ bool DiskBlobStorage::checkUniqueId(const String & id) const
 }
 
 
-void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr)
+void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 {
+    auto * paths_keeper = dynamic_cast<BlobStoragePathKeeper *>(fs_paths_keeper.get());
 
+    if (paths_keeper)
+    {
+        for (auto path : paths_keeper->paths)
+        {
+            blob_container_client.DeleteBlob(path);
+        }
+    }
 }
 
 
