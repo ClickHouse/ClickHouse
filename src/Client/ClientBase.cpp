@@ -667,18 +667,19 @@ void ClientBase::onEndOfStream()
 
 void ClientBase::onProfileEvents(Block & block)
 {
-    if (block.rows() == 0)
+    const auto rows = block.rows();
+    if (rows == 0)
         return;
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
     const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
     const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
 
-    auto const * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-    auto const * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
     HostToThreadTimesMap thread_times;
-    for (size_t i = 0; i < block.rows(); ++i)
+    for (size_t i = 0; i < rows; ++i)
     {
         auto thread_id = array_thread_id[i];
         auto host_name = host_names.getDataAt(i).toString();
