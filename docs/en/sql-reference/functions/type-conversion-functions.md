@@ -279,7 +279,7 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrDefault {#todate32-or-null}
+## toDate32OrDefault {#todate32-or-default}
 
 The same as [toDate32](#todate32) but returns default value if invalid argument is received.
 
@@ -362,7 +362,7 @@ Result:
 ```
 
 
-## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ornull}
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
 
 Converts an input string to a [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
 
@@ -855,14 +855,14 @@ Result:
 ```
 
 
-## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_null}
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
 
 Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
 
 **Syntax**
 
 ```sql
-accurateCastOrNull(x, T)
+accurateCastOrDefault(x, T)
 ```
 
 **Parameters**
@@ -873,7 +873,7 @@ accurateCastOrNull(x, T)
 
 **Returned value**
 
--   The value, converted to the specified data type `T`.
+-   The value converted to the specified data type `T`.
 
 **Example**
 
