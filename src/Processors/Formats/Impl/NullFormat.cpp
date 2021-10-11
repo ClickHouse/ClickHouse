@@ -16,9 +16,9 @@ protected:
     void consume(Chunk) override {}
 };
 
-void registerOutputFormatProcessorNull(FormatFactory & factory)
+void registerOutputFormatNull(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Null", [](
+    factory.registerOutputFormat("Null", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
