@@ -815,6 +815,7 @@ namespace MySQLReplication
             {
                 event = std::make_shared<QueryEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
+                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
@@ -826,7 +827,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        position.update(event);
+                        break;
                 }
                 break;
             }
