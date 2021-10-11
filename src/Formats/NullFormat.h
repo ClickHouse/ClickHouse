@@ -1,3 +1,4 @@
+#pragma once
 #include <Processors/Formats/IOutputFormat.h>
 
 namespace DB
