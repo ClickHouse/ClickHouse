@@ -301,11 +301,15 @@ void Counters::reset()
     resetCounters();
 }
 
-Counters Counters::getPartiallyAtomicSnapshot() const
+Counters::Snapshot::Snapshot()
+    : counters_holder(new Count[num_counters] {})
+{}
+
+Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
-    Counters res(VariableContext::Snapshot, nullptr);
+    Snapshot res;
     for (Event i = 0; i < num_counters; ++i)
-        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        res[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
 
