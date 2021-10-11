@@ -5,14 +5,14 @@
 namespace DB
 {
 
-class SerializationTupleElement final : public SerializationWrapper
+class SerializationNamed final : public SerializationWrapper
 {
 private:
     String name;
     bool escape_delimiter;
 
 public:
-    SerializationTupleElement(const SerializationPtr & nested_, const String & name_, bool escape_delimiter_ = true)
+    SerializationNamed(const SerializationPtr & nested_, const String & name_, bool escape_delimiter_ = true)
         : SerializationWrapper(nested_)
         , name(name_), escape_delimiter(escape_delimiter_)
     {
@@ -21,11 +21,13 @@ public:
     const String & getElementName() const { return name; }
 
     void enumerateStreams(
+        SubstreamPath & path,
         const StreamCallback & callback,
-        SubstreamPath & path) const override;
+        DataTypePtr type,
+        ColumnPtr column) const override;
 
     void serializeBinaryBulkStatePrefix(
-         SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkStateSuffix(
@@ -51,6 +53,22 @@ public:
         SubstreamsCache * cache) const override;
 
 private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const String name;
+        const bool escape_delimiter;
+
+        SubcolumnCreator(const String & name_, bool escape_delimiter_)
+            : name(name_), escape_delimiter(escape_delimiter_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev) const override
+        {
+            return std::make_shared<SerializationNamed>(prev, name, escape_delimiter);
+        }
+    };
+
     void addToPath(SubstreamPath & path) const;
 };
 

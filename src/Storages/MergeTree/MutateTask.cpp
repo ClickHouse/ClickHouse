@@ -337,15 +337,14 @@ static NameToNameVector collectFilesForRenames(
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : source_part->getColumns())
+    for (const auto & column : source_part->getColumns())
     {
         auto serialization = source_part->getSerializationForColumn(column);
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+            });
     }
 
     NameToNameVector rename_vector;

@@ -702,7 +702,7 @@ ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column
     current_column = current_column->decompress();
 
     if (column.isSubcolumn())
-        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), *current_column);
+        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
 
     return current_column;
 }
