@@ -27,7 +27,7 @@ public:
         std::string error_msg = {};
     };
 
-    explicit FileLogDirectoryWatcher(const std::string & path_);
+    explicit FileLogDirectoryWatcher(const std::string & path_, ContextPtr context_);
     ~FileLogDirectoryWatcher() = default;
 
     Events getEventsAndReset();

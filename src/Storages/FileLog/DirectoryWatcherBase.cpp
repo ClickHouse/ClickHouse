@@ -13,11 +13,15 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_DOESNT_EXIST;
-	extern const int IO_ERROR;
+    extern const int IO_SETUP_ERROR;
 }
 
-DirectoryWatcherBase::DirectoryWatcherBase(FileLogDirectoryWatcher & owner_, const std::string & path_, int event_mask_)
-    : owner(owner_), path(path_), event_mask(event_mask_)
+static constexpr int event_size = sizeof(struct inotify_event);
+static constexpr int buffer_size = 1024 * (NAME_MAX + event_size + 1);
+
+DirectoryWatcherBase::DirectoryWatcherBase(
+    FileLogDirectoryWatcher & owner_, const std::string & path_, ContextPtr context_, int event_mask_)
+    : WithContext(context_->getGlobalContext()), owner(owner_), path(path_), event_mask(event_mask_)
 {
     if (!std::filesystem::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The path {} does not exist.", path);
@@ -27,7 +31,8 @@ DirectoryWatcherBase::DirectoryWatcherBase(FileLogDirectoryWatcher & owner_, con
 
     fd = inotify_init();
     if (fd == -1)
-        throw Exception("cannot initialize inotify", ErrorCodes::IO_ERROR);
+        throw Exception("cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
+
     watch_task = getContext()->getMessageBrokerSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
 }
@@ -49,13 +54,13 @@ void DirectoryWatcherBase::watchFunc()
     int wd = inotify_add_watch(fd, path.c_str(), mask);
     if (wd == -1)
     {
-        owner.onError(Exception(ErrorCodes::IO_ERROR, "Watch directory {} failed.", path));
+        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed.", path));
     }
 
     std::string buffer;
-    buffer.resize(4096);
+    buffer.resize(buffer_size);
     fd_set fds;
-    while (true)
+    while (!stopped)
     {
         FD_ZERO(&fds);
         FD_SET(fd, &fds);
@@ -127,6 +132,7 @@ void DirectoryWatcherBase::start()
 
 void DirectoryWatcherBase::stop()
 {
+    stopped = true;
     if (watch_task)
         watch_task->deactivate();
 }
