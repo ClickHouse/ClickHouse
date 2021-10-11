@@ -1,6 +1,6 @@
 #include <Common/ThreadStatus.h>
 
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -14,7 +14,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>

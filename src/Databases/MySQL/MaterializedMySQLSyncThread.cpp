@@ -13,7 +13,7 @@
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
-#    include <DataStreams/CountingBlockOutputStream.h>
+#    include <Processors/Transforms/CountingTransform.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -25,8 +25,8 @@
 #    include <Storages/StorageMergeTree.h>
 #    include <Common/quoteString.h>
 #    include <Common/setThreadName.h>
-#    include <common/sleep.h>
-#    include <common/bit_cast.h>
+#    include <base/sleep.h>
+#    include <base/bit_cast.h>
 
 namespace DB
 {
