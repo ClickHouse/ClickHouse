@@ -365,7 +365,7 @@ struct MurmurHash3Impl32
 
     static UInt32 combineHashes(UInt32 h1, UInt32 h2)
     {
-        return combineHashesFunc<UInt32, MurmurHash3Impl32>(h1, h2);
+        return IntHash32Impl::apply(h1) ^ h2;
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -389,7 +389,7 @@ struct MurmurHash3Impl64
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return combineHashesFunc<UInt64, MurmurHash3Impl64>(h1, h2);
+        return IntHash64Impl::apply(h1) ^ h2;
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -401,16 +401,16 @@ struct MurmurHash3Impl128
 
     using ReturnType = UInt128;
 
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
-    {
-        return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2);
-    }
-
     static UInt128 apply(const char * data, const size_t size)
     {
         char bytes[16];
         MurmurHash3_x64_128(data, size, 0, bytes);
         return *reinterpret_cast<UInt128 *>(bytes);
+    }
+
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    {
+        return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
