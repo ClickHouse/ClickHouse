@@ -1168,7 +1168,7 @@ void TreeRewriter::normalize(
     // if we have at least two different functions. E.g. we will replace sum(x)
     // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
     // be calculated only once because of CSE.
-    if (settings.optimize_fuse_sum_count_avg || settings.optimize_syntax_fuse_functions)
+    if (settings.optimize_fuse_sum_count_avg)
     {
         FuseSumCountAggregatesVisitor::Data data;
         FuseSumCountAggregatesVisitor(data).visit(query);
