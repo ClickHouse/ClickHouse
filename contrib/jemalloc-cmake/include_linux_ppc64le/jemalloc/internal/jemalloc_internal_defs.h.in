@@ -81,7 +81,7 @@
 /* #undef JEMALLOC_HAVE_ISSETUGID */
 
 /* Defined if pthread_atfork(3) is available. */
-#define JEMALLOC_HAVE_PTHREAD_ATFORK
+/* #undef JEMALLOC_HAVE_PTHREAD_ATFORK */
 
 /* Defined if pthread_setname_np(3) is available. */
 #define JEMALLOC_HAVE_PTHREAD_SETNAME_NP
@@ -284,7 +284,7 @@
 #define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
 
 /* Defined if madvise(2) is available but MADV_FREE is not (x86 Linux only). */
-/* #undef JEMALLOC_DEFINE_MADVISE_FREE */
+#define JEMALLOC_DEFINE_MADVISE_FREE
 
 /*
  * Defined if MADV_DO[NT]DUMP is supported as an argument to madvise.
