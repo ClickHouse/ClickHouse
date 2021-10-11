@@ -14,9 +14,14 @@ check_include_file("windows.h" HAVE_WINDOWS_H)
 
 set (HAVE_BUILTIN_EXPECT 1)
 set (HAVE_BUILTIN_CTZ 1)
-set (SNAPPY_HAVE_SSSE3 ${ENABLE_SSSE3})
 set (HAVE_FUNC_MMAP 1)
 set (HAVE_FUNC_SYSCONF 1)
+
+if (ARCH_AMD64 AND ENABLE_SSSE3)
+    set (SNAPPY_HAVE_SSSE3 1)
+else ()
+    set (SNAPPY_HAVE_SSSE3 0)
+endif ()
 
 configure_file(
   "${SOURCE_DIR}/cmake/config.h.in"
