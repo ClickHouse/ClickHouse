@@ -48,6 +48,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <DataStreams/InternalTextLogs.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace fs = std::filesystem;
 
@@ -240,7 +241,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.clearProgressOutput();
 
-    output_format->write(block);
+    output_format->write(materializeBlock(block));
     written_first_block = true;
 
     /// Received data block is immediately displayed to the user.
@@ -358,10 +359,10 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             current_format = "Vertical";
 
         /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        if (!need_render_progress)
-            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
-        else
-            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        // if (!need_render_progress)
+        //     output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        // else
+        output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->doWritePrefix();
     }
