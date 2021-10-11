@@ -143,7 +143,7 @@ else ()
         }
     " HAVE_AVX512)
     if (HAVE_AVX512 AND ENABLE_AVX512)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+        set(X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} ${TEST_FLAG}")
     endif ()
 
     set (TEST_FLAG "-mbmi")
@@ -157,7 +157,7 @@ else ()
         }
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+        set(X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} ${TEST_FLAG}")
     endif ()    
 endif ()
 
