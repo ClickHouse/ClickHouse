@@ -155,7 +155,14 @@ endif()
 
 option(WITH_FALLOCATE "build with fallocate" ON)
 if(WITH_FALLOCATE)
-  set (HAVE_FALLOCATE 1)
+  CHECK_C_SOURCE_COMPILES("
+#include <fcntl.h>
+#include <linux/falloc.h>
+int main() {
+ int fd = open(\"/dev/null\", 0);
+ fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1024);
+}
+" HAVE_FALLOCATE)
   if(HAVE_FALLOCATE)
     add_definitions(-DROCKSDB_FALLOCATE_PRESENT)
   endif()
