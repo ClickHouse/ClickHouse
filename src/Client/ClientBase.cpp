@@ -48,7 +48,7 @@
 #include <IO/CompressionMethod.h>
 
 #include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/InternalTextLogsRowOutputStream.h>
+#include <DataStreams/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -94,6 +94,9 @@ void interruptSignalHandler(int signum)
     if (exit_on_signal.test_and_set())
         _exit(signum);
 }
+
+ClientBase::~ClientBase() = default;
+ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
@@ -393,8 +396,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
-        logs_out_stream->writePrefix();
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
     }
 }
 
@@ -426,10 +428,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     catch (Exception & e)
     {
         if (!is_interactive)
-        {
             e.addMessage("(in query: {})", full_query);
-            throw;
-        }
+        throw;
     }
 
     if (have_error)
@@ -640,9 +640,6 @@ void ClientBase::onEndOfStream()
 
     if (block_out_stream)
         block_out_stream->writeSuffix();
-
-    if (logs_out_stream)
-        logs_out_stream->writeSuffix();
 
     resetOutput();
 
