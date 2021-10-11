@@ -11,7 +11,10 @@ The cross-build for AARCH64 is based on the [Build instructions](../development/
 
 ## Install Clang-13
 
-Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
+Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup or do
+```
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
