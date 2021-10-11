@@ -598,7 +598,6 @@ namespace
         void addExtremesToResult(const Block & extremes);
         void addProfileInfoToResult(const BlockStreamProfileInfo & info);
         void addLogsToResult();
-        void addProfileEventsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
         void sendException(const Exception & exception);
@@ -624,7 +623,6 @@ namespace
         BlockIO io;
         Progress progress;
         InternalTextLogsQueuePtr logs_queue;
-        InternalProfileEventsQueuePtr profile_queue;
 
         GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
         GRPCResult result;
@@ -776,8 +774,6 @@ namespace
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
             CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
-        profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-        CurrentThread::attachInternalProfileEventsQueue(profile_queue);
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
@@ -1129,7 +1125,6 @@ namespace
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
                 {
                     addProgressToResult();
-                    addProfileEventsToResult();
                     after_send_progress.restart();
                 }
 
@@ -1181,7 +1176,6 @@ namespace
         finalize = true;
         io.onFinish();
         addProgressToResult();
-        addProfileEventsToResult();
         query_scope->logPeakMemoryUsage();
         addLogsToResult();
         sendResult();
@@ -1443,11 +1437,6 @@ namespace
                 log_entry.set_text(text.data, text.size);
             }
         }
-    }
-
-    void Call::addProfileEventsToResult()
-    {
-
     }
 
     void Call::sendResult()
