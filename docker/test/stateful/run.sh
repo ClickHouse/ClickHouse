@@ -69,7 +69,7 @@ service clickhouse-server restart
 
 # Wait for server to start accepting connections
 for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && breaks
+    clickhouse-client --query "SELECT 1" && break
     sleep 1
 done
 
