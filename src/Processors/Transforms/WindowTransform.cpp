@@ -1514,20 +1514,14 @@ struct WindowFunctionDenseRank final : public WindowFunction
     }
 };
 
-struct RecurrentWindowFunction : public WindowFunction
+namespace recurrent_detail
 {
-    RecurrentWindowFunction(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
-    {
-    }
-
     template<typename T> T getLastValueFromInputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
     }
 
-    template<> Float64 getLastValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    template<> Float64 getLastValueFromInputColumn<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index)
     {
         const auto & workspace = transform->workspaces[function_index];
         auto current_row = transform->current_row;
@@ -1554,7 +1548,7 @@ struct RecurrentWindowFunction : public WindowFunction
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
     }
 
-    template<> Float64 getLastValueFromOutputColumn(const WindowTransform * transform, size_t function_index)
+    template<> Float64 getLastValueFromOutputColumn<Float64>(const WindowTransform * transform, size_t function_index)
     {
         auto current_row = transform->current_row;
 
@@ -1573,6 +1567,27 @@ struct RecurrentWindowFunction : public WindowFunction
         }
 
         return 0;
+    }
+}
+
+struct RecurrentWindowFunction : public WindowFunction
+{
+    RecurrentWindowFunction(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+    }
+
+    template<typename T>
+    static T getLastValueFromOutputColumn(const WindowTransform * transform, size_t function_index)
+    {
+        return recurrent_detail::getLastValueFromOutputColumn<T>(transform, function_index);
+    }
+
+    template<typename T>
+    static T getLastValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    {
+        return recurrent_detail::getLastValueFromInputColumn<T>(transform, function_index, column_index);
     }
 };
 
