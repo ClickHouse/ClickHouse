@@ -125,7 +125,7 @@ DiskType::Type DiskBlobStorage::getType() const
 
 bool DiskBlobStorage::supportZeroCopyReplication() const
 {
-    return false;
+    return true;
 }
 
 
