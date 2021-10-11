@@ -1,4 +1,4 @@
-#include "InternalTextLogsRowOutputStream.h"
+#include "InternalTextLogs.h"
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/typeid_cast.h>
@@ -13,12 +13,7 @@
 namespace DB
 {
 
-Block InternalTextLogsRowOutputStream::getHeader() const
-{
-    return InternalTextLogsQueue::getSampleBlock();
-}
-
-void InternalTextLogsRowOutputStream::write(const Block & block)
+void InternalTextLogs::write(const Block & block)
 {
     const auto & array_event_time = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time").column).getData();
     const auto & array_microseconds = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time_microseconds").column).getData();
