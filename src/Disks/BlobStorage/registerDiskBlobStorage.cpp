@@ -56,14 +56,19 @@ void checkReadAccess(IDisk & disk)
 
 void checkRemoveAccess(IDisk & disk)
 {
-    // TODO: make this an assert (== true)
-    std::cout << disk.checkUniqueId(test_file) << "\n";
+    if (!disk.checkUniqueId(test_file))
+    {
+        // TODO: improve error codes
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the file to exist, but did not find it: {}", test_file);
+    }
 
     // TODO: implement actually removing the file from Blob Storage cloud, now it seems only the metadata file is removed
     disk.removeFile(test_file);
 
-    // TODO: make this an assert (== false)
-    std::cout << disk.checkUniqueId(test_file) << "\n";
+    if (disk.checkUniqueId(test_file))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the file not to exist, but found it: {}", test_file);
+    }
 }
 
 
