@@ -9,16 +9,9 @@ This is for the case when you have Linux machine and want to use it to build `cl
 
 The cross-build for AARCH64 is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-8 {#install-clang-8}
+## Install Clang-13
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
-For example, in Ubuntu Bionic you can use the following commands:
-
-``` bash
-echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
-sudo apt-get update
-sudo apt-get install clang-8
-```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
