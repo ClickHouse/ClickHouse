@@ -30,14 +30,17 @@ public:
 
 private:
 
-    std::unique_ptr<ReadBuffer> initialize();
+    void initialize();
 
+    std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     Azure::Storage::Blobs::BlobContainerClient blob_container_client;
-    std::unique_ptr<ReadBuffer> impl;
     std::vector<uint8_t> tmp_buffer;
-    UInt64 max_single_read_retries;
+    UInt64 max_single_read_retries; // TODO: unused field
     const String & path;
     off_t offset = 0;
+    size_t buf_size;
+    size_t total_size;
+    bool initialized = false;
 
 };
 
