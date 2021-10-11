@@ -879,7 +879,7 @@ def run_tests_array(all_tests_with_params):
 
     while True:
         if is_concurrent:
-            case = queue.get(timeout=args.timeout)
+            case = queue.get(timeout=args.timeout * 1.1)
             if not case:
                 break
         else:
@@ -1080,10 +1080,10 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
             pool.map_async(run_tests_array, parallel_tests_array)
 
             for suit in test_suite.parallel_tests:
-                queue.put(suit, timeout=args.timeout)
+                queue.put(suit, timeout=args.timeout * 1.1)
 
             for _ in range(jobs):
-                queue.put(None, timeout=args.timeout)
+                queue.put(None, timeout=args.timeout * 1.1)
 
             queue.close()
 

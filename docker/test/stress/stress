@@ -117,7 +117,7 @@ def prepare_for_hung_check(drop_databases):
     # Wait for last queries to finish if any, not longer than 300 seconds
     call("""clickhouse client -q "select sleepEachRow((
             select maxOrDefault(300 - elapsed) + 1 from system.processes where query not like '%from system.processes%' and elapsed < 300
-            ) / 300) from numbers(300) format Null" """, shell=True, stderr=STDOUT, timeout=30)
+            ) / 300) from numbers(300) format Null" """, shell=True, stderr=STDOUT, timeout=330)
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
