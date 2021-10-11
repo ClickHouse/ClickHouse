@@ -66,28 +66,16 @@ public:
         size_t row)>;
 
 private:
-    using InputCreator = std::function<BlockInputStreamPtr(
-        ReadBuffer & buf,
-        const Block & sample,
-        UInt64 max_block_size,
-        ReadCallback callback,
-        const FormatSettings & settings)>;
 
-    using OutputCreator = std::function<BlockOutputStreamPtr(
-        WriteBuffer & buf,
-        const Block & sample,
-        WriteCallback callback,
-        const FormatSettings & settings)>;
-
-    using InputProcessorCreatorFunc = InputFormatPtr(
+    using InputCreatorFunc = InputFormatPtr(
         ReadBuffer & buf,
         const Block & header,
         const RowInputFormatParams & params,
         const FormatSettings & settings);
 
-    using InputProcessorCreator = std::function<InputProcessorCreatorFunc>;
+    using InputCreator = std::function<InputCreatorFunc>;
 
-    using OutputProcessorCreator = std::function<OutputFormatPtr(
+    using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -102,8 +90,6 @@ private:
     {
         InputCreator input_creator;
         OutputCreator output_creator;
-        InputProcessorCreator input_processor_creator;
-        OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
@@ -121,25 +107,6 @@ public:
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-
-    /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
-    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
-    BlockOutputStreamPtr getOutputStreamParallelIfPossible(
-        const String & name,
-        WriteBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        WriteCallback callback = {},
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-
-    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
-    BlockOutputStreamPtr getOutputStream(
-        const String & name,
-        WriteBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
@@ -167,15 +134,13 @@ public:
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Register format by its name.
-    void registerInputFormat(const String & name, InputCreator input_creator);
-    void registerOutputFormat(const String & name, OutputCreator output_creator);
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
-    void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
-    void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
+    /// Register format by its name.
+    void registerInputFormat(const String & name, InputCreator input_creator);
+    void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markFormatAsColumnOriented(const String & name);

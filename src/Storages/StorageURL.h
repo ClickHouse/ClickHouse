@@ -14,6 +14,9 @@
 namespace DB
 {
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 struct ConnectionTimeouts;
 
 /**
@@ -99,7 +102,7 @@ public:
 
 private:
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
 
     bool is_first_chunk = true;
 };

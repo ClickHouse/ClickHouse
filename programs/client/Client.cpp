@@ -44,8 +44,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
-#include <DataStreams/NullBlockOutputStream.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -61,7 +59,6 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include "TestTags.h"
 
 #ifndef __clang__

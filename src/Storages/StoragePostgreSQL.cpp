@@ -22,7 +22,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <IO/WriteHelpers.h>
