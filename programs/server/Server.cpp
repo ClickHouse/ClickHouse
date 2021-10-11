@@ -1036,6 +1036,10 @@ if (ThreadFuzzer::instance().isEffective())
         server.start();
 
     SCOPE_EXIT({
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -1075,9 +1079,6 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        // Uses a raw pointer to global context for getting ZooKeeper.
-        main_config_reloader.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1159,7 +1160,6 @@ if (ThreadFuzzer::instance().isEffective())
         UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
         if (total_memory_profiler_step)
         {
-            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
 
