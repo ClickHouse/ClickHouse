@@ -2353,7 +2353,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 
 **См. также**
 
--   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+-   Табличный движок [Distributed](../../engines/table-engines/special/distributed.md)
 
 ## shardCount {#shard-count}
 
