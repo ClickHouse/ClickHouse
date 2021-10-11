@@ -1944,6 +1944,21 @@ Possible values:
 
 Default value: `0`.
 
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+   
+Default value: `1`.
+
+See also:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
@@ -3542,7 +3557,7 @@ Default value: empty list — means whole PostgreSQL database will be replicated
 
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
-Allow reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
 
 Possible values:
 
@@ -3553,11 +3568,11 @@ Default value: `0`.
 
 ## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
 
-Allows to have user-managed replication slots. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
 
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which initial dump of tables will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
@@ -3614,6 +3629,16 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Sets the maximum number of retries during a single HTTP read.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1024`.
 
 ## log_queries_probability {#log-queries-probability}
 
@@ -3724,3 +3749,38 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
+
+Possible values:
+
+-   0 — Positional arguments aren't supported.
+-   1 — Positional arguments are supported: column numbers can use instead of column names.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Result:
+
+```text
+┌─one─┬─two─┬─three─┐
+│  30 │  10 │   20  │
+│  20 │  20 │   10  │
+│  10 │  20 │   30  │
+└─────┴─────┴───────┘
+```
