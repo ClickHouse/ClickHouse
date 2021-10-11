@@ -16,9 +16,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -33,6 +32,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <base/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -48,6 +48,10 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric QueryThread;
+}
 
 namespace DB
 {
@@ -218,6 +222,8 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
+            std::mutex fatal_error_mutex;
+
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -226,7 +232,11 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
+                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
+                {
+                    std::lock_guard lock(fatal_error_mutex);
+                    sendLogs();
+                });
             }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -310,8 +320,10 @@ void TCPHandler::runImpl()
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this]()
+                    auto callback = [this, &fatal_error_mutex]()
                     {
+                        std::lock_guard lock(fatal_error_mutex);
+
                         if (isQueryCancelled())
                             return true;
 
@@ -1357,7 +1369,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
     bool read_ok = skip_block_in->read();
 
     if (!read_ok)
@@ -1387,7 +1399,7 @@ void TCPHandler::initBlockInput()
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
-        state.block_in = std::make_shared<NativeBlockInputStream>(
+        state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version);
@@ -1418,7 +1430,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                 state.maybe_compressed_out = out;
         }
 
-        state.block_out = std::make_shared<NativeBlockOutputStream>(
+        state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1432,7 +1444,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     {
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
-        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+        state.logs_block_out = std::make_unique<NativeWriter>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
