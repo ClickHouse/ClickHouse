@@ -2,8 +2,10 @@
 
 namespace DB
 {
-FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_)
-    : path(path_), dw(std::make_unique<DirectoryWatcherBase>(*this, path)), log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
+FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, ContextPtr context_)
+    : path(path_)
+    , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
+    , log(&Poco::Logger::get("DirectoryIterator (" + path + ")"))
 {
 }
 

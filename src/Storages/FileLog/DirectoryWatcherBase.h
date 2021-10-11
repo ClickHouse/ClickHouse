@@ -53,7 +53,7 @@ public:
     };
 
     struct DirectoryEvent
-	{
+    {
         DirectoryEvent(const std::string & f, DirectoryEventType ev) : path(f), event(ev) { }
 
         /// The directory or file that has been changed.
@@ -70,7 +70,8 @@ public:
     /// Creates a DirectoryWatcher for the directory given in path.
     /// To enable only specific events, an eventMask can be specified by
     /// OR-ing the desired event IDs (e.g., DW_ITEM_ADDED | DW_ITEM_MODIFIED).
-    explicit DirectoryWatcherBase(FileLogDirectoryWatcher & owner_, const std::string & path_, int event_mask_ = DW_FILTER_ENABLE_ALL);
+    explicit DirectoryWatcherBase(
+        FileLogDirectoryWatcher & owner_, const std::string & path_, ContextPtr context_, int event_mask_ = DW_FILTER_ENABLE_ALL);
 
     ~DirectoryWatcherBase();
 
@@ -80,7 +81,7 @@ public:
     /// Returns the directory being watched.
     const std::string & directory() const;
 
-    [[noreturn]] void watchFunc();
+    void watchFunc();
 
 protected:
     void start();
@@ -91,6 +92,8 @@ private:
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;
     TaskThread watch_task;
+
+    std::atomic<bool> stopped{false};
 
     const std::string path;
     int event_mask;
