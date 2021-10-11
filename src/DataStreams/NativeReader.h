@@ -57,32 +57,28 @@ struct IndexForNativeFormat
   * Can also be used to store data on disk.
   * In this case, can use the index.
   */
-class NativeBlockInputStream : public IBlockInputStream
+class NativeReader
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_);
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
+    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
-    NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    String getName() const override { return "Native"; }
-
     static void readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
-    Block getHeader() const override;
+    Block getHeader() const;
 
     void resetParser();
 
-
-protected:
-    Block readImpl() override;
+    Block read();
 
 private:
     ReadBuffer & istr;

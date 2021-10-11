@@ -1,4 +1,4 @@
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
