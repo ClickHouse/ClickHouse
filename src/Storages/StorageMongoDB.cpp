@@ -17,6 +17,7 @@
 #include <Processors/Pipe.h>
 #include <DataStreams/MongoDBSource.h>
 #include <Parsers/ASTHelpers.h>
+#include <Processors/Transforms/MongoDBSource.h>
 
 namespace DB
 {
