@@ -130,6 +130,21 @@ Pipe ReadFromMergeTree::readFromPool(
     const auto & settings = context->getSettingsRef();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "Here!!!");
+
+    // String anime;
+    // for (const auto & part : parts_with_range)
+    // {
+    //     anime += part.data_part->name + '\n';
+    //     for (const auto & range : part.ranges)
+    //     {
+    //         anime += fmt::format("({} {}), ", range.begin, range.end);
+    //     }
+    //     anime += '\n';
+    // }
+
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), anime);
+
     auto pool = std::make_shared<MergeTreeReadPool>(
         max_streams,
         sum_marks,
@@ -142,7 +157,7 @@ Pipe ReadFromMergeTree::readFromPool(
         required_columns,
         backoff_settings,
         settings.preferred_block_size_bytes,
-        false);
+        true);
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
@@ -798,6 +813,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool sample_factor_column_queried,
     Poco::Logger * log)
 {
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree::selectRangesToRead"), "Here");
     AnalysisResult result;
     const auto & settings = context->getSettingsRef();
 
@@ -948,6 +964,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
+
+
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "ReadFromMergeTree::initializePipeline");
+
+    // String anime;
+    // for (const auto & part : result.parts_with_ranges)
+    // {
+    //     anime += part.data_part->name + '\n';
+    //     for (const auto & range : part.ranges)
+    //     {
+    //         anime += fmt::format("({} {}), ", range.begin, range.end);
+    //     }
+    //     anime += '\n';
+    // }
+
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), anime);
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
 

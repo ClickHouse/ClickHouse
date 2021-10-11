@@ -88,7 +88,7 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     /// We are the first who wants to process parts in partition
     if (partition_it == partitions.end())
     {
-        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "First to process partition");
+        // LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "First to process partition");
         auto part_and_projection = request.part_name + "#" + request.projection_name;
 
         PartitionReading partition_reading;
@@ -165,7 +165,7 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
                 }
                 anime += "######################\n";
 
-                LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), anime);
+                // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), anime);
             }
 
         }

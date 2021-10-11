@@ -61,11 +61,15 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
+
+sed -i '/SAMPLE BY/d' /var/lib/clickhouse/metadata/datasets/hits_v1.sql
+sed -i '/SAMPLE BY/d' /var/lib/clickhouse/metadata/datasets/visits_v1.sql
+
 service clickhouse-server restart
 
 # Wait for server to start accepting connections
 for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && break
+    clickhouse-client --query "SELECT 1" && breaks
     sleep 1
 done
 
@@ -75,22 +79,28 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     clickhouse-client --query "CREATE DATABASE test ON CLUSTER 'test_cluster_database_replicated'
         ENGINE=Replicated('/test/clickhouse/db/test', '{shard}', '{replica}')"
 
-    clickhouse-client --query "CREATE TABLE test.hits AS datasets.hits_v1"
-    clickhouse-client --query "CREATE TABLE test.visits AS datasets.visits_v1"
+    clickhouse-client --query "CREATE TABLE test.hits_plain AS datasets.hits_v1"
+    clickhouse-client --query "CREATE TABLE test.visits_plain AS datasets.visits_v1"
 
-    clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1"
-    clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1"
+    clickhouse-client --query "INSERT INTO test.hits_plain SELECT * FROM datasets.hits_v1"
+    clickhouse-client --query "INSERT INTO test.visits_plain SELECT * FROM datasets.visits_v1"
 
     clickhouse-client --query "DROP TABLE datasets.hits_v1"
     clickhouse-client --query "DROP TABLE datasets.visits_v1"
+
+    clickhouse-client --query "create table test.hits as test.hits_plain engine = Distributed('test_cluster_one_shard_three_replicas', test, hits_plain, rand());"
+    clickhouse-client --query "create table test.visits as test.visits_plain engine = Distributed('test_cluster_one_shard_three_replicas', test, visits_plain, rand());"
 
     MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 else
     clickhouse-client --query "CREATE DATABASE test"
     clickhouse-client --query "SHOW TABLES FROM test"
-    clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
-    clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+    clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits_plain"
+    clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits_plain"
+
+    clickhouse-client --query "create table test.hits as test.hits_plain engine = Distributed('test_cluster_one_shard_three_replicas', test, hits_plain, rand());"
+    clickhouse-client --query "create table test.visits as test.visits_plain engine = Distributed('test_cluster_one_shard_three_replicas', test, visits_plain, rand());"
 fi
 
 clickhouse-client --query "SHOW TABLES FROM test"

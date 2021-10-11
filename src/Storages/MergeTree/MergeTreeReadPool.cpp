@@ -156,8 +156,8 @@ MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, cons
         }
     }
     if (all_part_ranges.empty())
-        throw Exception("Trying to read marks range [" + std::to_string(from.begin) + ", " + std::to_string(from.end) + "] from part '"
-            + part.getFullPath() + "' which has no ranges in this query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read marks range [{}, {}] from part '{}'"
+            "which has no ranges in this query", from.begin, from.end, part.getFullPath());
 
     auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
     if (begin == all_part_ranges.end())

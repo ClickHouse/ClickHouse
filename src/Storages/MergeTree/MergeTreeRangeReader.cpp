@@ -172,7 +172,12 @@ MergeTreeRangeReader::Stream::Stream(
 void MergeTreeRangeReader::Stream::checkNotFinished() const
 {
     if (isFinished())
+    {
+        LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Current mark {}, last_mark {}", current_mark, last_mark);
+        LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), StackTrace().toString());
         throw Exception("Cannot read out of marks range.", ErrorCodes::LOGICAL_ERROR);
+    }
+
 }
 
 void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_rows) const
