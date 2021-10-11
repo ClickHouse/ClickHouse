@@ -125,25 +125,9 @@ function fuzz
 
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
-    # NOTE: that $! cannot be used to obtain the server pid, since it will be
-    # the pid of the bash, due to piping the output of clickhouse-server to
-    # tail
-    PID_FILE=clickhouse-server.pid
-    clickhouse-server --pidfile=$PID_FILE --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
-
-    server_pid=-1
-    for _ in {1..60}; do
-        if [ -s $PID_FILE ]; then
-            server_pid=$(cat $PID_FILE)
-            break
-        fi
-        sleep 1
-    done
-
-    if [ $server_pid = -1 ]; then
-        echo "Server did not started" >&2
-        exit 1
-    fi
+    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
+    clickhouse-server --config-file db/config.xml -- --path db > >(tail -100000 > server.log) 2>&1 &
+    server_pid=$!
 
     kill -0 $server_pid
 

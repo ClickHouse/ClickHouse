@@ -853,6 +853,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 class CompiledAggregateFunctionsHolder;
+class NativeWriter;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -1150,7 +1151,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        IBlockOutputStream & out) const;
+        NativeWriter & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>

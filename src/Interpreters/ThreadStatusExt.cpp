@@ -1,6 +1,6 @@
 #include <Common/ThreadStatus.h>
 
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
