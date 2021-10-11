@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -259,6 +259,17 @@ public:
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
+    String getDatabaseComment() const
+    {
+        std::lock_guard lock{mutex};
+        return comment;
+    }
+    void setDatabaseComment(String new_comment)
+    {
+        std::lock_guard lock{mutex};
+        comment = std::move(new_comment);
+    }
+
     /// Get name of database.
     String getDatabaseName() const
     {
@@ -324,6 +335,7 @@ protected:
 
     mutable std::mutex mutex;
     String database_name;
+    String comment;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

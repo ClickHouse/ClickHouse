@@ -11,7 +11,6 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <Core/UUID.h>
-#include "DataStreams/RemoteBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -32,11 +31,12 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
+#include <DataStreams/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>

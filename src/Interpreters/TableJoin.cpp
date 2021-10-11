@@ -1,7 +1,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <Core/Block.h>
@@ -23,7 +23,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <algorithm>
 
 
@@ -352,7 +352,7 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 
 bool TableJoin::oneDisjunct() const
 {
-    if (!isComma(kind()) && !isCross(kind()))
+    if (!isCrossOrComma(kind()))
         assert(!clauses.empty());
     return clauses.size() <= 1;
 }

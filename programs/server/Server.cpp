@@ -14,14 +14,14 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard_safe.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/ErrorHandlers.h>
-#include <common/getMemoryAmount.h>
-#include <common/errnoToString.h>
-#include <common/coverage.h>
+#include <base/scope_guard_safe.h>
+#include <base/defines.h>
+#include <base/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <base/ErrorHandlers.h>
+#include <base/getMemoryAmount.h>
+#include <base/errnoToString.h>
+#include <base/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -30,7 +30,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -343,7 +343,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 4096));
 
     return address;
 }
@@ -514,8 +514,6 @@ if (ThreadFuzzer::instance().isEffective())
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
-
-    global_context->initializeBackgroundExecutors();
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
@@ -850,7 +848,10 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-            global_context->setExternalModelsConfig(config);
+
+            global_context->loadOrReloadDictionaries(*config);
+            global_context->loadOrReloadModels(*config);
+            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -915,6 +916,10 @@ if (ThreadFuzzer::instance().isEffective())
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
+
+    /// Initialize background executors after we load default_profile config.
+    /// This is needed to load proper values of background_pool_size etc.
+    global_context->initializeBackgroundExecutors();
 
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
@@ -1031,6 +1036,10 @@ if (ThreadFuzzer::instance().isEffective())
         server.start();
 
     SCOPE_EXIT({
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -1070,9 +1079,6 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        // Uses a raw pointer to global context for getting ZooKeeper.
-        main_config_reloader.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1154,7 +1160,6 @@ if (ThreadFuzzer::instance().isEffective())
         UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
         if (total_memory_profiler_step)
         {
-            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
 
@@ -1469,22 +1474,44 @@ if (ThreadFuzzer::instance().isEffective())
         /// try to load dictionaries immediately, throw on error and die
         try
         {
-            global_context->loadDictionaries(config());
+            global_context->loadOrReloadDictionaries(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load embedded dictionaries immediately, throw on error and die
+        try
+        {
+            global_context->tryCreateEmbeddedDictionaries(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
+            throw;
+        }
+
+        /// try to load models immediately, throw on error and die
+        try
+        {
+            global_context->loadOrReloadModels(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
             throw;
         }
 
         /// try to load user defined executable functions, throw on error and die
         try
         {
-            global_context->loadUserDefinedExecutableFunctions(config());
+            global_context->loadOrReloadUserDefinedExecutableFunctions(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
+            tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 
