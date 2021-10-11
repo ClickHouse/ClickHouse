@@ -2,7 +2,9 @@ version: '2.3'
 
 services:
   minio1:
-    image: minio/minio
+    # Newer version of minio results in such errors:
+    # "AWSErrorMarshaller: Encountered AWSError 'InternalError': We encountered an internal error, please try again"
+    image: minio/minio:RELEASE.2021-09-23T04-46-24Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
@@ -19,14 +21,14 @@ services:
 
   # HTTP proxies for Minio.
   proxy1:
-    image: yandex/clickhouse-s3-proxy
+    image: clickhouse/s3-proxy
     expose:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
       - "443"  # Reverse proxy port (secure)
 
   proxy2:
-    image: yandex/clickhouse-s3-proxy
+    image: clickhouse/s3-proxy
     expose:
       - "8080"
       - "80"
@@ -34,7 +36,7 @@ services:
 
   # Empty container to run proxy resolver.
   resolver:
-    image: yandex/clickhouse-python-bottle
+    image: clickhouse/python-bottle
     expose:
       - "8080"
     tty: true

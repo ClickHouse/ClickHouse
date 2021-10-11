@@ -110,6 +110,11 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
+    void expand(const Filter & mask, bool inverted) override
+    {
+        idx.getPositionsPtr()->expand(mask, inverted);
+    }
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
@@ -187,12 +192,14 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
+    ColumnPtr & getDictionaryPtr() { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
@@ -259,7 +266,6 @@ public:
         static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
         size_t getSizeOfIndexType() const { return size_of_type; }
 
-        void check(size_t max_dictionary_size);
         void checkSizeOfType();
 
         ColumnPtr detachPositions() { return std::move(positions); }
@@ -327,9 +333,6 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
-
-    template <typename Cmp>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

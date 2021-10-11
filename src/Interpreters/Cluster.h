@@ -39,14 +39,21 @@ public:
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
+    /// Local are also treated as remote if treat_local_port_as_remote is set and the local address includes a port
     /// 'clickhouse_port' - port that this server instance listen for queries.
     /// This parameter is needed only to check that some address is local (points to ourself).
     ///
     /// Used for remote() function.
-    Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-            const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote,
-            bool secure = false, Int64 priority = 1);
+    Cluster(
+        const Settings & settings,
+        const std::vector<std::vector<String>> & names,
+        const String & username,
+        const String & password,
+        UInt16 clickhouse_port,
+        bool treat_local_as_remote,
+        bool treat_local_port_as_remote,
+        bool secure = false,
+        Int64 priority = 1);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -78,7 +85,7 @@ public:
         */
 
         String host_name;
-        UInt16 port;
+        UInt16 port{0};
         String user;
         String password;
 
@@ -115,6 +122,7 @@ public:
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,
+            bool treat_local_port_as_remote,
             bool secure_ = false,
             Int64 priority_ = 1,
             UInt32 shard_index_ = 0,
@@ -265,6 +273,8 @@ private:
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;
+
+    String name;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

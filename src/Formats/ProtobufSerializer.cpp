@@ -32,7 +32,7 @@
 #   include <IO/ReadHelpers.h>
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
-#   include <common/range.h>
+#   include <base/range.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -41,7 +41,7 @@
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
 #   include <boost/range/algorithm_ext/erase.hpp>
-#   include <common/logger_useful.h>
+#   include <base/logger_useful.h>
 
 namespace DB
 {
@@ -1239,7 +1239,7 @@ namespace
                             else
                             {
                                 WriteBufferFromOwnString buf;
-                                writeText(decimal, scale, buf);
+                                writeText(decimal, scale, buf, false);
                                 cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
                             }
                         };
@@ -1316,9 +1316,9 @@ namespace
         {
             WriteBufferFromString buf{str};
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
-               writeDateTimeText(decimal, scale, buf);
+                writeDateTimeText(decimal, scale, buf);
             else
-                writeText(decimal, scale, buf);
+                writeText(decimal, scale, buf, false);
         }
 
         DecimalType stringToDecimal(const String & str) const
@@ -1423,18 +1423,23 @@ namespace
     };
 
 
-    /// Serializes a ColumnVector<UInt32> containing dates to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
+    /// Serializes a ColumnVector<UInt32> containing datetimes to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
     class ProtobufSerializerDateTime : public ProtobufSerializerNumber<UInt32>
     {
     public:
         ProtobufSerializerDateTime(
-            const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerNumber<UInt32>(field_descriptor_, reader_or_writer_)
+            const DataTypeDateTime & type,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<UInt32>(field_descriptor_, reader_or_writer_),
+            date_lut(type.getTimeZone())
         {
             setFunctions();
         }
 
     protected:
+        const DateLUTImpl & date_lut;
+
         void setFunctions()
         {
             switch (field_typeid)
@@ -1458,17 +1463,17 @@ namespace
                 {
                     write_function = [this](UInt32 value)
                     {
-                        dateTimeToString(value, text_buffer);
+                        dateTimeToString(value, text_buffer, date_lut);
                         writeStr(text_buffer);
                     };
 
                     read_function = [this]() -> UInt32
                     {
                         readStr(text_buffer);
-                        return stringToDateTime(text_buffer);
+                        return stringToDateTime(text_buffer, date_lut);
                     };
 
-                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string()); };
+                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string(), date_lut); };
                     break;
                 }
 
@@ -1477,17 +1482,17 @@ namespace
             }
         }
 
-        static void dateTimeToString(time_t tm, String & str)
+        static void dateTimeToString(time_t tm, String & str, const DateLUTImpl & lut)
         {
             WriteBufferFromString buf{str};
-            writeDateTimeText(tm, buf);
+            writeDateTimeText(tm, buf, lut);
         }
 
-        static time_t stringToDateTime(const String & str)
+        static time_t stringToDateTime(const String & str, const DateLUTImpl & lut)
         {
             ReadBufferFromString buf{str};
             time_t tm = 0;
-            readDateTimeText(tm, buf);
+            readDateTimeText(tm, buf, lut);
             if (tm < 0)
                 tm = 0;
             return tm;
@@ -2833,7 +2838,7 @@ namespace
                 case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(field_descriptor, reader_or_writer);
                 case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(field_descriptor, reader_or_writer);
                 case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(field_descriptor, reader_or_writer);
                 case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);

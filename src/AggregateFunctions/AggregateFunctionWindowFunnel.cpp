@@ -4,9 +4,10 @@
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB

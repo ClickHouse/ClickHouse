@@ -1,4 +1,4 @@
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
@@ -39,6 +39,11 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 1;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

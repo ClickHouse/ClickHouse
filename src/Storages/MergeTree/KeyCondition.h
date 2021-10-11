@@ -55,25 +55,24 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left;                       /// the left border, if any
-    FieldRef right;                      /// the right border, if any
-    bool left_bounded = false;        /// bounded at the left
-    bool right_bounded = false;       /// bounded at the right
-    bool left_included = false;       /// includes the left border, if any
-    bool right_included = false;      /// includes the right border, if any
+    FieldRef left = NEGATIVE_INFINITY;   /// the left border
+    FieldRef right = POSITIVE_INFINITY;  /// the right border
+    bool left_included = false;           /// includes the left border
+    bool right_included = false;          /// includes the right border
 
-    /// The whole unversum.
+    /// The whole universe (not null).
     Range() {}
 
     /// One point.
     Range(const FieldRef & point)
-        : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
+        : left(point), right(point), left_included(true), right_included(true) {}
 
     /// A bounded two-sided range.
     Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-        : left(left_), right(right_),
-        left_bounded(true), right_bounded(true),
-        left_included(left_included_), right_included(right_included_)
+        : left(left_)
+        , right(right_)
+        , left_included(left_included_)
+        , right_included(right_included_)
     {
         shrinkToIncludedIfPossible();
     }
@@ -82,9 +81,11 @@ public:
     {
         Range r;
         r.right = right_point;
-        r.right_bounded = true;
         r.right_included = right_included;
         r.shrinkToIncludedIfPossible();
+        // Special case for [-Inf, -Inf]
+        if (r.right.isNegativeInfinity() && right_included)
+            r.left_included = true;
         return r;
     }
 
@@ -92,9 +93,11 @@ public:
     {
         Range r;
         r.left = left_point;
-        r.left_bounded = true;
         r.left_included = left_included;
         r.shrinkToIncludedIfPossible();
+        // Special case for [+Inf, +Inf]
+        if (r.left.isPositiveInfinity() && left_included)
+            r.right_included = true;
         return r;
     }
 
@@ -104,7 +107,7 @@ public:
       */
     void shrinkToIncludedIfPossible()
     {
-        if (left.isExplicit() && left_bounded && !left_included)
+        if (left.isExplicit() && !left_included)
         {
             if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
             {
@@ -117,7 +120,7 @@ public:
                 left_included = true;
             }
         }
-        if (right.isExplicit() && right_bounded && !right_included)
+        if (right.isExplicit() && !right_included)
         {
             if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
             {
@@ -132,12 +135,7 @@ public:
         }
     }
 
-    bool empty() const
-    {
-        return left_bounded && right_bounded
-            && (less(right, left)
-                || ((!left_included || !right_included) && !less(left, right)));
-    }
+    bool empty() const { return less(right, left) || ((!left_included || !right_included) && !less(left, right)); }
 
     /// x contained in the range
     bool contains(const FieldRef & x) const
@@ -148,35 +146,23 @@ public:
     /// x is to the left
     bool rightThan(const FieldRef & x) const
     {
-        return (left_bounded
-            ? !(less(left, x) || (left_included && equals(x, left)))
-            : false);
+        return less(left, x) || (left_included && equals(x, left));
     }
 
     /// x is to the right
     bool leftThan(const FieldRef & x) const
     {
-        return (right_bounded
-            ? !(less(x, right) || (right_included && equals(x, right)))
-            : false);
+        return less(x, right) || (right_included && equals(x, right));
     }
 
     bool intersectsRange(const Range & r) const
     {
         /// r to the left of me.
-        if (r.right_bounded
-            && left_bounded
-            && (less(r.right, left)
-                || ((!left_included || !r.right_included)
-                    && equals(r.right, left))))
+        if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
             return false;
 
         /// r to the right of me.
-        if (r.left_bounded
-            && right_bounded
-            && (less(right, r.left)                          /// ...} {...
-                || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
-                    && equals(r.left, right))))
+        if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
             return false;
 
         return true;
@@ -185,30 +171,23 @@ public:
     bool containsRange(const Range & r) const
     {
         /// r starts to the left of me.
-        if (left_bounded
-            && (!r.left_bounded
-                || less(r.left, left)
-                || (r.left_included
-                    && !left_included
-                    && equals(r.left, left))))
+        if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
             return false;
 
         /// r ends right of me.
-        if (right_bounded
-            && (!r.right_bounded
-                || less(right, r.right)
-                || (r.right_included
-                    && !right_included
-                    && equals(r.right, right))))
+        if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
             return false;
 
         return true;
     }
 
-    void swapLeftAndRight()
+    void invert()
     {
         std::swap(left, right);
-        std::swap(left_bounded, right_bounded);
+        if (left.isPositiveInfinity())
+            left = NEGATIVE_INFINITY;
+        if (right.isNegativeInfinity())
+            right = POSITIVE_INFINITY;
         std::swap(left_included, right_included);
     }
 
@@ -247,16 +226,8 @@ public:
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
         size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef* right_key,
-        const DataTypes & data_types,
-        BoolMask initial_mask = BoolMask(false, false)) const;
-
-    /// Are the condition and its negation valid in a semi-infinite (not limited to the right) key range.
-    /// left_key must contain all the fields in the sort_descr in the appropriate order.
-    BoolMask checkAfter(
-        size_t used_key_size,
-        const FieldRef * left_key,
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
@@ -264,15 +235,8 @@ public:
     /// This is more efficient than checkInRange(...).can_be_true.
     bool mayBeTrueInRange(
         size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
-        const DataTypes & data_types) const;
-
-    /// Same as checkAfter, but calculate only may_be_true component of a result.
-    /// This is more efficient than checkAfter(...).can_be_true.
-    bool mayBeTrueAfter(
-        size_t used_key_size,
-        const FieldRef * left_key,
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
         const DataTypes & data_types) const;
 
     /// Checks that the index can not be used
@@ -338,6 +302,8 @@ private:
             FUNCTION_NOT_IN_RANGE,
             FUNCTION_IN_SET,
             FUNCTION_NOT_IN_SET,
+            FUNCTION_IS_NULL,
+            FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -408,6 +374,14 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
+
+    bool transformConstantWithValidFunctions(
+        const String & expr_name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type,
+        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: distributed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,13 +10,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 while true
 do
     opts=(
-        --max_distributed_connections 9
+        --max_distributed_connections 20
         --max_threads 1
-        --query "SELECT sleepEachRow(1) FROM remote('127.{2..10}', system.one)"
+        --query "SELECT sleepEachRow(1) FROM remote('127.{2..21}', system.one)"
         --format Null
     )
-    # 5 less then 9 seconds (9 streams), but long enough to cover possible load peaks
+    # 10 less then 20 seconds (20 streams), but long enough to cover possible load peaks
     # "$@" left to pass manual options (like --experimental_use_processors 0) during manual testing
 
-    timeout 5s ${CLICKHOUSE_CLIENT} "${opts[@]}" "$@" && break
+    timeout 10s ${CLICKHOUSE_CLIENT} "${opts[@]}" "$@" && break
 done

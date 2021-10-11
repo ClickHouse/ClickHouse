@@ -242,7 +242,7 @@ def decrypt(self, mysql_datatype):
 def feature(self, node="clickhouse1", mysql_node="mysql1"):
     """Check usage of encryption functions with [MySQL dictionary].
 
-    [MySQL dictionary]: https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources/#dicts-external_dicts_dict_sources-mysql
+    [MySQL dictionary]: https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources/#dicts-external_dicts_dict_sources-mysql
     """
     self.context.node = self.context.cluster.node(node)
     self.context.mysql_node = self.context.cluster.node(mysql_node)

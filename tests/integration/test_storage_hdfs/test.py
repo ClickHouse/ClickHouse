@@ -17,7 +17,7 @@ def started_cluster():
 
 def test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-
+    node1.query("drop table if exists SimpleHDFSStorage SYNC")
     node1.query(
         "create table SimpleHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/simple_storage', 'TSV')")
     node1.query("insert into SimpleHDFSStorage values (1, 'Mark', 72.53)")

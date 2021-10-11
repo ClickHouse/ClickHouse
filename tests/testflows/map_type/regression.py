@@ -109,10 +109,9 @@ xflags = {
 @Specifications(
     SRS018_ClickHouse_Map_Data_Type
 )
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """Map type regression.
     """
-    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
@@ -120,8 +119,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "map_type_env")) as cluster:

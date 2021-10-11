@@ -12,7 +12,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/AccessFlags.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/AlterCommands.h>
@@ -23,10 +22,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 namespace DB
 {
@@ -215,16 +216,16 @@ void StorageMaterializedView::read(
     }
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto stream = storage->write(query, metadata_snapshot, local_context);
+    auto sink = storage->write(query, metadata_snapshot, local_context);
 
-    stream->addTableLock(lock);
-    return stream;
+    sink->addTableLock(lock);
+    return sink;
 }
 
 
@@ -308,9 +309,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
     else
@@ -318,9 +318,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter())
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
 }

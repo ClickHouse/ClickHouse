@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
 
 namespace DB
@@ -16,17 +16,13 @@ namespace ErrorCodes
 
 /// tupleHammingDistance function: (Tuple(...), Tuple(...))-> N
 /// Return the number of non-equal tuple elements
-class FunctionTupleHammingDistance : public IFunction
+class FunctionTupleHammingDistance : public ITupleFunction
 {
-private:
-    ContextPtr context;
-
 public:
     static constexpr auto name = "tupleHammingDistance";
-    using ResultType = UInt8;
 
-    explicit FunctionTupleHammingDistance(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTupleHammingDistance>(context); }
+    explicit FunctionTupleHammingDistance(ContextPtr context_) : ITupleFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
     String getName() const override { return name; }
 
@@ -34,22 +30,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    Columns getTupleElements(const IColumn & column) const
-    {
-        if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
-            return convertConstTupleToConstantElements(*const_column);
-
-        if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
-        {
-            Columns columns(column_tuple->tupleSize());
-            for (size_t i = 0; i < columns.size(); ++i)
-                columns[i] = column_tuple->getColumnPtr(i);
-            return columns;
-        }
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} should be tuples, got {}",
-                        getName(), column.getName());
-    }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -57,11 +38,11 @@ public:
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
 
         if (!left_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
                             getName(), arguments[0].type->getName());
 
         if (!right_tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
                             getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
@@ -85,7 +66,7 @@ public:
 
         auto compare = FunctionFactory::instance().get("notEquals", context);
         auto plus = FunctionFactory::instance().get("plus", context);
-        DataTypes types(tuple_size);
+        DataTypePtr res_type;
         for (size_t i = 0; i < tuple_size; ++i)
         {
             try
@@ -93,22 +74,23 @@ public:
                 ColumnWithTypeAndName left{left_elements.empty() ? nullptr : left_elements[i], left_types[i], {}};
                 ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[i], right_types[i], {}};
                 auto elem_compare = compare->build(ColumnsWithTypeAndName{left, right});
-                types[i] = elem_compare->getResultType();
+
+                if (i == 0)
+                {
+                    res_type = elem_compare->getResultType();
+                    continue;
+                }
+
+                ColumnWithTypeAndName left_type{res_type, {}};
+                ColumnWithTypeAndName right_type{elem_compare->getResultType(), {}};
+                auto plus_elem = plus->build({left_type, right_type});
+                res_type = plus_elem->getResultType();
             }
             catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
             }
-        }
-
-        auto res_type = types[0];
-        for (size_t i = 1; i < tuple_size; ++i)
-        {
-            ColumnWithTypeAndName left{res_type, {}};
-            ColumnWithTypeAndName right{types[i], {}};
-            auto plus_elem = plus->build({left, right});
-            res_type = plus_elem->getResultType();
         }
 
         return res_type;
@@ -129,23 +111,28 @@ public:
 
         auto compare = FunctionFactory::instance().get("notEquals", context);
         auto plus = FunctionFactory::instance().get("plus", context);
-        ColumnsWithTypeAndName columns(tuple_size);
+        ColumnWithTypeAndName res;
         for (size_t i = 0; i < tuple_size; ++i)
         {
             ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
             ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
             auto elem_compare = compare->build(ColumnsWithTypeAndName{left, right});
-            columns[i].type = elem_compare->getResultType();
-            columns[i].column = elem_compare->execute({left, right}, columns[i].type, input_rows_count);
-        }
 
-        auto res = columns[0];
-        for (size_t i = 1; i < tuple_size; ++i)
-        {
-            auto plus_elem = plus->build({res, columns[i]});
-            auto res_type = plus_elem->getResultType();
-            res.column = plus_elem->execute({res, columns[i]}, res_type, input_rows_count);
-            res.type = res_type;
+            ColumnWithTypeAndName column;
+            column.type = elem_compare->getResultType();
+            column.column = elem_compare->execute({left, right}, column.type, input_rows_count);
+
+            if (i == 0)
+            {
+                res = std::move(column);
+            }
+            else
+            {
+                auto plus_elem = plus->build({res, column});
+                auto res_type = plus_elem->getResultType();
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.type = res_type;
+            }
         }
 
         return res.column;

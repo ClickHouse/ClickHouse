@@ -8,11 +8,10 @@ Columns:
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Index name.
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Index type.
--   `expr` ([String](../../sql-reference/data-types/string.md)) — Expression used to calculate the index.
--   `granularity` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of granules in the block.
+-   `expr` ([String](../../sql-reference/data-types/string.md)) — Expression for the index calculation.
+-   `granularity` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of granules in the block.
 
 **Example**
-
 
 ```sql
 SELECT * FROM system.data_skipping_indices LIMIT 2 FORMAT Vertical;

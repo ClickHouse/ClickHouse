@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -685,7 +685,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>

@@ -22,7 +22,7 @@ SELECT [DISTINCT] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [UNION ALL ...]
@@ -159,4 +159,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 有关详细信息，请参阅部分 “Settings”. 可以使用外部排序（将临时表保存到磁盘）和外部聚合。
 
-{## [原始文章](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
+{## [原始文章](https://clickhouse.com/docs/en/sql-reference/statements/select/) ##}

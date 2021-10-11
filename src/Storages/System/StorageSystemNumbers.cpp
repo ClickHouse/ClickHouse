@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>

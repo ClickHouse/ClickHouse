@@ -1,4 +1,4 @@
-#include <common/map.h>
+#include <base/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -79,7 +79,7 @@ void DataTypeMap::assertKeyType() const
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getName() << "," << value_type->getName() << ")";
+    s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
 
     return s.str();
 }

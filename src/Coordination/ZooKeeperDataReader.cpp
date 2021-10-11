@@ -174,7 +174,22 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
 
     LOG_INFO(log, "Deserializing data from snapshot");
     int64_t zxid_from_nodes = deserializeStorageData(storage, reader, log);
-    storage.zxid = std::max(zxid, zxid_from_nodes);
+    /// In ZooKeeper Snapshots can contain inconsistent state of storage. They call
+    /// this inconsistent state "fuzzy". So it's guaranteed that snapshot contain all
+    /// records up to zxid from snapshot name and also some records for future.
+    /// But it doesn't mean that we have just some state of storage from future (like zxid + 100 log records).
+    /// We have incorrect state of storage where some random log entries from future were applied....
+    ///
+    /// In ZooKeeper they say that their transactions log is idempotent and can be applied to "fuzzy" state as is.
+    /// It's true but there is no any general invariant which produces this property. They just have ad-hoc "if's" which detects
+    /// "fuzzy" state inconsistencies and apply log records in special way. Several examples:
+    /// https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/server/DataTree.java#L453-L463
+    /// https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/server/DataTree.java#L476-L480
+    /// https://github.com/apache/zookeeper/blob/master/zookeeper-server/src/main/java/org/apache/zookeeper/server/DataTree.java#L547-L549
+    if (zxid_from_nodes > zxid)
+        LOG_WARNING(log, "ZooKeeper snapshot was in inconsistent (fuzzy) state. Will try to apply log. ZooKeeper create non fuzzy snapshot with restart. You can just restart ZooKeeper server and get consistent version.");
+
+    storage.zxid = zxid;
 
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
@@ -210,16 +225,18 @@ void deserializeLogMagic(ReadBuffer & in)
 
     static constexpr int32_t LOG_HEADER = 1514884167; /// "ZKLG"
     if (magic_header != LOG_HEADER)
-        throw Exception(ErrorCodes::CORRUPTED_DATA ,"Incorrect magic header in file, expected {}, got {}", LOG_HEADER, magic_header);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect magic header in file, expected {}, got {}", LOG_HEADER, magic_header);
 
     if (version != 2)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,"Cannot deserialize ZooKeeper data other than version 2, got version {}", version);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize ZooKeeper data other than version 2, got version {}", version);
 }
 
 
-/// For some reason zookeeper stores slightly different records in log then
-/// requests. For example:
-///  class CreateTxn {
+/// ZooKeeper transactions log differs from requests. The main reason: to store records in log
+/// in some "finalized" state (for example with concrete versions).
+///
+/// Example:
+/// class CreateTxn {
 ///      ustring path;
 ///      buffer data;
 ///      vector<org.apache.zookeeper.data.ACL> acl;
@@ -289,10 +306,9 @@ Coordination::ZooKeeperRequestPtr deserializeCreateTxn(ReadBuffer & in)
     Coordination::read(result->data, in);
     Coordination::read(result->acls, in);
     Coordination::read(result->is_ephemeral, in);
-    result->need_to_hash_acls = false;
-    /// How we should use it? It should just increment on request execution
-    int32_t parent_c_version;
-    Coordination::read(parent_c_version, in);
+    Coordination::read(result->parent_cversion, in);
+
+    result->restored_from_zookeeper_log = true;
     return result;
 }
 
@@ -300,6 +316,7 @@ Coordination::ZooKeeperRequestPtr deserializeDeleteTxn(ReadBuffer & in)
 {
     std::shared_ptr<Coordination::ZooKeeperRemoveRequest> result = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
     Coordination::read(result->path, in);
+    result->restored_from_zookeeper_log = true;
     return result;
 }
 
@@ -309,6 +326,7 @@ Coordination::ZooKeeperRequestPtr deserializeSetTxn(ReadBuffer & in)
     Coordination::read(result->path, in);
     Coordination::read(result->data, in);
     Coordination::read(result->version, in);
+    result->restored_from_zookeeper_log = true;
     /// It stores version + 1 (which should be, not for request)
     result->version -= 1;
 
@@ -320,6 +338,10 @@ Coordination::ZooKeeperRequestPtr deserializeCheckVersionTxn(ReadBuffer & in)
     std::shared_ptr<Coordination::ZooKeeperCheckRequest> result = std::make_shared<Coordination::ZooKeeperCheckRequest>();
     Coordination::read(result->path, in);
     Coordination::read(result->version, in);
+    result->restored_from_zookeeper_log = true;
+    /// It stores version + 1 (which should be, not for request)
+    result->version -= 1;
+
     return result;
 }
 
@@ -329,14 +351,19 @@ Coordination::ZooKeeperRequestPtr deserializeCreateSession(ReadBuffer & in)
     int32_t timeout;
     Coordination::read(timeout, in);
     result->session_timeout_ms = timeout;
+    result->restored_from_zookeeper_log = true;
     return result;
 }
 
-Coordination::ZooKeeperRequestPtr deserializeCloseSession(ReadBuffer & in)
+Coordination::ZooKeeperRequestPtr deserializeCloseSession(ReadBuffer & in, bool empty)
 {
     std::shared_ptr<Coordination::ZooKeeperCloseRequest> result = std::make_shared<Coordination::ZooKeeperCloseRequest>();
-    std::vector<std::string> data;
-    Coordination::read(data, in);
+    if (!empty)
+    {
+        std::vector<std::string> data;
+        Coordination::read(data, in);
+    }
+    result->restored_from_zookeeper_log = true;
     return result;
 }
 
@@ -356,14 +383,14 @@ Coordination::ZooKeeperRequestPtr deserializeSetACLTxn(ReadBuffer & in)
     Coordination::read(result->version, in);
     /// It stores version + 1 (which should be, not for request)
     result->version -= 1;
-    result->need_to_hash_acls = false;
+    result->restored_from_zookeeper_log = true;
 
     return result;
 }
 
 Coordination::ZooKeeperRequestPtr deserializeMultiTxn(ReadBuffer & in);
 
-Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtxn)
+Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtxn, int64_t txn_length = 0)
 {
     int32_t type;
     Coordination::read(type, in);
@@ -371,6 +398,11 @@ Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtx
     int32_t sub_txn_length = 0;
     if (subtxn)
         Coordination::read(sub_txn_length, in);
+
+    bool empty_txn = !subtxn && txn_length == 32; /// Possible for old-style CloseTxn's
+
+    if (empty_txn && type != -11)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Empty non close-session transaction found");
 
     int64_t in_count_before = in.count();
 
@@ -398,7 +430,7 @@ Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtx
             result = deserializeCreateSession(in);
             break;
         case -11:
-            result = deserializeCloseSession(in);
+            result = deserializeCloseSession(in, empty_txn);
             break;
         case -1:
             result = deserializeErrorTxn(in);
@@ -442,7 +474,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
     if (request == nullptr)
         return true;
 
-    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests) //-V522
+    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests) // -V522
         if (subrequest == nullptr)
             return true;
     return false;
@@ -470,7 +502,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
     int64_t time;
     Coordination::read(time, in);
 
-    Coordination::ZooKeeperRequestPtr request = deserializeTxnImpl(in, false);
+    Coordination::ZooKeeperRequestPtr request = deserializeTxnImpl(in, false, txn_len);
 
     /// Skip all other bytes
     int64_t bytes_read = in.count() - count_before;
@@ -543,12 +575,24 @@ void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string
 
     LOG_INFO(log, "Totally have {} logs", existing_logs.size());
 
-    for (auto [zxid, log_path] : existing_logs)
+    std::vector<std::string> stored_files;
+    for (auto it = existing_logs.rbegin(); it != existing_logs.rend(); ++it)
     {
-        if (zxid > storage.zxid)
-            deserializeLogAndApplyToStorage(storage, log_path, log);
-        else
-            LOG_INFO(log, "Skipping log {}, it's ZXID {} is smaller than storages ZXID {}", log_path, zxid, storage.zxid);
+        if (it->first >= storage.zxid)
+        {
+            stored_files.emplace_back(it->second);
+        }
+        else if (it->first < storage.zxid)
+        {
+            /// add the last logfile that is less than the zxid
+            stored_files.emplace_back(it->second);
+            break;
+        }
+    }
+
+    for (auto it = stored_files.rbegin(); it != stored_files.rend(); ++it)
+    {
+        deserializeLogAndApplyToStorage(storage, *it, log);
     }
 }
 

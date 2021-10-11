@@ -2,12 +2,12 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
-#include <common/getThreadId.h>
-#include <common/getPageSize.h>
+#include <base/getThreadId.h>
+#include <base/getPageSize.h>
 
 #include <csignal>
 
@@ -149,7 +149,11 @@ ThreadStatus::~ThreadStatus()
 
     if (deleter)
         deleter();
-    current_thread = nullptr;
+
+    /// Only change current_thread if it's currently being used by this ThreadStatus
+    /// For example, PushingToViewsBlockOutputStream creates and deletes ThreadStatus instances while running in the main query thread
+    if (current_thread == this)
+        current_thread = nullptr;
 }
 
 void ThreadStatus::updatePerformanceCounters()
@@ -217,7 +221,6 @@ MainThreadStatus & MainThreadStatus::getInstance()
     return thread_status;
 }
 MainThreadStatus::MainThreadStatus()
-    : ThreadStatus()
 {
     main_thread = current_thread;
 }

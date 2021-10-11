@@ -53,6 +53,24 @@ struct MergeInfo
 };
 
 struct FutureMergedMutatedPart;
+using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+
+/**
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker to account all the memory used.
+ */
+class MemoryTrackerThreadSwitcher : boost::noncopyable
+{
+public:
+    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit);
+    ~MemoryTrackerThreadSwitcher();
+private:
+    MemoryTracker * background_thread_memory_tracker;
+    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    UInt64 prev_untracked_memory_limit;
+};
+
+using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {
@@ -87,17 +105,23 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    UInt64 max_untracked_memory;
 
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part);
+    MergeListElement(
+        const StorageID & table_id_,
+        FutureMergedMutatedPartPtr future_part,
+        UInt64 memory_profiler_step,
+        UInt64 memory_profiler_sample_probability,
+        UInt64 max_untracked_memory_);
 
     MergeInfo getInfo() const;
+
+    MergeListElement * ptr() { return this; }
 
     ~MergeListElement();
 };

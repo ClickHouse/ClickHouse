@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
@@ -43,7 +44,7 @@ class DDLWorker
 {
 public:
     DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
+              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr, const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -125,6 +126,7 @@ protected:
     std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
 
+    Coordination::Stat queue_node_stat;
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
@@ -146,6 +148,7 @@ protected:
 
     std::atomic<UInt64> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
+    const CurrentMetrics::Metric * max_pushed_entry_metric;
 };
 
 

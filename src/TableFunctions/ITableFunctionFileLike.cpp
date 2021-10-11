@@ -10,10 +10,14 @@
 
 #include <Storages/StorageFile.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+
+#include <Processors/ISource.h>
+
+#include <DataStreams/IBlockInputStream.h>
+
 
 namespace DB
 {
@@ -83,8 +87,8 @@ ColumnsDescription ITableFunctionFileLike::getActualTableStructure(ContextPtr co
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         if (paths.empty())
             throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
-        auto read_stream = StorageDistributedDirectoryMonitor::createStreamFromFile(paths[0]);
-        return ColumnsDescription{read_stream->getHeader().getNamesAndTypesList()};
+        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
+        return ColumnsDescription{source->getOutputs().front().getHeader().getNamesAndTypesList()};
     }
     return parseColumnsListFromString(structure, context);
 }

@@ -4,9 +4,11 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
+#include <Core/TypeId.h>
+#include <base/TypeName.h>
 
 
 namespace DB
@@ -28,6 +30,7 @@ struct CompareHelper
 {
     static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
     static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
+    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -74,6 +77,11 @@ struct FloatCompareHelper
         return a > b;
     }
 
+    static constexpr bool equals(T a, T b, int nan_direction_hint)
+    {
+        return compare(a, b, nan_direction_hint) == 0;
+    }
+
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
         const bool isnan_a = std::isnan(a);
@@ -102,7 +110,7 @@ template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!IsDecimalNumber<T>);
+    static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
@@ -110,6 +118,7 @@ private:
 
     struct less;
     struct greater;
+    struct equals;
 
 public:
     using ValueType = T;
@@ -228,7 +237,7 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
@@ -238,6 +247,7 @@ public:
         assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
+
 
     void get(size_t n, Field & res) const override
     {
@@ -283,6 +293,8 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
@@ -355,12 +367,7 @@ template <typename T>
 template <typename Type>
 ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    size_t size = indexes.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
+    assert(limit <= indexes.size());
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();

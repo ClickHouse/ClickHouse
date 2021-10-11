@@ -2,11 +2,13 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <common/shared_ptr_helper.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <base/shared_ptr_helper.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -32,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 protected:
     IStorageURLBase(
@@ -44,7 +46,8 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        const String & compression_method_);
+        const String & compression_method_,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
 
     Poco::URI uri;
     String compression_method;
@@ -54,6 +57,7 @@ protected:
     // For `url` table function, we use settings from current query context.
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
 
     virtual std::string getReadMethod() const;
 
@@ -77,31 +81,27 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
 };
 
-class StorageURLBlockOutputStream : public IBlockOutputStream
+class StorageURLSink : public SinkToStorage
 {
 public:
-    StorageURLBlockOutputStream(
+    StorageURLSink(
         const Poco::URI & uri,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
-        const Block & sample_block_,
+        const Block & sample_block,
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method);
 
-    Block getHeader() const override
-    {
-        return sample_block;
-    }
-
-    void write(const Block & block) override;
-    void writePrefix() override;
-    void writeSuffix() override;
+    std::string getName() const override { return "StorageURLSink"; }
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
-    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+
+    bool is_first_chunk = true;
 };
 
 class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
@@ -117,7 +117,8 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_);
+        const String & compression_method_,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
 
     String getName() const override
     {
@@ -130,6 +131,8 @@ public:
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
+
+    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
 };
 
 
@@ -155,6 +158,13 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    struct Configuration
+    {
+        String url;
+        String compression_method = "auto";
+        std::vector<std::pair<String, String>> headers;
+    };
 
 private:
     std::vector<Poco::URI> uri_options;

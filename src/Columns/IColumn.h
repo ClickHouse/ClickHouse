@@ -4,7 +4,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Core/Types.h>
 
 
@@ -230,11 +230,19 @@ public:
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
-      *  if 0, then don't makes reserve(),
-      *  otherwise (i.e. < 0), makes reserve() using size of source column.
+      * if 0, then don't makes reserve(),
+      * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+
+    /** Expand column by mask inplace. After expanding column will
+      * satisfy the following: if we filter it by given mask, we will
+      * get initial column. Values with indexes i: mask[i] = 0
+      * shouldn't be used after expanding.
+      * If inverted is true, inverted mask will be used.
+      */
+    virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
@@ -480,6 +488,28 @@ protected:
 
     template <typename Derived>
     bool hasEqualValuesImpl() const;
+
+    /// Uses std::sort and partial_sort as default algorithms.
+    /// Implements 'less' and 'equals' via comparator.
+    /// If 'less' and 'equals' can be implemented more optimal
+    /// (e.g. with less number of comparisons), you can use
+    /// directly the second overload of this method.
+    template <typename Comparator>
+    void updatePermutationImpl(
+        size_t limit,
+        Permutation & res,
+        EqualRanges & equal_ranges,
+        Comparator cmp) const;
+
+    template <typename Less, typename Equals, typename Sort, typename PartialSort>
+    void updatePermutationImpl(
+        size_t limit,
+        Permutation & res,
+        EqualRanges & equal_ranges,
+        Less less,
+        Equals equals,
+        Sort full_sort,
+        PartialSort partial_sort) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

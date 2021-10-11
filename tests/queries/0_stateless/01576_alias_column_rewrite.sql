@@ -127,3 +127,11 @@ select sum(i) from pd group by dt_m settings allow_experimental_projection_optim
 
 drop table pd;
 drop table pl;
+
+drop table if exists t;
+
+create temporary table t (x UInt64, y alias x);
+insert into t values (1);
+select sum(x), sum(y) from t;
+
+drop table t;

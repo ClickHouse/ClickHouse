@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <dictionaries_lib_path>/etc/clickhouse-server/config.d/dictionaries_lib</dictionaries_lib_path>
     <logger>
         <level>trace</level>
@@ -8,5 +8,9 @@
         <count>10</count>
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+
+        <library_bridge_log>/var/log/clickhouse-server/clickhouse-library-bridge.log</library_bridge_log>
+        <library_bridge_errlog>/var/log/clickhouse-server/clickhouse-library-bridge.err.log</library_bridge_errlog>
+        <library_bridge_level>trace</library_bridge_level>
     </logger>
-</yandex>
+</clickhouse>

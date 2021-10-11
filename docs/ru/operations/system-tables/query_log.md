@@ -24,6 +24,8 @@ ClickHouse не удаляет данные из таблица автомати
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+
 Столбцы:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип события, произошедшего при выполнении запроса. Значения:
@@ -51,6 +53,7 @@ ClickHouse не удаляет данные из таблица автомати
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена баз данных, присутствующих в запросе.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена таблиц, присутствующих в запросе.
 -   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена столбцов, присутствующих в запросе.
+-   `projections` ([String](../../sql-reference/data-types/string.md)) — имена проекций, использованных при выполнении запроса.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — сообщение исключения, если запрос завершился по исключению.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [stack trace](https://en.wikipedia.org/wiki/Stack_trace). Пустая строка, если запрос успешно завершен.
@@ -65,6 +68,8 @@ ClickHouse не удаляет данные из таблица автомати
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID родительского запроса.
 -   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого клиент сделал родительский запрос.
+-   `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса (для распределенных запросов).
+-   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд (для распределенных запросов).
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.
     -   2 — HTTP.
@@ -101,59 +106,81 @@ ClickHouse не удаляет данные из таблица автомати
 **Пример**
 
 ``` sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%') ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
 Row 1:
 ──────
-type:                          QueryStart
-event_date:                    2020-09-11
-event_time:                    2020-09-11 10:08:17
-event_time_microseconds:       2020-09-11 10:08:17.063321
-query_start_time:              2020-09-11 10:08:17
-query_start_time_microseconds: 2020-09-11 10:08:17.063321
-query_duration_ms:             0
-read_rows:                     0
-read_bytes:                    0
-written_rows:                  0
-written_bytes:                 0
-result_rows:                   0
-result_bytes:                  0
-memory_usage:                  0
-current_database:              default
-query:                         INSERT INTO test1 VALUES
-exception_code:                0
+type:                                  QueryFinish
+event_date:                            2021-07-28
+event_time:                            2021-07-28 13:46:56
+event_time_microseconds:               2021-07-28 13:46:56.719791
+query_start_time:                      2021-07-28 13:46:56
+query_start_time_microseconds:         2021-07-28 13:46:56.704542
+query_duration_ms:                     14
+read_rows:                             8393
+read_bytes:                            374325
+written_rows:                          0
+written_bytes:                         0
+result_rows:                           4201
+result_bytes:                          153024
+memory_usage:                          4714038
+current_database:                      default
+query:                                 SELECT DISTINCT arrayJoin(extractAll(name, '[\\w_]{2,}')) AS res FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.table_engines UNION ALL SELECT name FROM system.formats UNION ALL SELECT name FROM system.table_functions UNION ALL SELECT name FROM system.data_type_families UNION ALL SELECT name FROM system.merge_tree_settings UNION ALL SELECT name FROM system.settings UNION ALL SELECT cluster FROM system.clusters UNION ALL SELECT macro FROM system.macros UNION ALL SELECT policy_name FROM system.storage_policies UNION ALL SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate UNION ALL SELECT name FROM system.databases LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.tables LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.dictionaries LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.columns LIMIT 10000) WHERE notEmpty(res)
+normalized_query_hash:                 6666026786019643712
+query_kind:                            Select
+databases:                             ['system']
+tables:                                ['system.aggregate_function_combinators','system.clusters','system.columns','system.data_type_families','system.databases','system.dictionaries','system.formats','system.functions','system.macros','system.merge_tree_settings','system.settings','system.storage_policies','system.table_engines','system.table_functions','system.tables']
+columns:                               ['system.aggregate_function_combinators.name','system.clusters.cluster','system.columns.name','system.data_type_families.name','system.databases.name','system.dictionaries.name','system.formats.name','system.functions.is_aggregate','system.functions.name','system.macros.macro','system.merge_tree_settings.name','system.settings.name','system.storage_policies.policy_name','system.table_engines.name','system.table_functions.name','system.tables.name']
+projections:                           []
+exception_code:                        0
 exception:
 stack_trace:
-is_initial_query:              1
-user:                          default
-query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
-address:                       ::ffff:127.0.0.1
-port:                          33452
-initial_user:                  default
-initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
-initial_address:               ::ffff:127.0.0.1
-initial_port:                  33452
-interface:                     1
-os_user:                       bharatnc
-client_hostname:               tower
-client_name:                   ClickHouse
-client_revision:               54437
-client_version_major:          20
-client_version_minor:          7
-client_version_patch:          2
-http_method:                   0
+is_initial_query:                      1
+user:                                  default
+query_id:                              a3361f6e-a1fd-4d54-9f6f-f93a08bab0bf
+address:                               ::ffff:127.0.0.1
+port:                                  51006
+initial_user:                          default
+initial_query_id:                      a3361f6e-a1fd-4d54-9f6f-f93a08bab0bf
+initial_address:                       ::ffff:127.0.0.1
+initial_port:                          51006
+initial_query_start_time:              2021-07-28 13:46:56
+initial_query_start_time_microseconds: 2021-07-28 13:46:56.704542
+interface:                             1
+os_user:
+client_hostname:
+client_name:                           ClickHouse client
+client_revision:                       54449
+client_version_major:                  21
+client_version_minor:                  8
+client_version_patch:                  0
+http_method:                           0
 http_user_agent:
+http_referer:
+forwarded_for:
 quota_key:
-revision:                      54440
-thread_ids:                    []
-ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
-Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
+revision:                              54453
+log_comment:
+thread_ids:                            [5058,22097,22110,22094]
+ProfileEvents.Names:                   ['Query','SelectQuery','ArenaAllocChunks','ArenaAllocBytes','FunctionExecute','NetworkSendElapsedMicroseconds','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds','OSWriteBytes','OSWriteChars']
+ProfileEvents.Values:                  [1,1,39,352256,64,360,8393,374325,412,440,34480,13108,4723,671,19,17828,8192,10240]
+Settings.Names:                        ['load_balancing','max_memory_usage']
+Settings.Values:                       ['random','10000000000']
+used_aggregate_functions:              []
+used_aggregate_function_combinators:   []
+used_database_engines:                 []
+used_data_type_families:               ['UInt64','UInt8','Nullable','String','date']
+used_dictionaries:                     []
+used_formats:                          []
+used_functions:                        ['concat','notEmpty','extractAll']
+used_storages:                         []
+used_table_functions:                  []
 ```
 
 **Смотрите также**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/operations/system_tables/query_log) <!--hide-->

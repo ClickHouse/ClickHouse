@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
@@ -68,7 +68,7 @@ public:
 
 protected:
     friend class StorageFileSource;
-    friend class StorageFileBlockOutputStream;
+    friend class StorageFileSink;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
@@ -95,10 +95,8 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd instead of path
-    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
-    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
+    bool is_db_table = true;        /// Table is stored in real database, not user's file
+    bool use_table_fd = false;      /// Use table_fd instead of path
 
     mutable std::shared_timed_mutex rwlock;
 

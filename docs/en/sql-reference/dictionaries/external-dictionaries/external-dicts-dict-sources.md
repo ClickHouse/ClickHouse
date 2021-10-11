@@ -598,7 +598,7 @@ SOURCE(CLICKHOUSE(
     table 'ids'
     where 'id=10'
     secure 1
-))
+));
 ```
 
 Setting fields:

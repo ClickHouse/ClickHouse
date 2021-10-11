@@ -14,6 +14,8 @@
 namespace DB
 {
 
+static constexpr auto DEFAULT_CODEC_NAME = "Default";
+
 class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;

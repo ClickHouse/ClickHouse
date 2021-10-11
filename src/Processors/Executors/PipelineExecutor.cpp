@@ -9,7 +9,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -45,6 +45,8 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
+        if (process_list_element)
+            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -57,6 +59,12 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 
         throw;
     }
+}
+
+PipelineExecutor::~PipelineExecutor()
+{
+    if (process_list_element)
+        process_list_element->removePipelineExecutor(this);
 }
 
 void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
@@ -391,6 +399,9 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    if (num_threads < 1)
+        num_threads = 1;
+
     try
     {
         executeImpl(num_threads);
@@ -418,11 +429,13 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    if (finished)
-        return false;
-
     if (!is_execution_initialized)
+    {
         initializeExecution(1);
+
+        if (yield_flag && *yield_flag)
+            return true;
+    }
 
     executeStepImpl(0, 1, yield_flag);
 

@@ -1,15 +1,17 @@
 #include "HTTPDictionarySource.h"
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
+#include <DataStreams/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -61,14 +63,15 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     credentials.setPassword(other.credentials.getPassword());
 }
 
-BlockInputStreamPtr HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
+Pipe HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
     Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
-    auto input_stream = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(in_ptr_wrapped));
+    auto source = FormatFactory::instance().getInput(configuration.format, *in_ptr_wrapped, sample_block, context, max_block_size);
+    source->addBuffer(std::move(in_ptr_wrapped));
+    return Pipe(std::move(source));
 }
 
 void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
@@ -88,7 +91,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadAll()
+Pipe HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(configuration.url);
@@ -105,7 +108,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
+Pipe HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -123,7 +126,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -150,7 +153,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -209,13 +212,13 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextPtr context,
+                                   ContextPtr global_context,
                                    const std::string & /* default_database */,
                                    bool created_from_ddl) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
-        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         const auto & settings_config_prefix = config_prefix + ".http";
         const auto & credentials_prefix = settings_config_prefix + ".credentials";
@@ -254,7 +257,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .header_entries = std::move(header_entries)
         };
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context_local_copy, created_from_ddl);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
     };
     factory.registerSource("http", create_table_source);
 }

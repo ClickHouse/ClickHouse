@@ -12,7 +12,8 @@
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
-#include <common/range.h>
+#include <Parsers/ParserDatabaseOrNone.h>
+#include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -300,6 +301,23 @@ namespace
             return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
+
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTDatabaseOrNone> & default_database)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"DEFAULT DATABASE"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserDatabaseOrNone database_p;
+            if (!database_p.parse(pos, ast, expected))
+                return false;
+
+            default_database = typeid_cast<std::shared_ptr<ASTDatabaseOrNone>>(ast);
+            return true;
+        });
+    }
 }
 
 
@@ -349,6 +367,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    std::shared_ptr<ASTDatabaseOrNone> default_database;
     String cluster;
 
     while (true)
@@ -388,6 +407,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
+            continue;
+
+        if (!default_database && parseDefaultDatabase(pos, expected, default_database))
             continue;
 
         if (alter)
@@ -445,6 +467,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
+    query->default_database = std::move(default_database);
 
     return true;
 }

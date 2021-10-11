@@ -8,7 +8,7 @@
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/GetObjectRequest.h>
-#    include <common/logger_useful.h>
+#    include <base/logger_useful.h>
 
 #    include <utility>
 
@@ -43,49 +43,62 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    Stopwatch watch;
     bool next_result = false;
-    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
 
-    if (!impl)
-        impl = initialize();
-
-    for (size_t attempt = 0; attempt < max_single_read_retries; ++attempt)
+    if (impl)
     {
+        /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
+        impl->position() = position();
+        assert(!impl->hasPendingData());
+    }
+    else
+    {
+        /// `impl` is not initialized and we're about to read the first portion of data.
+        impl = initialize();
+        next_result = impl->hasPendingData();
+    }
+
+    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+    for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
+    {
+        Stopwatch watch;
         try
         {
+            /// Try to read a next portion of data.
             next_result = impl->next();
-            /// FIXME. 1. Poco `istream` cannot read less than buffer_size or this state is being discarded during
-            ///           istream <-> iostream conversion. `gcount` always contains 0,
-            ///           that's why we always have error "Cannot read from istream at offset 0".
-
+            watch.stop();
+            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             break;
         }
         catch (const Exception & e)
         {
+            watch.stop();
+            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
-            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
+            LOG_DEBUG(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
                     bucket, key, getPosition(), attempt, e.message());
 
+            if (attempt + 1 == max_single_read_retries)
+                throw;
+
+            /// Pause before next attempt.
+            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+
+            /// Try to reinitialize `impl`.
             impl.reset();
             impl = initialize();
+            next_result = impl->hasPendingData();
         }
-
-        std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
-        sleep_time_with_backoff_milliseconds *= 2;
     }
 
-    watch.stop();
-    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
     if (!next_result)
         return false;
 
-    working_buffer = internal_buffer = impl->buffer();
-    pos = working_buffer.begin();
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-    ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
-
+    ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
     offset += working_buffer.size();
 
     return true;

@@ -1,15 +1,12 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -223,12 +220,6 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
-    static constexpr auto all_part_states =
-    {
-        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
-        State::DeleteOnDestroy
-    };
-
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -238,14 +229,10 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    /// Returns name of state
-    static String stateToString(State state);
-    String stateString() const;
+    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
+    constexpr std::string_view stateString() const { return stateString(state); }
 
-    String getNameWithState() const
-    {
-        return name + " (state " + stateString() + ")";
-    }
+    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
@@ -301,7 +288,9 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    MinMaxIndex minmax_idx;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 
@@ -374,7 +363,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadat file names without checksums. For example,
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 

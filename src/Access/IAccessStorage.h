@@ -3,7 +3,7 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -84,7 +84,9 @@ public:
 
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
+    Strings readNames(const std::vector<UUID> & ids) const;
     std::optional<String> tryReadName(const UUID & id) const;
+    Strings tryReadNames(const std::vector<UUID> & ids) const;
 
     /// Returns true if a specified entity can be inserted into this storage.
     /// This function doesn't check whether there are no entities with such name in the storage.

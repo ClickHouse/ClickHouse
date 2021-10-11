@@ -148,6 +148,7 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -155,21 +156,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
+            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
-                {"input", isStringOrFixedString, nullptr, "plaintext"},
-                {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
+                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "encryption mode string"},
+                {"input", &isStringOrFixedString<IDataType>, nullptr, "plaintext"},
+                {"key", &isStringOrFixedString<IDataType>, nullptr, "encryption key binary string"},
             },
             optional_args
         );
@@ -423,6 +424,7 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -430,21 +432,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
+            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
+                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
                 {"input", nullptr, nullptr, "ciphertext"},
-                {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
+                {"key", &isStringOrFixedString<IDataType>, nullptr, "decryption key binary string"},
             },
             optional_args
         );

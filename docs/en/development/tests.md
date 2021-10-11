@@ -70,7 +70,13 @@ Note that integration of ClickHouse with third-party drivers is not tested. Also
 
 Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-It’s not necessarily to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+
+You can run individual gtest checks by calling the executable directly, for example:
+
+```bash
+$ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
+```
 
 ## Performance Tests {#performance-tests}
 
@@ -233,7 +239,7 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.tech/blog/en/2021/fuzzing-clickhouse/).
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
 
 ## Stress test
 
@@ -335,4 +341,4 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
 
-[Original article](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

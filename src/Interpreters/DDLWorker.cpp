@@ -24,12 +24,14 @@
 #include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <common/sleep.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/logger_useful.h>
+#include <base/sleep.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
+
+#include <Interpreters/ZooKeeperLog.h>
 
 namespace fs = std::filesystem;
 
@@ -156,14 +158,19 @@ DDLWorker::DDLWorker(
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
     const String & logger_name,
-    const CurrentMetrics::Metric * max_entry_metric_)
+    const CurrentMetrics::Metric * max_entry_metric_,
+    const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
+    , max_pushed_entry_metric(max_pushed_entry_metric_)
 {
     if (max_entry_metric)
         CurrentMetrics::set(*max_entry_metric, 0);
+
+    if (max_pushed_entry_metric)
+        CurrentMetrics::set(*max_pushed_entry_metric, 0);
 
     if (1 < pool_size)
     {
@@ -371,7 +378,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
+    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
     /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
@@ -627,7 +634,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             String dummy;
             if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
             {
-                constexpr int timeout_ms = 30 * 1000;
+                constexpr int timeout_ms = 60 * 1000;
                 if (!eph_node_disappeared->tryWait(timeout_ms))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
                                     "probably it's owned by someone else", active_node_path);
@@ -765,7 +772,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    zookeeper->createAncestors(fs::path(shard_path) / ""); /* appends "/" at the end of shard_path */
+    assert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
+    zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
+    zookeeper->createIfNotExists(shard_path, "");
 
     /// Leader replica creates is_executed_path node on successful query execution.
     /// We will remove create_shard_flag from zk operations list, if current replica is just waiting for leader to execute the query.
@@ -1044,6 +1053,15 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    if (max_pushed_entry_metric)
+    {
+        String str_buf = node_path.substr(query_path_prefix.length());
+        DB::ReadBufferFromString in(str_buf);
+        CurrentMetrics::Metric id;
+        readText(id, in);
+        id = std::max(*max_pushed_entry_metric, id);
+        CurrentMetrics::set(*max_pushed_entry_metric, id);
+    }
 
     /// We cannot create status dirs in a single transaction with previous request,
     /// because we don't know node_path until previous request is executed.
@@ -1136,10 +1154,9 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             scheduleTasks(reinitialized);
 
-            LOG_DEBUG(log, "Waiting for queue updates");
-            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
-            constexpr int queue_wait_timeout_ms = 10000;
-            queue_updated_event->tryWait(queue_wait_timeout_ms);
+            LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
+                      queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
