@@ -86,7 +86,7 @@ StorageFileLog::StorageFileLog(
 #endif
 
         if (path_is_directory)
-            directory_watch = std::make_unique<FileLogDirectoryWatcher>(path, context_);
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, context_);
 
         auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
