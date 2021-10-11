@@ -1452,6 +1452,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
         auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
         auto index_marks_file_name = index_name_escaped + index_granularity_info.marks_file_extension;
 
+        /// If part does not contain index
         auto bin_checksum = checksums.files.find(index_file_name);
         if (bin_checksum != checksums.files.end())
         {
