@@ -117,8 +117,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     }
 
     ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_new_part_relative_tmp_path = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix + "/";
-    auto local_new_part_tmp_path = global_ctx->data->relative_data_path + local_new_part_relative_tmp_path;
+    auto local_new_part_relative_tmp_path_name = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+    auto local_new_part_tmp_path = global_ctx->data->relative_data_path + local_new_part_relative_tmp_path_name + "/";
     if (ctx->disk->exists(local_new_part_tmp_path))
         throw Exception("Directory " + fullPath(ctx->disk, local_new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
@@ -142,7 +142,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->future_part->type,
         global_ctx->future_part->part_info,
         local_single_disk_volume,
-        local_new_part_relative_tmp_path,
+        local_new_part_relative_tmp_path_name,
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
