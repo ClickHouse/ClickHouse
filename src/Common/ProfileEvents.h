@@ -63,11 +63,6 @@ namespace ProfileEvents
         {
             Snapshot();
 
-            Count & operator[] (Event event)
-            {
-                return counters_holder[event];
-            }
-
             const Count & operator[] (Event event) const
             {
                 return counters_holder[event];
@@ -75,6 +70,8 @@ namespace ProfileEvents
 
         private:
             std::unique_ptr<Count[]> counters_holder;
+
+            friend class Counters;
         };
 
         /// Every single value is fetched atomically, but not all values as a whole.

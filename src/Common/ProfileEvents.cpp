@@ -309,7 +309,7 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
     for (Event i = 0; i < num_counters; ++i)
-        res[i] = counters[i].load(std::memory_order_relaxed);
+        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
 
