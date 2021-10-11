@@ -842,8 +842,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     /// If some thread (send/receive) already finalizing session don't try to do it
     bool already_started = finalization_started.exchange(true);
 
-    LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_closed={}, reason={}",
-             session_id, already_started, requests_queue.isClosed(), reason);
+    LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
+             session_id, already_started, requests_queue.isFinished(), reason);
 
     if (already_started)
         return;
