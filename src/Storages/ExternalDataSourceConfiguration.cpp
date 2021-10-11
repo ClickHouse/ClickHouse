@@ -111,7 +111,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                 }
 
                 auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto arg_value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>();
+                auto * arg_value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>();
                 if (arg_value_literal)
                 {
                     auto arg_value = arg_value_literal->value;
