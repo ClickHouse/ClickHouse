@@ -11,6 +11,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -23,6 +24,8 @@
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -369,7 +372,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 database->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 
