@@ -352,6 +352,7 @@ class TestCase:
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
         testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
+        testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
             database = testcase_args.database
@@ -367,7 +368,9 @@ class TestCase:
             database = 'test_{suffix}'.format(suffix=random_str())
 
             try:
-                clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={'log_comment': testcase_basename})
+                clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={
+                    'log_comment': testcase_args.testcase_basename,
+                })
             except TimeoutError:
                 total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
                 return None, "", f"Timeout creating database {database} before test", total_time
@@ -587,7 +590,9 @@ class TestCase:
         if need_drop_database:
             seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
             try:
-                clickhouse_execute(args, "DROP DATABASE " + database, timeout=seconds_left)
+                clickhouse_execute(args, "DROP DATABASE " + database, timeout=seconds_left, settings={
+                    'log_comment': args.testcase_basename,
+                })
             except TimeoutError:
                 total_time = (datetime.now() - start_time).total_seconds()
                 return None, "", f"Timeout dropping database {database} after test", total_time
