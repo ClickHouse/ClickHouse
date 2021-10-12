@@ -65,6 +65,8 @@ protected:
 
     void work() override;
 
+    bool checkTimeLimit() const;
+
 private:
     StreamLocalLimits limits;
     SizeLimits leaf_limits;
