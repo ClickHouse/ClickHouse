@@ -15,6 +15,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/RWLock.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -322,9 +323,9 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(std::shared_mutex & rwlock)
+    void setLock(RWLockImpl::LockHolder rwlock_holder)
     {
-        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
+        storage_join_lock = rwlock_holder;
     }
 
     void reuseJoinedData(const HashJoin & join);
@@ -383,7 +384,7 @@ private:
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    std::shared_lock<std::shared_mutex> storage_join_lock;
+    RWLockImpl::LockHolder storage_join_lock = nullptr;
 
     void init(Type type_);
 

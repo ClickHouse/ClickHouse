@@ -30,11 +30,11 @@ namespace ErrorCodes
 }
 
 
-class SetOrJoinBlockOutputStream : public IBlockOutputStream
+class SetOrJoinBlockOutputStream : public IBlockOutputStream, WithContext
 {
 public:
     SetOrJoinBlockOutputStream(
-        StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
+        ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
 
@@ -56,13 +56,15 @@ private:
 
 
 SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
+    ContextPtr ctx,
     StorageSetOrJoinBase & table_,
     const StorageMetadataPtr & metadata_snapshot_,
     const String & backup_path_,
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : table(table_)
+    : WithContext(ctx)
+    , table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
@@ -79,7 +81,7 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
     Block sorted_block = block.sortColumns();
 
-    table.insertBlock(sorted_block);
+    table.insertBlock(sorted_block, getContext());
     if (persistent)
         backup_stream.write(sorted_block);
 }
@@ -99,10 +101,10 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinBlockOutputStream>(context, *this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 
@@ -150,10 +152,10 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block); }
 void StorageSet::finishInsert() { set->finishInsert(); }
 
-size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
+size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
 
@@ -205,6 +207,7 @@ void StorageSetOrJoinBase::restore()
 
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
+    ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path);
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
@@ -212,14 +215,14 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     backup_stream.readPrefix();
 
     while (Block block = backup_stream.read())
-        insertBlock(block);
+        insertBlock(block, ctx);
 
     finishInsert();
     backup_stream.readSuffix();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, backup_stream.getProfileInfo().rows, ReadableSize(backup_stream.getProfileInfo().bytes), getSize());
+        file_path, backup_stream.getProfileInfo().rows, ReadableSize(backup_stream.getProfileInfo().bytes), getSize(ctx));
 }
 
 
