@@ -45,7 +45,7 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return !has_elems; }
 
@@ -87,7 +87,7 @@ class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 public:
     MergeTreeConditionFullText(
             const SelectQueryInfo & query_info,
-            ContextPtr context,
+            const Context & context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenExtractorPtr token_extactor_);
@@ -112,7 +112,6 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
@@ -146,16 +145,9 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool traverseASTEquals(
-        const String & function_name,
-        const ASTPtr & key_ast,
-        const DataTypePtr & value_type,
-        const Field & value_field,
-        RPNElement & out);
-
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
+    bool getKey(const ASTPtr & node, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
@@ -216,7 +208,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, ContextPtr context) const override;
+            const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

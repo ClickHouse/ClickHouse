@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
@@ -15,7 +15,7 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -92,7 +92,6 @@ namespace detail
     protected:
         Poco::URI uri;
         std::string method;
-        std::string content_encoding;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -138,7 +137,6 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                content_encoding = response.get("Content-Encoding", "");
                 return istr;
 
             }
@@ -231,11 +229,6 @@ namespace detail
             next_callback = next_callback_;
             /// Some data maybe already read
             next_callback(count());
-        }
-
-        const std::string & getCompressionMethod() const
-        {
-            return content_encoding;
         }
     };
 }

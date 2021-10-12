@@ -1,3 +1,0 @@
-<clickhouse>
-    <background_processing_pool_task_sleep_seconds_when_no_work_max>0.1</background_processing_pool_task_sleep_seconds_when_no_work_max>
-</clickhouse>

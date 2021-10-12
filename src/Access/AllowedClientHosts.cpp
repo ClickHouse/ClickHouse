@@ -1,10 +1,11 @@
 #include <Access/AllowedClientHosts.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
+#include <common/SimpleCache.h>
 #include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
+#include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <ifaddrs.h>
 #include <Common/DNSResolver.h>

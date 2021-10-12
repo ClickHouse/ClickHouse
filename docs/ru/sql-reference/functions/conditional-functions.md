@@ -1,29 +1,27 @@
 ---
 toc_priority: 43
-toc_title: "Условные функции"
+toc_title: "\u0423\u0441\u043b\u043e\u0432\u043d\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
 ---
 
 # Условные функции {#uslovnye-funktsii}
 
 ## if {#if}
 
-Условное выражение. В отличие от большинства систем, ClickHouse всегда считает оба выражения `then` и `else`.
+Условное выражение. В отличии от большинства систем, ClickHouse всегда считает оба выражения `then` и `else`.
 
 **Синтаксис**
 
 ``` sql
-if(cond, then, else)
+SELECT if(cond, then, else)
 ```
 
 Если условие `cond` не равно нулю, то возвращается результат выражения `then`. Если условие `cond` равно нулю или является NULL, то результат выражения `then` пропускается и возвращается результат выражения `else`.
 
-Чтобы вычислять функцию `if` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then` вычисляется только для строк, где условие `cond` верно, а выражение `else` – для строк, где условие `cond` неверно. Например, при выполнении запроса `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль, так как `intDiv(42, number)` будет вычислено только для чисел, которые не удовлетворяют условию `number = 0`.
+**Параметры**
 
-**Аргументы**
-
--   `cond` – проверяемое условие. Может быть [UInt8](../../sql-reference/functions/conditional-functions.md) или `NULL`.
--   `then` – возвращается результат выражения, если условие `cond` истинно.
--   `else` – возвращается результат выражения, если условие `cond` ложно.
+-   `cond` – Условие, которое может быть равно 0 или нет. Может быть [UInt8](../../sql-reference/functions/conditional-functions.md) или `NULL`.
+-   `then` - Возвращается результат выражения, если условие `cond` истинно.
+-   `else` - Возвращается результат выражения, если условие `cond` ложно.
 
 **Возвращаемые значения**
 
@@ -34,10 +32,10 @@ if(cond, then, else)
 Запрос:
 
 ``` sql
-SELECT if(1, plus(2, 2), plus(2, 6));
+SELECT if(1, plus(2, 2), plus(2, 6))
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─plus(2, 2)─┐
@@ -48,10 +46,10 @@ SELECT if(1, plus(2, 2), plus(2, 6));
 Запрос:
 
 ``` sql
-SELECT if(0, plus(2, 2), plus(2, 6));
+SELECT if(0, plus(2, 2), plus(2, 6))
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─plus(2, 6)─┐
@@ -79,19 +77,13 @@ SELECT if(0, plus(2, 2), plus(2, 6));
 
 Позволяет более компактно записать оператор [CASE](../operators/index.md#operator_case) в запросе.
 
-**Синтаксис**
+    multiIf(cond_1, then_1, cond_2, then_2...else)
 
-``` sql
-multiIf(cond_1, then_1, cond_2, then_2, ..., else)
-```
+**Параметры**
 
-Чтобы вычислять функцию `multiIf` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` верно, `cond_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` верно. Например, при выполнении запроса `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
-
-**Аргументы**
-
--   `cond_N` — условие, при выполнении которого функция вернёт `then_N`.
--   `then_N` — результат функции при выполнении.
--   `else` — результат функции, если ни одно из условий не выполнено.
+-   `cond_N` — Условие, при выполнении которого функция вернёт `then_N`.
+-   `then_N` — Результат функции при выполнении.
+-   `else` — Результат функции, если ни одно из условий не выполнено.
 
 Функция принимает `2N+1` параметров.
 
@@ -118,3 +110,5 @@ multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 │                                       ᴺᵁᴸᴸ │
 └────────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/conditional_functions/) <!--hide-->

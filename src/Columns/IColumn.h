@@ -4,7 +4,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Core/Types.h>
 
 
@@ -25,9 +25,6 @@ class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
-
-class ISerialization;
-using SerializationPtr = std::shared_ptr<const ISerialization>;
 
 
 /*
@@ -210,10 +207,6 @@ public:
     /// Returns pointer to the position after the read data.
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
-    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Returns a pointer to the position after the deserialized data.
-    virtual const char * skipSerializedInArena(const char *) const = 0;
-
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
@@ -230,19 +223,11 @@ public:
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
-      * if 0, then don't makes reserve(),
-      * otherwise (i.e. < 0), makes reserve() using size of source column.
+      *  if 0, then don't makes reserve(),
+      *  otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
-
-    /** Expand column by mask inplace. After expanding column will
-      * satisfy the following: if we filter it by given mask, we will
-      * get initial column. Values with indexes i: mask[i] = 0
-      * shouldn't be used after expanding.
-      * If inverted is true, inverted mask will be used.
-      */
-    virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.

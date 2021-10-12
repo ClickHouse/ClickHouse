@@ -1,6 +1,6 @@
-<clickhouse>
+<yandex>
     <merge_tree>
         <cleanup_delay_period>0</cleanup_delay_period>
         <cleanup_delay_period_random_add>0</cleanup_delay_period_random_add>
     </merge_tree>
-</clickhouse>
+</yandex>

@@ -1,7 +1,0 @@
-CREATE TABLE tmp ENGINE = TinyLog AS SELECT queryID();
-CREATE TABLE tmp ENGINE = TinyLog AS SELECT initialQueryID();
-3
-3
-1
-1
-3

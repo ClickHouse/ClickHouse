@@ -7,7 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -143,11 +143,6 @@ public:
     {
         std::lock_guard lock(mutex);
         return cells.size();
-    }
-
-    size_t maxSize() const
-    {
-        return max_size;
     }
 
     void reset()

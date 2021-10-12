@@ -57,7 +57,7 @@ Columns:
     Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
 -   `can_become_leader` (`UInt8`) - Whether the replica can be a leader.
 -   `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
-    This mode is turned on if the config does not have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
+    This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
 -   `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
 -   `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
 -   `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
@@ -82,10 +82,9 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
 -   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
--   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — Map between replica name and is replica active.
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you do not request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
+If you don’t request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
 
 For example, you can check that everything is working correctly like this:
 
@@ -119,7 +118,7 @@ WHERE
     OR active_replicas < total_replicas
 ```
 
-If this query does not return anything, it means that everything is fine.
+If this query doesn’t return anything, it means that everything is fine.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/replicas) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/replicas) <!--hide-->
 

@@ -6,9 +6,7 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <common/sort.h>
 
 #include <cmath>
 
@@ -61,9 +59,11 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <is_decimal T>
+template <typename T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
+    static_assert(IsDecimalNumber<T>);
+
 private:
     using Self = ColumnDecimal;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -85,8 +85,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getDataType() const override { return TypeId<T>::value; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -107,7 +107,7 @@ public:
     {
         data.resize_fill(data.size() + length);
     }
-    void insert(const Field & x) override { data.push_back(DB::get<T>(x)); }
+    void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
@@ -129,7 +129,6 @@ public:
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
@@ -151,8 +150,6 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const IColumn::Filter & mask, bool inverted) override;
-
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
@@ -210,12 +207,7 @@ protected:
     }
 };
 
-template <class> class ColumnVector;
-template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
-template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
-template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
-
-template <is_decimal T>
+template <typename T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {

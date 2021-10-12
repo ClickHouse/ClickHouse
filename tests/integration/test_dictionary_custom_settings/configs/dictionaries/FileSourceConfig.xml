@@ -1,10 +1,10 @@
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test_file</name>
         
         <source>
             <file>
-	        <path>/etc/clickhouse-server/dictionaries/source.csv</path>
+                <path>/etc/clickhouse-server/config.d/source.csv</path>
                 <format>CSVWithNames</format>
             </file>
 
@@ -42,4 +42,4 @@
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>

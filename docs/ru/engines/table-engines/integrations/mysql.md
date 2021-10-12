@@ -1,11 +1,11 @@
 ---
-toc_priority: 4
+toc_priority: 3
 toc_title: MySQL
 ---
 
 # MySQL {#mysql}
 
-Движок MySQL позволяет выполнять запросы `SELECT` и `INSERT` над данными, хранящимися на удалённом MySQL сервере.
+Движок MySQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
 ## Создание таблицы {#sozdanie-tablitsy}
 
@@ -18,13 +18,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table-engines/integrations/mysql.md#create-table-query).
 
-Структура таблицы может отличаться от структуры исходной таблицы MySQL:
+Структура таблицы может отличаться от исходной структуры таблицы MySQL:
 
--   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но можно использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [привести](../../../engines/database-engines/mysql.md#data_types-support) значения к типам данных ClickHouse.
--   Настройка [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
+-   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../engines/table-engines/integrations/mysql.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
@@ -49,12 +48,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
-
-Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
-
-```sql
-CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
-```
 
 ## Пример использования {#primer-ispolzovaniia}
 
@@ -107,3 +100,4 @@ SELECT * FROM mysql_table
 -   [Табличная функция ‘mysql’](../../../engines/table-engines/integrations/mysql.md)
 -   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

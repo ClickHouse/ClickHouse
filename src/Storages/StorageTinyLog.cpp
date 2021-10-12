@@ -4,7 +4,6 @@
 
 #include <map>
 #include <cassert>
-#include <chrono>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -23,6 +22,9 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -35,7 +37,6 @@
 #include "StorageLogSettings.h"
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -70,11 +71,11 @@ public:
         size_t block_size_,
         const NamesAndTypesList & columns_,
         StorageTinyLog & storage_,
-        ReadSettings read_settings_,
+        size_t max_read_buffer_size_,
         FileChecker::Map file_sizes_)
         : SourceWithProgress(getHeader(columns_))
         , block_size(block_size_), columns(columns_), storage(storage_)
-        , read_settings(std::move(read_settings_)), file_sizes(std::move(file_sizes_))
+        , max_read_buffer_size(max_read_buffer_size_), file_sizes(std::move(file_sizes_))
     {
     }
 
@@ -88,15 +89,13 @@ private:
     NamesAndTypesList columns;
     StorageTinyLog & storage;
     bool is_finished = false;
-    ReadSettings read_settings;
+    size_t max_read_buffer_size;
     FileChecker::Map file_sizes;
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, ReadSettings read_settings_, size_t file_size)
-            : plain(file_size
-                ? disk->readFile(data_path, read_settings_.adjustBufferSize(file_size))
-                : std::make_unique<ReadBuffer>(nullptr, 0)),
+        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_, size_t file_size)
+            : plain(file_size ? disk->readFile(data_path, std::min(max_read_buffer_size_, file_size)) : std::make_unique<ReadBuffer>(nullptr, 0)),
             limited(std::make_unique<LimitReadBuffer>(*plain, file_size, false)),
             compressed(*limited)
         {
@@ -110,11 +109,11 @@ private:
     using FileStreams = std::map<String, std::unique_ptr<Stream>>;
     FileStreams streams;
 
-    using DeserializeState = ISerialization::DeserializeBinaryBulkStatePtr;
+    using DeserializeState = IDataType::DeserializeBinaryBulkStatePtr;
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, UInt64 limit, ISerialization::SubstreamsCache & cache);
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache);
 };
 
 
@@ -133,7 +132,7 @@ Chunk TinyLogSource::generate()
         return {};
     }
 
-    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+    std::unordered_map<String, IDataType::SubstreamsCache> caches;
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
@@ -163,45 +162,42 @@ Chunk TinyLogSource::generate()
 
 
 void TinyLogSource::readData(const NameAndTypePair & name_and_type,
-    ColumnPtr & column, UInt64 limit, ISerialization::SubstreamsCache & cache)
+    ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache)
 {
-    ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = IDataType::getSerialization(name_and_type);
-
-    settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.count(IDataType::getSubcolumnNameForStream(path)))
             return nullptr;
 
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String stream_name = IDataType::getFileNameForStream(name_and_type, path);
         auto & stream = streams[stream_name];
         if (!stream)
         {
             String file_path = storage.files[stream_name].data_file_path;
             stream = std::make_unique<Stream>(
-                storage.disk, file_path, read_settings, file_sizes[fileName(file_path)]);
+                storage.disk, file_path, max_read_buffer_size, file_sizes[fileName(file_path)]);
         }
 
         return &stream->compressed;
     };
 
     if (deserialize_states.count(name) == 0)
-         serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+         type->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name], &cache);
+    type->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name], &cache);
 }
 
 
-class TinyLogSink final : public SinkToStorage
+class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit TinyLogSink(
+    explicit TinyLogBlockOutputStream(
         StorageTinyLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         std::unique_lock<std::shared_timed_mutex> && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -215,7 +211,7 @@ public:
         }
     }
 
-    ~TinyLogSink() override
+    ~TinyLogBlockOutputStream() override
     {
         try
         {
@@ -233,10 +229,10 @@ public:
         }
     }
 
-    String getName() const override { return "TinyLogSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override;
-    void onFinish() override;
+    void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageTinyLog & storage;
@@ -265,24 +261,24 @@ private:
     using FileStreams = std::map<String, std::unique_ptr<Stream>>;
     FileStreams streams;
 
-    using SerializeState = ISerialization::SerializeBinaryBulkStatePtr;
+    using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
     SerializeStates serialize_states;
 
     using WrittenStreams = std::set<String>;
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenStreams & written_streams);
+    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenStreams & written_streams);
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams);
 };
 
 
-ISerialization::OutputStreamGetter TinyLogSink::createStreamGetter(
+IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
     const NameAndTypePair & column,
     WrittenStreams & written_streams)
 {
-    return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
+    return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = ISerialization::getFileNameForStream(column, path);
+        String stream_name = IDataType::getFileNameForStream(column, path);
 
         if (!written_streams.insert(stream_name).second)
             return nullptr;
@@ -300,11 +296,10 @@ ISerialization::OutputStreamGetter TinyLogSink::createStreamGetter(
 }
 
 
-void TinyLogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
+void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
 {
-    ISerialization::SerializeBinaryBulkSettings settings;
+    IDataType::SerializeBinaryBulkSettings settings;
     const auto & [name, type] = name_and_type;
-    auto serialization = type->getDefaultSerialization();
 
     if (serialize_states.count(name) == 0)
     {
@@ -312,15 +307,15 @@ void TinyLogSink::writeData(const NameAndTypePair & name_and_type, const IColumn
         /// Use different WrittenStreams set, or we get nullptr for them in `serializeBinaryBulkWithMultipleStreams`
         WrittenStreams prefix_written_streams;
         settings.getter = createStreamGetter(name_and_type, prefix_written_streams);
-        serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+        type->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
     }
 
     settings.getter = createStreamGetter(name_and_type, written_streams);
-    serialization->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
+    type->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 }
 
 
-void TinyLogSink::onFinish()
+void TinyLogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
@@ -333,15 +328,14 @@ void TinyLogSink::onFinish()
     }
 
     WrittenStreams written_streams;
-    ISerialization::SerializeBinaryBulkSettings settings;
+    IDataType::SerializeBinaryBulkSettings settings;
     for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
         {
             settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
-            auto serialization = column.type->getDefaultSerialization();
-            serialization->serializeBinaryBulkStateSuffix(settings, it->second);
+            column.type->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
 
@@ -367,9 +361,8 @@ void TinyLogSink::onFinish()
 }
 
 
-void TinyLogSink::consume(Chunk chunk)
+void TinyLogBlockOutputStream::write(const Block & block)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
@@ -389,7 +382,6 @@ StorageTinyLog::StorageTinyLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -402,7 +394,6 @@ StorageTinyLog::StorageTinyLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -437,9 +428,9 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
         throw Exception("Duplicate column with name " + name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        String stream_name = IDataType::getFileNameForStream(column, substream_path);
         if (!files.count(stream_name))
         {
             ColumnData column_data;
@@ -448,9 +439,8 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
         }
     };
 
-    ISerialization::SubstreamPath substream_path;
-    auto serialization = type->getDefaultSerialization();
-    serialization->enumerateStreams(stream_callback, substream_path);
+    IDataType::SubstreamPath substream_path;
+    type->enumerateStreams(stream_callback, substream_path);
 }
 
 
@@ -470,9 +460,9 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
+static std::chrono::seconds getLockTimeout(const Context & context)
 {
-    const Settings & settings = context->getSettingsRef();
+    const Settings & settings = context.getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
@@ -484,17 +474,19 @@ Pipe StorageTinyLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    auto all_columns = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
+    const Settings & settings = context.getSettingsRef();
+
     std::shared_lock lock{rwlock, getLockTimeout(context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -504,18 +496,18 @@ Pipe StorageTinyLog::read(
         max_block_size,
         Nested::convertToSubcolumns(all_columns),
         *this,
-        context->getReadSettings(),
+        settings.max_read_buffer_size,
         file_checker.getFileSizes()));
 }
 
 
-SinkToStoragePtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<TinyLogSink>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
+    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
 }
 
 
-CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr context)
+CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & context)
 {
     std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
@@ -524,36 +516,8 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
     return file_checker.check();
 }
 
-IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
-{
-    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    ColumnSizeByName column_sizes;
-    FileChecker::Map file_sizes = file_checker.getFileSizes();
-
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
-    {
-        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            ColumnSize & size = column_sizes[column.name];
-            auto it = files.find(stream_name);
-            if (it != files.end())
-                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
-        };
-
-        ISerialization::SubstreamPath substream_path;
-        auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
-    }
-
-    return column_sizes;
-}
-
 void StorageTinyLog::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     disk->clearDirectory(table_path);
 
@@ -579,17 +543,11 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String disk_name = getDiskName(*args.storage_def);
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.context.getDisk(disk_name);
 
         return StorageTinyLog::create(
-            disk,
-            args.relative_data_path,
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.context.getSettings().max_compress_block_size);
     }, features);
 }
 

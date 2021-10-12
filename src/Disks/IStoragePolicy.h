@@ -1,10 +1,7 @@
 #pragma once
-
-#include <Disks/DiskType.h>
-
 #include <memory>
 #include <vector>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -17,7 +14,6 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 class IReservation;
-using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
 
@@ -61,7 +57,6 @@ public:
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;
-    /// Returns disks by type ordered by volumes priority
 };
 
 }

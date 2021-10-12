@@ -1,10 +1,9 @@
-<clickhouse>
+<yandex>
     <http_port remove="remove"/>
     <mysql_port remove="remove"/>
-    <postgresql_port remove="remove"/>
     <interserver_http_port remove="remove"/>
     <tcp_with_proxy_port remove="remove"/>
-    <keeper_server remove="remove"/>
+    <test_keeper_server remove="remove"/>
     <listen_host>::</listen_host>
 
     <logger>
@@ -27,4 +26,4 @@
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
 
     <remap_executable replace="replace">true</remap_executable>
-</clickhouse>
+</yandex>

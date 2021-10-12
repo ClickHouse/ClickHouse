@@ -13,7 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/FieldVisitorSum.h>
+#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
@@ -21,7 +21,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -65,9 +64,7 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
 {
 private:
     DataTypePtr keys_type;
-    SerializationPtr keys_serialization;
     DataTypes values_types;
-    Serializations values_serializations;
 
 public:
     using Base = IAggregateFunctionDataHelper<
@@ -75,14 +72,9 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */)
-        , keys_type(keys_type_)
-        , keys_serialization(keys_type->getDefaultSerialization())
-        , values_types(values_types_)
+        : Base(argument_types_, {} /* parameters */), keys_type(keys_type_),
+          values_types(values_types_)
     {
-        values_serializations.reserve(values_types.size());
-        for (const auto & type : values_types)
-            values_serializations.emplace_back(type->getDefaultSerialization());
     }
 
     DataTypePtr getReturnType() const override
@@ -141,8 +133,6 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     static const auto & getArgumentColumns(const IColumn**& columns)
     {
         if constexpr (tuple_argument)
@@ -190,7 +180,7 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (is_decimal<T>)
+                if constexpr (IsDecimalNumber<T>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
@@ -217,7 +207,7 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (is_decimal<T>)
+                    if constexpr (IsDecimalNumber<T>)
                     {
                         UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
@@ -258,9 +248,9 @@ public:
 
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf);
+            keys_type->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->serializeBinary(elem.second[col], buf);
+                values_types[col]->serializeBinary(elem.second[col], buf);
         }
     }
 
@@ -273,14 +263,14 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf);
+            keys_type->deserializeBinary(key, buf);
 
             Array values;
             values.resize(values_types.size());
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->deserializeBinary(values[col], buf);
+                values_types[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (is_decimal<T>)
+            if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;
@@ -396,7 +386,7 @@ private:
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
     /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
-    static constexpr const bool allow_hash = !is_over_big_int<T>;
+    static constexpr const bool allow_hash = !OverBigInt<T>;
     using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
 
     ContainerT keys_to_keep;
@@ -423,7 +413,7 @@ public:
 
         for (const Field & f : keys_to_keep_)
         {
-            keys_to_keep.emplace(f.safeGet<T>());
+            keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());
         }
     }
 

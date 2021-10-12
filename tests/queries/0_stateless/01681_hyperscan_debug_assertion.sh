@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-fasttest
-# Tag no-fasttest: Hyperscan
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

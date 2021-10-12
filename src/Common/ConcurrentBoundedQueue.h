@@ -2,20 +2,41 @@
 
 #include <queue>
 #include <type_traits>
-#include <atomic>
 
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <base/MoveOrCopyIfThrow.h>
-#include <Common/Exception.h>
+#include <common/types.h>
 
-namespace DB
+
+namespace detail
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<T>>
+    struct MoveOrCopyIfThrow;
+
+    template <typename T>
+    struct MoveOrCopyIfThrow<T, true>
+    {
+        void operator()(T && src, T & dst) const
+        {
+            dst = std::forward<T>(src);
+        }
+    };
+
+    template <typename T>
+    struct MoveOrCopyIfThrow<T, false>
+    {
+        void operator()(T && src, T & dst) const
+        {
+            dst = src;
+        }
+    };
+
+    template <typename T>
+    void moveOrCopyIfThrow(T && src, T & dst)
+    {
+        MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
+    }
 }
 
 /** A very simple thread-safe queue of limited size.
@@ -27,34 +48,38 @@ class ConcurrentBoundedQueue
 {
 private:
     std::queue<T> queue;
-    mutable Poco::FastMutex mutex;
+    Poco::FastMutex mutex;
     Poco::Semaphore fill_count;
     Poco::Semaphore empty_count;
-    std::atomic_bool closed = false;
 
-    template <typename... Args>
-    bool tryEmplaceImpl(Args &&... args)
+public:
+    ConcurrentBoundedQueue(size_t max_fill)
+        : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
+
+    void push(const T & x)
     {
-        bool emplaced = true;
-
+        empty_count.wait();
         {
             Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            if (closed)
-                emplaced = false;
-            else
-                queue.emplace(std::forward<Args>(args)...);
+            queue.push(x);
         }
-
-        if (emplaced)
-            fill_count.set();
-        else
-            empty_count.set();
-
-        return emplaced;
+        fill_count.set();
     }
 
-    void popImpl(T & x)
+    template <typename... Args>
+    void emplace(Args &&... args)
     {
+        empty_count.wait();
+        {
+            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+            queue.emplace(std::forward<Args>(args)...);
+        }
+        fill_count.set();
+    }
+
+    void pop(T & x)
+    {
+        fill_count.wait();
         {
             Poco::ScopedLock<Poco::FastMutex> lock(mutex);
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
@@ -63,82 +88,60 @@ private:
         empty_count.set();
     }
 
-public:
-    explicit ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill)
-        , empty_count(max_fill, max_fill)
-    {}
-
-    void push(const T & x)
-    {
-        empty_count.wait();
-        if (!tryEmplaceImpl(x))
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "tryPush/tryEmplace must be used with close()");
-    }
-
-    template <typename... Args>
-    void emplace(Args &&... args)
-    {
-        empty_count.wait();
-        if (!tryEmplaceImpl(std::forward<Args>(args)...))
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "tryPush/tryEmplace must be used with close()");
-    }
-
-    void pop(T & x)
-    {
-        fill_count.wait();
-        popImpl(x);
-    }
-
     bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
-        if (!empty_count.tryWait(milliseconds))
-            return false;
-
-        return tryEmplaceImpl(x);
+        if (empty_count.tryWait(milliseconds))
+        {
+            {
+                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+                queue.push(x);
+            }
+            fill_count.set();
+            return true;
+        }
+        return false;
     }
 
     template <typename... Args>
     bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
-        if (!empty_count.tryWait(milliseconds))
-            return false;
-
-        return tryEmplaceImpl(std::forward<Args>(args)...);
+        if (empty_count.tryWait(milliseconds))
+        {
+            {
+                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+                queue.emplace(std::forward<Args>(args)...);
+            }
+            fill_count.set();
+            return true;
+        }
+        return false;
     }
 
     bool tryPop(T & x, UInt64 milliseconds = 0)
     {
-        if (!fill_count.tryWait(milliseconds))
-            return false;
-
-        popImpl(x);
-        return true;
+        if (fill_count.tryWait(milliseconds))
+        {
+            {
+                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+                detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+                queue.pop();
+            }
+            empty_count.set();
+            return true;
+        }
+        return false;
     }
 
-    size_t size() const
+    size_t size()
     {
         Poco::ScopedLock<Poco::FastMutex> lock(mutex);
         return queue.size();
     }
 
-    size_t empty() const
+    size_t empty()
     {
         Poco::ScopedLock<Poco::FastMutex> lock(mutex);
         return queue.empty();
-    }
-
-    /// Forbids to push new elements to queue.
-    /// Returns false if queue was not closed before call, returns true if queue was already closed.
-    bool close()
-    {
-        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-        return closed.exchange(true);
-    }
-
-    bool isClosed() const
-    {
-        return closed.load();
     }
 
     void clear()

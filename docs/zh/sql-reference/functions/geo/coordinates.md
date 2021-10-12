@@ -1,1 +1,0 @@
-../../../../en/sql-reference/functions/geo/coordinates.md

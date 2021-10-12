@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -36,21 +36,18 @@ inline String likePatternToRegexp(const String & pattern)
                 res += ".";
                 break;
             case '\\':
-                /// Known escape sequences.
-                if (pos + 1 != end && (pos[1] == '%' || pos[1] == '_'))
-                {
-                    res += pos[1];
-                    ++pos;
-                }
-                else if (pos + 1 != end && pos[1] == '\\')
-                {
+                ++pos;
+                if (pos == end)
                     res += "\\\\";
-                    ++pos;
-                }
                 else
                 {
-                    /// Unknown escape sequence treated literally: as backslash and the following character.
-                    res += "\\\\";
+                    if (*pos == '%' || *pos == '_')
+                        res += *pos;
+                    else
+                    {
+                        res += '\\';
+                        res += *pos;
+                    }
                 }
                 break;
             default:
