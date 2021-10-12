@@ -525,7 +525,6 @@ class IColumn;
     M(Int64, http_max_tries, 1, "Max attempts to read via http.", 0) \
     M(Int64, http_retry_initial_backoff_ms, 100, "Min milliseconds for backoff, when retrying read via http", 0) \
     M(Int64, http_retry_max_backoff_ms, 10000, "Max milliseconds for backoff, when retrying read via http", 0) \
-    M(Bool, http_retriable_read, true, "Allow to resume reading via http if some error occurred. Reading will continue starting from last read byte (with `range` header)", 0) \
     \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
