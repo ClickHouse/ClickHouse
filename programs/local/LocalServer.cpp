@@ -1,8 +1,6 @@
 #include "LocalServer.h"
 
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
@@ -10,7 +8,6 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
@@ -21,19 +18,14 @@
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
-#include <Common/UnicodeBar.h>
-#include <Common/config_version.h>
 #include <Common/quoteString.h>
 #include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/IAST.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -45,7 +37,6 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <base/argsToConfig.h>
-#include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
 #include <filesystem>
 
@@ -721,6 +712,11 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         app.init(argc, argv);
         return app.run();
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
