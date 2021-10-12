@@ -1386,7 +1386,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
-            main_config_reloader.reset();
 
             if (current_connections)
             {
