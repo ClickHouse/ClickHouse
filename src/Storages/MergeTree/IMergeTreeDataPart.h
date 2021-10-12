@@ -384,10 +384,12 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
-    //const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
+    const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
+    MergeTreeDataPartDeletedMask& getDeletedMask() { return deleted_mask; }
 
 protected:
-    //MergeTreeDataPartDeletedMask deleted_mask {};
+    /// Loaded in table engines.
+    MergeTreeDataPartDeletedMask deleted_mask {};
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -427,8 +429,6 @@ private:
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
-
-    void loadDeletedMask();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);

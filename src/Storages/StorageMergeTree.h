@@ -129,15 +129,14 @@ private:
     mutable std::condition_variable currently_processing_in_background_condition;
 
     /// Parts that currently participate in merge or mutation.
-    /// This set has to be used with `currently_processing_in_background_mutex`.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
+
 
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     using MutationsByVersionIt = decltype(current_mutations_by_version)::iterator;
-
-    std::multimap<Int64, int> current_point_deletes;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -149,8 +148,8 @@ private:
     void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
-      * aggressive: when selecting parts, don't take into account their ratio size and novelty (used for OPTIMIZE query).
-      * Returns true if merge finished successfully.
+      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * Returns true if merge is finished successfully.
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate,
         const Names & deduplicate_by_columns,

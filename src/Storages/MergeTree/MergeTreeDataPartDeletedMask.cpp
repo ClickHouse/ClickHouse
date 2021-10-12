@@ -21,8 +21,6 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
             "Unknown format version {} for deleted mask", format_version);
 
-    readIntBinary(deleted_rows_hash, in);
-
     readVectorBinary(deleted_rows, in);
 
     size_t real_hash = 0;
@@ -43,23 +41,5 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
     writeVarUInt(1, out); //format version
     writeVarUInt(deleted_rows_hash, out);
     writeBinary(std::span{deleted_rows}, out);
-}
-
-void MergeTreeDataPartDeletedMask::update(const MergeTreeDataPartDeletedMask& other)
-{
-    std::copy(other.deleted_rows.cbegin(), other.deleted_rows.cend(), std::back_inserter(deleted_rows));
-    deleted_rows_hash ^= other.deleted_rows_hash;
-}
-
-void MergeTreeDataPartDeletedMask::updateWrite(const MergeTreeDataPartDeletedMask& other, WriteBufferFromFile & out)
-{
-    update(other);
-
-    out.seek(sizeof(size_t), SEEK_CUR); //reposition on hash
-    writeVarUInt(deleted_rows_hash, out);
-
-    out.seek(0, SEEK_END); //reposition after previously added rows
-
-    writeBinary(std::span{other.deleted_rows}, out);
 }
 }

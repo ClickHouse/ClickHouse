@@ -681,16 +681,15 @@ void StorageMergeTree::loadMutations()
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            const String name = it->name();
-            if (startsWith(name, "mutation_"))
+            if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, path, name);
+                MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", name, entry.commands.size());
-                auto [mutations_it, emplaced] = current_mutations_by_id.emplace(name, std::move(entry));
+                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
+                auto [mutations_it, emplaced] = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, mutations_it->second);
             }
-            else if (startsWith(name, "tmp_mutation_"))
+            else if (startsWith(it->name(), "tmp_mutation_"))
             {
                 disk->removeFile(it->path());
             }
