@@ -27,7 +27,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install Jinja2 pandas clickhouse_driver
+RUN pip3 install Jinja2
 
 COPY * /
 
