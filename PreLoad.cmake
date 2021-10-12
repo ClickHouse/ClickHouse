@@ -24,7 +24,7 @@ endif()
 execute_process(COMMAND uname -s OUTPUT_VARIABLE OS)
 execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH)
 
-if (OS MATCHES "Linux" AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+if (OS MATCHES "Linux" AND NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT UNBUNDLED)
     if (ARCH MATCHES "amd64|x86_64")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "" FORCE)
     elseif (ARCH MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
