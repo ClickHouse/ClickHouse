@@ -883,6 +883,7 @@ Packet Connection::receivePacket()
 
             case Protocol::Server::MergeTreeReadTaskRequest:
                 res.request = receivePartitionReadRequest();
+                return res;
 
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
