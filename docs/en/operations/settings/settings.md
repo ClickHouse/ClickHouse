@@ -3798,10 +3798,6 @@ Possible values:
 
 Default value: `1`.
 
-**See Also**
-
--   [PREWHERE](../../sql-reference/statements/select/prewhere.md) clause in `SELECT` queries
-
 ## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
@@ -3817,6 +3813,4 @@ Default value: `0`.
 
 **See Also**
 
--   [PREWHERE](../../sql-reference/statements/select/prewhere.md) clause in `SELECT` queries
--   [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier in `SELECT` queries
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
