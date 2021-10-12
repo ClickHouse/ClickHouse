@@ -45,12 +45,14 @@ else
     sudo clickhouse start
 fi
 
+# better gdb script
 echo "
 set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
+set pagination off
+handle SIGUSR1 nostop noprint ignore
+handle SIGUSR2 nostop noprint ignore
+handle SIGKILL nostop noprint ignore
+handle SIGTERM nostop noprint ignore
 continue
 thread apply all backtrace
 detach
