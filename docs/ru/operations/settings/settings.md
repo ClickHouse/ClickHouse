@@ -2692,7 +2692,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 **Примеры**
 
-Запрос
+Запрос:
 
 ```sql
 SELECT * FROM csv_custom_null FORMAT CSV;
