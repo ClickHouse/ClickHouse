@@ -314,7 +314,12 @@ void KeeperTCPHandler::runImpl()
     auto response_fd = poll_wrapper->getResponseFD();
     auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
     {
-        [[maybe_unused]] bool push_result = responses->push(response);
+        if (!responses->push(response))
+            throw Exception(ErrorCodes::SYSTEM_ERROR,
+                "Could not push response with xid {} and zxid {}",
+                response->xid,
+                response->zxid);
+
         UInt8 single_byte = 1;
         [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };
