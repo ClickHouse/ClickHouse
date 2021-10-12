@@ -235,8 +235,8 @@ namespace
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
-        {   
-            uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero_vec, _MM_CMPINT_GT); 
+        {
+            uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero_vec, _MM_CMPINT_GT);
  
             if (mask == 0xffffffffffffffff)
             {
@@ -258,18 +258,18 @@ namespace
                 while (mask)
                 {
                     size_t index = __builtin_ctzll(mask);
-                    copy_array(offsets_pos + index);           
+                    copy_array(offsets_pos + index);
                 #ifdef __BMI__
                     mask = _blsr_u64(mask);
                 #else
                     mask = mask & (mask-1);
-                #endif                       
+                #endif
                 }
             }
 
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
-        }  
+        }
    #elif defined(__AVX2__)
         const __m256i zero_vec = _mm256_setzero_si256();
         static constexpr size_t SIMD_BYTES = 32;
@@ -277,7 +277,7 @@ namespace
 
         while (filt_pos < filt_end_aligned)
         {
-            uint32_t mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero_vec));    
+            uint32_t mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero_vec));
 
             if (mask == 0xffffffff)
             {
@@ -299,18 +299,18 @@ namespace
                 while (mask)
                 {
                     size_t index = __builtin_ctz(mask);
-                    copy_array(offsets_pos + index);           
+                    copy_array(offsets_pos + index);
                 #ifdef __BMI__
                     mask = _blsr_u32(mask);
                 #else
                     mask = mask & (mask-1);
-                #endif                       
+                #endif
                 }
             }
 
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
-        }  
+        }
     #elif defined(__SSE2__)
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;

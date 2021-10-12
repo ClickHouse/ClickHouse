@@ -238,13 +238,13 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         */    
 #if defined(__AVX512F__) && defined(__AVX512BW__)
     static constexpr size_t SIMD_BYTES = 64;
-    const __m512i zero64 = _mm512_setzero_epi32();  
+    const __m512i zero64 = _mm512_setzero_epi32();
     const UInt8 * filt_end_avx512 = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
     const size_t chars_per_simd_elements = SIMD_BYTES * n;
 
     while (filt_pos < filt_end_avx512)
-    {    
-        uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero64, _MM_CMPINT_GT);    
+    {
+        uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero64, _MM_CMPINT_GT);
 
         if (0xFFFFFFFFFFFFFFFF == mask)
         {
@@ -263,7 +263,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 mask = _blsr_u64(mask);
             #else
                 mask = mask & (mask-1);
-            #endif                
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;

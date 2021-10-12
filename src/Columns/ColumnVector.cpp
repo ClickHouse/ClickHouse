@@ -310,7 +310,6 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
-    
     /** A slightly more optimized version.
     * Based on the assumption that often pieces of consecutive values
     *  completely pass or do not pass the filter.
@@ -318,11 +317,11 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     */
 #if defined(__AVX512F__) && defined(__AVX512BW__)
     static constexpr size_t SIMD_BYTES = 64;
-    const __m512i zero64 = _mm512_setzero_epi32();    
+    const __m512i zero64 = _mm512_setzero_epi32();
     const UInt8 * filt_end_avx512 = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
     while (filt_pos < filt_end_avx512)
-    {  
+    {
         UInt64 mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero64, _MM_CMPINT_GT);
 
         if (0xFFFFFFFFFFFFFFFF == mask)
@@ -339,7 +338,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
                 mask = _blsr_u64(mask);
             #else
                 mask = mask & (mask-1);
-            #endif                
+            #endif
             }
         }
 
