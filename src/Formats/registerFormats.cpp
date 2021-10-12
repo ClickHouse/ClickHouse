@@ -54,8 +54,6 @@ void registerOutputFormatRawBLOB(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
-void registerOutputFormatNull(FormatFactory & factory);
-
 void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatPrettyCompact(FormatFactory & factory);
 void registerOutputFormatPrettySpace(FormatFactory & factory);
