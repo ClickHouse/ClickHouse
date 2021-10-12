@@ -949,7 +949,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
 
-    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
+    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
     if (result.parts_with_ranges.empty())
     {
