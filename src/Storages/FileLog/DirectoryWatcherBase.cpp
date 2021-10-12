@@ -62,8 +62,11 @@ void DirectoryWatcherBase::watchFunc()
     fd_set fds;
     while (!stopped)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
         FD_ZERO(&fds);
         FD_SET(fd, &fds);
+#pragma clang diagnostic pop
 
         struct timeval tv;
         tv.tv_sec = 0;
