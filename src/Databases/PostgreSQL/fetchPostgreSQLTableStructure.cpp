@@ -27,9 +27,9 @@ namespace ErrorCodes
 
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
+std::set<std::string> fetchPostgreSQLTablesList(T & tx)
 {
-    std::unordered_set<std::string> tables;
+    std::set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
 
@@ -270,7 +270,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connec
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
 {
     pqxx::ReadTransaction tx(connection);
     auto result = fetchPostgreSQLTablesList(tx);
@@ -290,10 +290,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         bool with_primary_key, bool with_replica_identity_index);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
 
 }
 
