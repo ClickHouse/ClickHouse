@@ -270,7 +270,7 @@ namespace
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
         }
-    #elif defined(__AVX2__)
+    #elif defined(__AVX__) && defined(__AVX2__)
         const __m256i zero_vec = _mm256_setzero_si256();
         static constexpr size_t SIMD_BYTES = 32;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;

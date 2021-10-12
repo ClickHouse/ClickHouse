@@ -269,7 +269,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         data_pos += chars_per_simd_elements;
         filt_pos += SIMD_BYTES;
     }
-#elif defined(__AVX2__)
+#elif defined(__AVX__) && defined(__AVX2__)
     static constexpr size_t SIMD_BYTES = 32;
     const __m256i zero32 = _mm256_setzero_si256();
     const UInt8 * filt_end_avx2 = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
