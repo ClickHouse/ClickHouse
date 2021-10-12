@@ -41,6 +41,12 @@ namespace CurrentMetrics
         values[metric].store(value, std::memory_order_relaxed);
     }
 
+    /// Get value of specified metric.
+    inline Value get(Metric metric)
+    {
+        return values[metric].load(std::memory_order_relaxed);
+    }
+
     /// Add value for specified metric. You must subtract value later; or see class Increment below.
     inline void add(Metric metric, Value value = 1)
     {
