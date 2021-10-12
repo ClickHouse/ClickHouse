@@ -1539,7 +1539,8 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            global_context->getProcessList().killAllQueries();
+            if (!config().getBool("shutdown_wait_unfinished_queries", false))
+                global_context->getProcessList().killAllQueries();
 
             if (current_connections)
                 current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));

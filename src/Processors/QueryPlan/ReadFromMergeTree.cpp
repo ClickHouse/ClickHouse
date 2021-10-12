@@ -965,23 +965,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
 
-
-    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "ReadFromMergeTree::initializePipeline");
-
-    // String anime;
-    // for (const auto & part : result.parts_with_ranges)
-    // {
-    //     anime += part.data_part->name + '\n';
-    //     for (const auto & range : part.ranges)
-    //     {
-    //         anime += fmt::format("({} {}), ", range.begin, range.end);
-    //     }
-    //     anime += '\n';
-    // }
-
-    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), anime);
-
-    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
+    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
     if (result.parts_with_ranges.empty())
     {

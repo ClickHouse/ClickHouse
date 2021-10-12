@@ -278,7 +278,7 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_AMQPCPP OR USE_CASSANDRA)
-    add_subdirectory (libuv)
+    add_subdirectory (libuv-cmake)
 endif()
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)

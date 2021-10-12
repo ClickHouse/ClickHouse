@@ -162,6 +162,16 @@
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": false
+        },
+        {
+            "compiler": "clang-13-ppc64le",
+            "build-type": "",
+            "sanitizer": "",
+            "package-type": "binary",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": false
         }
     ],
     "tests_config": {

@@ -428,7 +428,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -442,7 +442,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        prefix,
+        suffix,
         &data,
         &merges_blocker,
         &ttl_merges_blocker);
