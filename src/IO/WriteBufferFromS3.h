@@ -1,20 +1,18 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #    include <memory>
 #    include <vector>
-#    include <base/logger_useful.h>
-#    include <base/types.h>
+#    include <common/logger_useful.h>
+#    include <common/types.h>
 
 #    include <IO/BufferWithOwnMemory.h>
 #    include <IO/WriteBuffer.h>
 
-#    include <aws/core/utils/memory/stl/AWSStringStream.h> // Y_IGNORE
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 
 namespace Aws::S3
 {
@@ -65,6 +63,8 @@ public:
 
     /// Receives response from the server after sending all data.
     void finalize() override;
+
+    ~WriteBufferFromS3() override;
 
 private:
     bool finalized = false;

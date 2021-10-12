@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -28,16 +27,21 @@ public:
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
-        ContextPtr context,
+        const Context & context,
         const std::string & table_name,
         ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    std::optional<StorageS3Configuration> s3_configuration;
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 class TableFunctionCOS : public TableFunctionS3

@@ -1,7 +1,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
@@ -120,5 +120,12 @@ void PipelineExecutingBlockInputStream::setQuota(const std::shared_ptr<const Ena
     throw Exception("Quota is not supported by PipelineExecutingBlockInputStream",
                     ErrorCodes::LOGICAL_ERROR);
 }
+
+void PipelineExecutingBlockInputStream::addTotalRowsApprox(size_t)
+{
+    throw Exception("Progress is not supported by PipelineExecutingBlockInputStream",
+                    ErrorCodes::LOGICAL_ERROR);
+}
+
 
 }

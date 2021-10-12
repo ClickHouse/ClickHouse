@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS foo_local;
 DROP TABLE IF EXISTS foo_distributed;
 

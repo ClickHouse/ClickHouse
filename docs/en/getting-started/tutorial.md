@@ -85,8 +85,8 @@ Now it’s time to fill our ClickHouse server with some sample data. In this tut
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.
@@ -105,7 +105,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset does not cover its full functionality, so there are only two tables to create:
+Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -659,4 +659,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 
 Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
 
-[Original article](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ELEMENT_IN_AST;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -48,30 +47,13 @@ size_t IAST::checkSize(size_t max_size) const
     return res;
 }
 
-void IAST::reset(IAST *& field)
-{
-    if (field == nullptr)
-        return;
-
-    const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
-    {
-       return p.get() == field;
-    });
-
-    if (child == children.end())
-        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
-
-    children.erase(child);
-    field = nullptr;
-}
-
 
 IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
     updateTreeHash(hash_state);
     IAST::Hash res;
-    hash_state.get128(res);
+    hash_state.get128(res.first, res.second);
     return res;
 }
 

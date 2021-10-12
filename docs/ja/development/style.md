@@ -749,11 +749,19 @@ CPU命令セットは、サーバー間でサポートされる最小のセッ�
 
 ## 図書館 {#libraries}
 
-**1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
+**1.** C++20標準ライブラリが使用されています（実験的な拡張が許可されています）。 `boost` と `Poco` フレームワーク
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse.
+**2.** 必要に応じて、OSパッケージで利用可能な既知のライブラリを使用できます。
 
-**3.** Preference is always given to libraries that are already in use.
+すでに利用可能な良い解決策がある場合は、別のライブラリをインストールする必要がある場合でも、それを使用してください。
+
+(が準備をしておいてくださ去の悪い図書館からのコードです。)
+
+**3.** パッケージに必要なものがない場合や、古いバージョンや間違った種類のコンパイルがある場合は、パッケージにないライブラリをインストールできます。
+
+**4.** ライブラリが小さく、独自の複雑なビルドシステムがない場合は、ソースファイルを `contrib` フォルダ。
+
+**5.** すでに使用されているライブラリが優先されます。
 
 ## 一般的な推奨事項 {#general-recommendations-1}
 
@@ -830,4 +838,4 @@ function(
       size_t limit)
 ```
 
-[元の記事](https://clickhouse.com/docs/en/development/style/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

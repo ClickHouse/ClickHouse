@@ -70,8 +70,8 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 		    <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.com/docs/ru/engines/table-engines/special/distributed/
-            -->
+                see https://clickhouse.tech/docs/ru/engines/table-engines/special/distributed/
+            --> 	
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
@@ -181,3 +181,4 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 
 `clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их «на лету». Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-copier/) <!--hide-->

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -25,16 +25,16 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable : public IFunction
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
+    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
 
@@ -56,9 +56,10 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+
+private:
+    const Context & global_context;
 };
 
 
@@ -116,12 +117,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, global_context);
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -129,28 +125,19 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
-        bool treat_local_as_remote = false;
-        bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
         auto cluster = std::make_shared<Cluster>(
-            getContext()->getSettings(),
+            global_context.getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
-            getContext()->getTCPPort(),
-            treat_local_as_remote,
-            treat_local_port_as_remote);
+            global_context.getTCPPort(),
+            false);
 
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        auto remote_columns = getStructureOfRemoteTable(*cluster,
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
-
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, global_context);
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
 }

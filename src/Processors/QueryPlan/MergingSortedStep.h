@@ -19,9 +19,8 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     /// Add limit or change it to lower value.
@@ -34,3 +33,5 @@ private:
 };
 
 }
+
+

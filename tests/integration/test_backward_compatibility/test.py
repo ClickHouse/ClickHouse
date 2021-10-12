@@ -12,7 +12,7 @@ def start_cluster():
     try:
         cluster.start()
         for i, node in enumerate([node1, node2]):
-            node.query_with_retry(
+            node.query(
                 '''CREATE TABLE t(date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/t', '{}')
                 PARTITION BY toYYYYMM(date)

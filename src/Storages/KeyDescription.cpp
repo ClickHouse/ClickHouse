@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -67,14 +66,14 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const Context & context)
 {
     *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
-    ContextPtr context)
+    const Context & context)
 {
     *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
 }
@@ -82,39 +81,15 @@ void KeyDescription::recalculateWithNewColumns(
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const Context & context)
 {
     return getSortingKeyFromAST(definition_ast, columns, context, {});
-}
-
-bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
-{
-    if (!node_expr)
-        return false;
-
-    auto * function_expr = node_expr->as<ASTFunction>();
-    bool modulo_in_ast = false;
-    if (function_expr)
-    {
-        if (function_expr->name == "modulo")
-        {
-            function_expr->name = "moduloLegacy";
-            modulo_in_ast = true;
-        }
-        if (function_expr->arguments)
-        {
-            auto children = function_expr->arguments->children;
-            for (const auto & child : children)
-                modulo_in_ast |= moduloToModuloLegacyRecursive(child);
-        }
-    }
-    return modulo_in_ast;
 }
 
 KeyDescription KeyDescription::getSortingKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const std::optional<String> & additional_column)
 {
     KeyDescription result;
@@ -150,14 +125,6 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
                             backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
     }
 
-    return result;
-}
-
-KeyDescription KeyDescription::buildEmptyKey()
-{
-    KeyDescription result;
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
     return result;
 }
 

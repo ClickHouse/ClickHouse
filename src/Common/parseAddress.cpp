@@ -1,7 +1,7 @@
 #include <Common/parseAddress.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -28,27 +28,15 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
             throw Exception("Illegal address passed to function parseAddress: "
                 "the address begins with opening square bracket, but no closing square bracket found", ErrorCodes::BAD_ARGUMENTS);
 
-        port = closing_square_bracket + 1;
+        port = find_first_symbols<':'>(closing_square_bracket + 1, end);
     }
     else
         port = find_first_symbols<':'>(begin, end);
 
     if (port != end)
     {
-        if (*port != ':')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Illegal port prefix passed to function parseAddress: {}", port);
-
-        ++port;
-
-        UInt16 port_number;
-        ReadBufferFromMemory port_buf(port, end - port);
-        if (!tryReadText(port_number, port_buf) || !port_buf.eof())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Illegal port passed to function parseAddress: {}", port);
-        }
-        return { std::string(begin, port - 1), port_number };
+        UInt16 port_number = parse<UInt16>(port + 1);
+        return { std::string(begin, port), port_number };
     }
     else if (default_port)
     {

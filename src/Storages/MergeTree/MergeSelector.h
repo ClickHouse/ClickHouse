@@ -31,16 +31,16 @@ public:
     struct Part
     {
         /// Size of data part in bytes.
-        size_t size = 0;
+        size_t size;
 
         /// How old this data part in seconds.
-        time_t age = 0;
+        time_t age;
 
         /// Depth of tree of merges by which this part was created. New parts has zero level.
-        unsigned level = 0;
+        unsigned level;
 
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
-        const void * data = nullptr;
+        const void * data;
 
         /// Information about different TTLs for part. Can be used by
         /// TTLSelector to assign merges with TTL.

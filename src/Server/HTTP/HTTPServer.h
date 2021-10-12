@@ -5,7 +5,7 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -17,27 +17,27 @@ class HTTPServer : public Poco::Net::TCPServer
 {
 public:
     explicit HTTPServer(
-        ContextPtr context,
+        const Context & context,
         HTTPRequestHandlerFactoryPtr factory,
-        UInt16 port_number = 80,
+        UInt16 portNumber = 80,
         Poco::Net::HTTPServerParams::Ptr params = new Poco::Net::HTTPServerParams);
 
     HTTPServer(
-        ContextPtr context,
+        const Context & context,
         HTTPRequestHandlerFactoryPtr factory,
         const Poco::Net::ServerSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params);
 
     HTTPServer(
-        ContextPtr context,
+        const Context & context,
         HTTPRequestHandlerFactoryPtr factory,
-        Poco::ThreadPool & thread_pool,
+        Poco::ThreadPool & threadPool,
         const Poco::Net::ServerSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params);
 
     ~HTTPServer() override;
 
-    void stopAll(bool abort_current = false);
+    void stopAll(bool abortCurrent = false);
 
 private:
     HTTPRequestHandlerFactoryPtr factory;

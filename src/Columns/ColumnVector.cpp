@@ -3,8 +3,7 @@
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -14,10 +13,10 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/unaligned.h>
+#include <ext/bit_cast.h>
+#include <ext/scope_guard.h>
 
 #include <cmath>
 #include <cstring>
@@ -34,7 +33,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -49,12 +47,6 @@ template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
-}
-
-template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
-{
     return pos + sizeof(T);
 }
 
@@ -109,15 +101,6 @@ struct ColumnVector<T>::greater
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
-template <typename T>
-struct ColumnVector<T>::equals
-{
-    const Self & parent;
-    int nan_direction_hint;
-    equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
-};
-
 
 namespace
 {
@@ -165,7 +148,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         /// A case for radix sort
-        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+        if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
         {
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
@@ -213,21 +196,80 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
-    auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
+    if (equal_range.empty())
+        return;
 
-    if (reverse)
-        this->updatePermutationImpl(
-            limit, res, equal_range,
-            greater(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
-    else
-        this->updatePermutationImpl(
-            limit, res, equal_range,
-            less(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+    if (limit >= data.size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_range = std::move(new_ranges);});
+
+    for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+        if (reverse)
+            pdqsort(res.begin() + first, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, last);
+        }
+    }
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then, we are working inside the interval.
+
+        if (reverse)
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
 }
 
 template <typename T>
@@ -244,37 +286,28 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
+            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
     }
 
     return res;
 }
 
 template <typename T>
-UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
+UInt64 ColumnVector<T>::get64(size_t n) const
 {
-    if constexpr (is_arithmetic_v<T>)
-        return bit_cast<UInt64>(data[n]);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
+    return ext::bit_cast<UInt64>(data[n]);
 }
 
 template <typename T>
-inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
+inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 {
-    if constexpr (is_arithmetic_v<T>)
-        return static_cast<Float64>(data[n]);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>);
+    return static_cast<Float64>(data[n]);
 }
 
 template <typename T>
-Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
+Float32 ColumnVector<T>::getFloat32(size_t n) const
 {
-    if constexpr (is_arithmetic_v<T>)
-        return static_cast<Float32>(data[n]);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
+    return static_cast<Float32>(data[n]);
 }
 
 template <typename T>
@@ -327,18 +360,19 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
         mask = ~mask;
 
-        if (0xFFFF == mask)
+        if (0 == mask)
+        {
+            /// Nothing is inserted.
+        }
+        else if (0xFFFF == mask)
         {
             res_data.insert(data_pos, data_pos + SIMD_BYTES);
         }
         else
         {
-            while (mask)
-            {
-                size_t index = __builtin_ctz(mask);
-                res_data.push_back(data_pos[index]);
-                mask = mask & (mask - 1);
-            }
+            for (size_t i = 0; i < SIMD_BYTES; ++i)
+                if (filt_pos[i])
+                    res_data.push_back(data_pos[i]);
         }
 
         filt_pos += SIMD_BYTES;
@@ -356,12 +390,6 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
-{
-    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>
@@ -392,7 +420,22 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 template <typename T>
 ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t size = data.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    auto res = this->create(limit);
+    typename Self::Container & res_data = res->getData();
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[perm[i]];
+
+    return res;
 }
 
 template <typename T>
@@ -433,6 +476,8 @@ void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
 template <typename T>
 void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 {
+    using FastRefT = std::conditional_t<is_big_int_v<T>, const T &, const T>;
+
     size_t size = data.size();
 
     if (size == 0)
@@ -453,7 +498,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     T cur_min = NaNOrZero<T>();
     T cur_max = NaNOrZero<T>();
 
-    for (const T & x : data)
+    for (FastRefT x : data)
     {
         if (isNaN(x))
             continue;
@@ -518,6 +563,5 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-template class ColumnVector<UUID>;
 
 }

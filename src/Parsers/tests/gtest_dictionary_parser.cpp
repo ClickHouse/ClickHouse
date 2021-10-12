@@ -1,4 +1,4 @@
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>

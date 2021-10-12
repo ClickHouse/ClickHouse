@@ -9,7 +9,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -21,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -65,7 +63,7 @@ public:
                 const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
 
                 WriteBufferFromOwnString out;
-                result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
+                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
                 node = std::make_shared<ASTLiteral>(out.str());
             }
         }
@@ -90,7 +88,7 @@ public:
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, ContextPtr context, const NamesAndTypesList & all_columns)
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     auto syntax_result = TreeRewriter(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
@@ -107,9 +105,9 @@ void dropAliases(ASTPtr & node)
 }
 
 
-bool isCompatible(IAST & node)
+bool isCompatible(const IAST & node)
 {
-    if (auto * function = node.as<ASTFunction>())
+    if (const auto * function = node.as<ASTFunction>())
     {
         if (function->parameters)   /// Parametric aggregate functions
             return false;
@@ -132,25 +130,18 @@ bool isCompatible(IAST & node)
             || name == "notLike"
             || name == "in"
             || name == "notIn"
-            || name == "isNull"
-            || name == "isNotNull"
             || name == "tuple"))
             return false;
 
         /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
         /// but a normal tuple with more than one element is represented as a parenthesized expression (x, y) and is perfectly compatible.
-        /// So to support tuple with zero or one elements we can clear function name to get (x) instead of tuple(x)
-        if (name == "tuple")
-        {
-            if (function->arguments->children.size() <= 1)
-            {
-                function->name.clear();
-            }
-        }
+        if (name == "tuple" && function->arguments->children.size() <= 1)
+            return false;
 
-        /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
+        /// If the right hand side of IN is an identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
-            && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
+            && (function->arguments->children.size() != 2
+                || function->arguments->children[1]->as<ASTIdentifier>()))
             return false;
 
         for (const auto & expr : function->arguments->children)
@@ -248,11 +239,10 @@ String transformQueryForExternalDatabase(
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    const Context & context)
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
-    bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -280,30 +270,27 @@ String transformQueryForExternalDatabase(
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
-        else if (strict)
-        {
-            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
-        }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
             {
+                bool compatible_found = false;
                 auto new_function_and = makeASTFunction("and");
                 for (const auto & elem : function->arguments->children)
                 {
                     if (isCompatible(*elem))
+                    {
                         new_function_and->arguments->children.push_back(elem);
+                        compatible_found = true;
+                    }
                 }
                 if (new_function_and->arguments->children.size() == 1)
-                    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
-                else if (new_function_and->arguments->children.size() > 1)
+                    new_function_and->name = "";
+
+                if (compatible_found)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
-    }
-    else if (strict && original_where)
-    {
-        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
     ASTPtr select_ptr = select;

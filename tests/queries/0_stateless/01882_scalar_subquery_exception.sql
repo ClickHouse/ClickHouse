@@ -14,6 +14,3 @@ select
     /
   (select count() from nums_in_mem_dist where rand() > 0)
 from system.one; -- { serverError 158 }
-
-drop table nums_in_mem;
-drop table nums_in_mem_dist;

@@ -1,5 +1,5 @@
 ---
-toc_priority: 5
+toc_priority: 7
 toc_title: MongoDB
 ---
 
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ``` text
 CREATE TABLE mongo_table
 (
-    key UInt64,
+    key UInt64, 
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
@@ -54,4 +54,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/integrations/mongodb/) <!--hide-->

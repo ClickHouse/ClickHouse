@@ -13,7 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <ext/range.h>
 
 #include <h3api.h>
 
@@ -35,29 +35,26 @@ class FunctionH3KRing : public IFunction
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3KRing>(); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arg = arguments[1].get();
         if (!isInteger(arg))
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be integer",
-                arg->getName(), 2, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be integer",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -75,12 +72,12 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (const auto row : ext::range(0, input_rows_count))
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
 
-            /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
+            /// Overflow is possible. The function maxKringSize does not check for overflow.
             /// The calculation is similar to square of k but several times more.
             /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
             constexpr auto max_k = 10000;
@@ -89,9 +86,9 @@ public:
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
-            const auto vec_size = maxGridDiskSize(k);
+            const auto vec_size = maxKringSize(k);
             hindex_vec.resize(vec_size);
-            gridDisk(origin_hindex, k, hindex_vec.data());
+            kRing(origin_hindex, k, hindex_vec.data());
 
             dst_data.reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)

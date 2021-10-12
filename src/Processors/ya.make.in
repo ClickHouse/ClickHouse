@@ -1,0 +1,16 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/msgpack
+    contrib/libs/protobuf
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'Arrow|Avro|ORC|Parquet|CapnProto' | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

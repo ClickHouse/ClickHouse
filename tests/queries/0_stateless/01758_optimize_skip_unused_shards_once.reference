@@ -1,2 +1,0 @@
-StorageDistributed (dist_01758): Auto-increment is 0
-StorageDistributed (dist_01758): Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): [1]

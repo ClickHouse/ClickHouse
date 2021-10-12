@@ -2,7 +2,7 @@
 
 ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it’s dependencies to separately build all version of documentations (all languages in either single and multi page mode) as static HTMLs and then a PDF for each single page version. The results are then put in the correct directory structure. It is recommended to use Python 3.7 to run this script.
 
-[release.sh](release.sh) also pulls static files needed for [official ClickHouse website](https://clickhouse.com) from [../../website](../../website) folder then pushes to specified GitHub repo to be served via [GitHub Pages](https://pages.github.com).
+[release.sh](release.sh) also pulls static files needed for [official ClickHouse website](https://clickhouse.tech) from [../../website](../../website) folder then pushes to specified GitHub repo to be served via [GitHub Pages](https://pages.github.com).
 
 ## How to check if the documentation will look fine? {#how-to-check-if-the-documentation-will-look-fine}
 
@@ -47,16 +47,9 @@ When all prerequisites are installed, running `build.py` without args (there are
 
 The easiest way to see the result is to use `--livereload=8888` argument of build.py. Alternatively, you can manually launch a HTTP server to serve the docs, for example by running `cd ClickHouse/docs/build && python3 -m http.server 8888`. Then go to http://localhost:8888 in browser. Feel free to use any other port instead of 8888.
 
-## How to change code highlighting? {#how-to-change-code-hl}
-
-ClickHouse does not use mkdocs `highlightjs` feature. It uses modified pygments styles instead.
-If you want to change code highlighting, edit the `website/css/highlight.css` file.
-Currently, an [eighties](https://github.com/idleberg/base16-pygments/blob/master/css/base16-eighties.dark.css) theme
-is used.
-
 ## How to subscribe on documentation changes? {#how-to-subscribe-on-documentation-changes}
 
 At the moment there’s no easy way to do just that, but you can consider:
 
--   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-qfort0u8-TWqK4wIP0YSdoDE0btKa1w).
--   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.com.
+-   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/enQtOTUzMjM4ODQwNTc5LWJmMjE3Yjc2YmI1ZDBlZmI4ZTc3OWY3ZTIwYTljYzY4MzBlODM3YzBjZTc1YmYyODRlZTJkYTgzYzBiNTA2Yjk).
+-   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.tech.

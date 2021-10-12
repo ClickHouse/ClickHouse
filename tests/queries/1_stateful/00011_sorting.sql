@@ -1,1 +1,1 @@
-SELECT EventTime::DateTime('Europe/Moscow') FROM test.hits ORDER BY EventTime DESC LIMIT 10
+SELECT EventTime FROM test.hits ORDER BY EventTime DESC LIMIT 10

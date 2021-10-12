@@ -2,13 +2,13 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -123,7 +122,7 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
         else
-            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + column.getName(),
+            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -132,14 +131,14 @@ namespace
 ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
     : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
 {
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insert(const Field & x)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsert(x));
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertDefault()
@@ -152,7 +151,7 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -168,14 +167,14 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
         idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(nested, position));
     }
 
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(src, n));
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -205,7 +204,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
         auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
         idx.insertPositionsRange(*inserted_indexes->index(*sub_idx, 0), 0, length);
     }
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length)
@@ -213,55 +212,23 @@ void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t
     compactIfSharedDictionary();
     auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(src, start, length);
     idx.insertPositionsRange(*inserted_indexes, 0, length);
-    // idx.check(getDictionary().size());
-}
-
-static void checkPositionsAreLimited(const IColumn & positions, UInt64 limit)
-{
-    auto check_for_type = [&](auto type)
-    {
-        using ColumnType = decltype(type);
-        const auto * column_ptr = typeid_cast<const ColumnVector<ColumnType> *>(&positions);
-
-        if (!column_ptr)
-            return false;
-
-        const auto & data = column_ptr->getData();
-        size_t num_rows = data.size();
-        UInt64 max_position = 0;
-        for (size_t i = 0; i < num_rows; ++i)
-            max_position = std::max<UInt64>(max_position, data[i]);
-
-        if (max_position >= limit)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Index for LowCardinality is out of range. Dictionary size is {}, "
-                            "but found index with value {}", limit, max_position);
-
-        return true;
-    };
-
-    if (!check_for_type(UInt8()) &&
-        !check_for_type(UInt16()) &&
-        !check_for_type(UInt32()) &&
-        !check_for_type(UInt64()))
-        throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + positions.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions)
 {
-    checkPositionsAreLimited(positions, keys.size());
+    Index(positions.getPtr()).check(keys.size());
     compactIfSharedDictionary();
     auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(keys, 0, keys.size());
     idx.insertPositionsRange(*inserted_indexes->index(positions, 0), 0, positions.size());
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 void ColumnLowCardinality::insertData(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
 }
 
 StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -276,13 +243,8 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     const char * new_pos;
     idx.insertPosition(dictionary.getColumnUnique().uniqueDeserializeAndInsertFromArena(pos, new_pos));
 
-    // idx.check(getDictionary().size());
+    idx.check(getDictionary().size());
     return new_pos;
-}
-
-const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
-{
-    return getDictionary().skipSerializedInArena(pos);
 }
 
 void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
@@ -391,6 +353,81 @@ void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int na
             if (perm_index == perm_size)
                 break;
         }
+    }
+}
+
+template <typename Cmp>
+void ColumnLowCardinality::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_ranges.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    auto less = [&comparator](size_t lhs, size_t rhs){ return comparator(lhs, rhs) < 0; };
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto& [first, last] = equal_ranges[i];
+        std::sort(res.begin() + first, res.begin() + last, less);
+
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (comparator(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        auto new_first = first;
+
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (comparator(res[new_first],res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (comparator(res[new_first], res[j]) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
     }
 }
 
@@ -706,6 +743,30 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
                         ErrorCodes::ILLEGAL_COLUMN);
 
     checkSizeOfType();
+}
+
+void ColumnLowCardinality::Index::check(size_t /*max_dictionary_size*/)
+{
+    /// TODO: remove
+    /*
+    auto check = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        auto & positions_data = getPositionsData<CurIndexType>();
+
+        for (size_t i = 0; i < positions_data.size(); ++i)
+        {
+            if (positions_data[i] >= max_dictionary_size)
+            {
+                throw Exception("Found index " + toString(positions_data[i]) + " at position " + toString(i)
+                                + " which is grated or equal than dictionary size " + toString(max_dictionary_size),
+                                ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+    };
+
+    callForType(std::move(check), size_of_type);
+     */
 }
 
 void ColumnLowCardinality::Index::checkSizeOfType()
