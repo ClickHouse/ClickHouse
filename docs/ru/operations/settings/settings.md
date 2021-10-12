@@ -2706,7 +2706,7 @@ SELECT * FROM csv_custom_null FORMAT CSV;
 \N
 ```
 
-Запрос
+Запрос:
 
 ```sql
 SET output_format_csv_null_representation = 'My NULL';
