@@ -272,7 +272,7 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+    return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
 }
