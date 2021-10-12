@@ -365,7 +365,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 
 Преобразует входную строку в значение с типом данных [Decimal(P,S)](../../sql-reference/data-types/decimal.md). Семейство функций включает в себя:
 
--   `toDecimal32OrDefault(expr, S)` — Возвращает значение типа `Decimal32(S)` data type.
+-   `toDecimal32OrDefault(expr, S)` — возвращает значение типа `Decimal32(S)`.
 -   `toDecimal64OrDefault(expr, S)` — Возвращает значение типа `Decimal64(S)` data type.
 -   `toDecimal128OrDefault(expr, S)` — Возвращает значение типа `Decimal128(S)` data type.
 -   `toDecimal256OrDefault(expr, S)` — Возвращает значение типа `Decimal256(S)` data type.
