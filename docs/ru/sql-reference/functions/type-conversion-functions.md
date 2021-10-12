@@ -853,7 +853,6 @@ SELECT
 ```
 
 
-
 ## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_null}
 
 Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если оно указано.
