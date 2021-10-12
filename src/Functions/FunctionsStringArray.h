@@ -1,18 +1,20 @@
 #pragma once
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
-#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -721,23 +723,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type || !isString(array_type->getNestedType()))
-            throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2
-            && !isString(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
@@ -755,10 +741,14 @@ public:
         {
             Array src_arr = col_const_arr->getValue<Array>();
             String dst_str;
+            bool first_non_null = true;
             for (size_t i = 0, size = src_arr.size(); i < size; ++i)
             {
-                if (i != 0)
+                if (src_arr[i].isNull())
+                    continue;
+                if (!first_non_null)
                     dst_str += delimiter;
+                first_non_null = false;
                 dst_str += src_arr[i].get<const String &>();
             }
 
