@@ -439,9 +439,13 @@ void IMergeTreeDataPart::removeIfNeeded()
                 if (file_name.empty())
                     throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
 
-                if (!startsWith(file_name, "tmp"))
+                if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
                 {
-                    LOG_ERROR(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
+                    LOG_ERROR(
+                        storage.log,
+                        "~DataPart() should remove part {} but its name doesn't start with \"tmp\" or end with \".tmp_proj\". Too "
+                        "suspicious, keeping the part.",
+                        path);
                     return;
                 }
             }
