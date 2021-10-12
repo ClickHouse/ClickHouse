@@ -281,7 +281,7 @@ Result:
 
 ## toDate32OrDefault {#todate32-or-default}
 
-The same as [toDate32](#todate32) but returns default value if invalid argument is received.
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if invalid argument is received.
 
 **Example**
 
