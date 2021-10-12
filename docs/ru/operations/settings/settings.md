@@ -2713,7 +2713,7 @@ SET output_format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
-Результат
+Результат:
 
 ```text
 788
