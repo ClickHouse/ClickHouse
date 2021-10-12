@@ -999,7 +999,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             }
             else
                 throw Exception(storage_already_exists_error_code,
-                    "{} {}.{} already exists.", storage_name, backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
+                    "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
         }
 
         data_path = database->getTableDataPath(create);

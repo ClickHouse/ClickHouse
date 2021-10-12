@@ -1,3 +1,4 @@
+#include "Core/Protocol.h"
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
@@ -412,6 +413,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
+        case Protocol::Server::ProfileEvents:
             replica_with_last_received_packet = replica_location;
             break;
 
