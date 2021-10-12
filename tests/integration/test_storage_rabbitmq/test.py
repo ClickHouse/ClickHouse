@@ -463,10 +463,12 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='big', routing_key='', body=message)
 
-    while True:
+    for _ in range(300):
         result = instance.query('SELECT count() FROM test.view')
         if int(result) == batch_messages * rabbitmq_messages:
             break
+
+        time.sleep(1)
 
     connection.close()
     instance.query('''
