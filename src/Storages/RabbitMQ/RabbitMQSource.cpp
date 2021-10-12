@@ -1,5 +1,6 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -118,8 +119,8 @@ Chunk RabbitMQSource::generateImpl()
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
-    auto input_format = context->getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, max_block_size);
+    auto input_format = FormatFactory::instance().getInputFormat(
+            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
 
