@@ -237,7 +237,7 @@ namespace
         while (filt_pos < filt_end_aligned)
         {
             uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero_vec, _MM_CMPINT_GT);
- 
+
             if (mask == 0xffffffffffffffff)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
@@ -350,7 +350,7 @@ namespace
 
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
-        }          
+        }
     #endif
 
         while (filt_pos < filt_end)

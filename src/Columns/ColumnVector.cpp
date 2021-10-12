@@ -348,12 +348,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
 #elif defined(__AVX2__)
     static constexpr size_t SIMD_BYTES = 32;
-    const __m256i zero32 = _mm256_setzero_si256();   
+    const __m256i zero32 = _mm256_setzero_si256();
     const UInt8 * filt_end_avx2 = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
     while (filt_pos < filt_end_avx2)
     {
-        UInt32 mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero32));    
+        UInt32 mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero32));
 
         if (0xFFFFFFFF == mask)
         {
@@ -369,7 +369,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
                 mask = _blsr_u32(mask);
             #else
                 mask = mask & (mask-1);
-            #endif                
+            #endif
             }
         }
 
