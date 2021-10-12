@@ -14,7 +14,7 @@ Prewhere — это оптимизация для более эффективн�
 
 В запросе может быть одновременно указаны и `PREWHERE`, и `WHERE`. В этом случае `PREWHERE` предшествует `WHERE`.
 
-Если значение параметра [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) равно 0, эвристика по автоматическому перемещнию части выражений из `WHERE` к `PREWHERE` отключается.
+Если значение параметра [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) равно 0, эвристика по автоматическому перемещению части выражений из `WHERE` к `PREWHERE` отключается.
 
 Если в запросе есть модификатор [FINAL](from.md#select-from-final), оптимизация `PREWHERE` не всегда корректна. Она действует только если включены обе настройки [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) и [optimize_move_to_prewhere_if_final](../../../operations/settings/settings.md#optimize_move_to_prewhere_if_final).
 
