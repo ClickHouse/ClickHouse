@@ -90,7 +90,7 @@ def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default
     if default_format is not None:
         params['default_format'] = default_format
 
-    client.request('POST', '/?' + urllib.parse.urlencode(params))
+    client.request('POST', '/?' + base_args.client_options_query_str + urllib.parse.urlencode(params))
     res = client.getresponse()
     data = res.read()
     if res.status != 200:
@@ -1418,7 +1418,11 @@ if __name__ == '__main__':
         else:
             os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
-        os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+        client_options_query_str = get_additional_client_options_url(args)
+        args.client_options_query_str = client_options_query_str + '&'
+        os.environ['CLICKHOUSE_URL_PARAMS'] += client_options_query_str
+    else:
+        args.client_options_query_str = ''
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
