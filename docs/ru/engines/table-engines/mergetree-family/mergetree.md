@@ -320,7 +320,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 -   `set(max_rows)` — хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
 
--   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — хранит [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter), содержащий все N-граммы блока данных. Работает только со строками. Может быть использован для оптимизации выражений `equals`, `like` и `in`.
+-   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — хранит [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter), содержащий все N-граммы блока данных. Работает только с данными форматов [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) и [Map](../../../sql-reference/data-types/map.md) с ключами типа `String` или `fixedString`. Может быть использован для оптимизации выражений `EQUALS`, `LIKE` и `IN`.
 
     -   `n` — размер N-граммы,
     -   `size_of_bloom_filter_in_bytes` — размер в байтах фильтра Блума (можно использовать большие значения, например, 256 или 512, поскольку сжатие компенсирует возможные издержки).
