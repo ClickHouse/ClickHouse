@@ -986,7 +986,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description),
+            .description = std::move(description), //-V1030
             .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
             .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }

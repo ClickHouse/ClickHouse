@@ -80,8 +80,10 @@ namespace Protocol
             ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
                                       /// This is such an inverted logic, where server sends requests
                                       /// And client returns back response
-            MergeTreeReadTaskRequest = 14,
+            ProfileEvents = 14,       /// Packet with profile events from server.
+            MergeTreeReadTaskRequest = 15,
             MAX = ReadTaskRequest,
+
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -105,7 +107,8 @@ namespace Protocol
                 "TableColumns",
                 "PartUUIDs",
                 "ReadTaskRequest",
-                "MergeTreeReadTaskRequest"
+                "ProfileEvents",
+                "MergeTreeReadTaskRequest",
             };
             return packet <= MAX
                 ? data[packet]
