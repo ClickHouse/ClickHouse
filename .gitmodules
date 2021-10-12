@@ -249,3 +249,6 @@
 [submodule "contrib/magic_enum"]
 	path = contrib/magic_enum
 	url = https://github.com/Neargye/magic_enum
+[submodule "contrib/libprotobuf-mutator"]
+	path = contrib/libprotobuf-mutator
+	url = https://github.com/google/libprotobuf-mutator

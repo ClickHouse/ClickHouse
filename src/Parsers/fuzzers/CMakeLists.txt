@@ -6,3 +6,8 @@ target_link_libraries(select_parser_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZ
 
 add_executable(create_parser_fuzzer create_parser_fuzzer.cpp ${SRCS})
 target_link_libraries(create_parser_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
+
+string(REPLACE " -Werror" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+add_subdirectory(codegen_fuzzer)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+

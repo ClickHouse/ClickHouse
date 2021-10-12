@@ -49,6 +49,10 @@ add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
 
+if (ENABLE_FUZZING)
+    add_subdirectory (libprotobuf-mutator-cmake)
+endif()
+
 if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
 endif()
