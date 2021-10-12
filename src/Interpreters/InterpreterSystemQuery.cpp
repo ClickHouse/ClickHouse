@@ -219,12 +219,12 @@ BlockIO InterpreterSystemQuery::execute()
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
     {
-        if (!query.database.empty())
-            query.table = query.database + "." + query.table;
+        if (!query.getDatabase().empty())
+            query.setTable(query.getDatabase() + "." + query.getTable());
     }
-    else if (!query.table.empty())
+    else if (!query.getTable().empty())
     {
-        table_id = getContext()->resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
+        table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
 
 
@@ -296,7 +296,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.table, getContext());
+            external_dictionaries_loader.reloadDictionary(query.getTable(), getContext());
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -588,10 +588,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         if (!dropReplicaImpl(query, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
-    else if (!query.database.empty())
+    else if (!query.getDatabase().empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.database);
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.database);
+        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
         for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -782,84 +782,84 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_MERGES: [[fallthrough]];
         case Type::START_MERGES:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_MERGES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_MERGES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_TTL_MERGES: [[fallthrough]];
         case Type::START_TTL_MERGES:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_MOVES: [[fallthrough]];
         case Type::START_MOVES:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_MOVES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES: [[fallthrough]];
         case Type::START_FETCHES:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
         case Type::START_DISTRIBUTED_SENDS:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS);
             else
-                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
         case Type::START_REPLICATED_SENDS:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS);
             else
-                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
         case Type::START_REPLICATION_QUEUES:
         {
-            if (query.table.empty())
+            if (query.getTable().empty())
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
             break;
         }
         case Type::DROP_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
         case Type::RESTORE_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
         case Type::RESTART_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
         case Type::RESTART_REPLICAS:
@@ -869,7 +869,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::FLUSH_DISTRIBUTED:
         {
-            required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
             break;
         }
         case Type::FLUSH_LOGS:

@@ -39,14 +39,14 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->database = {};
-            res->table = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->setDatabase("");
+            res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
             parsed_table = true;
         }
     }
 
     if (!parsed_table)
-        parsed_table = parseDatabaseAndTableName(pos, expected, res->database, res->table);
+        parsed_table = parseDatabaseAndTableASTPtr(pos, expected, res->database, res->table);
 
     if (!parsed_table && require_table)
             return false;
@@ -56,6 +56,12 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
             return false;
 
     res->cluster = cluster;
+
+    if (res->database)
+        res->children.push_back(res->database);
+    if (res->table)
+        res->children.push_back(res->table);
+
     return true;
 }
 
@@ -163,14 +169,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
                 {
                     ParserIdentifier database_parser;
-                    ASTPtr database;
-                    if (!database_parser.parse(pos, database, expected))
+                    if (!database_parser.parse(pos, res->database, expected))
                         return false;
-                    tryGetIdentifierNameInto(database, res->database);
                 }
                 else if (ParserKeyword{"TABLE"}.ignore(pos, expected))
                 {
-                    parseDatabaseAndTableName(pos, expected, res->database, res->table);
+                    parseDatabaseAndTableASTPtr(pos, expected, res->database, res->table);
                 }
                 else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
                 {
@@ -193,7 +197,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
-            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableASTPtr(pos, expected, res->database, res->table))
                 return false;
             break;
 
@@ -251,7 +255,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->storage_policy = storage_policy_str;
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
-                parseDatabaseAndTableName(pos, expected, res->database, res->table);
+                parseDatabaseAndTableASTPtr(pos, expected, res->database, res->table);
             break;
         }
 
@@ -265,7 +269,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseDatabaseAndTableName(pos, expected, res->database, res->table);
+            parseDatabaseAndTableASTPtr(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
@@ -286,6 +290,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             /// There are no [db.table] after COMMAND NAME
             break;
     }
+
+    if (res->database)
+        res->children.push_back(res->database);
+    if (res->table)
+        res->children.push_back(res->table);
 
     node = std::move(res);
     return true;
