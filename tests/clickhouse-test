@@ -77,6 +77,10 @@ def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default
     params = {
         'query': query,
 
+        # hung check in stress tests may remove the database,
+        # hence we should use 'system'.
+        'database': 'system',
+
         'connect_timeout': timeout,
         'receive_timeout': timeout,
         'send_timeout': timeout,
