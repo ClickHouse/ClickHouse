@@ -1168,7 +1168,7 @@ void TCPHandler::receiveQuery()
     if (is_interserver_mode)
     {
         ClientInfo original_session_client_info = session->getClientInfo();
-        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER);
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP);
         session->getClientInfo() = original_session_client_info;
     }
 
