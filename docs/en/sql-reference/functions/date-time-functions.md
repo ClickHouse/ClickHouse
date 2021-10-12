@@ -26,6 +26,7 @@ SELECT
 ## timeZone {#timezone}
 
 Returns the timezone of the server.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 **Syntax**
 
@@ -322,7 +323,7 @@ Truncates sub-seconds.
 **Syntax**
 
 ``` sql
-toStartOfSecond(value[, timezone])
+toStartOfSecond(value, [timezone])
 ```
 
 **Arguments**

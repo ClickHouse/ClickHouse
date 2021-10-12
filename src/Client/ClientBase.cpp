@@ -9,6 +9,10 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
+#include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -48,7 +52,7 @@
 #include <IO/CompressionMethod.h>
 
 #include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/InternalTextLogsRowOutputStream.h>
+#include <DataStreams/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -67,12 +71,64 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
 }
 
 namespace DB
 {
+
+
+std::atomic_flag exit_on_signal = ATOMIC_FLAG_INIT;
+
+class QueryInterruptHandler : private boost::noncopyable
+{
+public:
+    QueryInterruptHandler() { exit_on_signal.clear(); }
+
+    ~QueryInterruptHandler() { exit_on_signal.test_and_set(); }
+
+    static bool cancelled() { return exit_on_signal.test(); }
+};
+
+/// This signal handler is set only for sigint.
+void interruptSignalHandler(int signum)
+{
+    if (exit_on_signal.test_and_set())
+        _exit(signum);
+}
+
+ClientBase::~ClientBase() = default;
+ClientBase::ClientBase() = default;
+
+void ClientBase::setupSignalHandler()
+{
+     exit_on_signal.test_and_set();
+
+     struct sigaction new_act;
+     memset(&new_act, 0, sizeof(new_act));
+
+     new_act.sa_handler = interruptSignalHandler;
+     new_act.sa_flags = 0;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&new_act.sa_mask);
+#else
+     if (sigemptyset(&new_act.sa_mask))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+#endif
+
+     if (sigaction(SIGINT, &new_act, nullptr))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+}
+
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
@@ -350,8 +406,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
-        logs_out_stream->writePrefix();
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
     }
 }
 
@@ -383,10 +438,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     catch (Exception & e)
     {
         if (!is_interactive)
-        {
             e.addMessage("(in query: {})", full_query);
-            throw;
-        }
+        throw;
     }
 
     if (have_error)
@@ -454,8 +507,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query)
 {
-    InterruptListener interrupt_listener;
     bool cancelled = false;
+    QueryInterruptHandler query_interrupt_handler;
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -477,18 +530,17 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
             {
                 auto cancel_query = [&] {
                     connection->sendCancel();
-                    cancelled = true;
                     if (is_interactive)
                     {
                         progress_indication.clearProgressOutput();
                         std::cout << "Cancelling query." << std::endl;
-                    }
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+                    }
+                    cancelled = true;
                 };
 
-                if (interrupt_listener.check())
+                /// handler received sigint
+                if (query_interrupt_handler.cancelled())
                 {
                     cancel_query();
                 }
@@ -569,6 +621,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             onEndOfStream();
             return false;
 
+        case Protocol::Server::ProfileEvents:
+            onProfileEvents(packet.block);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -599,9 +655,6 @@ void ClientBase::onEndOfStream()
     if (block_out_stream)
         block_out_stream->writeSuffix();
 
-    if (logs_out_stream)
-        logs_out_stream->writeSuffix();
-
     resetOutput();
 
     if (is_interactive && !written_first_block)
@@ -609,6 +662,45 @@ void ClientBase::onEndOfStream()
         progress_indication.clearProgressOutput();
         std::cout << "Ok." << std::endl;
     }
+}
+
+
+void ClientBase::onProfileEvents(Block & block)
+{
+    const auto rows = block.rows();
+    if (rows == 0)
+        return;
+    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+    HostToThreadTimesMap thread_times;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto thread_id = array_thread_id[i];
+        auto host_name = host_names.getDataAt(i).toString();
+        if (thread_id != 0)
+            progress_indication.addThreadIdToList(host_name, thread_id);
+        auto event_name = names.getDataAt(i);
+        auto value = array_values[i];
+        if (event_name == user_time_name)
+        {
+            thread_times[host_name][thread_id].user_ms = value;
+        }
+        else if (event_name == system_time_name)
+        {
+            thread_times[host_name][thread_id].system_ms = value;
+        }
+        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        {
+            thread_times[host_name][thread_id].memory_usage = value;
+        }
+    }
+    progress_indication.updateThreadEventData(thread_times);
 }
 
 
@@ -1534,6 +1626,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+
+    query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);

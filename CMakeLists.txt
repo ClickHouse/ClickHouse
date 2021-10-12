@@ -135,6 +135,7 @@ if (ENABLE_FUZZING)
     # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
 endif()
 
 # Global libraries
@@ -174,6 +175,13 @@ if (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
     endif()
+endif ()
+
+# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
+# because there are two different branches of clang: clang and AppleClang.
+# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
+if (HAS_RESERVED_IDENTIFIER)
+    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
@@ -326,6 +334,10 @@ endif ()
 # benchmarks.
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
+if (COMPILER_GCC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc

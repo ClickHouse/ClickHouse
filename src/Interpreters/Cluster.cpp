@@ -1,5 +1,4 @@
 #include <Interpreters/Cluster.h>
-#include <base/SimpleCache.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>

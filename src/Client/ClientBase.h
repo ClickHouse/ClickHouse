@@ -30,11 +30,18 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+void interruptSignalHandler(int signum);
+
+class InternalTextLogs;
+
 class ClientBase : public Poco::Util::Application
 {
 
 public:
     using Arguments = std::vector<String>;
+
+    ClientBase();
+    ~ClientBase() override;
 
     void init(int argc, char ** argv);
 
@@ -61,6 +68,7 @@ protected:
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+    static void setupSignalHandler();
 
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -106,6 +114,7 @@ private:
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
     void onProfileInfo(const BlockStreamProfileInfo & profile_info);
     void onEndOfStream();
+    void onProfileEvents(Block & block);
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
@@ -174,7 +183,7 @@ protected:
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
-    BlockOutputStreamPtr logs_out_stream;
+    std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

@@ -28,6 +28,8 @@ private:
 
     ColumnArray(const ColumnArray &) = default;
 
+    template <bool positive> struct Cmp;
+
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -185,9 +187,6 @@ private:
 
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
-
-    template <typename Comparator>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
 };
 
 
