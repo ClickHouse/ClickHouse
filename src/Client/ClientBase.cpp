@@ -668,7 +668,7 @@ void ClientBase::onEndOfStream()
 void ClientBase::onProfileEvents(Block & block)
 {
     const auto rows = block.rows();
-    if (rows == 0)
+    if (rows == 0 || !progress_indication.print_hardware_utilization)
         return;
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1560,6 +1560,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("ignore-error", "do not stop processing in multiquery mode")
         ("stacktrace", "print stack traces of exceptions")
+        ("hardware-utilization", "print hardware utilization information in progress bar")
     ;
 
     addAndCheckOptions(options_description, options, common_arguments);
@@ -1626,6 +1627,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    if (options.count("hardware-utilization"))
+        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
