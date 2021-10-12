@@ -991,47 +991,48 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
-    const RangesInDataParts & parts_with_ranges,
+    const ReadFromMergeTree::AnalysisResult & result,
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    // Check limitations. query_id is used as the quota RAII's resource key.
-    String query_id;
+    const auto data_settings = data.getSettings();
+    auto max_partitions_to_read
+        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
+    if (max_partitions_to_read > 0)
     {
-        const auto data_settings = data.getSettings();
-        auto max_partitions_to_read
-                = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
-        if (max_partitions_to_read > 0)
-        {
-            std::set<String> partitions;
-            for (const auto & part_with_ranges : parts_with_ranges)
-                partitions.insert(part_with_ranges.data_part->info.partition_id);
-            if (partitions.size() > size_t(max_partitions_to_read))
-                throw Exception(
-                        ErrorCodes::TOO_MANY_PARTITIONS,
-                        "Too many partitions to read. Current {}, max {}",
-                        partitions.size(),
-                        max_partitions_to_read);
-        }
+        std::set<String> partitions;
+        for (const auto & part_with_ranges : result.parts_with_ranges)
+            partitions.insert(part_with_ranges.data_part->info.partition_id);
+        if (partitions.size() > size_t(max_partitions_to_read))
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTITIONS,
+                "Too many partitions to read. Current {}, max {}",
+                partitions.size(),
+                max_partitions_to_read);
+    }
 
-        if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0)
+    if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0
+        && result.selected_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+    {
+        auto query_id = context->getCurrentQueryId();
+        if (!query_id.empty())
         {
-            size_t sum_marks = 0;
-            for (const auto & part : parts_with_ranges)
-                sum_marks += part.getMarksCount();
-
-            if (sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+            auto lock = data.getQueryIdSetLock();
+            if (data.insertQueryIdOrThrowNoLock(query_id, data_settings->max_concurrent_queries, lock))
             {
-                query_id = context->getCurrentQueryId();
-                if (!query_id.empty())
-                    data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
+                try
+                {
+                    return std::make_shared<QueryIdHolder>(query_id, data);
+                }
+                catch (...)
+                {
+                    /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
+                    data.removeQueryIdNoLock(query_id, lock);
+                    throw;
+                }
             }
         }
     }
-
-    if (!query_id.empty())
-        return std::make_shared<QueryIdHolder>(query_id, data);
-
     return nullptr;
 }
 
