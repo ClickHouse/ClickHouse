@@ -863,7 +863,7 @@ bool StorageMergeTree::mergeSelectedParts(
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
-            *(merge_list_entry),
+            (*merge_list_entry)->ref(),
             table_lock_holder,
             time(nullptr),
             getContext(),
@@ -1022,7 +1022,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_list_entry),
+            future_part, metadata_snapshot, merge_mutate_entry.commands, (*merge_list_entry)->ref(),
             time(nullptr), getContext(), merge_mutate_entry.tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
