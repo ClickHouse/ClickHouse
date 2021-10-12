@@ -34,6 +34,8 @@ if (CMAKE_CROSSCOMPILING)
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
+        set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+        set (ENABLE_ORC OFF CACHE INTERNAL "")
         set (ENABLE_GRPC OFF CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
