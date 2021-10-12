@@ -368,7 +368,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 -   `toDecimal32OrDefault(expr, S)` — возвращает значение типа `Decimal32(S)`.
 -   `toDecimal64OrDefault(expr, S)` — возвращает значение типа `Decimal64(S)`.
 -   `toDecimal128OrDefault(expr, S)` — возвращает значение типа `Decimal128(S)`.
--   `toDecimal256OrDefault(expr, S)` — Возвращает значение типа `Decimal256(S)` data type.
+-   `toDecimal256OrDefault(expr, S)` — возвращает значение типа `Decimal256(S)`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать значение по умолчанию вместо исключения.
 
