@@ -2695,7 +2695,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 Запрос
 
 ```sql
-SELECT * from csv_custom_null FORMAT CSV;
+SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
 Результат
