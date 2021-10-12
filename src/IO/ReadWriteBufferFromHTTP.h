@@ -34,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
 }
 
 template <typename SessionPtr>
@@ -108,7 +109,12 @@ namespace detail
 
         size_t bytes_read = 0;
         size_t start_byte = 0;
+
+        bool resumable_read = true;
         std::optional<size_t> total_bytes_to_read;
+
+        /// Delayed exception in case retries with partial content are not satisfiable
+        std::optional<Poco::Exception> exception;
 
         ReadSettings settings;
 
@@ -129,8 +135,12 @@ namespace detail
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
 
-            if (bytes_read && settings.http_retriable_read)
+            bool partial_content = false;
+            if (bytes_read && resumable_read)
+            {
+                partial_content = true;
                 request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
+            }
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
@@ -149,9 +159,16 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
+                if (partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+                {
+                    /// If we retries some request, throw error from that request.
+                    if (exception)
+                        exception->rethrow();
+                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range"));
+                }
+
                 content_encoding = response.get("Content-Encoding", "");
                 return istr;
-
             }
             catch (const Poco::Exception & e)
             {
@@ -196,10 +213,13 @@ namespace detail
                 [&](const HTTPHeaderEntry & header) { return std::get<0>(header) == "Range"; });
             if (range_header != http_header_entries_.end())
             {
+                if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "POST request cannot have range headers");
+
                 auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
                 auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
                 if (ec != std::errc())
-                    settings.http_retriable_read = false;
+                    resumable_read = false;
             }
 
             initialize();
@@ -228,7 +248,7 @@ namespace detail
                 if (response.hasContentLength())
                     total_bytes_to_read = response.getContentLength();
                 else
-                    settings.http_retriable_read = false;
+                    resumable_read = false;
             }
 
             try
@@ -274,14 +294,17 @@ namespace detail
                         successful_read = true;
                         break;
                     }
-                    catch (const Poco::Exception &)
+                    catch (const Poco::Exception & e)
                     {
                         if (i == settings.http_max_tries - 1
-                            || (bytes_read && !settings.http_retriable_read))
+                            || (bytes_read && !resumable_read))
                             throw;
 
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
                         impl.reset();
+
+                        exception.reset();
+                        exception.emplace(e);
 
                         sleepForMilliseconds(milliseconds_to_wait);
                         milliseconds_to_wait *= 2;
