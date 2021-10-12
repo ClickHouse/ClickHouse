@@ -1378,7 +1378,7 @@ public:
         auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
 
-        for (auto [key, value] : object)
+        for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
         }
