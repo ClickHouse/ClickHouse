@@ -368,7 +368,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         db->drop(local_context);
 
         /// Old ClickHouse versions did not store database.sql files
-        /// Remove metadata dir (if exists) to avoid creation recreation of .sql file on server startup
+        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
         fs::remove(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
