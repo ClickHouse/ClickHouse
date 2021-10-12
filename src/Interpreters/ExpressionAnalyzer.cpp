@@ -811,11 +811,11 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     return table_join;
 }
 
-static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
+static JoinPtr tryGetStorageJoin(ContextPtr context, std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoinLocked(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join, context);
     return {};
 }
 
@@ -880,7 +880,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
     /// Use StorageJoin if any.
-    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
+    JoinPtr join = tryGetStorageJoin(getContext(), syntax->analyzed_join);
 
     if (!join)
     {
