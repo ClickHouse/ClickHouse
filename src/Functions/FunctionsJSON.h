@@ -433,6 +433,7 @@ struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKey
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
+struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
 
 
 template <typename JSONParser>
@@ -1346,6 +1347,40 @@ public:
         {
             col_key.insertData(key.data(), key.size());
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {});
+        }
+
+        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        return true;
+    }
+};
+
+template <typename JSONParser>
+class JSONExtractKeysImpl
+{
+public:
+    using Element = typename JSONParser::Element;
+
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_unique<DataTypeString>();
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
+    {
+        if (!element.isObject())
+            return false;
+
+        auto object = element.getObject();
+
+        auto & col_arr = assert_cast<ColumnArray &>(dest);
+        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
+        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+
+        for (auto [key, value] : object)
+        {
+            col_key.insertData(key.data(), key.size());
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
