@@ -135,6 +135,7 @@ if (ENABLE_FUZZING)
     # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
 endif()
 
 # Global libraries
@@ -333,6 +334,10 @@ endif ()
 # benchmarks.
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
+if (COMPILER_GCC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
