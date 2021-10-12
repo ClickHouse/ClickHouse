@@ -367,13 +367,9 @@ class TestCase:
 
             database = 'test_{suffix}'.format(suffix=random_str())
 
-            try:
-                clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={
-                    'log_comment': testcase_args.testcase_basename,
-                })
-            except socket.timeout:
-                total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
-                return None, "", f"Timeout creating database {database} before test", total_time
+            clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={
+                'log_comment': testcase_args.testcase_basename,
+            })
 
             os.environ["CLICKHOUSE_DATABASE"] = database
             # Set temporary directory to match the randomly generated database,
