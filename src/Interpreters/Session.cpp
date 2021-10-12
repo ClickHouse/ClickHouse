@@ -424,4 +424,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     return query_context;
 }
 
+
+void Session::releaseSessionID()
+{
+    if (!named_session)
+        return;
+    named_session->release();
+    named_session = nullptr;
+}
+
 }
