@@ -131,6 +131,9 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
+
+        if (settings.parallel_reading_from_replicas)
+            modified_settings.collaborate_with_initiator = true;
     }
 
     size_t num_replicas = replica_states.size();

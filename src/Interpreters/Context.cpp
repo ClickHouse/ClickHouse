@@ -2823,7 +2823,11 @@ void Context::setReadTaskCallback(ReadTaskCallback && callback)
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
+    {
+        std::cout << StackTrace().toString() << std::endl;
         throw Exception(fmt::format("Next task callback for is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+    }
+
     return merge_tree_read_task_callback.value();
 }
 

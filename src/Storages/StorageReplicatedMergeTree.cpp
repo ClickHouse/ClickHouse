@@ -4093,8 +4093,7 @@ void StorageReplicatedMergeTree::read(
     }
 
     /// If true, then we will ask initiator if we can read chosen ranges
-    bool enable_parallel_reading = local_context->getSettingsRef().parallel_reading_from_replicas
-        && local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+    bool enable_parallel_reading = local_context->getSettingsRef().collaborate_with_initiator;
 
     if (auto plan = reader.read(
         column_names, metadata_snapshot, query_info, local_context,

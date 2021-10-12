@@ -164,6 +164,9 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
+        if (settings.parallel_reading_from_replicas)
+            modified_settings.collaborate_with_initiator = true;
+
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.

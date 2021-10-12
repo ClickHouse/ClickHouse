@@ -126,6 +126,7 @@ class IColumn;
     M(UInt64, parallel_replica_offset, 0, "", 0) \
     \
     M(Bool, parallel_reading_from_replicas, true, "If true, ClickHouse will send a SELECT query to all replicas of a table...", 0) \
+    M(Bool, collaborate_with_initiator, false, "...", 0) \
     \
     M(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards and nodes unresolvable through DNS. Shard is marked as unavailable when none of the replicas can be reached.", 0) \
     \

@@ -192,11 +192,10 @@ void StorageMergeTree::read(
     unsigned num_streams)
 {
     /// If true, then we will ask initiator if we can read chosen ranges
-    bool enable_parallel_reading = local_context->getSettingsRef().parallel_reading_from_replicas
-        && local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+    bool enable_parallel_reading = local_context->getSettingsRef().collaborate_with_initiator;
 
-    // LOG_FATAL(log, "Parallel reading from replicas enabled {}", enable_parallel_reading);
-    // LOG_FATAL(log, "Is initial query {}", local_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
+    if (enable_parallel_reading)
+        LOG_TRACE(log, "Parallel reading from replicas enabled {}", enable_parallel_reading);
 
     if (auto plan = reader.read(
         column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
