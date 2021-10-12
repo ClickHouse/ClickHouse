@@ -11,7 +11,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
-#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -24,8 +23,6 @@
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
