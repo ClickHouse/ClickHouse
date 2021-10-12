@@ -18,8 +18,10 @@ option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
 option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
 option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
 option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
-option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 1)
-option (ENABLE_BMI "Use BMI instructions on x86_64" 1)
+option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
+option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
+option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 1)
+option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
 
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
@@ -129,8 +131,8 @@ else ()
     if (HAVE_AVX2 AND ENABLE_AVX2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
-#Disable vectorize due to llvm autovectorization bug with avx512
-    set (TEST_FLAG "-mavx512f -mavx512bw -fno-slp-vectorize -fno-vectorize")
+
+    set (TEST_FLAG "-mavx512f -mavx512bw")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <immintrin.h>
@@ -143,7 +145,7 @@ else ()
         }
     " HAVE_AVX512)
     if (HAVE_AVX512 AND ENABLE_AVX512)
-        set(X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} ${TEST_FLAG}")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
     set (TEST_FLAG "-mbmi")
@@ -157,8 +159,29 @@ else ()
         }
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
-        set(X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} ${TEST_FLAG}")
-    endif ()    
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()   
+
+    if (ENABLE_AVX2_FOR_SPEC_OP)
+        set (X86_INTRINSICS_FLAGS "")
+        if (HAVE_BMI)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+        endif () 
+        if (HAVE_AVX AND HAVE_AVX2)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx -mavx2")
+        endif ()     
+    endif () 
+
+    if (ENABLE_AVX512_FOR_SPEC_OP)
+        set (X86_INTRINSICS_FLAGS "")
+        if (HAVE_BMI)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+        endif () 
+        if (HAVE_AVX512)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw")
+        endif ()     
+    endif () 
+
 endif ()
 
 cmake_pop_check_state ()
