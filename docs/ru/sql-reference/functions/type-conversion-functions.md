@@ -278,7 +278,7 @@ SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrDefault {#todate32-or-null}
+## toDate32OrDefault {#todate32-or-default}
 
 То же самое, что и [toDate32](#todate32), но возвращает значение по умолчанию, если получен недопустимый аргумент.
 
