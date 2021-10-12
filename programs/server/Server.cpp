@@ -911,6 +911,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         server.start();
 
     SCOPE_EXIT({
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -1382,7 +1386,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
-            main_config_reloader.reset();
 
             if (current_connections)
             {
