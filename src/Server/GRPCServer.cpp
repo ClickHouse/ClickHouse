@@ -1,4 +1,6 @@
 #include "GRPCServer.h"
+#include <limits>
+#include <memory>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>

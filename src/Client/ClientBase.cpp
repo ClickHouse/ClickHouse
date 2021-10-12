@@ -9,6 +9,10 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
+#include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -70,6 +74,12 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
 }
 
 namespace DB
@@ -611,6 +621,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             onEndOfStream();
             return false;
 
+        case Protocol::Server::ProfileEvents:
+            onProfileEvents(packet.block);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -648,6 +662,45 @@ void ClientBase::onEndOfStream()
         progress_indication.clearProgressOutput();
         std::cout << "Ok." << std::endl;
     }
+}
+
+
+void ClientBase::onProfileEvents(Block & block)
+{
+    const auto rows = block.rows();
+    if (rows == 0)
+        return;
+    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+    HostToThreadTimesMap thread_times;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto thread_id = array_thread_id[i];
+        auto host_name = host_names.getDataAt(i).toString();
+        if (thread_id != 0)
+            progress_indication.addThreadIdToList(host_name, thread_id);
+        auto event_name = names.getDataAt(i);
+        auto value = array_values[i];
+        if (event_name == user_time_name)
+        {
+            thread_times[host_name][thread_id].user_ms = value;
+        }
+        else if (event_name == system_time_name)
+        {
+            thread_times[host_name][thread_id].system_ms = value;
+        }
+        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        {
+            thread_times[host_name][thread_id].memory_usage = value;
+        }
+    }
+    progress_indication.updateThreadEventData(thread_times);
 }
 
 
