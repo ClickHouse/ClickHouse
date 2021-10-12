@@ -3006,7 +3006,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_secondary_index_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -3017,9 +3017,9 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
             from -= value;
         };
 
-        log_subtract(total_column_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
-        log_subtract(total_column_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
-        log_subtract(total_column_size.marks, part_secondary_index_size.marks, ".marks");
+        log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
+        log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
+        log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
     auto indexes_descriptions = getInMemoryMetadataPtr()->secondary_indices;
