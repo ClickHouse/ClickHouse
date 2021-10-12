@@ -108,7 +108,7 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const IMergeTreeDataPart * parent_part = nullptr,
-        const String & prefix = "");
+        const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MutateTaskPtr mutatePartToTemporaryPart(

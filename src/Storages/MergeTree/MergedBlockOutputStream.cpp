@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -51,11 +50,6 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
     writeImpl(block, permutation);
 }
 
-void MergedBlockOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
         bool sync,
@@ -93,7 +87,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsSizesOnDisk();
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
     new_part->storage.lockSharedData(*new_part);
