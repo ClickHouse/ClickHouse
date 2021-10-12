@@ -104,7 +104,6 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const Context & context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
