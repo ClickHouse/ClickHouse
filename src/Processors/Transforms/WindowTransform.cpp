@@ -1530,13 +1530,13 @@ namespace recurrent_detail
         {
             if (current_row.block > 0)
             {
-                auto & column = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[column_index]];
+                const auto & column = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[column_index]];
                 return column->getFloat64(column->size()-1);
             }
         }
         else
         {
-            auto & column = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[column_index]];
+            const auto & column = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[column_index]];
             return column->getFloat64(current_row.row-1);
         }
 
@@ -1556,13 +1556,13 @@ namespace recurrent_detail
         {
             if (current_row.block > 0)
             {
-                auto & column = transform->blockAt(current_row.block-1).output_columns[function_index];
+                const auto & column = transform->blockAt(current_row.block-1).output_columns[function_index];
                 return column->getFloat64(column->size()-1);
             }
         }
         else
         {
-            auto & column = transform->blockAt(current_row.block).output_columns[function_index];
+            const auto & column = transform->blockAt(current_row.block).output_columns[function_index];
             return column->getFloat64(current_row.row-1);
         }
 
