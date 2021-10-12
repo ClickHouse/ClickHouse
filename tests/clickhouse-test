@@ -371,7 +371,7 @@ class TestCase:
                 clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={
                     'log_comment': testcase_args.testcase_basename,
                 })
-            except TimeoutError:
+            except socket.timeout:
                 total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
                 return None, "", f"Timeout creating database {database} before test", total_time
 
@@ -593,7 +593,7 @@ class TestCase:
                 clickhouse_execute(args, "DROP DATABASE " + database, timeout=seconds_left, settings={
                     'log_comment': args.testcase_basename,
                 })
-            except TimeoutError:
+            except socket.timeout:
                 total_time = (datetime.now() - start_time).total_seconds()
                 return None, "", f"Timeout dropping database {database} after test", total_time
             shutil.rmtree(args.test_tmp_dir)
