@@ -89,10 +89,13 @@ def make_clickhouse_client(base_args):
         # hence we should use 'system'.
         database='system',
         settings=get_additional_client_options_dict(base_args))
+
 def clickhouse_execute_one(base_args, *args, **kwargs):
     return make_clickhouse_client(base_args).execute_one(*args, **kwargs)
+
 def clickhouse_execute(base_args, *args, **kwargs):
     return make_clickhouse_client(base_args).execute(*args, **kwargs)
+
 def clickhouse_execute_pandas(base_args, *args, **kwargs):
     return make_clickhouse_client(base_args).execute_pandas(*args, **kwargs)
 
@@ -109,6 +112,7 @@ def stop_tests():
     global restarted_tests
 
     with stop_tests_triggered_lock:
+        print("Stopping tests")
         if not stop_tests_triggered.is_set():
             stop_tests_triggered.set()
 
@@ -875,7 +879,7 @@ def run_tests_array(all_tests_with_params):
 
     while True:
         if is_concurrent:
-            case = queue.get()
+            case = queue.get(timeout=args.timeout * 1.1)
             if not case:
                 break
         else:
@@ -1076,10 +1080,10 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
             pool.map_async(run_tests_array, parallel_tests_array)
 
             for suit in test_suite.parallel_tests:
-                queue.put(suit)
+                queue.put(suit, timeout=args.timeout * 1.1)
 
             for _ in range(jobs):
-                queue.put(None)
+                queue.put(None, timeout=args.timeout * 1.1)
 
             queue.close()
 
