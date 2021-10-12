@@ -129,8 +129,8 @@ else ()
     if (HAVE_AVX2 AND ENABLE_AVX2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
-
-    set (TEST_FLAG "-mavx512f -mavx512bw")
+#we have to add -force-vector-width=16 due to llvm autovectorization bug with avx512
+    set (TEST_FLAG "-mavx512f -mavx512bw -force-vector-width=16")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <immintrin.h>
