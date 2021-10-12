@@ -3587,10 +3587,6 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `1`.
 
-**См. также**
-
--   секция [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах `SELECT`
-
 ## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
 
 Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md) с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
@@ -3606,6 +3602,4 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 **См. также**
 
--   секция [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах `SELECT`
--   модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final) в запросах `SELECT`
 -   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
