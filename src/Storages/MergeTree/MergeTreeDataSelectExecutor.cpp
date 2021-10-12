@@ -173,9 +173,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
     {
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(
-            query_info.minmax_count_projection_block.cloneEmpty(),
-            Chunk(query_info.minmax_count_projection_block.getColumns(), query_info.minmax_count_projection_block.rows())));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(query_info.minmax_count_projection_block));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_plan->addStep(std::move(read_from_pipe));
     }
@@ -983,7 +981,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description),
+            .description = std::move(description), //-V1030
             .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
             .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }
