@@ -173,7 +173,7 @@ void PocoHTTPClient::makeRequestInternal(
             {
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, false);
+                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
                 bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -185,7 +185,7 @@ void PocoHTTPClient::makeRequestInternal(
             }
             else
             {
-                session = makeHTTPSession(target_uri, timeouts, true);
+                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
             }
 
 
