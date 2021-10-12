@@ -60,6 +60,8 @@ public:
 
     void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
+    bool print_hardware_utilization = false;
+
 private:
 
     size_t getUsedThreadsCount() const;
