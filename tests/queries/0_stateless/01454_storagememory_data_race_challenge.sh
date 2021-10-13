@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
 
 set -e
 

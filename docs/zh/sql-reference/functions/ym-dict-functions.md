@@ -1,8 +1,8 @@
-# 使用 Yandex.Metrica 字典函数 {#functions-for-working-with-yandex-metrica-dictionaries}
+# 功能与Yandex的工作。梅特里卡词典 {#functions-for-working-with-yandex-metrica-dictionaries}
 
-为了使下面的功能正常工作，服务器配置必须指定获取所有 Yandex.Metrica 字典的路径和地址。Yandex.Metrica 字典在任何这些函数的第一次调用时加载。 如果无法加载引用列表，则会引发异常。
+为了使下面的功能正常工作，服务器配置必须指定获取所有Yandex的路径和地址。梅特里卡字典. 字典在任何这些函数的第一次调用时加载。 如果无法加载引用列表，则会引发异常。
 
-有关创建引用列表的信息，请参阅 «字典» 部分.
+For information about creating reference lists, see the section «Dictionaries».
 
 ## 多个地理基 {#multiple-geobases}
 
@@ -17,18 +17,18 @@ ClickHouse支持同时使用多个备选地理基（区域层次结构），以�
 
 所有字典都在运行时重新加载（每隔一定数量的秒重新加载一次，如builtin_dictionaries_reload_interval config参数中定义，或默认情况下每小时一次）。 但是，可用字典列表在服务器启动时定义一次。
 
-所有处理区域的函数都在末尾有一个可选参数—字典键。它被称为地基。
+All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 示例:
 
-    regionToCountry(RegionID) – 使用默认路径: /opt/geo/regions_hierarchy.txt
-    regionToCountry(RegionID, '') – 使用默认路径: /opt/geo/regions_hierarchy.txt
-    regionToCountry(RegionID, 'ua') – 使用字典中的'ua' 键: /opt/geo/regions_hierarchy_ua.txt
+    regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 
-### regionToCity(id[, geobase]) {#regiontocityid-geobase}
+### ﾂ环板(ｮﾂ嘉ｯﾂ偲青regionｼﾂ氾ｶﾂ鉄ﾂ工ﾂ渉\]) {#regiontocityid-geobase}
 
-从 Yandex geobase 接收一个 UInt32 数字类型的区域ID 。如果该区域是一个城市或城市的一部分，它将返回相应城市的区域ID。否则,返回0。
+Accepts a UInt32 number – the region ID from the Yandex geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
-### regionToArea(id[, geobase]) {#regiontoareaid-geobase}
+### 虏茅驴麓卤戮碌禄路戮鲁拢\]) {#regiontoareaid-geobase}
 
 将区域转换为区域（地理数据库中的类型5）。 在所有其他方式，这个功能是一样的 ‘regionToCity’.
 
@@ -84,59 +84,37 @@ LIMIT 15
     │ Federation of Bosnia and Herzegovina                     │
     └──────────────────────────────────────────────────────────┘
 
-### regionToCountry(id[, geobase]) {#regiontocountryid-geobase}
+### 虏茅驴麓卤戮碌禄路戮鲁拢(陆毛隆隆(803)888-8325\]) {#regiontocountryid-geobase}
 
 将区域转换为国家。 在所有其他方式，这个功能是一样的 ‘regionToCity’.
 示例: `regionToCountry(toUInt32(213)) = 225` 转换莫斯科（213）到俄罗斯（225）。
 
-### regionToContinent(id[, geobase]) {#regiontocontinentid-geobase}
+### 掳胫((禄脢鹿脷露胫鲁隆鹿((酶-11-16""\[脪陆,ase\]) {#regiontocontinentid-geobase}
 
 将区域转换为大陆。 在所有其他方式，这个功能是一样的 ‘regionToCity’.
 示例: `regionToContinent(toUInt32(213)) = 10001` 将莫斯科（213）转换为欧亚大陆（10001）。
 
-### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
-
-查找该区域层次结构中最高的大陆。
-
-**语法**
-
-``` sql
-regionToTopContinent(id[, geobase])
-```
-
-**参数**
-
--   `id` — Yandex geobase 的区域 ID. [UInt32](../../sql-reference/data-types/int-uint.md).
--   `geobase` — 字典的建. 参阅 [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). 可选.
-
-**返回值**
-
--   顶级大陆的标识符(当您在区域层次结构中攀爬时，是后者)。
--   0，如果没有。
-
-类型: `UInt32`.
-
-### regionToPopulation(id\[, geobase\]) {#regiontopopulationid-geobase}
+### ﾂ环板(ｮﾂ嘉ｯﾂ偲青regionｬﾂ静ｬﾂ青ｻﾂ催ｬﾂ渉\]) {#regiontopopulationid-geobase}
 
 获取区域的人口。
-人口可以记录在文件与地球基。请参阅«外部词典»部分。
+The population can be recorded in files with the geobase. See the section «External dictionaries».
 如果没有为该区域记录人口，则返回0。
 在Yandex地理数据库中，可能会为子区域记录人口，但不会为父区域记录人口。
 
 ### regionIn(lhs,rhs\[,地理数据库\]) {#regioninlhs-rhs-geobase}
 
 检查是否 ‘lhs’ 属于一个区域 ‘rhs’ 区域。 如果属于UInt8，则返回等于1的数字，如果不属于则返回0。
-这种关系是反射的——任何地区也属于自己。
+The relationship is reflexive – any region also belongs to itself.
 
-### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
+### ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人\]) {#regionhierarchyid-geobase}
 
-从 Yandex geobase 接收一个 UInt32 数字类型的区域ID。返回一个区域ID数组，由传递的区域和链上的所有父节点组成。
+Accepts a UInt32 number – the region ID from the Yandex geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 示例: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
-### regionToName(id\[, lang\]) {#regiontonameid-lang}
+### 地区名称(id\[,郎\]) {#regiontonameid-lang}
 
-从 Yandex geobase 接收一个 UInt32 数字类型的区域ID。带有语言名称的字符串可以作为第二个参数传递。支持的语言有:ru, en, ua, uk, by, kz, tr。如果省略第二个参数，则使用' ru '语言。如果不支持该语言，则抛出异常。返回一个字符串-对应语言的区域名称。如果指定ID的区域不存在，则返回一个空字符串。
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
 
 `ua` 和 `uk` 都意味着乌克兰。
 
-[原始文章](https://clickhouse.com/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

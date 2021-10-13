@@ -64,6 +64,7 @@ void MySQLOutputFormat::initialize()
     }
 }
 
+
 void MySQLOutputFormat::consume(Chunk chunk)
 {
     initialize();

@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
 #include <chrono>
@@ -77,7 +77,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     writing_task->deactivate();
     connection.disconnect();
-    assert(rows == 0);
+    assert(rows == 0 && chunks.empty());
 }
 
 

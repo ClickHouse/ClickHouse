@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
-# Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 # Regression for MemoryTracker that had been incorrectly accounted
 # (it was reset before deallocation)

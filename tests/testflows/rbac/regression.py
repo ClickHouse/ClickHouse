@@ -31,7 +31,6 @@ issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
 issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
 issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
 issue_25413 = "https://github.com/ClickHouse/ClickHouse/issues/25413"
-issue_26746 = "https://github.com/ClickHouse/ClickHouse/issues/26746"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -151,15 +150,7 @@ xfails = {
     "privileges/kill mutation/:/:/KILL ALTER : with revoked privilege":
         [(Fail, issue_25413)],
     "privileges/kill mutation/:/:/KILL ALTER : with revoked ALL privilege":
-        [(Fail, issue_25413)],
-    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted directly":
-        [(Fail, issue_26746)],
-    "privileges/create table/create with subquery privilege granted directly or via role/create with subquery, privilege granted through a role":
-        [(Fail, issue_26746)],
-    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted directly":
-        [(Fail, issue_26746)],
-    "views/live view/create with join subquery privilege granted directly or via role/create with join subquery, privilege granted through a role":
-        [(Fail, issue_26746)]
+        [(Fail, issue_25413)]
 }
 
 xflags = {

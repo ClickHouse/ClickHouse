@@ -31,9 +31,7 @@ enum class CompressionMethod
     /// Zstd compressor
     ///  This option corresponds to HTTP Content-Encoding: zstd
     Zstd,
-    Brotli,
-    Lz4,
-    Bzip2
+    Brotli
 };
 
 /// How the compression method is named in HTTP.

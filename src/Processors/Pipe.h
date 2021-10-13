@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/PipelineResourcesHolder.h>
-#include <Processors/Chain.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Access/EnabledQuota.h>
 #include <DataStreams/SizeLimits.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
@@ -13,6 +14,11 @@ struct StreamLocalLimits;
 
 class Pipe;
 using Pipes = std::vector<Pipe>;
+
+class QueryPipeline;
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
@@ -80,9 +86,6 @@ public:
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
 
-    /// Add chain to every output port.
-    void addChains(std::vector<Chain> chains);
-
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
@@ -111,13 +114,29 @@ public:
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
     /// For queries with nested interpreters (i.e. StorageDistributed)
-    void addQueryPlan(std::unique_ptr<QueryPlan> plan);
-
-    PipelineResourcesHolder detachResources();
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
-    PipelineResourcesHolder holder;
+
+    struct Holder
+    {
+        Holder() = default;
+        Holder(Holder &&) = default;
+        /// Custom mode assignment does not destroy data from lhs. It appends data from rhs to lhs.
+        Holder& operator=(Holder &&);
+
+        /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
+        /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+        /// because QueryPipeline is alive until query is finished.
+        std::vector<std::shared_ptr<const Context>> interpreter_context;
+        std::vector<StoragePtr> storage_holders;
+        std::vector<TableLockHolder> table_locks;
+        std::vector<std::unique_ptr<QueryPlan>> query_plans;
+        std::shared_ptr<QueryIdHolder> query_id_holder;
+    };
+
+    Holder holder;
 
     /// Header is common for all output below.
     Block header;
@@ -143,7 +162,6 @@ private:
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
     void setOutputFormat(ProcessorPtr output);
 
-    friend class QueryPipelineBuilder;
     friend class QueryPipeline;
 };
 

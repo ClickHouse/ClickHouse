@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001
+# shellcheck disable=SC2086
 
 set -eux
 set -o pipefail
@@ -12,7 +12,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted_disable_False_binary"}
 
 function clone
 {
@@ -71,51 +71,25 @@ function watchdog
     kill -9 -- $fuzzer_pid ||:
 }
 
-function filter_exists_and_template
+function filter_exists
 {
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
-            # SC2001 shellcheck suggests:
-            # echo ${path//.sql.j2/.gen.sql}
-            # but it doesn't allow to use regex
-            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
+            echo "$path"
         else
             echo "'$path' does not exists" >&2
         fi
     done
 }
 
-function stop_server
-{
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
-    killall clickhouse-server ||:
-    for _ in {1..10}
-    do
-        if ! pgrep -f clickhouse-server
-        then
-            break
-        fi
-        sleep 1
-    done
-    killall -9 clickhouse-server ||:
-
-    # Debug.
-    date
-    sleep 10
-    jobs
-    pstree -aspgT
-}
-
 function fuzz
 {
-    /generate-test-j2.py --path ch/tests/queries/0_stateless
-
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
-    NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
+    NEW_TESTS="$(filter_exists $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
     then
         NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
@@ -123,12 +97,9 @@ function fuzz
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
-    # interferes with gdb
-    export CLICKHOUSE_WATCHDOG_ENABLE=0
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml -- --path db > >(tail -100000 > server.log) 2>&1 &
+    export CLICKHOUSE_WATCHDOG_ENABLE=0 # interferes with gdb
+    clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
-
     kill -0 $server_pid
 
     echo "
@@ -163,7 +134,6 @@ continue
     clickhouse-client \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
-        --stacktrace \
         --query-fuzzer-runs=1000 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
@@ -205,13 +175,24 @@ continue
         server_died=1
     fi
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
-    stop_server &
-    server_exit_code=0
-    wait $server_pid || server_exit_code=$?
-    echo "Server exit code is $server_exit_code"
+    # Stop the server.
+    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    killall clickhouse-server ||:
+    for _ in {1..10}
+    do
+        if ! pgrep -f clickhouse-server
+        then
+            break
+        fi
+        sleep 1
+    done
+    killall -9 clickhouse-server ||:
+
+    # Debug.
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
 
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
@@ -241,7 +222,7 @@ continue
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
         { grep --text -o "Found error:.*" fuzzer.log \
-            || grep --text -ao "Exception:.*" fuzzer.log \
+            || grep --text -o "Exception.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

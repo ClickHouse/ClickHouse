@@ -53,7 +53,7 @@ Since using ‘xxx’ is highly unusual, this may be changed in the future. We r
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44.
+IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. 
 
 Alias: `INET6_NTOA`.
 
@@ -123,7 +123,7 @@ LIMIT 10
 
 ## IPv6StringToNum {#ipv6stringtonums}
 
-The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes.
+The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
 
 If the input string contains a valid IPv4 address, returns its IPv6 equivalent.
 HEX can be uppercase or lowercase.
@@ -136,13 +136,13 @@ Alias: `INET6_ATON`.
 IPv6StringToNum(string)
 ```
 
-**Argument**
+**Argument** 
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   IPv6 address in binary format.
+-   IPv6 address in binary format. 
 
 Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
@@ -280,7 +280,7 @@ toIPv6(string)
 
 **Returned value**
 
--   IP address.
+-   IP address. 
 
 Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 

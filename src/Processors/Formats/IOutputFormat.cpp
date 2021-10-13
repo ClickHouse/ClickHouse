@@ -117,3 +117,4 @@ void IOutputFormat::write(const Block & block)
 }
 
 }
+
