@@ -45,6 +45,23 @@ else
     sudo clickhouse start
 fi
 
+echo "
+set follow-fork-mode child
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+detach
+quit
+" > script.gdb
+
+# FIXME Hung check may work incorrectly because of attached gdb
+# 1. False positives are possible
+# 2. We cannot attach another gdb to get stacktraces if some queries hung
+gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
+
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
 
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
@@ -96,10 +113,12 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('8')
     fi
 
+    set +e
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
+    set -e
 }
 
 export -f run_tests
@@ -114,12 +133,6 @@ grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
 clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
-clickhouse-client --allow_introspection_functions=1 -q "
-    WITH
-        arrayMap(x -> concat(demangle(addressToSymbol(x)), ':', addressToLine(x)), trace) AS trace_array,
-        arrayStringConcat(trace_array, '\n') AS trace_string
-    SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
-" | pigz > /test_output/trace-log.tsv.gz &
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
@@ -146,6 +159,7 @@ fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
 tar -chf /test_output/zookeeper_log_dump.tar /var/lib/clickhouse/data/system/zookeeper_log ||:
+tar -chf /test_output/trace_log_dump.tar /var/lib/clickhouse/data/system/trace_log ||:
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
