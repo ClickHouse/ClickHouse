@@ -61,9 +61,16 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
             partition_by->formatImpl(settings, state, frame);
         }
     }
-    else
+    else if (table_id)
+    {
         settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (!getDatabase().empty() ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+                      << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "")
+                      << (!database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    }
 
     if (columns)
     {
