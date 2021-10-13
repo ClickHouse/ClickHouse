@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <unistd.h>
 #include <sys/inotify.h>
-#include <sys/select.h>
+#include <sys/poll.h>
 
 namespace DB
 {
@@ -59,27 +59,12 @@ void DirectoryWatcherBase::watchFunc()
 
     std::string buffer;
     buffer.resize(buffer_size);
-    fd_set fds;
+    pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
     while (!stopped)
     {
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-        FD_ZERO(&fds);
-#pragma clang diagnostic pop
-
-#else
-        FD_ZERO(&fds);
-#endif
-
-
-        FD_SET(fd, &fds);
-
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 200000;
-
-        if (select(fd + 1, &fds, nullptr, nullptr, &tv) == 1)
+        if (poll(&pfd, 1, 5000) > 0 && pfd.revents & POLLIN)
         {
             int n = read(fd, buffer.data(), buffer.size());
             int i = 0;
