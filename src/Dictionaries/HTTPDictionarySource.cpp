@@ -1,6 +1,5 @@
 #include "HTTPDictionarySource.h"
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -12,7 +11,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -255,7 +254,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format =config.getString(settings_config_prefix + ".format", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries) //-V1030
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);

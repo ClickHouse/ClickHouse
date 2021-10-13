@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 

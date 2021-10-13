@@ -1,4 +1,6 @@
 #include "GRPCServer.h"
+#include <limits>
+#include <memory>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -6,9 +8,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -35,7 +38,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -584,6 +587,7 @@ namespace
         void finishQuery();
         void onException(const Exception & exception);
         void onFatalError();
+        void releaseQueryIDAndSessionID();
         void close();
 
         void readQueryInfo();
@@ -1175,6 +1179,7 @@ namespace
         addProgressToResult();
         query_scope->logPeakMemoryUsage();
         addLogsToResult();
+        releaseQueryIDAndSessionID();
         sendResult();
         close();
 
@@ -1205,6 +1210,8 @@ namespace
                 LOG_WARNING(log, "Couldn't send logs to client");
             }
 
+            releaseQueryIDAndSessionID();
+
             try
             {
                 sendException(exception);
@@ -1224,7 +1231,7 @@ namespace
         {
             try
             {
-                finalize = true;
+                result.mutable_exception()->set_name("FatalError");
                 addLogsToResult();
                 sendResult();
             }
@@ -1232,6 +1239,17 @@ namespace
             {
             }
         }
+    }
+
+    void Call::releaseQueryIDAndSessionID()
+    {
+        /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
+        /// because the client may decide to send another query with the same query ID or session ID
+        /// immediately after it receives our final result, and it's prohibited to have
+        /// two queries executed at the same time with the same query ID or session ID.
+        io.process_list_entry.reset();
+        if (session)
+            session->releaseSessionID();
     }
 
     void Call::close()
