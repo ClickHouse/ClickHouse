@@ -30,7 +30,7 @@ const std::string & FileLogDirectoryWatcher::getPath() const
     return path;
 }
 
-void FileLogDirectoryWatcher::onItemAdded(const DirectoryWatcherBase::DirectoryEvent & ev)
+void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -48,7 +48,7 @@ void FileLogDirectoryWatcher::onItemAdded(const DirectoryWatcherBase::DirectoryE
 }
 
 
-void FileLogDirectoryWatcher::onItemRemoved(const DirectoryWatcherBase::DirectoryEvent & ev)
+void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -71,7 +71,7 @@ void FileLogDirectoryWatcher::onItemRemoved(const DirectoryWatcherBase::Director
 /// So, if we record all of these events, it will use a lot of memory, and then we
 /// need to handle it one by one in StorageFileLog::updateFileInfos, this is unnecessary
 /// because it is equal to just record and handle one MODIY event
-void FileLogDirectoryWatcher::onItemModified(const DirectoryWatcherBase::DirectoryEvent & ev)
+void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -91,7 +91,7 @@ void FileLogDirectoryWatcher::onItemModified(const DirectoryWatcherBase::Directo
     }
 }
 
-void FileLogDirectoryWatcher::onItemMovedFrom(const DirectoryWatcherBase::DirectoryEvent & ev)
+void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -108,7 +108,7 @@ void FileLogDirectoryWatcher::onItemMovedFrom(const DirectoryWatcherBase::Direct
     }
 }
 
-void FileLogDirectoryWatcher::onItemMovedTo(const DirectoryWatcherBase::DirectoryEvent & ev)
+void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -125,7 +125,7 @@ void FileLogDirectoryWatcher::onItemMovedTo(const DirectoryWatcherBase::Director
     }
 }
 
-void FileLogDirectoryWatcher::onError(const Exception & e)
+void FileLogDirectoryWatcher::onError(Exception e)
 {
     std::lock_guard<std::mutex> lock(mutex);
     LOG_ERROR(log, "Error happened during watching directory {}: {}", path, error.error_msg);
