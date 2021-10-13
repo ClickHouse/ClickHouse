@@ -360,7 +360,6 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-
 ## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
 
 Преобразует входную строку в значение с типом данных [Decimal(P,S)](../../sql-reference/data-types/decimal.md). Семейство функций включает в себя:
@@ -854,6 +853,7 @@ SELECT
 
 
 ## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
+
 Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если оно указано.
 
 **Синтаксис**
