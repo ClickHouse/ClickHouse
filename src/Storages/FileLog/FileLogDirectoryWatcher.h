@@ -51,14 +51,16 @@ private:
     /// The data race is because dw create a separate thread to monitor file events
     /// and put into events, then if we destruct events first, the monitor thread still
     /// running, it may access events during events destruction, leads to data race.
+    /// And we should put other members before dw as well, because all of them can be
+    /// accessed in thread created by dw.
     Events events;
-
-    std::unique_ptr<DirectoryWatcherBase> dw;
 
     Poco::Logger * log;
 
     std::mutex mutex;
 
     Error error;
+
+    std::unique_ptr<DirectoryWatcherBase> dw;
 };
 }
