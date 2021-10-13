@@ -57,6 +57,8 @@ def get_MemoryTracking():
     return int(http_query("SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'"))
 
 def check_memory(memory):
+    # bytes -> megabytes
+    memory = [*map(lambda x: int(int(x)/1024/1024), memory)]
     # 3 changes to MemoryTracking is minimum, since:
     # - this is not that high to not detect inacuracy
     # - memory can go like X/X+N due to some background allocations
