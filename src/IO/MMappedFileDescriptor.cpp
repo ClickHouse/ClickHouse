@@ -7,7 +7,7 @@
 
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <common/getPageSize.h>
+#include <base/getPageSize.h>
 #include <IO/MMappedFileDescriptor.h>
 
 

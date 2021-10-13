@@ -3,7 +3,7 @@
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 
 
 namespace DB
