@@ -23,7 +23,11 @@ public:
     String getName() const override { return "MergeTreeInOrder"; }
 
 private:
+    void prepareNewTask() override {}
     bool getNewTaskImpl() override;
+    void finalizeNewTask() override {
+        // std::cout << "MergeTreeInOrderSelectProcessor" << std::endl;
+    }
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeInOrderSelectProcessor");
 };

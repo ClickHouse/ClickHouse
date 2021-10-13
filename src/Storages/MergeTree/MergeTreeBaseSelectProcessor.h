@@ -51,7 +51,9 @@ protected:
 
     Chunk generate() final;
 
+    virtual void prepareNewTask() = 0;
     virtual bool getNewTaskImpl() = 0;
+    virtual void finalizeNewTask() = 0;
 
     virtual Chunk readFromPart();
 
@@ -87,8 +89,6 @@ protected:
     /// This header is used for chunks from readFromPart().
     Block header_without_virtual_columns;
 
-    std::unique_ptr<MergeTreeReadTask> task;
-
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
 
@@ -96,6 +96,8 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
+
+    MergeTreeReadTaskPtr task;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
 };
 

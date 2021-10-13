@@ -24,7 +24,12 @@ public:
     String getName() const override { return "MergeTreeReverse"; }
 
 private:
+    void prepareNewTask() override {}
     bool getNewTaskImpl() override;
+    void finalizeNewTask() override {
+        // std::cout << "MergeTreeReverseSelectProcessor" << std::endl;
+    }
+
     Chunk readFromPart() override;
 
     Chunks chunks;

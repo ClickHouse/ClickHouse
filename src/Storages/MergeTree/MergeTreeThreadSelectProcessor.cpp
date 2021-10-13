@@ -62,6 +62,14 @@ bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
         return false;
     }
 
+    return true;
+}
+
+
+void MergeTreeThreadSelectProcessor::finalizeNewTask()
+{
+    // std::cout << "MergeTreeThreadSelectProcessor" << std::endl;
+
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
     /// Allows pool to reduce number of threads in case of too slow reads.
@@ -69,18 +77,16 @@ bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 
     if (!reader)
     {
-        auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
-
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
 
-        reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
+        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
+            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
@@ -89,22 +95,19 @@ bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
         /// in other case we can reuse readers, anyway they will be "seeked" to required mark
         if (part_name != last_readed_part_name)
         {
-            auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
+            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
             if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
+                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
         }
     }
 
     last_readed_part_name = part_name;
-
-    return true;
 }
 
 

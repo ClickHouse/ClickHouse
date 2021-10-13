@@ -76,14 +76,40 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
 bool MergeTreeBaseSelectProcessor::getNewTask()
 {
+    prepareNewTask();
+
     while (true)
     {
-        bool res = getNewTaskImpl();
+        auto res = getNewTaskImpl();
 
-        // LOG_TEST(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), "getNewTaskImpl res:{}, has_value{}", toString(res), toString(read_task_callback.has_value()));
+        if (!read_task_callback.has_value())
+        {
+            if (res)
+            {
+                finalizeNewTask();
 
-        if (!read_task_callback.has_value() || !res)
+                // String result;
+
+                // result += fmt::format("Got task with ranges \n");
+                // for (auto range : task->mark_ranges)
+                //     result += fmt::format("({} {}), ", range.begin, range.end);
+                // result += fmt::format("\n");
+
+                // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
+            }
+
             return res;
+        }
+
+        if (!res)
+            return false;
+
+        String result;
+
+        // result += fmt::format("Got task with ranges \n");
+        // for (auto range : task->mark_ranges)
+        //     result += fmt::format("({} {}), ", range.begin, range.end);
+        // result += fmt::format("\n");
 
         String partition_id = task->data_part->info.partition_id;
         String part_name;
@@ -122,6 +148,15 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (responce.denied)
             continue;
 
+        // result += fmt::format("After coordination\n");
+        // for (auto range : task->mark_ranges)
+        //     result += fmt::format("({} {}), ", range.begin, range.end);
+        // result += fmt::format("\n");
+
+
+        // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
+
+        finalizeNewTask();
         return true;
     }
 }
