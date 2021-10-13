@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop database if exists db_hang;
 drop database if exists db_hang_temp;
 create database db_hang engine=Ordinary;
