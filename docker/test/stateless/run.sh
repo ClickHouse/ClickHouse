@@ -45,23 +45,6 @@ else
     sudo clickhouse start
 fi
 
-echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-detach
-quit
-" > script.gdb
-
-# FIXME Hung check may work incorrectly because of attached gdb
-# 1. False positives are possible
-# 2. We cannot attach another gdb to get stacktraces if some queries hung
-gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
-
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
 
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
