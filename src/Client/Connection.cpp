@@ -1,3 +1,4 @@
+#include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -9,8 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeWriter.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -21,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
+#include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
@@ -56,6 +58,35 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+}
+
+Connection::~Connection() = default;
+
+Connection::Connection(const String & host_, UInt16 port_,
+    const String & default_database_,
+    const String & user_, const String & password_,
+    const String & cluster_,
+    const String & cluster_secret_,
+    const String & client_name_,
+    Protocol::Compression compression_,
+    Protocol::Secure secure_,
+    Poco::Timespan sync_request_timeout_)
+    : host(host_), port(port_), default_database(default_database_)
+    , user(user_), password(password_)
+    , cluster(cluster_)
+    , cluster_secret(cluster_secret_)
+    , client_name(client_name_)
+    , compression(compression_)
+    , secure(secure_)
+    , sync_request_timeout(sync_request_timeout_)
+    , log_wrapper(*this)
+{
+    /// Don't connect immediately, only on first need.
+
+    if (user.empty())
+        user = "default";
+
+    setDescription();
 }
 
 
@@ -506,6 +537,7 @@ void Connection::sendQuery(
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
+    block_profile_events_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -533,11 +565,11 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
+            maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
     if (scalar)
@@ -841,6 +873,10 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
+            case Protocol::Server::ProfileEvents:
+                res.block = receiveProfileEvents();
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -866,18 +902,18 @@ Packet Connection::receivePacket()
 Block Connection::receiveData()
 {
     initBlockInput();
-    return receiveDataImpl(block_in);
+    return receiveDataImpl(*block_in);
 }
 
 
 Block Connection::receiveLogData()
 {
     initBlockLogsInput();
-    return receiveDataImpl(block_logs_in);
+    return receiveDataImpl(*block_logs_in);
 }
 
 
-Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
+Block Connection::receiveDataImpl(NativeReader & reader)
 {
     String external_table_name;
     readStringBinary(external_table_name, *in);
@@ -885,12 +921,19 @@ Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = stream->read();
+    Block res = reader.read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
 
     return res;
+}
+
+
+Block Connection::receiveProfileEvents()
+{
+    initBlockProfileEventsInput();
+    return receiveDataImpl(*block_profile_events_in);
 }
 
 
@@ -912,7 +955,7 @@ void Connection::initBlockInput()
                 maybe_compressed_in = in;
         }
 
-        block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
+        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
     }
 }
 
@@ -922,7 +965,16 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
+        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+    }
+}
+
+
+void Connection::initBlockProfileEventsInput()
+{
+    if (!block_profile_events_in)
+    {
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
     }
 }
 
