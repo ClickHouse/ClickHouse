@@ -527,6 +527,7 @@ if (ENABLE_TESTS AND USE_GTEST)
 
     target_link_libraries(unit_tests_dbms PRIVATE
         ${GTEST_BOTH_LIBRARIES}
+        common
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

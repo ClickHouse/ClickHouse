@@ -143,31 +143,11 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
                 result.push_back(range);
             else
             {
-                String anime;
-
-                anime += fmt::format("Intersection for range: {} {} \n", range.begin, range.end);
-                anime += fmt::format("Number of itersections has to be: {} \n", number_of_mark_intersection);
-                for (const auto & item: marks_it->second.getIntersectingRanges(range))
-                {
-                    anime += fmt::format("{} {} \n", item.begin, item.end);
-                }
-                anime += "######################\n";
-
                 auto new_ranges = marks_it->second.getNewRanges(range);
 
                 for (const auto & new_range : new_ranges)
                     result.push_back(new_range);
-
-
-                for (const auto & item: new_ranges)
-                {
-                    anime += fmt::format("{} {} \n", item.begin, item.end);
-                }
-                anime += "######################\n";
-
-                // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), anime);
             }
-
         }
 
         if (result.empty())

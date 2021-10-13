@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fmt/format.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
@@ -139,10 +140,11 @@ struct MarkRangesIntersectionsIndex
     size_t numberOfIntersectionsWith(MarkRange range)
     {
         /// Find the first one that starts with a larger coordinate
-        auto right_iter = std::lower_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::FindByBeginGreater());
+        /// In terms of std::upper_bound we will find an iterator since which the predicate is true
+        auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::StartsInCoordinateGreaterOrEqualThanValue());
 
         /// Find the last that ends with a lower coordinate
-        auto left_iter = std::lower_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
+        auto left_iter = std::upper_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::EndsInCoordinateLessOrEqualThanValue());
 
         size_t result = by_begin.size();
         result -= std::distance(left_iter, by_begin.rend());
@@ -153,14 +155,15 @@ struct MarkRangesIntersectionsIndex
 
     std::vector<MarkRange> getIntersectingRanges(MarkRange range)
     {
-        std::vector<MarkRange> result;
-
         /// Find the first one that starts with a larger coordinate
-        auto right_iter = std::lower_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::FindByBeginGreater());
+        auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end,
+            MarkRangesIntersectionsIndex::StartsInCoordinateGreaterOrEqualThanValue());
 
         /// Find the last that ends with a lower coordinate
-        auto left_iter = std::lower_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::FindByEndLess());
+        auto left_iter = std::upper_bound(by_begin.rbegin(), by_begin.rend(), range.begin,
+            MarkRangesIntersectionsIndex::EndsInCoordinateLessOrEqualThanValue());
 
+        std::vector<MarkRange> result;
         for (auto it = left_iter.base(); it != right_iter; ++it)
             result.push_back(*it);
 
@@ -172,7 +175,8 @@ struct MarkRangesIntersectionsIndex
         auto ranges = getIntersectingRanges(range);
         std::sort(ranges.begin(), ranges.end(), CompareByBegin());
 
-        assert(!ranges.empty());
+        if (ranges.empty())
+            throw std::runtime_error("Ranges empty!1");
 
         std::vector<MarkRange> gaps;
 
@@ -186,30 +190,30 @@ struct MarkRangesIntersectionsIndex
             prev_end = it->end;
         }
 
-
         if (range.end > ranges.back().end)
             gaps.push_back(MarkRange{ranges.back().end, range.end});
 
         return gaps;
     }
 
-    struct FindByBeginGreater : std::binary_function<bool, MarkRange, size_t>
+    /// Mark range is represented by a half-opened interval, the predicate checks the equility of boundaries
+    struct StartsInCoordinateGreaterOrEqualThanValue
     {
-        bool operator()(const MarkRange & rhs, size_t value) const
+        bool operator()(size_t value, const MarkRange & rhs) const
         {
-            return value > rhs.begin;
+            return rhs.begin >= value;
         }
     };
 
-    struct FindByEndLess : std::binary_function<bool, MarkRange, size_t>
+    struct EndsInCoordinateLessOrEqualThanValue
     {
-        bool operator()(const MarkRange & lhs, size_t value) const
+        bool operator()(size_t value, const MarkRange & lhs) const
         {
-            return value < lhs.end;
+            return lhs.end <= value;
         }
     };
 
-    struct CompareByBegin : std::binary_function<bool, MarkRange, MarkRange>
+    struct CompareByBegin
     {
         bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
         {
@@ -220,7 +224,7 @@ struct MarkRangesIntersectionsIndex
     };
 
 
-    struct CompareByEnd : std::binary_function<bool, MarkRange, MarkRange>
+    struct CompareByEnd
     {
         bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
         {
