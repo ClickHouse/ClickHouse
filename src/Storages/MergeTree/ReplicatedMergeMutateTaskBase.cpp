@@ -122,10 +122,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(
-            &(*merge_mutate_entry)->memory_tracker,
-            (*merge_mutate_entry)->max_untracked_memory,
-            (*merge_mutate_entry)->query_id);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
 
     auto remove_processed_entry = [&] () -> bool
     {
