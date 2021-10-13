@@ -242,7 +242,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
-    if (isComma(kind) || isCross(kind))
+    if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
         sample_block_with_columns_to_add = right_sample_block;
@@ -744,7 +744,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
-        if (storage_join_lock.mutex())
+        if (storage_join_lock)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 

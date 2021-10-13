@@ -20,7 +20,8 @@ enum class TraceType : uint8_t
     Real,
     CPU,
     Memory,
-    MemorySample
+    MemorySample,
+    MemoryPeak,
 };
 
 class TraceCollector

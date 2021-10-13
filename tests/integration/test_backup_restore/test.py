@@ -39,12 +39,10 @@ def get_last_backup_path(instance, database, table):
     return os.path.join(path_to_data, 'shadow', increment, 'data', database, table)
 
 def copy_backup_to_detached(instance, database, src_table, dst_table):
-    fp_increment = os.path.join(path_to_data, 'shadow/increment.txt')
-    increment = instance.exec_in_container(['cat',  fp_increment]).strip()
-    fp_backup = os.path.join(path_to_data, 'shadow', increment, 'data', database, src_table)
+    fp_backup = os.path.join(path_to_data, 'shadow', '*', 'data', database, src_table)
     fp_detached = os.path.join(path_to_data, 'data', database, dst_table, 'detached')
-    logging.debug(f'copy from {fp_backup} to {fp_detached}. increment {fp_increment}')
-    instance.exec_in_container(['cp', '-r', f'{fp_backup}', '-T' , f'{fp_detached}'])
+    logging.debug(f'copy from {fp_backup} to {fp_detached}')
+    instance.exec_in_container(['bash', '-c', f'cp -r {fp_backup} -T {fp_detached}'])
 
 def test_restore(started_cluster):
     instance.query("CREATE TABLE test.tbl1 AS test.tbl")

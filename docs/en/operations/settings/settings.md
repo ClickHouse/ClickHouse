@@ -3749,3 +3749,68 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
+
+Possible values:
+
+-   0 — Positional arguments aren't supported.
+-   1 — Positional arguments are supported: column numbers can use instead of column names.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Result:
+
+```text
+┌─one─┬─two─┬─three─┐
+│  30 │  10 │   20  │
+│  20 │  20 │   10  │
+│  10 │  20 │   30  │
+└─────┴─────┴───────┘
+```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization is disabled.
+-   1 — Automatic `PREWHERE` optimization is enabled.
+
+Default value: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
+-   1 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
