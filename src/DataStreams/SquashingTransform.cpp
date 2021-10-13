@@ -1,5 +1,4 @@
 #include <DataStreams/SquashingTransform.h>
-#include <iostream>
 
 
 namespace DB
@@ -68,6 +67,7 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
     }
 
     append<ReferenceType>(std::move(input_block));
+
     if (isEnoughSize(accumulated_block))
     {
         Block to_return;

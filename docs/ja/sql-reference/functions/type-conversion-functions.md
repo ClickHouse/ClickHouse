@@ -531,4 +531,4 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 同じように [parseDateTimeBestEffort](#parsedatetimebesteffort) ただし、処理できない日付形式が検出されたときにゼロの日付またはゼロの日付時刻を返します。
 
-[元の記事](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

@@ -1,0 +1,23 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+ADDINCL(
+    contrib/libs/libdivide
+    contrib/libs/pdqsort
+)
+
+PEERDIR(
+    clickhouse/src/Core
+    contrib/libs/libdivide
+    contrib/libs/pdqsort
+)
+
+NO_COMPILER_WARNINGS()
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F JIT | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

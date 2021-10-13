@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <remote_url_allow_hosts>
         <host>hdfs1:50070</host>
     </remote_url_allow_hosts>    
-</clickhouse>
+</yandex>

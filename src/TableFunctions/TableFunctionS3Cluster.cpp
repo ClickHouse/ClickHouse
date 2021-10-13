@@ -7,7 +7,7 @@
 #include <Storages/StorageS3Cluster.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -128,8 +128,6 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             ConstraintsDescription{},
             String{},
             context,
-            // No format_settings for S3Cluster
-            std::nullopt,
             compression_method,
             /*distributed_processing=*/true);
     }

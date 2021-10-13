@@ -33,7 +33,7 @@ def syntax_error():
     return (62, "Exception: Syntax error")
 
 def groups_frame_error():
-    return (48, "Exception: Window frame 'Groups' is not implemented")
+    return (48, "Exception: Window frame 'GROUPS' is not implemented")
 
 def getuid():
     if current().subtype == TestSubType.Example:
@@ -386,3 +386,23 @@ def create_table(self, name, statement, on_cluster=False):
                 node.query(f"DROP TABLE IF EXISTS {name} ON CLUSTER {on_cluster}")
             else:
                 node.query(f"DROP TABLE IF EXISTS {name}")
+
+@TestStep(Given)
+def allow_experimental_window_functions(self):
+    """Set allow_experimental_window_functions = 1
+    """
+    setting = ("allow_experimental_window_functions", 1)
+    default_query_settings = None
+
+    try:
+        with By("adding allow_experimental_window_functions to the default query settings"):
+            default_query_settings = getsattr(current().context, "default_query_settings", [])
+            default_query_settings.append(setting)
+        yield
+    finally:
+        with Finally("I remove allow_experimental_window_functions from the default query settings"):
+            if default_query_settings:
+                try:
+                    default_query_settings.pop(default_query_settings.index(setting))
+                except ValueError:
+                    pass

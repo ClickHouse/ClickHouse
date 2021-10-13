@@ -8,12 +8,12 @@
 #include <string>
 #include <limits>
 
-#include <base/preciseExp10.h>
-#include <base/types.h>
-#include <base/DateLUT.h>
+#include <common/preciseExp10.h>
+#include <common/types.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Types.h>
-#include <base/LocalDateTime.h>
+#include <common/LocalDateTime.h>
 
 
 namespace mysqlxx
