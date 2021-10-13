@@ -22,7 +22,7 @@ namespace ErrorCodes
 ODBCSource::ODBCSource(
     nanodbc::ConnectionHolderPtr connection_holder, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
     : ISource(sample_block)
-    , log(&Poco::Logger::get("ODBCBlockInputStream"))
+    , log(&Poco::Logger::get("ODBCSource"))
     , max_block_size{max_block_size_}
     , query(query_str)
 {
