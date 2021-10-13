@@ -240,6 +240,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         query->database = database;
         query->table = table;
+
+        if (database)
+            query->children.push_back(database);
+        if (table)
+            query->children.push_back(table);
     }
 
     tryGetIdentifierNameInto(format, query->format);
@@ -251,10 +256,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->data = data != end ? data : nullptr;
     query->end = end;
 
-    if (database)
-        query->children.push_back(database);
-    if (table)
-        query->children.push_back(table);
     if (columns)
         query->children.push_back(columns);
     if (select)
