@@ -62,13 +62,14 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 class MemoryTrackerThreadSwitcher : boost::noncopyable
 {
 public:
-    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit);
+    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit, const std::string & query_id);
     ~MemoryTrackerThreadSwitcher();
 private:
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
     UInt64 prev_untracked_memory_limit;
     UInt64 prev_untracked_memory;
+    String prev_query_id;
 };
 
 using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
@@ -107,6 +108,7 @@ struct MergeListElement : boost::noncopyable
 
     MemoryTracker memory_tracker{VariableContext::Process};
     UInt64 max_untracked_memory;
+    std::string query_id;
 
     UInt64 thread_id;
     MergeType merge_type;
