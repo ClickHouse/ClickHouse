@@ -1225,7 +1225,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     {
                         bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
                         executeTotalsAndHaving(
-                            query_plan, expressions.hasHaving(), expressions.before_having, aggregate_overflow_row, final);
+                            query_plan, expressions.hasHaving(), expressions.before_having, expressions.remove_having_filter, aggregate_overflow_row, final);
                     }
 
                     if (query.group_by_with_rollup)
@@ -1239,11 +1239,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                             throw Exception(
                                 "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING",
                                 ErrorCodes::NOT_IMPLEMENTED);
-                        executeHaving(query_plan, expressions.before_having);
+                        executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
                     }
                 }
                 else if (expressions.hasHaving())
-                    executeHaving(query_plan, expressions.before_having);
+                    executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
                 throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
@@ -2108,10 +2108,10 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 }
 
 
-void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
+void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto having_step
-        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), false);
+        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), remove_filter);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
@@ -2119,7 +2119,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 
 
 void InterpreterSelectQuery::executeTotalsAndHaving(
-    QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool overflow_row, bool final)
+    QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -2128,6 +2128,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
         overflow_row,
         expression,
         has_having ? getSelectQuery().having()->getColumnName() : "",
+        remove_filter,
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);
