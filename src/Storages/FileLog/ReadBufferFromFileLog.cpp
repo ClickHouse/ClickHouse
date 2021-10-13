@@ -107,7 +107,7 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         auto & file_meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
 
         if (!file_ctx.reader)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} does not initialized.", file_meta.file_name);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} does not initialized", file_meta.file_name);
 
         auto & reader = file_ctx.reader.value();
         Record record;
