@@ -65,7 +65,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
-    if (query.getDatabase().empty() && query.getDatabase().empty())
+    if (query.getDatabase().empty() && query.getTable().empty())
     {
         query.table_id = getContext()->resolveStorageID(query.table_id);
     }
