@@ -156,6 +156,11 @@ def build_website(args):
         os.path.join(args.src_dir, 'utils', 'list-versions', 'version_date.tsv'),
         os.path.join(args.output_dir, 'data', 'version_date.tsv'))
 
+    # This file can be requested to install ClickHouse.
+    shutil.copy2(
+        os.path.join(args.src_dir, 'docs', '_includes', 'install', 'universal.sh'),
+        os.path.join(args.output_dir, 'data', 'install.sh'))
+
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
             if filename == 'main.html':
@@ -218,7 +223,7 @@ def minify_file(path, css_digest, js_digest):
 # TODO: restore cssmin
 #     elif path.endswith('.css'):
 #         content = cssmin.cssmin(content)
-# TODO: restore jsmin    
+# TODO: restore jsmin
 #     elif path.endswith('.js'):
 #         content = jsmin.jsmin(content)
     with open(path, 'wb') as f:

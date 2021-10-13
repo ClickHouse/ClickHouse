@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
@@ -646,18 +647,19 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 {
     String query;
 
-    try
+    int metadata_file_fd = ::open(metadata_file_path.c_str(), O_RDONLY | O_CLOEXEC);
+
+    if (metadata_file_fd == -1)
     {
-        ReadBufferFromFile in(metadata_file_path, METADATA_FILE_BUFFER_SIZE);
-        readStringUntilEOF(query, in);
-    }
-    catch (const Exception & e)
-    {
-        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        if (errno == ENOENT && !throw_on_error)
             return nullptr;
-        else
-            throw;
+
+        throwFromErrnoWithPath("Cannot open file " + metadata_file_path, metadata_file_path,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
     }
+
+    ReadBufferFromFile in(metadata_file_fd, metadata_file_path, METADATA_FILE_BUFFER_SIZE);
+    readStringUntilEOF(query, in);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
