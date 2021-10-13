@@ -43,6 +43,8 @@
 
 #include <re2/re2.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -93,7 +95,7 @@ public:
     virtual void backup(size_t len) override { out.position() -= len; }
 
     virtual uint64_t byteCount() const override { return out.count(); }
-    virtual void flush() override { out.next(); }
+    virtual void flush() override { /* out.next(); */}
 
 private:
     WriteBuffer & out;
@@ -385,12 +387,8 @@ AvroRowOutputFormat::AvroRowOutputFormat(
     WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_, params_)
     , settings(settings_)
+    , params(params_)
     , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
-    , file_writer(
-        std::make_unique<OutputStreamWriteBufferAdapter>(out_),
-        serializer.getSchema(),
-        settings.avro.output_sync_interval,
-        getCodec(settings.avro.output_codec))
 {
 }
 
@@ -398,19 +396,71 @@ AvroRowOutputFormat::~AvroRowOutputFormat() = default;
 
 void AvroRowOutputFormat::writePrefix()
 {
-    file_writer.syncIfNeeded();
+    file_writer_ptr = std::make_unique<avro::DataFileWriterBase>(
+        std::make_unique<OutputStreamWriteBufferAdapter>(out),
+        serializer.getSchema(),
+        settings.avro.output_sync_interval,
+        getCodec(settings.avro.output_codec));
+
+    file_writer_ptr->syncIfNeeded();
 }
 
 void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    file_writer.syncIfNeeded();
-    serializer.serializeRow(columns, row_num, file_writer.encoder());
-    file_writer.incr();
+    file_writer_ptr->syncIfNeeded();
+    serializer.serializeRow(columns, row_num, file_writer_ptr->encoder());
+    file_writer_ptr->incr();
 }
 
 void AvroRowOutputFormat::writeSuffix()
 {
-    file_writer.close();
+    file_writer_ptr.reset();
+}
+
+void AvroRowOutputFormat::consume(DB::Chunk chunk)
+{
+    LOG_TRACE(&Poco::Logger::get("AvroBlockOutputFormat"), "top of consume");
+
+    if (params.callback)
+        consumeImplCallback(std::move(chunk));
+    else
+        consumeImpl(std::move(chunk));
+}
+
+void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
+{
+    auto num_rows = chunk.getNumRows();
+    const auto & columns = chunk.getColumns();
+
+    writePrefix();
+    for (size_t row = 0; row < num_rows; ++row)
+        write(columns, row);
+
+    first_row = false;
+}
+
+void AvroRowOutputFormat::consumeImplCallback(DB::Chunk chunk)
+{
+    auto num_rows = chunk.getNumRows();
+    const auto & columns = chunk.getColumns();
+
+    for (size_t row = 0; row < num_rows;)
+    {
+        writePrefix();
+        for (size_t row_in_file = 0;
+             row_in_file < settings.avro.output_rows_in_file && row < num_rows;
+             ++row, ++row_in_file)
+        {
+            write(columns, row);
+        }
+
+
+        file_writer_ptr->flush();
+        writeSuffix();
+
+        params.callback(columns, num_rows);
+        first_row = false;
+    }
 }
 
 void registerOutputFormatProcessorAvro(FormatFactory & factory)
