@@ -1,9 +1,11 @@
 #include "ProgressIndication.h"
+#include <algorithm>
 #include <cstddef>
 #include <numeric>
 #include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
+#include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
 #include "IO/WriteBufferFromString.h"
@@ -114,16 +116,17 @@ UInt64 ProgressIndication::getApproximateCoresNumber() const
         });
 }
 
-UInt64 ProgressIndication::getMemoryUsage() const
+ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 {
-    return std::accumulate(thread_data.cbegin(), thread_data.cend(), ZERO,
-        [](UInt64 acc, auto const & host_data)
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
+        [](MemoryUsage const & acc, auto const & host_data)
         {
-            return acc + std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
+            auto host_usage = std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
                 [](UInt64 memory, auto const & data)
                 {
                     return memory + data.second.memory_usage;
                 });
+            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)}; 
         });
 }
 
@@ -202,11 +205,12 @@ void ProgressIndication::writeProgress()
         profiling_msg_builder << " Running " << threads_number << " threads on "
             << std::min(cores_number, threads_number) << " cores";
 
-        auto memory_usage = getMemoryUsage();
+        auto [memory_usage, max_host_usage] = getMemoryUsage();
         if (memory_usage != 0)
-            profiling_msg_builder << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used.";
-        else
-            profiling_msg_builder << ".";
+            profiling_msg_builder << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used";
+        if (thread_data.size() > 1 && max_host_usage)
+            profiling_msg_builder << " total (per host max: " << formatReadableSizeWithDecimalSuffix(max_host_usage) << ")";
+        profiling_msg_builder << ".";
         profiling_msg = profiling_msg_builder.str();
     }
 
