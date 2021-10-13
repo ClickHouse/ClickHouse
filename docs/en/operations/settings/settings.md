@@ -1786,14 +1786,16 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
-## distributed_push_down_limit (#distributed-push-down-limit}
+## distributed_push_down_limit {#distributed-push-down-limit}
 
-LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+Enables or disables [LIMIT](#limit) applying on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
 
 Possible values:
 
--  0 - Disabled
--  1 - Enabled
+-  0 - Disabled.
+-  1 - Enabled.
+
+Default value: `1`.
 
 !!! note "Note"
     That with this setting the result of the query may be inaccurate.
