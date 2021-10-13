@@ -21,7 +21,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 
 #include "registerTableFunctions.h"
 

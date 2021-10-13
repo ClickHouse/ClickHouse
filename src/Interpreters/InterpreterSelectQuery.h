@@ -108,7 +108,6 @@ private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        const BlockInputStreamPtr & input_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
@@ -122,7 +121,7 @@ private:
 
     Block getSampleBlockImpl();
 
-    void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
+    void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
 
@@ -198,7 +197,6 @@ private:
     TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
-    BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;

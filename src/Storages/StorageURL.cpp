@@ -13,7 +13,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>

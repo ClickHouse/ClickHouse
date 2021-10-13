@@ -1,6 +1,5 @@
 #include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
@@ -9,6 +8,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Columns/ColumnConst.h>
 
@@ -164,13 +164,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 
 Pipe::Pipe(ProcessorPtr source)
 {
-    if (auto * source_from_input_stream = typeid_cast<SourceFromInputStream *>(source.get()))
-    {
-        /// Special case for SourceFromInputStream. Will remove it later.
-        totals_port = source_from_input_stream->getTotalsPort();
-        extremes_port = source_from_input_stream->getExtremesPort();
-    }
-    else if (source->getOutputs().size() != 1)
+    if (source->getOutputs().size() != 1)
         checkSource(*source);
 
     if (collected_processors)

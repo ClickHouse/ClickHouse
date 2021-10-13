@@ -13,8 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <DataStreams/ITTLAlgorithm.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/queryToString.h>
 
