@@ -4408,15 +4408,16 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             ErrorCodes::LOGICAL_ERROR);
 
     auto block = metadata_snapshot->minmax_count_projection->sample_block;
+    bool need_primary_key_max_column = false;
     String primary_key_max_column_name;
     if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
-        primary_key_max_column_name = *(block.getNames().cend() - 2);
-    bool need_primary_key_max_column = std::any_of(
-        required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
+    {
+        primary_key_max_column_name = block.getNames()[ProjectionDescription::PRIMARY_KEY_MAX_COLUMN_POS];
+        need_primary_key_max_column = std::any_of(
+            required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
+    }
 
     auto minmax_count_columns = block.mutateColumns();
-    auto minmax_count_columns_size = minmax_count_columns.size();
-
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
         auto func = column.getAggregateFunction();
@@ -4460,26 +4461,25 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             continue;
         }
 
-        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
-        for (size_t i = 0; i < minmax_idx_size; ++i)
-        {
-            size_t min_pos = i * 2;
-            size_t max_pos = i * 2 + 1;
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[min_pos]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[max_pos]);
-            const auto & range = part->minmax_idx->hyperrectangle[i];
-            insert(min_column, range.left);
-            insert(max_column, range.right);
-        }
-
+        size_t pos = 0;
         if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
         {
             const auto & primary_key_column = *part->index[0];
             auto primary_key_column_size = primary_key_column.size();
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[minmax_count_columns_size - 3]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[minmax_count_columns_size - 2]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
             insert(min_column, primary_key_column[0]);
             insert(max_column, primary_key_column[primary_key_column_size - 1]);
+        }
+
+        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
+        for (size_t i = 0; i < minmax_idx_size; ++i)
+        {
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            const auto & range = part->minmax_idx->hyperrectangle[i];
+            insert(min_column, range.left);
+            insert(max_column, range.right);
         }
 
         {

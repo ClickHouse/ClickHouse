@@ -184,16 +184,16 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
-    for (const auto & column : minmax_columns)
-    {
-        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
-        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
-    }
     if (!primary_key_asts.empty())
     {
         select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
         select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
         result.has_primary_key_minmax = true;
+    }
+    for (const auto & column : minmax_columns)
+    {
+        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
     }
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
