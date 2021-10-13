@@ -38,7 +38,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Formats/NullFormat.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPipeline.h>
@@ -359,10 +359,10 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             current_format = "Vertical";
 
         /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        // if (!need_render_progress)
-        //     output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
-        // else
-        output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        if (!need_render_progress)
+            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        else
+            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->doWritePrefix();
     }
