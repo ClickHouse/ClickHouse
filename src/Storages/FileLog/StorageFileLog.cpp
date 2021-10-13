@@ -270,7 +270,7 @@ void StorageFileLog::deserialize()
         {
             throw Exception(
                 ErrorCodes::NOT_REGULAR_FILE,
-                "The file {} under {} is not a regular file when deserializing meta files.",
+                "The file {} under {} is not a regular file when deserializing meta files",
                 dir_entry.path().c_str(),
                 root_meta_path);
         }
@@ -281,12 +281,12 @@ void StorageFileLog::deserialize()
 
         if (!tryReadIntText(inode, in))
         {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", dir_entry.path().c_str());
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", dir_entry.path().c_str());
         }
         assertChar('\n', in);
         if (!tryReadIntText(last_written_pos, in))
         {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", dir_entry.path().c_str());
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", dir_entry.path().c_str());
         }
 
         meta.file_name = dir_entry.path().filename();
@@ -322,7 +322,7 @@ Pipe StorageFileLog::read(
     {
         throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Can not read from table {}, because it has been depended by other tables.",
+            "Can not read from table {}, because it has been depended by other tables",
             table_id.getTableName());
     }
 
@@ -433,7 +433,7 @@ void StorageFileLog::assertStreamGood(const std::ifstream & reader)
 {
     if (!reader.good())
     {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Stream is in bad state.");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Stream is in bad state");
     }
 }
 
@@ -457,7 +457,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "File {} has been broken.", file);
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "File {} has been broken", file);
             }
             /// update file end at the monment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -516,16 +516,16 @@ void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset)
 
     if (!tryReadIntText(_, in))
     {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", full_name);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
     assertChar('\n', in);
     if (!tryReadIntText(last_written_pos, in))
     {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed.", full_name);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
     if (last_written_pos > offset)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Last stored last_written_pos in meta file {} is bigger than current last_written_pos.", full_name);
+            ErrorCodes::LOGICAL_ERROR, "Last stored last_written_pos in meta file {} is bigger than current last_written_pos", full_name);
 }
 
 size_t StorageFileLog::getMaxBlockSize() const
@@ -633,7 +633,7 @@ bool StorageFileLog::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
