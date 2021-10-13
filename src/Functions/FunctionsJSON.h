@@ -1362,7 +1362,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        return std::make_unique<DataTypeString>();
+        return std::make_unique<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
@@ -1374,16 +1374,15 @@ public:
 
         auto object = element.getObject();
 
-        auto & col_arr = assert_cast<ColumnArray &>(dest);
-        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
-        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+        ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
+        auto & col_key = assert_cast<ColumnString &>(col_res.getData());
 
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
         }
 
-        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + object.size());
         return true;
     }
 };
