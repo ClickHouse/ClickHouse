@@ -7,6 +7,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
 add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 
+set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier")
+
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${Protobuf_INCLUDE_DIRS}")
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${LibProtobufMutator_SOURCE_DIR}")
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${LibProtobufMutator_SOURCE_DIR}/src")
