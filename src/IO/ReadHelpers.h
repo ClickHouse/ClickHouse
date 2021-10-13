@@ -276,11 +276,13 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         {
             case '+':
             {
+                /// 123+ or +123+, just stop after 123 or +123.
+                if (has_number)
+                    return ReturnType(true);
+
+                /// No digits read yet, but we already read sign, like ++, -+.
                 if (has_sign)
                 {
-                    if (has_number)
-                        return ReturnType(true);
-
                     if constexpr (throw_exception)
                         throw ParsingException(
                             "Cannot parse number with multiple sign (+/-) characters",
@@ -294,11 +296,11 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             }
             case '-':
             {
+                if (has_number)
+                    return ReturnType(true);
+
                 if (has_sign)
                 {
-                    if (has_number)
-                        return ReturnType(true);
-
                     if constexpr (throw_exception)
                         throw ParsingException(
                             "Cannot parse number with multiple sign (+/-) characters",
