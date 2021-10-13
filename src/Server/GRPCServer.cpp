@@ -10,6 +10,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/materializeBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -1118,7 +1119,7 @@ namespace
                     break;
 
                 if (block && !io.null_format)
-                    output_format_processor->write(block);
+                    output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
                 {
@@ -1364,7 +1365,7 @@ namespace
         WriteBufferFromString buf{*result.mutable_totals()};
         auto format = query_context->getOutputFormat(output_format, buf, totals);
         format->doWritePrefix();
-        format->write(totals);
+        format->write(materializeBlock(totals));
         format->doWriteSuffix();
     }
 
@@ -1376,7 +1377,7 @@ namespace
         WriteBufferFromString buf{*result.mutable_extremes()};
         auto format = query_context->getOutputFormat(output_format, buf, extremes);
         format->doWritePrefix();
-        format->write(extremes);
+        format->write(materializeBlock(extremes));
         format->doWriteSuffix();
     }
 
