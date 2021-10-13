@@ -211,7 +211,7 @@ def test_errors_handling():
     assert "Table default.t already exists" in e.display_text
 
 def test_authentication():
-    query("CREATE USER john IDENTIFIED BY 'qwe123'")
+    query("CREATE USER OR REPLACE john IDENTIFIED BY 'qwe123'")
     assert query("SELECT currentUser()", user_name="john", password="qwe123") == "john\n"
 
 def test_logs():
