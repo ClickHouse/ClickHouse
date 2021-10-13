@@ -4,9 +4,9 @@
 #include <Common/escapeForFileName.h>
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/TTLCalcInputStream.h>
+#include <DataStreams/SquashingTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>

@@ -35,7 +35,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
@@ -56,6 +55,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <boost/range/adaptor/filtered.hpp>
@@ -3481,9 +3481,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             buf,
             metadata_snapshot->getPartitionKey().sample_block,
             local_context->getSettingsRef().max_block_size);
-        auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
+        QueryPipeline pipeline(std::move(input_format));
+        PullingPipelineExecutor executor(pipeline);
 
-        auto block = input_stream->read();
+        Block block;
+        executor.pull(block);
+
         if (!block || !block.rows())
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str + "`",

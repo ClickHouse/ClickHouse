@@ -18,7 +18,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>

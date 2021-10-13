@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 

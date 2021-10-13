@@ -13,7 +13,6 @@
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MongoDBSource.h>
 

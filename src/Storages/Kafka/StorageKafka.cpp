@@ -16,7 +16,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
