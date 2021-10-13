@@ -187,7 +187,7 @@ public:
     /// it will do read in another session, that read may not see the
     /// already performed write.
 
-    void finalize()  override { finalize(false, false, "unknown"); }
+    void finalize(const String & reason)  override { finalize(false, false, reason); }
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
