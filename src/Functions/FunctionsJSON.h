@@ -1001,7 +1001,7 @@ struct JSONExtractTree
                 }
                 else
                 {
-                    for (auto [key, value] : object)
+                    for (auto & [key, value] : object)
                     {
                         auto index = name_to_index_map.find(key);
                         if (index != name_to_index_map.end())
@@ -1164,7 +1164,7 @@ public:
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = col_tuple.getColumn(1);
 
-        for (auto [key, value] : object)
+        for (auto & [key, value] : object)
         {
             if (extract_tree->insertResultToColumn(col_value, value))
                 col_key.insertData(key.data(), key.size());
@@ -1343,7 +1343,7 @@ public:
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = assert_cast<ColumnString &>(col_tuple.getColumn(1));
 
-        for (auto [key, value] : object)
+        for (auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {});
