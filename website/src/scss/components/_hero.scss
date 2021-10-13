@@ -28,3 +28,31 @@
 	margin-bottom: -160px;
 	padding-bottom: 160px;
 }
+
+.base-hero {
+	height:22.5vw;
+	max-height:324px;
+	min-height:280px;
+}
+.index-hero {
+  background-image:url('/images/backgrounds/bg-hero-home.svg');
+  height:68vw;
+  max-height:980px;
+  max-width:2448px;
+  width:170vw;
+}
+.other-hero {
+  background-image: url('/images/backgrounds/bg-hero.svg');
+  max-width: 2448px;
+  width: 170vw;
+}
+.bg-footer-cta {
+  background-image:url('/images/backgrounds/bg-footer-cta.svg');
+  width:2448px;
+}
+.quickstart-bg {
+  background-image:url('/images/backgrounds/bg-quick-start.svg');
+  height:40vw;
+  top:220px;
+  width:170vw;
+}
