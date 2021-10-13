@@ -8,6 +8,7 @@ import logging
 import io
 import string
 import ast
+import math
 
 import avro.schema
 import avro.io
@@ -1825,6 +1826,52 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 '''
 
     assert TSV(result) == TSV(expected)
+
+    kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_produce_consume_avro(kafka_cluster):
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+
+    topic_name = "insert_avro"
+    kafka_create_topic(admin_client, topic_name)
+
+    num_rows = 75
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka_writer;
+
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro',
+                     kafka_group_name = 'avro',
+                     kafka_format = 'Avro';
+
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro',
+                     kafka_group_name = 'avro',
+                     kafka_format = 'Avro';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.kafka;
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer select number*10 as key, number*100 as value from numbers({num_rows}) SETTINGS output_format_avro_rows_in_file = 7".format(num_rows=num_rows))
+
+    instance.wait_for_log_line("Committed offset {offset}".format(offset=math.ceil(num_rows/7)))
+
+    expected_num_rows = instance.query("SELECT COUNT(1) FROM test.view", ignore_error=True)
+    assert (int(expected_num_rows) == num_rows)
+
+    expected_max_key = instance.query("SELECT max(key) FROM test.view", ignore_error=True)
+    assert (int(expected_max_key) == (num_rows - 1) * 10)
 
     kafka_delete_topic(admin_client, topic_name)
 
