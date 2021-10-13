@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
@@ -41,7 +42,14 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
+        /// Remove table w/o lock since:
+        /// - it does not require it
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
+        SCOPE_EXIT(lock.lock());
+        lock.unlock();
         table->drop();
+
         if (table->storesDataOnDisk())
         {
             assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
