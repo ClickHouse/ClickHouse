@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <mongo1>
             <user>root</user>
@@ -9,4 +9,4 @@
             <table>simple_table</table>
         </mongo1>
     </named_collections>
-</yandex>
+</clickhouse>

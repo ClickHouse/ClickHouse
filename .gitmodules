@@ -252,3 +252,6 @@
 [submodule "contrib/libprotobuf-mutator"]
 	path = contrib/libprotobuf-mutator
 	url = https://github.com/google/libprotobuf-mutator
+[submodule "contrib/sysroot"]
+	path = contrib/sysroot
+	url = https://github.com/ClickHouse-Extras/sysroot.git

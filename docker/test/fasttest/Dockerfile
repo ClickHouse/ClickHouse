@@ -1,5 +1,5 @@
 #  docker build -t clickhouse/fasttest .
-FROM ubuntu:20.04
+FROM clickhouse/test-util
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
@@ -67,7 +67,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas Jinja2 pandas clickhouse_driver
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

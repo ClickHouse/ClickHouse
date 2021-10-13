@@ -13,6 +13,12 @@
     <create_query>create materialized view mv_4 engine = MergeTree order by tuple() as
         select number, toString(number) from main_table where number % 13 != 4;</create_query>
 
+    <fill_query>SYSTEM STOP MERGES main_table</fill_query>
+    <fill_query>SYSTEM STOP MERGES mt_1</fill_query>
+    <fill_query>SYSTEM STOP MERGES mt_2</fill_query>
+    <fill_query>SYSTEM STOP MERGES mt_3</fill_query>
+    <fill_query>SYSTEM STOP MERGES mt_4</fill_query>
+
     <query>insert into main_table select number from numbers(10000000)</query>
 
     <drop_query>drop table if exists main_table;</drop_query>

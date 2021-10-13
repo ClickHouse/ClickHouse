@@ -2,7 +2,7 @@
 
 #include <map>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>

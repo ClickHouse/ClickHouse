@@ -34,7 +34,7 @@ RUN apt-get update -y \
             postgresql-client \
             sqlite3
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas Jinja2 clickhouse_driver
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -60,6 +60,5 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
 COPY run.sh /
-COPY process_functional_tests_result.py /
 COPY setup_minio.sh /
 CMD ["/bin/bash", "/run.sh"]

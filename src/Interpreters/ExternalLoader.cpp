@@ -9,8 +9,8 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <common/chrono_io.h>
-#include <common/scope_guard_safe.h>
+#include <base/chrono_io.h>
+#include <base/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -1243,8 +1243,10 @@ private:
         {
             lock.unlock();
             {
-                std::lock_guard config_lock{config_mutex};
-                loading_dispatcher.setConfiguration(config_files_reader.read());
+                {
+                    std::lock_guard config_lock{config_mutex};
+                    loading_dispatcher.setConfiguration(config_files_reader.read());
+                }
                 loading_dispatcher.reloadOutdated();
             }
             lock.lock();
