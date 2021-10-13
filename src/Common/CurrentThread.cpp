@@ -91,6 +91,24 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
     return current_thread->getInternalTextLogsQueue();
 }
 
+void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachInternalProfileEventsQueue(queue);
+}
+
+InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
+        return nullptr;
+
+    return current_thread->getInternalProfileEventsQueue();
+}
+
 ThreadGroupStatusPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))

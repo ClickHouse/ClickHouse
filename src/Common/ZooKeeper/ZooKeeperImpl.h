@@ -187,7 +187,7 @@ public:
     /// it will do read in another session, that read may not see the
     /// already performed write.
 
-    void finalize()  override { finalize(false, false); }
+    void finalize(const String & reason)  override { finalize(false, false, reason); }
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
@@ -240,6 +240,8 @@ private:
     ThreadFromGlobalPool send_thread;
     ThreadFromGlobalPool receive_thread;
 
+    Poco::Logger * log;
+
     void connect(
         const Nodes & node,
         Poco::Timespan connection_timeout);
@@ -257,7 +259,7 @@ private:
     void close();
 
     /// Call all remaining callbacks and watches, passing errors to them.
-    void finalize(bool error_send, bool error_receive);
+    void finalize(bool error_send, bool error_receive, const String & reason);
 
     template <typename T>
     void write(const T &);
