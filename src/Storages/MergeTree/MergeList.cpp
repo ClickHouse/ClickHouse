@@ -34,6 +34,11 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
 
     prev_untracked_memory_limit = current_thread->untracked_memory_limit;
     current_thread->untracked_memory_limit = untracked_memory_limit;
+
+    /// Avoid accounting memory from another mutation/merge
+    /// (NOTE: consider moving such code to ThreadFromGlobalPool and related places)
+    prev_untracked_memory = current_thread->untracked_memory;
+    current_thread->untracked_memory = 0;
 }
 
 
@@ -45,6 +50,7 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
 
     current_thread->untracked_memory_limit = prev_untracked_memory_limit;
+    current_thread->untracked_memory = prev_untracked_memory;
 }
 
 MergeListElement::MergeListElement(
