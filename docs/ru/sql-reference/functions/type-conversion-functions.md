@@ -92,7 +92,7 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 
 ## toInt(8\|16\|32\|64\|128\|256)OrDefault {#toint8163264128256orDefault}
 
-Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось - возвращает значение по умолчанию.
+Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось —  возвращает значение по умолчанию.
 
 **Пример**
 
@@ -109,7 +109,6 @@ SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe1
 │                                          123123 │                                               -1 │
 └─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
 ```
-
 
 ## toUInt(8\|16\|32\|64\|256) {#touint8163264}
 
@@ -362,14 +361,14 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 ```
 
 
-## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ornull}
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
 
 Преобразует входную строку в значение с типом данных [Decimal(P,S)](../../sql-reference/data-types/decimal.md). Семейство функций включает в себя:
 
--   `toDecimal32OrDefault(expr, S)` — Возвращает значение типа `Decimal32(S)` data type.
--   `toDecimal64OrDefault(expr, S)` — Возвращает значение типа `Decimal64(S)` data type.
--   `toDecimal128OrDefault(expr, S)` — Возвращает значение типа `Decimal128(S)` data type.
--   `toDecimal256OrDefault(expr, S)` — Возвращает значение типа `Decimal256(S)` data type.
+-   `toDecimal32OrDefault(expr, S)` — возвращает значение типа `Decimal32(S)`.
+-   `toDecimal64OrDefault(expr, S)` — возвращает значение типа `Decimal64(S)`.
+-   `toDecimal128OrDefault(expr, S)` — возвращает значение типа `Decimal128(S)`.
+-   `toDecimal256OrDefault(expr, S)` — возвращает значение типа `Decimal256(S)`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать значение по умолчанию вместо исключения.
 
@@ -854,10 +853,8 @@ SELECT
 ```
 
 
-
-## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_null}
-
-Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если указано.
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
+Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если оно указано.
 
 **Синтаксис**
 
@@ -869,7 +866,7 @@ accurateCastOrDefault(x, T)
 
 -   `x` — входное значение.
 -   `T` — имя возвращаемого типа данных.
--   `default_value` - значение по умолчанию возвращаемого типа данных.
+-   `default_value` — значение по умолчанию возвращаемого типа данных.
 
 **Возвращаемое значение**
 

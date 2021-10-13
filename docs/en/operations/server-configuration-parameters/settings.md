@@ -71,9 +71,9 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 ## encryption {#server-settings-encryption}
 
-It configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
-Keys can be hex or string with the length equal to 16 bytes.
+Keys can be hex or string with a length equal to 16 bytes.
 
 **Example**
 
