@@ -173,8 +173,6 @@ DictionaryPtr createLayout(const std::string & ,
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The 'key' should consist of a single attribute for a polygon dictionary");
 
-    IPolygonDictionary::Configuration configuration;
-
     const auto key_type = (*dict_struct.key)[0].type;
     const auto f64 = std::make_shared<DataTypeFloat64>();
     const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
@@ -182,25 +180,28 @@ DictionaryPtr createLayout(const std::string & ,
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
     const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
 
+    IPolygonDictionary::InputType input_type;
+    IPolygonDictionary::PointType point_type;
+
     if (key_type->equals(multi_polygon_array))
     {
-        configuration.input_type = IPolygonDictionary::InputType::MultiPolygon;
-        configuration.point_type = IPolygonDictionary::PointType::Array;
+        input_type = IPolygonDictionary::InputType::MultiPolygon;
+        point_type = IPolygonDictionary::PointType::Array;
     }
     else if (key_type->equals(multi_polygon_tuple))
     {
-        configuration.input_type = IPolygonDictionary::InputType::MultiPolygon;
-        configuration.point_type = IPolygonDictionary::PointType::Tuple;
+        input_type = IPolygonDictionary::InputType::MultiPolygon;
+        point_type = IPolygonDictionary::PointType::Tuple;
     }
     else if (key_type->equals(simple_polygon_array))
     {
-        configuration.input_type = IPolygonDictionary::InputType::SimplePolygon;
-        configuration.point_type = IPolygonDictionary::PointType::Array;
+        input_type = IPolygonDictionary::InputType::SimplePolygon;
+        point_type = IPolygonDictionary::PointType::Array;
     }
     else if (key_type->equals(simple_polygon_tuple))
     {
-        configuration.input_type = IPolygonDictionary::InputType::SimplePolygon;
-        configuration.point_type = IPolygonDictionary::PointType::Tuple;
+        input_type = IPolygonDictionary::InputType::SimplePolygon;
+        point_type = IPolygonDictionary::PointType::Tuple;
     }
     else
     {
@@ -218,7 +219,12 @@ DictionaryPtr createLayout(const std::string & ,
     config.keys(layout_prefix, keys);
     const auto & dict_prefix = layout_prefix + "." + keys.front();
 
-    configuration.store_polygon_key_column = config.getUInt(dict_prefix + ".store_polygon_key_column", false);
+    IPolygonDictionary::Configuration configuration
+    {
+        .input_type = input_type,
+        .point_type = point_type,
+        .store_polygon_key_column = config.getBool(dict_prefix + ".store_polygon_key_column", false)
+    };
 
     if (dict_struct.range_min || dict_struct.range_max)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

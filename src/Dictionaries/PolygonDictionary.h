@@ -52,12 +52,12 @@ public:
 
     struct Configuration
     {
-        /// Store polygon key column. That will allow to read columns from polygon dictionary.
-        bool store_polygon_key_column = false;
-
         InputType input_type = InputType::MultiPolygon;
 
         PointType point_type = PointType::Array;
+
+        /// Store polygon key column. That will allow to read columns from polygon dictionary.
+        bool store_polygon_key_column = false;
     };
 
     IPolygonDictionary(
