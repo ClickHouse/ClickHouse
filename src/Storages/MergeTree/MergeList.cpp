@@ -10,7 +10,8 @@ namespace DB
 {
 
 
-MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit, const std::string & query_id)
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_)
+    : merge_list_entry(merge_list_entry_)
 {
     // Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
@@ -29,19 +30,19 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
         }
 
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-        background_thread_memory_tracker->setParent(memory_tracker_ptr);
+        background_thread_memory_tracker->setParent(&merge_list_entry->memory_tracker);
     }
 
     prev_untracked_memory_limit = current_thread->untracked_memory_limit;
-    current_thread->untracked_memory_limit = untracked_memory_limit;
+    current_thread->untracked_memory_limit = merge_list_entry->max_untracked_memory;
 
     /// Avoid accounting memory from another mutation/merge
     /// (NOTE: consider moving such code to ThreadFromGlobalPool and related places)
     prev_untracked_memory = current_thread->untracked_memory;
-    current_thread->untracked_memory = 0;
+    current_thread->untracked_memory = merge_list_entry->untracked_memory;
 
     prev_query_id = current_thread->getQueryId().toString();
-    current_thread->setQueryId(query_id);
+    current_thread->setQueryId(merge_list_entry->query_id);
 }
 
 
@@ -53,7 +54,10 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
 
     current_thread->untracked_memory_limit = prev_untracked_memory_limit;
+
+    merge_list_entry->untracked_memory = current_thread->untracked_memory;
     current_thread->untracked_memory = prev_untracked_memory;
+
     current_thread->setQueryId(prev_query_id);
 }
 
