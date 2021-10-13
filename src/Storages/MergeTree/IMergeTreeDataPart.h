@@ -1,12 +1,15 @@
 #pragma once
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Core/Block.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -55,8 +58,6 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
-
     using Type = MergeTreeDataPartType;
 
 
@@ -103,15 +104,8 @@ public:
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
-    /// NOTE: Returns zeros if secondary indexes are not found in checksums.
-    /// Otherwise return information about secondary index size on disk.
-    IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
-
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
-
-    /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -184,7 +178,6 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
-    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -230,6 +223,12 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
+    static constexpr auto all_part_states =
+    {
+        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
+        State::DeleteOnDestroy
+    };
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -239,10 +238,14 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
-    constexpr std::string_view stateString() const { return stateString(state); }
+    /// Returns name of state
+    static String stateToString(State state);
+    String stateString() const;
 
-    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
+    String getNameWithState() const
+    {
+        return name + " (state " + stateString() + ")";
+    }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
@@ -298,9 +301,7 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
-
-    MinMaxIndexPtr minmax_idx;
+    MinMaxIndex minmax_idx;
 
     Checksums checksums;
 
@@ -351,9 +352,7 @@ public:
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
-
-    /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix) const;
 
@@ -375,7 +374,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadata file names without checksums. For example,
+    /// Return set of metadat file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
@@ -407,10 +406,6 @@ protected:
 
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
-
-    ColumnSize total_secondary_indices_size;
-
-    IndexSizeByName secondary_index_sizes;
 
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -465,10 +460,6 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    void calculateColumnsSizesOnDisk();
-
-    void calculateSecondaryIndicesSizesOnDisk();
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

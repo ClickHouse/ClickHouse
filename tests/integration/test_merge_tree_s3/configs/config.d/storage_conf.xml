@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <storage_configuration>
         <disks>
             <s3>
@@ -8,13 +8,6 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </s3>
-            <unstable_s3>
-                <type>s3</type>
-                <endpoint>http://resolver:8081/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <s3_max_single_read_retries>10</s3_max_single_read_retries>
-            </unstable_s3>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -31,17 +24,10 @@
                     </external>
                 </volumes>
             </s3>
-            <unstable_s3>
-                <volumes>
-                    <main>
-                        <disk>unstable_s3</disk>
-                    </main>
-                </volumes>
-            </unstable_s3>
         </policies>
     </storage_configuration>
 
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
-</clickhouse>
+</yandex>

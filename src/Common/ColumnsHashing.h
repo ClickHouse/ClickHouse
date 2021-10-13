@@ -6,7 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/LRUCache.h>
 #include <Common/assert_cast.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>

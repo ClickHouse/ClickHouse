@@ -16,7 +16,7 @@
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 
 #include <mutex>

@@ -10,22 +10,17 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     bool force_,
     const String & column_name_,
     const ExpressionActionsPtr & default_expression_,
-    const String & default_column_name_,
-    bool is_compact_part_)
+    const String & default_column_name_)
     : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
-    , is_compact_part(is_compact_part_)
 {
     if (!isMinTTLExpired())
     {
         new_ttl_info = old_ttl_info;
         is_fully_empty = false;
     }
-
-    if (isMaxTTLExpired())
-        new_ttl_info.finished = true;
 }
 
 void TTLColumnAlgorithm::execute(Block & block)
@@ -42,7 +37,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         return;
 
     /// Later drop full column
-    if (isMaxTTLExpired() && !is_compact_part)
+    if (isMaxTTLExpired())
         return;
 
     auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);

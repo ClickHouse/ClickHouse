@@ -1,5 +1,4 @@
 #include <Coordination/KeeperServer.h>
-#include <Coordination/Defines.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -358,7 +357,7 @@ void KeeperServer::waitInit()
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 
-std::vector<int64_t> KeeperServer::getDeadSessions()
+std::unordered_set<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
 }

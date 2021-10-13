@@ -19,9 +19,6 @@ public:
         return name;
     }
 
-protected:
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,

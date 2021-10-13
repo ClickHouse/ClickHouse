@@ -1,6 +1,6 @@
 #pragma once
 #include <array>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace Poco { namespace Net { class IPAddress; }}
 

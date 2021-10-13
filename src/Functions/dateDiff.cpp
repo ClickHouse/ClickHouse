@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 #include <type_traits>
 
@@ -55,7 +55,6 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
 
 #include <Common/hex.h>
@@ -15,13 +14,13 @@
 namespace DB
 {
 
-NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
+Block OpenTelemetrySpanLogElement::createBlock()
 {
     return {
-        {"trace_id", std::make_shared<DataTypeUUID>()},
-        {"span_id", std::make_shared<DataTypeUInt64>()},
-        {"parent_span_id", std::make_shared<DataTypeUInt64>()},
-        {"operation_name", std::make_shared<DataTypeString>()},
+        {std::make_shared<DataTypeUUID>(), "trace_id"},
+        {std::make_shared<DataTypeUInt64>(), "span_id"},
+        {std::make_shared<DataTypeUInt64>(), "parent_span_id"},
+        {std::make_shared<DataTypeString>(), "operation_name"},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
         // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
@@ -32,21 +31,16 @@ NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
         // Also subtraction of two DateTime64 points doesn't work, so you can't
         // get duration.
         // It is much less hassle to just use UInt64 of microseconds.
-        {"start_time_us", std::make_shared<DataTypeUInt64>()},
-        {"finish_time_us", std::make_shared<DataTypeUInt64>()},
-        {"finish_date", std::make_shared<DataTypeDate>()},
-        {"attribute", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {std::make_shared<DataTypeUInt64>(), "start_time_us"},
+        {std::make_shared<DataTypeUInt64>(), "finish_time_us"},
+        {std::make_shared<DataTypeDate>(), "finish_date"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "attribute.names"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "attribute.values"}
     };
 }
 
-NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
-{
-    return
-    {
-        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"},
-        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"}
-    };
-}
 
 void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
@@ -59,16 +53,17 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(start_time_us);
     columns[i++]->insert(finish_time_us);
     columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
+    columns[i++]->insert(attribute_names);
     // The user might add some ints values, and we will have Int Field, and the
     // insert will fail because the column requires Strings. Convert the fields
     // here, because it's hard to remember to convert them in all other places.
-
-    Map map(attribute_names.size());
-    for (size_t attr_idx = 0; attr_idx < map.size(); ++attr_idx)
+    Array string_values;
+    string_values.reserve(attribute_values.size());
+    for (const auto & value : attribute_values)
     {
-        map[attr_idx] = Tuple{attribute_names[attr_idx], toString(attribute_values[attr_idx])};
+        string_values.push_back(toString(value));
     }
-    columns[i++]->insert(map);
+    columns[i++]->insert(string_values);
 }
 
 

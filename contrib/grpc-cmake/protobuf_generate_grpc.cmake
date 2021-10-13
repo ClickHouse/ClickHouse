@@ -187,7 +187,7 @@ function(protobuf_generate_grpc)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND $<TARGET_FILE:protobuf::protoc>
+      COMMAND protobuf::protoc
       ARGS --${protobuf_generate_grpc_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --plugin=protoc-gen-grpc=$<TARGET_FILE:${protobuf_generate_grpc_PLUGIN}>

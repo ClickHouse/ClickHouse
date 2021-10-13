@@ -1,8 +1,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -309,14 +308,26 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
-void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
-{
-    expandDataByMask<char *>(data, mask, inverted);
-}
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t size = data.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    auto res = createView();
+
+    res->data.resize(limit);
+    for (size_t i = 0; i < limit; ++i)
+        res->data[i] = data[perm[i]];
+
+    return res;
 }
 
 ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
@@ -327,7 +338,6 @@ ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) 
 template <typename Type>
 ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
     auto res = createView();
 
     res->data.resize(limit);
@@ -491,9 +501,8 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
-            x.getTypeName(), Field::Types::AggregateFunctionState);
+        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
+                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)

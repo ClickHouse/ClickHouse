@@ -80,7 +80,6 @@ SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
-
 Result:
 
 ```text
@@ -322,7 +321,7 @@ Truncates sub-seconds.
 **Syntax**
 
 ``` sql
-toStartOfSecond(value, [timezone])
+toStartOfSecond(value[, timezone])
 ```
 
 **Arguments**
@@ -1015,7 +1014,7 @@ Result:
 
 ## dateName {#dataname}
 
-Returns specified part of date.
+Returns part of date with specified date part.
 
 **Syntax**
 
@@ -1025,13 +1024,13 @@ dateName(date_part, date)
 
 **Arguments**
 
--   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
--   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
+-   `date_part` - Date part. Possible values .
+-   `date` — Date [Date](../../sql-reference/data-types/date.md) or DateTime [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md).
+
 
 **Returned value**
 
--   The specified part of date.
+-   Specified date part of date.
 
 Type: [String](../../sql-reference/data-types/string.md#string)
 

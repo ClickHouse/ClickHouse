@@ -8,7 +8,7 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -115,8 +115,6 @@ void ODBCBlockInputStream::insertValue(
             assert_cast<ColumnFloat64 &>(column).insertValue(row.get<double>(idx));
             break;
         case ValueType::vtFixedString:[[fallthrough]];
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insert(row.get<std::string>(idx));
             break;

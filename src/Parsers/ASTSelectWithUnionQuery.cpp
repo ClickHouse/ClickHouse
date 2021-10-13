@@ -33,21 +33,18 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == Mode::ALL)
-            return "UNION ALL";
-        else if (mode == Mode::DISTINCT)
-            return "UNION DISTINCT";
-        else if (mode == Mode::INTERSECT)
-            return "INTERSECT";
-        else if (mode == Mode::EXCEPT)
-            return "EXCEPT";
-        return "";
+        if (mode == Mode::Unspecified)
+            return "";
+        else if (mode == Mode::ALL)
+            return " ALL";
+        else
+            return " DISTINCT";
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION"
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
@@ -78,7 +75,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
 bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
-    return set_of_modes.contains(Mode::DISTINCT) || set_of_modes.contains(Mode::INTERSECT) || set_of_modes.contains(Mode::EXCEPT);
+    return set_of_modes.contains(Mode::DISTINCT);
 }
 
 }
