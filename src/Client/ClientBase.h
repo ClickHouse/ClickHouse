@@ -9,6 +9,8 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
+#include <Storages/StorageFile.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace po = boost::program_options;
 
@@ -113,6 +115,7 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
