@@ -1,6 +1,7 @@
+#include <mutex>
 #include <Common/ThreadStatus.h>
 
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -123,10 +124,12 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_ids.emplace_back(thread_id);
+        thread_group->threads.insert(this);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
         fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
+        profile_queue_ptr = thread_group->profile_queue_ptr;
 
         if (global_context.expired())
             global_context = thread_group->global_context;
@@ -397,6 +400,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     finalizePerformanceCounters();
 
     /// Detach from thread group
+    {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->threads.erase(this);
+    }
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 

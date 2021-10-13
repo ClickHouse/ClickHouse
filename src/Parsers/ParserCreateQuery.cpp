@@ -481,7 +481,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (attach && s_from.ignore(pos, expected))
     {
-        ParserLiteral from_path_p;
+        ParserStringLiteral from_path_p;
         if (!from_path_p.parse(pos, from_path, expected))
             return false;
     }
@@ -896,7 +896,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
-        ParserLiteral literal_p;
+        ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }

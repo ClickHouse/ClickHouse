@@ -289,7 +289,7 @@ ZooKeeper::~ZooKeeper()
 {
     try
     {
-        finalize(false, false);
+        finalize(false, false, "Destructor called");
 
         if (send_thread.joinable())
             send_thread.join();
@@ -299,7 +299,7 @@ ZooKeeper::~ZooKeeper()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 }
 
@@ -317,6 +317,7 @@ ZooKeeper::ZooKeeper(
     session_timeout(session_timeout_),
     operation_timeout(std::min(operation_timeout_, session_timeout_))
 {
+    log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!root_path.empty())
@@ -449,6 +450,10 @@ void ZooKeeper::connect(
 
         message << fail_reasons.str() << "\n";
         throw Exception(message.str(), Error::ZCONNECTIONLOSS);
+    }
+    else
+    {
+        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}", socket.peerAddress().toString(), session_id);
     }
 }
 
@@ -604,8 +609,8 @@ void ZooKeeper::sendThread()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize(true, false);
+        tryLogCurrentException(log);
+        finalize(true, false, "Exception in sendThread");
     }
 }
 
@@ -663,8 +668,8 @@ void ZooKeeper::receiveThread()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize(false, true);
+        tryLogCurrentException(log);
+        finalize(false, true, "Exception in receiveThread");
     }
 }
 
@@ -799,7 +804,7 @@ void ZooKeeper::receiveEvent()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         /// Unrecoverable. Don't leave incorrect state in memory.
         if (!response)
@@ -819,7 +824,7 @@ void ZooKeeper::receiveEvent()
         catch (...)
         {
             /// Throw initial exception, not exception from callback.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log);
         }
 
         throw;
@@ -832,10 +837,15 @@ void ZooKeeper::receiveEvent()
 }
 
 
-void ZooKeeper::finalize(bool error_send, bool error_receive)
+void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
-    if (finalization_started.exchange(true))
+    bool already_started = finalization_started.exchange(true);
+
+    LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_closed={}, reason={}",
+             session_id, already_started, requests_queue.isClosed(), reason);
+
+    if (already_started)
         return;
 
     auto expire_session_if_not_expired = [&]
@@ -860,7 +870,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
                 /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
                 expire_session_if_not_expired();
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
             }
 
             /// Send thread will exit after sending close request or on expired flag
@@ -879,7 +889,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
         catch (...)
         {
             /// We must continue to execute all callbacks, because the user is waiting for them.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log);
         }
 
         if (!error_receive && receive_thread.joinable())
@@ -908,7 +918,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                     catch (...)
                     {
                         /// We must continue to all other callbacks, because the user is waiting for them.
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        tryLogCurrentException(log);
                     }
                 }
             }
@@ -939,7 +949,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                         }
                         catch (...)
                         {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                            tryLogCurrentException(log);
                         }
                     }
                 }
@@ -967,7 +977,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        tryLogCurrentException(log);
                     }
                 }
             }
@@ -983,14 +993,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    tryLogCurrentException(log);
                 }
             }
         }
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 }
 
@@ -1028,7 +1038,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     }
     catch (...)
     {
-        finalize(false, false);
+        finalize(false, false, getCurrentExceptionMessage(false, false, false));
         throw;
     }
 
