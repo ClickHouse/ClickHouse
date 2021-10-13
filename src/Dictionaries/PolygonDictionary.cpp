@@ -130,13 +130,17 @@ Pipe IPolygonDictionary::read(const Names & column_names, size_t) const
     ColumnsWithTypeAndName result_columns;
     result_columns.reserve(column_names.size());
 
-    for (const auto & column_name : column_names) {
+    for (const auto & column_name : column_names)
+    {
         ColumnWithTypeAndName column_with_type;
 
-        if (column_name == dictionary_key_attribute.name) {
+        if (column_name == dictionary_key_attribute.name)
+        {
             column_with_type.column = key_attribute_column;
             column_with_type.type = dictionary_key_attribute.type;
-        } else {
+        }
+        else
+        {
             const auto & dictionary_attribute = dict_struct.getAttribute(column_name);
             size_t attribute_index = dict_struct.attribute_name_to_index.find(dictionary_attribute.name)->second;
 
