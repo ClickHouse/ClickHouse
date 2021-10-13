@@ -153,10 +153,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
 
             with node.cluster.shell(node.name) as bash:
                 bash.expect(bash.prompt)
-                bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
-                # make sure tail process is launched and started to follow the file
-                bash.expect("<==")
-                bash.expect("\n")
+                bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
                 with When("I add the config", description=config.path):
                     command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
@@ -173,10 +170,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
             with Finally(f"I remove {config.name}"):
                 with node.cluster.shell(node.name) as bash:
                     bash.expect(bash.prompt)
-                    bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
-                    # make sure tail process is launched and started to follow the file
-                    bash.expect("<==")
-                    bash.expect("\n")
+                    bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
                     with By("removing the config file", description=config.path):
                         node.command(f"rm -rf {config.path}", exitcode=0)
@@ -194,7 +188,7 @@ def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-se
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<clickhouse><ldap_servers></ldap_servers></clickhouse>")
+    root = xmltree.fromstring("<yandex><ldap_servers></ldap_servers></yandex>")
     xml_servers = root.find("ldap_servers")
     xml_servers.append(xmltree.Comment(text=f"LDAP servers {uid}"))
 
@@ -231,7 +225,7 @@ def create_ldap_users_config_content(*users, config_d_dir="/etc/clickhouse-serve
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<clickhouse><users></users></clickhouse>")
+    root = xmltree.fromstring("<yandex><users></users></yandex>")
     xml_users = root.find("users")
     xml_users.append(xmltree.Comment(text=f"LDAP users {uid}"))
 

@@ -1,8 +1,8 @@
 #include "SharedLibraryHandler.h"
 
-#include <base/scope_guard.h>
-#include <base/bit_cast.h>
-#include <base/find_symbols.h>
+#include <common/scope_guard.h>
+#include <common/bit_cast.h>
+#include <common/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 

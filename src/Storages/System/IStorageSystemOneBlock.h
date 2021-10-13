@@ -1,10 +1,8 @@
 #pragma once
-
-#include <Core/NamesAndAliases.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Pipe.h>
 
@@ -31,7 +29,6 @@ class IStorageSystemOneBlock : public IStorage
 protected:
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const = 0;
 
-
 public:
 #if defined(ARCADIA_BUILD)
     IStorageSystemOneBlock(const String & name_) : IStorageSystemOneBlock(StorageID{"system", name_}) {}
@@ -40,7 +37,7 @@ public:
     IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
+        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes()));
         setInMemoryMetadata(metadata_);
     }
 
@@ -65,8 +62,6 @@ public:
 
         return Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk)));
     }
-
-    static NamesAndAliases getNamesAndAliases() { return {}; }
 };
 
 }

@@ -1,11 +1,8 @@
 #include <DataTypes/Serializations/SerializationIP.h>
-
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/Exception.h>
 #include <Common/formatIPv6.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <Functions/FunctionsCoding.h>
 
 namespace DB
 {

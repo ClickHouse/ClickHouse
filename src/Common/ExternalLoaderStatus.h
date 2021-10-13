@@ -1,12 +1,13 @@
 #pragma once
 
 #include <vector>
-#include <base/EnumReflection.h>
-#include <base/types.h>
+#include <utility>
+#include <ostream>
+#include <common/types.h>
 
 namespace DB
 {
-    enum class ExternalLoaderStatus : Int8
+    enum class ExternalLoaderStatus
     {
         NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
         LOADED, /// Object has been loaded successfully.
@@ -17,14 +18,7 @@ namespace DB
         NOT_EXIST, /// Object with this name wasn't found in the configuration.
     };
 
-    inline std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
-    {
-        std::vector<std::pair<String, Int8>> out;
-        out.reserve(magic_enum::enum_count<ExternalLoaderStatus>());
-
-        for (const auto & [value, str] : magic_enum::enum_entries<ExternalLoaderStatus>())
-            out.emplace_back(std::string{str}, static_cast<Int8>(value));
-
-        return out;
-    }
+    String toString(ExternalLoaderStatus status);
+    std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
+    std::ostream & operator<<(std::ostream & out, ExternalLoaderStatus status);
 }

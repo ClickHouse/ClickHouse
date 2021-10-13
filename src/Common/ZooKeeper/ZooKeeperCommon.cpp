@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <array>
 
 
@@ -239,53 +239,6 @@ void ZooKeeperListResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(stat, out);
 }
 
-
-void ZooKeeperSetACLRequest::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(path, out);
-    Coordination::write(acls, out);
-    Coordination::write(version, out);
-}
-
-void ZooKeeperSetACLRequest::readImpl(ReadBuffer & in)
-{
-    Coordination::read(path, in);
-    Coordination::read(acls, in);
-    Coordination::read(version, in);
-}
-
-void ZooKeeperSetACLResponse::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(stat, out);
-}
-
-void ZooKeeperSetACLResponse::readImpl(ReadBuffer & in)
-{
-    Coordination::read(stat, in);
-}
-
-void ZooKeeperGetACLRequest::readImpl(ReadBuffer & in)
-{
-    Coordination::read(path, in);
-}
-
-void ZooKeeperGetACLRequest::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(path, out);
-}
-
-void ZooKeeperGetACLResponse::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(acl, out);
-    Coordination::write(stat, out);
-}
-
-void ZooKeeperGetACLResponse::readImpl(ReadBuffer & in)
-{
-    Coordination::read(acl, in);
-    Coordination::read(stat, in);
-}
-
 void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
@@ -501,8 +454,6 @@ ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::ma
 ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return std::make_shared<ZooKeeperCheckResponse>(); }
 ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return std::make_shared<ZooKeeperMultiResponse>(requests); }
 ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::make_shared<ZooKeeperCloseResponse>(); }
-ZooKeeperResponsePtr ZooKeeperSetACLRequest::makeResponse() const { return std::make_shared<ZooKeeperSetACLResponse>(); }
-ZooKeeperResponsePtr ZooKeeperGetACLRequest::makeResponse() const { return std::make_shared<ZooKeeperGetACLResponse>(); }
 
 void ZooKeeperSessionIDRequest::writeImpl(WriteBuffer & out) const
 {
@@ -536,139 +487,6 @@ void ZooKeeperSessionIDResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(session_id, out);
     Coordination::write(server_id, out);
 }
-
-
-void ZooKeeperRequest::createLogElements(LogElements & elems) const
-{
-    elems.emplace_back();
-    auto & elem =  elems.back();
-    elem.xid = xid;
-    elem.has_watch = has_watch;
-    elem.op_num = static_cast<uint32_t>(getOpNum());
-    elem.path = getPath();
-    elem.request_idx = elems.size() - 1;
-}
-
-
-void ZooKeeperCreateRequest::createLogElements(LogElements & elems) const
-{
-    ZooKeeperRequest::createLogElements(elems);
-    auto & elem =  elems.back();
-    elem.data = data;
-    elem.is_ephemeral = is_ephemeral;
-    elem.is_sequential = is_sequential;
-}
-
-void ZooKeeperRemoveRequest::createLogElements(LogElements & elems) const
-{
-    ZooKeeperRequest::createLogElements(elems);
-    auto & elem =  elems.back();
-    elem.version = version;
-}
-
-void ZooKeeperSetRequest::createLogElements(LogElements & elems) const
-{
-    ZooKeeperRequest::createLogElements(elems);
-    auto & elem =  elems.back();
-    elem.data = data;
-    elem.version = version;
-}
-
-void ZooKeeperCheckRequest::createLogElements(LogElements & elems) const
-{
-    ZooKeeperRequest::createLogElements(elems);
-    auto & elem =  elems.back();
-    elem.version = version;
-}
-
-void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
-{
-    ZooKeeperRequest::createLogElements(elems);
-    elems.back().requests_size = requests.size();
-    for (const auto & request : requests)
-    {
-        auto & req = dynamic_cast<ZooKeeperRequest &>(*request);
-        assert(!req.xid || req.xid == xid);
-        req.createLogElements(elems);
-    }
-}
-
-
-void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    auto & elem =  elems[idx];
-    assert(!elem.xid || elem.xid == xid);
-    elem.xid = xid;
-    int32_t response_op = tryGetOpNum();
-    assert(!elem.op_num || elem.op_num == response_op || response_op < 0);
-    elem.op_num = response_op;
-
-    elem.zxid = zxid;
-    elem.error = static_cast<Int32>(error);
-}
-
-void ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.watch_type = type;
-    elem.watch_state = state;
-    elem.path = path;
-}
-
-void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.path_created = path_created;
-}
-
-void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.stat = stat;
-}
-
-void ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.data = data;
-    elem.stat = stat;
-}
-
-void ZooKeeperSetResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.stat = stat;
-}
-
-void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.stat = stat;
-    elem.children = names;
-}
-
-void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    assert(idx == 0);
-    assert(elems.size() == responses.size() + 1);
-    ZooKeeperResponse::fillLogElements(elems, idx);
-    for (const auto & response : responses)
-    {
-        auto & resp = dynamic_cast<ZooKeeperResponse &>(*response);
-        assert(!resp.xid || resp.xid == xid);
-        assert(!resp.zxid || resp.zxid == zxid);
-        resp.xid = xid;
-        resp.zxid = zxid;
-        resp.fillLogElements(elems, ++idx);
-    }
-}
-
 
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {
@@ -727,8 +545,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
-    registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
-    registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
 }
 
 }

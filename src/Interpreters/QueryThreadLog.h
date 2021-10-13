@@ -49,8 +49,7 @@ struct QueryThreadLogElement
 
     static std::string name() { return "QueryThreadLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases();
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 

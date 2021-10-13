@@ -9,8 +9,10 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance('instance',
-        dictionaries=['configs/dictionaries/dict1.xml'], main_configs=['configs/config.d/config.xml'], stay_alive=True)
-
+        dictionaries=['configs/dictionaries/dict1.xml'],
+        main_configs=[
+            'configs/config.d/config.xml',
+            'configs/log_conf.xml'], stay_alive=True)
 
 def create_dict_simple():
     instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
@@ -25,7 +27,6 @@ def create_dict_simple():
         MAX_STORED_KEYS 1048576))
         LIFETIME(2) ;
     ''')
-
 
 @pytest.fixture(scope="module")
 def ch_cluster():

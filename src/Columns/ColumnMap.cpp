@@ -1,11 +1,11 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/map.h>
-#include <base/range.h>
+#include <common/map.h>
+#include <common/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -149,11 +149,6 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
-void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
-{
-    nested->expand(mask, inverted);
-}
-
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
     auto permuted = nested->permute(perm, limit);
@@ -276,10 +271,7 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();
-    const auto byte_size = compressed->byteSize();
-    /// The order of evaluation of function arguments is unspecified
-    /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
     {
         return ColumnMap::create(compressed->decompress());
     });

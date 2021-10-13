@@ -123,7 +123,7 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
 ## Optional External Libraries {#optional-external-libraries}
 
@@ -233,13 +233,11 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.com/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
-
-Writing tests: https://clickhouse.com/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
 List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
@@ -249,8 +247,8 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

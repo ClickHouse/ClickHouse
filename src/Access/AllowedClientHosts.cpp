@@ -1,7 +1,8 @@
 #include <Access/AllowedClientHosts.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
+#include <common/SimpleCache.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
 #include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>

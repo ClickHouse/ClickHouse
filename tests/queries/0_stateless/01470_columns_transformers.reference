@@ -54,8 +54,8 @@ SELECT
     sum(k)
 FROM columns_transformers
 SELECT
-    avg(i) + 1,
-    avg(j) + 2,
+    avg(i + 1 AS i),
+    avg(j + 2 AS j),
     avg(k)
 FROM columns_transformers
 SELECT

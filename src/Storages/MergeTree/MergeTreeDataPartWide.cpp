@@ -49,10 +49,13 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
+    auto new_settings = reader_settings;
+    new_settings.convert_nested_to_subcolumns = true;
+
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartWide>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
         ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings,
+        mark_cache, mark_ranges, new_settings,
         avg_value_size_hints, profile_callback);
 }
 
@@ -126,7 +129,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     }
     else
     {
-        auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
+        auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
         while (!buffer->eof())
         {
             buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block

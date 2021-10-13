@@ -5,7 +5,7 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -105,16 +105,12 @@ namespace MySQLReplication
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
         {
             typ = QUERY_EVENT_MULTI_TXN_FLAG;
-            if (!query.starts_with("COMMIT"))
-                transaction_complete = false;
         }
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
                 throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
-            if (!query.starts_with("XA COMMIT"))
-                transaction_complete = false;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
@@ -302,6 +298,7 @@ namespace MySQLReplication
     }
 
     /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
     /// MYSQL_TYPE_SET
     /// MYSQL_TYPE_TINY_BLOB
     /// MYSQL_TYPE_MEDIUM_BLOB
@@ -565,22 +562,6 @@ namespace MySQLReplication
                         row.push_back(dispatch((meta >> 8) & 0xFF, meta & 0xFF, read_decimal));
                         break;
                     }
-                    case MYSQL_TYPE_ENUM:
-                    {
-                        if ((meta & 0xFF) == 1)
-                        {
-                            UInt8 val = 0;
-                            payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                            row.push_back(Field{UInt8{val}});
-                        }
-                        else
-                        {
-                            UInt16 val = 0;
-                            payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                            row.push_back(Field{UInt16{val}});
-                        }
-                        break;
-                    }
                     case MYSQL_TYPE_VARCHAR:
                     case MYSQL_TYPE_VAR_STRING:
                     {
@@ -715,26 +696,9 @@ namespace MySQLReplication
     {
         switch (event->header.type)
         {
-            case FORMAT_DESCRIPTION_EVENT: {
-                binlog_pos = event->header.log_pos;
-                break;
-            }
-            case QUERY_EVENT: {
-                auto query = std::static_pointer_cast<QueryEvent>(event);
-                if (query->transaction_complete && pending_gtid)
-                {
-                    gtid_sets.update(*pending_gtid);
-                    pending_gtid.reset();
-                }
-                binlog_pos = event->header.log_pos;
-                break;
-            }
+            case FORMAT_DESCRIPTION_EVENT:
+            case QUERY_EVENT:
             case XID_EVENT: {
-                if (pending_gtid)
-                {
-                    gtid_sets.update(*pending_gtid);
-                    pending_gtid.reset();
-                }
                 binlog_pos = event->header.log_pos;
                 break;
             }
@@ -745,11 +709,9 @@ namespace MySQLReplication
                 break;
             }
             case GTID_EVENT: {
-                if (pending_gtid)
-                    gtid_sets.update(*pending_gtid);
                 auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
                 binlog_pos = event->header.log_pos;
-                pending_gtid = gtid_event->gtid;
+                gtid_sets.update(gtid_event->gtid);
                 break;
             }
             default:
@@ -815,7 +777,6 @@ namespace MySQLReplication
             {
                 event = std::make_shared<QueryEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
-                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
@@ -827,7 +788,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        break;
+                        position.update(event);
                 }
                 break;
             }

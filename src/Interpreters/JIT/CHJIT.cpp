@@ -26,7 +26,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -156,7 +156,7 @@ public:
                     throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
-                invalidate_cache = false;
+                InvalidateCache = false;
             }
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
@@ -372,7 +372,7 @@ CHJIT::CHJIT()
 
 CHJIT::~CHJIT() = default;
 
-CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
+CHJIT::CompiledModuleInfo CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
@@ -393,7 +393,7 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
     return module;
 }
 
-CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
+CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
 
@@ -417,7 +417,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
     dynamic_linker.resolveRelocations();
     module_memory_manager->finalizeMemory(nullptr);
 
-    CompiledModule compiled_module;
+    CompiledModuleInfo module_info;
 
     for (const auto & function : *module)
     {
@@ -433,29 +433,47 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not found symbol {} after compilation", function_name);
 
         auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
-        compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
+
+        std::string symbol_name = std::to_string(current_module_key) + '_' + function_name;
+        name_to_symbol[symbol_name] = jit_symbol_address;
+        module_info.compiled_functions.emplace_back(std::move(function_name));
     }
 
-    compiled_module.size = module_memory_manager->allocatedSize();
-    compiled_module.identifier = current_module_key;
+    module_info.size = module_memory_manager->allocatedSize();
+    module_info.identifier = current_module_key;
 
     module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);
 
-    compiled_code_size.fetch_add(compiled_module.size, std::memory_order_relaxed);
+    compiled_code_size.fetch_add(module_info.size, std::memory_order_relaxed);
 
-    return compiled_module;
+    return module_info;
 }
 
-void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
+void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
-    auto module_it = module_identifier_to_memory_manager.find(module.identifier);
+    auto module_it = module_identifier_to_memory_manager.find(module_info.identifier);
     if (module_it == module_identifier_to_memory_manager.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module.identifier);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module_info.identifier);
+
+    for (const auto & function : module_info.compiled_functions)
+        name_to_symbol.erase(function);
 
     module_identifier_to_memory_manager.erase(module_it);
-    compiled_code_size.fetch_sub(module.size, std::memory_order_relaxed);
+    compiled_code_size.fetch_sub(module_info.size, std::memory_order_relaxed);
+}
+
+void * CHJIT::findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const
+{
+    std::lock_guard<std::mutex> lock(jit_lock);
+
+    std::string symbol_name = std::to_string(module_info.identifier) + '_' + function_name;
+    auto it = name_to_symbol.find(symbol_name);
+    if (it != name_to_symbol.end())
+        return it->second;
+
+    return nullptr;
 }
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)

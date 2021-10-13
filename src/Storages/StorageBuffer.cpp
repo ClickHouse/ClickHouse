@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -18,22 +19,18 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <base/logger_useful.h>
-#include <base/getThreadId.h>
-#include <base/range.h>
+#include <common/logger_useful.h>
+#include <common/getThreadId.h>
+#include <common/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-
 
 namespace ProfileEvents
 {
@@ -130,8 +127,6 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
 
@@ -165,7 +160,13 @@ protected:
         columns.reserve(column_names_and_types.size());
 
         for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(buffer.data, elem));
+        {
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);
@@ -368,14 +369,13 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
             if (query_info.prewhere_info->alias_actions)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->alias_actions, actions_settings));
+                        query_info.prewhere_info->alias_actions);
                 });
             }
 
@@ -385,7 +385,7 @@ void StorageBuffer::read(
                 {
                     return std::make_shared<FilterTransform>(
                             header,
-                            std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter, actions_settings),
+                            query_info.prewhere_info->row_level_filter,
                             query_info.prewhere_info->row_level_column_name,
                             false);
                 });
@@ -395,7 +395,7 @@ void StorageBuffer::read(
             {
                 return std::make_shared<FilterTransform>(
                         header,
-                        std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions, actions_settings),
+                        query_info.prewhere_info->prewhere_actions,
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
@@ -512,29 +512,29 @@ static void appendBlock(const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage
+class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferSink(
+    explicit BufferBlockOutputStream(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {
-        // Check table structure.
-        metadata_snapshot->check(getHeader(), true);
-    }
+    {}
 
-    String getName() const override { return "BufferSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        size_t rows = chunk.getNumRows();
-        if (!rows)
+        if (!block)
             return;
 
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        // Check table structure.
+        metadata_snapshot->check(block, true);
+
+        size_t rows = block.rows();
+        if (!rows)
+            return;
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -641,9 +641,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
@@ -669,6 +669,7 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
 
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
@@ -957,10 +958,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
-    PushingPipelineExecutor executor(block_io.pipeline);
-    executor.start();
-    executor.push(std::move(block_to_write));
-    executor.finish();
+    block_io.out->writePrefix();
+    block_io.out->write(block_to_write);
+    block_io.out->writeSuffix();
 }
 
 
@@ -1019,13 +1019,11 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];

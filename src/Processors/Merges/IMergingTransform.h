@@ -16,8 +16,7 @@ public:
         size_t num_inputs,
         const Block & input_header,
         const Block & output_header,
-        bool have_all_inputs_,
-        bool has_limit_below_one_block_);
+        bool have_all_inputs_);
 
     OutputPort & getOutputPort() { return outputs.front(); }
 
@@ -67,7 +66,6 @@ private:
     std::vector<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
-    bool has_limit_below_one_block = false;
 
     IProcessor::Status prepareInitializeInputs();
 };
@@ -83,9 +81,8 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        bool has_limit_below_one_block_,
         Args && ... args)
-        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, has_limit_below_one_block_)
+        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }
