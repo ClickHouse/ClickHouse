@@ -11,7 +11,6 @@
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/NativeFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
@@ -138,9 +137,6 @@ InputFormatPtr FormatFactory::getInput(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    if (name == "Native")
-        return std::make_shared<NativeInputFormatFromNativeBlockInputStream>(sample, buf);
-
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
