@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 
@@ -544,8 +545,28 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     assert(tables.empty());
-    fs::remove(local_context->getPath() + getDataPath());
-    fs::remove(getMetadataPath());
+    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
+    {
+        fs::remove_all(local_context->getPath() + getDataPath());
+        fs::remove_all(getMetadataPath());
+    }
+    else
+    {
+        try
+        {
+            fs::remove(local_context->getPath() + getDataPath());
+            fs::remove(getMetadataPath());
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() != std::errc::directory_not_empty)
+                throw Exception(Exception::CreateFromSTDTag{}, e);
+            throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Cannot drop: {}. "
+                "Probably database contain some detached tables or metadata leftovers from Ordinary engine. "
+                "If you want to remove all data anyway, try to attach database back and drop it again "
+                "with enabled force_remove_data_recursively_on_drop setting", e.what());
+        }
+    }
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const

@@ -1853,7 +1853,7 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
-            zk->finalize();
+            zk->finalize("Config changed");
 
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
     }
