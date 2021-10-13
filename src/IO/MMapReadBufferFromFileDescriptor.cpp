@@ -6,7 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 

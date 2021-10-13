@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 
@@ -63,16 +62,6 @@ private:
         inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed;
-        }
-
-        inline void finalize() const
-        {
-            if (out_maybe_delayed_and_compressed)
-                out_maybe_delayed_and_compressed->finalize();
-            if (out_maybe_compressed)
-                out_maybe_compressed->finalize();
-            if (out)
-                out->finalize();
         }
     };
 

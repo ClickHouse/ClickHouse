@@ -1,18 +1,18 @@
 path:
-  - /var/lib/clickhouse
+  - ./
   - "@replace": replace
 tmp_path:
-  - /var/lib/clickhouse/tmp/
+  - ./tmp/
   - "@replace": replace
 user_files_path:
-  - /var/lib/clickhouse/user_files/
+  - ./user_files/
   - "@replace": replace
 format_schema_path:
-  - /var/lib/clickhouse/format_schemas/
+  - ./format_schemas/
   - "@replace": replace
 access_control_path:
-  - /var/lib/clickhouse/access/
+  - ./access/
   - "@replace": replace
 top_level_domains_path:
-  - /var/lib/clickhouse/top_level_domains/
+  - ./top_level_domains/
   - "@replace": replace

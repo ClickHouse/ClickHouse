@@ -2,15 +2,14 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <base/errnoToString.h>
+#include <common/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
-#include <base/getThreadId.h>
-#include <base/getPageSize.h>
+#include <common/getThreadId.h>
+#include <common/getPageSize.h>
 
 #include <csignal>
-#include <mutex>
 
 
 namespace DB
@@ -45,7 +44,7 @@ namespace
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(getPageSize(), getSize()))
+        : data(aligned_alloc(getPageSize(), size))
     {
         /// Add a guard page
         /// (and since the stack grows downward, we need to protect the first page).
@@ -57,11 +56,12 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize() { return size; }
     void * getData() const { return data; }
 
 private:
     /// 16 KiB - not too big but enough to handle error.
+    static constexpr size_t size = std::max<size_t>(16 << 10, MINSIGSTKSZ);
     void * data;
 };
 
@@ -141,12 +141,6 @@ ThreadStatus::~ThreadStatus()
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
     }
 
-    if (thread_group)
-    {
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->threads.erase(this);
-    }
-
 #if !defined(ARCADIA_BUILD)
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
@@ -203,17 +197,6 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     thread_group->client_logs_level = client_logs_level;
 }
 
-void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
-{
-    profile_queue_ptr = profile_queue;
-
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->profile_queue_ptr = profile_queue;
-}
-
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 {
     fatal_error_callback = std::move(callback);
@@ -238,6 +221,7 @@ MainThreadStatus & MainThreadStatus::getInstance()
     return thread_status;
 }
 MainThreadStatus::MainThreadStatus()
+    : ThreadStatus()
 {
     main_thread = current_thread;
 }

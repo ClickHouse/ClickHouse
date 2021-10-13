@@ -42,15 +42,17 @@ public:
         const String & metadata_path_,
         const Poco::Util::AbstractConfiguration & config_);
 
-    DiskType getType() const override { return DiskType::HDFS; }
-    bool isRemote() const override { return true; }
+    DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        size_t estimated_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t direct_io_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 

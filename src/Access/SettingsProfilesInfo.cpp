@@ -1,6 +1,6 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <base/removeDuplicates.h>
+#include <common/removeDuplicates.h>
 
 
 namespace DB

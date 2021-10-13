@@ -14,7 +14,6 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>

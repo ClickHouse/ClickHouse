@@ -5,7 +5,7 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
@@ -100,12 +100,12 @@ namespace
 BlockIO InterpreterShowGrantsQuery::execute()
 {
     BlockIO res;
-    res.pipeline = executeImpl();
+    res.in = executeImpl();
     return res;
 }
 
 
-QueryPipeline InterpreterShowGrantsQuery::executeImpl()
+BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 {
     /// Build a create query.
     ASTs grant_queries = getGrantQueries();
@@ -129,7 +129,7 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
     if (desc.starts_with(prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return std::make_shared<OneBlockInputStream>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}});
 }
 
 

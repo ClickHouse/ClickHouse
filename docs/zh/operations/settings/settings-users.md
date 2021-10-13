@@ -161,4 +161,4 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 
 该 `filter` 可以是导致任何表达式 [UInt8](../../sql-reference/data-types/int-uint.md)-键入值。 它通常包含比较和逻辑运算符。 从行 `database_name.table1` 其中，不会为此用户返回为0的筛选结果。 过滤是不兼容的 `PREWHERE` 操作和禁用 `WHERE→PREWHERE` 优化。
 
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->

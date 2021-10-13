@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-#include <base/extended_types.h>
+#include <common/arithmeticOverflow.h>
+#include <common/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -24,10 +24,11 @@ namespace ErrorCodes
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <is_decimal T>
+template <typename T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
 {
     using Base = DataTypeDecimalBase<T>;
+    static_assert(IsDecimalNumber<T>);
 
 public:
     using typename Base::FieldType;
@@ -46,11 +47,6 @@ public:
     T parseFromString(const String & str) const;
     SerializationPtr doGetDefaultSerialization() const override;
 };
-
-using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;
-using DataTypeDecimal64 = DataTypeDecimal<Decimal64>;
-using DataTypeDecimal128 = DataTypeDecimal<Decimal128>;
-using DataTypeDecimal256 = DataTypeDecimal<Decimal256>;
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)

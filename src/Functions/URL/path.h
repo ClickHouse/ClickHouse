@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Functions/URL/FunctionsURL.h>
 
 

@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <IO/ReadHelpers.h>

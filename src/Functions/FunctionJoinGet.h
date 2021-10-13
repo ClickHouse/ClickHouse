@@ -14,15 +14,13 @@ class StorageJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 
 template <bool or_null>
-class ExecutableFunctionJoinGet final : public IExecutableFunction, WithContext
+class ExecutableFunctionJoinGet final : public IExecutableFunction
 {
 public:
-    ExecutableFunctionJoinGet(ContextPtr context_,
-                              TableLockHolder table_lock_,
+    ExecutableFunctionJoinGet(TableLockHolder table_lock_,
                               StorageJoinPtr storage_join_,
                               const DB::Block & result_columns_)
-        : WithContext(context_)
-        , table_lock(std::move(table_lock_))
+        : table_lock(std::move(table_lock_))
         , storage_join(std::move(storage_join_))
         , result_columns(result_columns_)
     {}
@@ -44,17 +42,15 @@ private:
 };
 
 template <bool or_null>
-class FunctionJoinGet final : public IFunctionBase, WithContext
+class FunctionJoinGet final : public IFunctionBase
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
-    FunctionJoinGet(ContextPtr context_,
-                    TableLockHolder table_lock_,
+    FunctionJoinGet(TableLockHolder table_lock_,
                     StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
-        : WithContext(context_)
-        , table_lock(std::move(table_lock_))
+        : table_lock(std::move(table_lock_))
         , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
         , argument_types(std::move(argument_types_))
