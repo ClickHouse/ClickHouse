@@ -2,6 +2,17 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
+# This test verifies that memory tracking does not have significant drift,
+# in other words, every allocation should be taken into account at the global
+# memory tracker.
+#
+# So we are running some queries with GROUP BY to make some allocations,
+# and after we are checking MemoryTracking metric from system.metrics,
+# and check that it does not changes too frequently.
+#
+# Also note, that syncing MemoryTracking with RSS had been disabled in
+# asynchronous_metrics_update_period_s.xml.
+
 import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
