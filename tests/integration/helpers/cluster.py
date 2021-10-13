@@ -33,6 +33,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.test_tools import assert_eq_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
+from helpers.client import QueryRuntimeException
 
 import docker
 
@@ -2038,18 +2039,19 @@ class ClickHouseInstance:
 
             self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
 
-            sleep_time = 0.1
-            num_steps = int(stop_wait_sec / sleep_time)
+            start_time = time.time()
             stopped = False
-            for step in range(num_steps):
-                time.sleep(sleep_time)
+            while time.time() <= start_time + stop_wait_sec:
                 ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
                 if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
                     stopped = True
                     break
+                time.sleep(1)
 
             if not stopped:
                 logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
+                self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
+
                 self.stop_clickhouse(kill=True)
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
@@ -2061,9 +2063,13 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        try:
+            assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        except QueryRuntimeException as err:
+            self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
+            raise err
 
-    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
