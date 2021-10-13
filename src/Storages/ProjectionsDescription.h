@@ -30,6 +30,10 @@ struct ProjectionDescription
 
     static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
 
+    /// If minmax_count projection contains a primary key's minmax values. Their positions will be 0 and 1.
+    static constexpr const size_t PRIMARY_KEY_MIN_COLUMN_POS = 0;
+    static constexpr const size_t PRIMARY_KEY_MAX_COLUMN_POS = 1;
+
     /// Definition AST of projection
     ASTPtr definition_ast;
 
@@ -58,6 +62,7 @@ struct ProjectionDescription
 
     bool is_minmax_count_projection = false;
 
+    /// If a primary key expression is used in the minmax_count projection, this flag will be true.
     bool has_primary_key_minmax = false;
 
     /// Parse projection from definition AST
