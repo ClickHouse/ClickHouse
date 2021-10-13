@@ -24,14 +24,14 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     : WithContext(context_->getGlobalContext()), owner(owner_), path(path_), event_mask(event_mask_)
 {
     if (!std::filesystem::exists(path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The path {} does not exist.", path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The path {} does not exist", path);
 
     if (!std::filesystem::is_directory(path))
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "The path {} does not a directory.", path);
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "The path {} does not a directory", path);
 
     fd = inotify_init();
     if (fd == -1)
-        throw Exception("cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
+        throw Exception("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
 
     watch_task = getContext()->getMessageBrokerSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
@@ -54,7 +54,7 @@ void DirectoryWatcherBase::watchFunc()
     int wd = inotify_add_watch(fd, path.c_str(), mask);
     if (wd == -1)
     {
-        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed.", path));
+        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed", path));
     }
 
     std::string buffer;
@@ -62,10 +62,16 @@ void DirectoryWatcherBase::watchFunc()
     fd_set fds;
     while (!stopped)
     {
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
         FD_ZERO(&fds);
 #pragma clang diagnostic pop
+
+#else
+        FD_ZERO(&fds);
+#endif
+
 
         FD_SET(fd, &fds);
 
