@@ -163,8 +163,8 @@ else ()
     endif ()   
 
 #Limit avx2/avx512 flag for specific source build
+    set (X86_INTRINSICS_FLAGS "")
     if (ENABLE_AVX2_FOR_SPEC_OP)
-        set (X86_INTRINSICS_FLAGS "")
         if (HAVE_BMI)
             set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
         endif ()
