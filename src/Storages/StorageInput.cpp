@@ -6,7 +6,6 @@
 #include <memory>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB

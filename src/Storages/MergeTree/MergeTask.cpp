@@ -19,7 +19,6 @@
 #include "Processors/Merges/GraphiteRollupSortedTransform.h"
 #include "Processors/Merges/AggregatingSortedTransform.h"
 #include "Processors/Merges/VersionedCollapsingTransform.h"
-#include "Processors/Executors/PipelineExecutingBlockInputStream.h"
 #include "DataStreams/TTLBlockInputStream.h"
 #include <DataStreams/TTLCalcInputStream.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
