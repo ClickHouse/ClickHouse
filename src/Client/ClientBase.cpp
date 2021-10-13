@@ -9,6 +9,7 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Common/getNumberOfPhysicalCPUCores.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -773,7 +774,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
-
+        /// Get name of table
+        const auto table_name = parsed_insert_query->table_id.getTableName();
         std::string compression_method;
         /// Compression method can be specified in query
         if (parsed_insert_query->compression)
@@ -782,13 +784,35 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
-        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
-        /// Buffer for reading from file is created and wrapped with appropriate compression method
-        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
-
+        /// Create temporary storage file, to support globs and parallel reading
+        StorageFile::CommonArguments args{
+            WithContext(global_context),
+            StorageID("_from_infile", table_name),
+            parsed_insert_query->format,
+            std::nullopt /*format settings*/,
+            compression_method,
+            columns_description,
+            ConstraintsDescription{},
+            String{},
+        };
+        StoragePtr storage = StorageFile::create(in_file, global_context->getUserFilesPath(), args);
+        storage->startup();
+        SelectQueryInfo query_info;
+        
         try
         {
-            sendDataFrom(*in_buffer, sample, columns_description, parsed_query);
+            sendDataFromPipe(
+                storage->read(
+                        sample.getNames(),
+                        storage->getInMemoryMetadataPtr(),
+                        query_info,
+                        global_context,
+                        {},
+                        DEFAULT_BLOCK_SIZE,
+                        getNumberOfPhysicalCPUCores()
+                    ), 
+                parsed_query
+            );
         }
         catch (Exception & e)
         {
@@ -862,6 +886,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
+    sendDataFromPipe(std::move(pipe), parsed_query);
+}
+
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
+{
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
