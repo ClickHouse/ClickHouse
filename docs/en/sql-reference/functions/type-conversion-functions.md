@@ -869,7 +869,7 @@ accurateCastOrDefault(x, T)
 
 -   `x` — Input value.
 -   `T` — The name of the returned data type.
--   `default_value` - Default value of returned data type.
+-   `default_value` — Default value of returned data type.
 
 **Returned value**
 
