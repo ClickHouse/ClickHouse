@@ -96,10 +96,12 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('8')
     fi
 
+    set +e
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
+    set -e
 }
 
 export -f run_tests
