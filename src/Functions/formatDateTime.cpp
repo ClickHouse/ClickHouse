@@ -14,8 +14,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <base/DateLUTImpl.h>
-#include <base/find_symbols.h>
+#include <common/DateLUTImpl.h>
+#include <common/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 
 #include <type_traits>

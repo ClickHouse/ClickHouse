@@ -4,8 +4,8 @@
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-#include <base/types.h>
-#include <base/unaligned.h>
+#include <common/types.h>
+#include <common/unaligned.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>

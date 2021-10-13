@@ -45,14 +45,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-config = '''<clickhouse>
+config = '''<yandex>
     <profiles>
         <default>
             <sleep_in_send_tables_status_ms>{sleep_in_send_tables_status_ms}</sleep_in_send_tables_status_ms>
             <sleep_in_send_data_ms>{sleep_in_send_data_ms}</sleep_in_send_data_ms>
         </default>
     </profiles>
-</clickhouse>'''
+</yandex>'''
 
 
 QUERY_1 = "SELECT count() FROM distributed"

@@ -2,7 +2,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/join_common.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -14,9 +14,8 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
-    join->checkTypesOfKeys(header);
     ExtraBlockPtr tmp;
+    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->joinBlock(header, tmp);
     LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
@@ -124,8 +123,7 @@ void JoiningTransform::work()
                 return;
             }
 
-            non_joined_blocks = join->getNonJoinedBlocks(
-                inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
+            non_joined_blocks = join->getNonJoinedBlocks(outputs.front().getHeader(), max_block_size);
             if (!non_joined_blocks)
             {
                 process_non_joined = false;

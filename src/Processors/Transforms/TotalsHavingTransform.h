@@ -28,7 +28,6 @@ public:
         bool overflow_row_,
         const ExpressionActionsPtr & expression_,
         const std::string & filter_column_,
-        bool remove_filter_,
         TotalsMode totals_mode_,
         double auto_include_threshold_,
         bool final_);
@@ -40,7 +39,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final);
+    static Block transformHeader(Block block, const ActionsDAG * expression, bool final);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -56,7 +55,6 @@ private:
     bool overflow_row;
     ExpressionActionsPtr expression;
     String filter_column_name;
-    bool remove_filter;
     TotalsMode totals_mode;
     double auto_include_threshold;
     bool final;

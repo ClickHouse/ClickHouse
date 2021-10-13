@@ -16,17 +16,18 @@
 namespace DB
 {
 
-TTLTransform::TTLTransform(
-    const Block & header_,
+TTLBlockInputStream::TTLBlockInputStream(
+    const BlockInputStreamPtr & input_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
-    : IAccumulatingTransform(header_, header_)
-    , data_part(data_part_)
-    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLTransform)"))
+    : data_part(data_part_)
+    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLBlockInputStream)"))
 {
+    children.push_back(input_);
+    header = children.at(0)->getHeader();
     auto old_ttl_infos = data_part->ttl_infos;
 
     if (metadata_snapshot_->hasRowsTTL())
@@ -49,7 +50,7 @@ TTLTransform::TTLTransform(
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
-            group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_, getInputPort().getHeader(), storage_));
+            group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_, header, storage_));
 
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
@@ -97,40 +98,22 @@ Block reorderColumns(Block block, const Block & header)
     return res;
 }
 
-void TTLTransform::consume(Chunk chunk)
+Block TTLBlockInputStream::readImpl()
 {
     if (all_data_dropped)
-    {
-        finishConsume();
-        return;
-    }
-
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
-    for (const auto & algorithm : algorithms)
-        algorithm->execute(block);
-
-    if (!block)
-        return;
-
-    size_t num_rows = block.rows();
-    setReadyChunk(Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows));
-}
-
-Chunk TTLTransform::generate()
-{
-    Block block;
-    for (const auto & algorithm : algorithms)
-        algorithm->execute(block);
-
-    if (!block)
         return {};
 
-    size_t num_rows = block.rows();
-    return Chunk(reorderColumns(std::move(block), getOutputPort().getHeader()).getColumns(), num_rows);
+    auto block = children.at(0)->read();
+    for (const auto & algorithm : algorithms)
+        algorithm->execute(block);
+
+    if (!block)
+        return block;
+
+    return reorderColumns(std::move(block), header);
 }
 
-void TTLTransform::finalize()
+void TTLBlockInputStream::readSuffixImpl()
 {
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
@@ -141,15 +124,6 @@ void TTLTransform::finalize()
         size_t rows_removed = all_data_dropped ? data_part->rows_count : delete_algorithm->getNumberOfRemovedRows();
         LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
     }
-}
-
-IProcessor::Status TTLTransform::prepare()
-{
-    auto status = IAccumulatingTransform::prepare();
-    if (status == Status::Finished)
-        finalize();
-
-    return status;
 }
 
 }

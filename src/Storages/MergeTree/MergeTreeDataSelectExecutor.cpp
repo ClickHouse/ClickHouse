@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <base/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -163,7 +163,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     LOG_DEBUG(
         log,
         "Choose {} projection {}",
-        query_info.projection->desc->type,
+        ProjectionDescription::typeToString(query_info.projection->desc->type),
         query_info.projection->desc->name);
 
     Pipes pipes;
@@ -173,7 +173,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
     {
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(query_info.minmax_count_projection_block));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(
+            query_info.minmax_count_projection_block.cloneEmpty(),
+            Chunk(query_info.minmax_count_projection_block.getColumns(), query_info.minmax_count_projection_block.rows())));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_plan->addStep(std::move(read_from_pipe));
     }
@@ -981,7 +983,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description), //-V1030
+            .description = std::move(description),
             .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
             .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }
@@ -991,48 +993,47 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
-    const ReadFromMergeTree::AnalysisResult & result,
+    const RangesInDataParts & parts_with_ranges,
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
-    auto max_partitions_to_read
-        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
-    if (max_partitions_to_read > 0)
+    // Check limitations. query_id is used as the quota RAII's resource key.
+    String query_id;
     {
-        std::set<String> partitions;
-        for (const auto & part_with_ranges : result.parts_with_ranges)
-            partitions.insert(part_with_ranges.data_part->info.partition_id);
-        if (partitions.size() > size_t(max_partitions_to_read))
-            throw Exception(
-                ErrorCodes::TOO_MANY_PARTITIONS,
-                "Too many partitions to read. Current {}, max {}",
-                partitions.size(),
-                max_partitions_to_read);
-    }
-
-    if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0
-        && result.selected_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
-    {
-        auto query_id = context->getCurrentQueryId();
-        if (!query_id.empty())
+        const auto data_settings = data.getSettings();
+        auto max_partitions_to_read
+                = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
+        if (max_partitions_to_read > 0)
         {
-            auto lock = data.getQueryIdSetLock();
-            if (data.insertQueryIdOrThrowNoLock(query_id, data_settings->max_concurrent_queries, lock))
+            std::set<String> partitions;
+            for (const auto & part_with_ranges : parts_with_ranges)
+                partitions.insert(part_with_ranges.data_part->info.partition_id);
+            if (partitions.size() > size_t(max_partitions_to_read))
+                throw Exception(
+                        ErrorCodes::TOO_MANY_PARTITIONS,
+                        "Too many partitions to read. Current {}, max {}",
+                        partitions.size(),
+                        max_partitions_to_read);
+        }
+
+        if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0)
+        {
+            size_t sum_marks = 0;
+            for (const auto & part : parts_with_ranges)
+                sum_marks += part.getMarksCount();
+
+            if (sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
             {
-                try
-                {
-                    return std::make_shared<QueryIdHolder>(query_id, data);
-                }
-                catch (...)
-                {
-                    /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
-                    data.removeQueryIdNoLock(query_id, lock);
-                    throw;
-                }
+                query_id = context->getCurrentQueryId();
+                if (!query_id.empty())
+                    data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
             }
         }
     }
+
+    if (!query_id.empty())
+        return std::make_shared<QueryIdHolder>(query_id, data);
+
     return nullptr;
 }
 
@@ -1530,7 +1531,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+                part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -1600,7 +1601,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_initial_selected_granules += num_granules;
 
             if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types)
+                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
                         .can_be_true)
                 continue;
 

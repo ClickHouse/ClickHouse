@@ -1,7 +1,7 @@
 #include "RangeHashedDictionary.h"
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/Typelists.h>
+#include <Common/TypeList.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -303,7 +303,8 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
@@ -650,8 +651,8 @@ struct RangeHashedDictionaryCallGetSourceImpl
     const Names * column_names;
     size_t max_block_size;
 
-    template <class RangeType>
-    void operator()(Id<RangeType>)
+    template <typename RangeType, size_t>
+    void operator()()
     {
         const auto & type = dict->dict_struct.range_min->type;
         if (pipe.empty() && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
@@ -662,12 +663,14 @@ struct RangeHashedDictionaryCallGetSourceImpl
 template <DictionaryKeyType dictionary_key_type>
 Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
+    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
+
     RangeHashedDictionaryCallGetSourceImpl<dictionary_key_type> callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
 
-    TLUtils::forEach(TLIntegral{}, callable);
+    ListType::forEach(callable);
 
     if (callable.pipe.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,

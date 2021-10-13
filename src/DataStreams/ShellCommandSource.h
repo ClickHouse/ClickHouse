@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include <base/logger_useful.h>
-#include <base/BorrowedObjectPool.h>
+#include <common/logger_useful.h>
+#include <common/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
@@ -13,7 +13,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -52,12 +52,14 @@ public:
         const std::string & format,
         const Block & sample_block,
         std::unique_ptr<ShellCommand> && command_,
+        Poco::Logger * log_,
         std::vector<SendDataTask> && send_data_tasks = {},
         const ShellCommandSourceConfiguration & configuration_ = {},
         std::shared_ptr<ProcessPool> process_pool_ = nullptr)
         : SourceWithProgress(sample_block)
         , command(std::move(command_))
         , configuration(configuration_)
+        , log(log_)
         , process_pool(process_pool_)
     {
         for (auto && send_data_task : send_data_tasks)
@@ -97,7 +99,7 @@ public:
             max_block_size = configuration.number_of_rows_to_read;
         }
 
-        pipeline = QueryPipeline(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
+        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
     }
 
@@ -131,6 +133,7 @@ protected:
         }
         catch (...)
         {
+            tryLogCurrentException(log);
             command = nullptr;
             throw;
         }
@@ -172,6 +175,8 @@ private:
     ShellCommandSourceConfiguration configuration;
 
     size_t current_read_rows = 0;
+
+    Poco::Logger * log;
 
     std::shared_ptr<ProcessPool> process_pool;
 

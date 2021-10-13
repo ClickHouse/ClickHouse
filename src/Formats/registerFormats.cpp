@@ -21,6 +21,8 @@ void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
 
+void registerInputFormatProcessorNative(FormatFactory & factory);
+void registerOutputFormatProcessorNative(FormatFactory & factory);
 void registerInputFormatProcessorRowBinary(FormatFactory & factory);
 void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
@@ -94,6 +96,8 @@ void registerFormats()
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
 
+    registerInputFormatProcessorNative(factory);
+    registerOutputFormatProcessorNative(factory);
     registerInputFormatProcessorRowBinary(factory);
     registerOutputFormatProcessorRowBinary(factory);
     registerInputFormatProcessorTabSeparated(factory);
@@ -117,14 +121,15 @@ void registerFormats()
     registerInputFormatProcessorRawBLOB(factory);
     registerOutputFormatProcessorRawBLOB(factory);
 
+#if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorORC(factory);
     registerOutputFormatProcessorORC(factory);
     registerInputFormatProcessorParquet(factory);
     registerOutputFormatProcessorParquet(factory);
-#if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorAvro(factory);
     registerOutputFormatProcessorAvro(factory);
 #endif
+
     registerInputFormatProcessorArrow(factory);
     registerOutputFormatProcessorArrow(factory);
 

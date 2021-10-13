@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
@@ -15,13 +15,16 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
 
+
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
 namespace DB
 {

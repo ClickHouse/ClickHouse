@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists ttl;
 
 create table ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d);

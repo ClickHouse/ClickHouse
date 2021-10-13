@@ -1,5 +1,5 @@
 #include <Storages/IStorage.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
@@ -15,13 +15,20 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
 {
 
-Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
+BlockIO InterpreterDescribeQuery::execute()
+{
+    BlockIO res;
+    res.in = executeImpl();
+    return res;
+}
+
+
+Block InterpreterDescribeQuery::getSampleBlock()
 {
     Block block;
 
@@ -49,19 +56,11 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
     col.name = "ttl_expression";
     block.insert(col);
 
-    if (include_subcolumns)
-    {
-        col.name = "is_subcolumn";
-        col.type = std::make_shared<DataTypeUInt8>();
-        col.column = col.type->createColumn();
-        block.insert(col);
-    }
-
     return block;
 }
 
 
-BlockIO InterpreterDescribeQuery::execute()
+BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
     ColumnsDescription columns;
 
@@ -88,8 +87,7 @@ BlockIO InterpreterDescribeQuery::execute()
         columns = metadata_snapshot->getColumns();
     }
 
-    bool include_subcolumns = getContext()->getSettingsRef().describe_include_subcolumns;
-    Block sample_block = getSampleBlock(include_subcolumns);
+    Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     for (const auto & column : columns)
@@ -119,47 +117,9 @@ BlockIO InterpreterDescribeQuery::execute()
             res_columns[6]->insert(queryToString(column.ttl));
         else
             res_columns[6]->insertDefault();
-
-        if (include_subcolumns)
-            res_columns[7]->insertDefault();
     }
 
-    if (include_subcolumns)
-    {
-        for (const auto & column : columns)
-        {
-            column.type->forEachSubcolumn([&](const auto & name, const auto & type, const auto & path)
-            {
-                res_columns[0]->insert(Nested::concatenateName(column.name, name));
-                res_columns[1]->insert(type->getName());
-
-                /// It's not trivial to calculate default expression for subcolumn.
-                /// So, leave it empty.
-                res_columns[2]->insertDefault();
-                res_columns[3]->insertDefault();
-                res_columns[4]->insert(column.comment);
-
-                if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
-                    res_columns[5]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
-                else
-                    res_columns[5]->insertDefault();
-
-                if (column.ttl)
-                    res_columns[6]->insert(queryToString(column.ttl));
-                else
-                    res_columns[6]->insertDefault();
-
-                res_columns[7]->insert(1u);
-            });
-        }
-    }
-
-    BlockIO res;
-    size_t num_rows = res_columns[0]->size();
-    auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
-    res.pipeline = QueryPipeline(std::move(source));
-
-    return res;
+    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
 
 }

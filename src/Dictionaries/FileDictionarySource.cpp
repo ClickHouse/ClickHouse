@@ -1,7 +1,8 @@
 #include "FileDictionarySource.h"
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>

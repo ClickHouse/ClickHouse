@@ -2,7 +2,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Common/thread_local_rng.h>
-#include "Core/Protocol.h"
 
 
 namespace DB
@@ -321,7 +320,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
-        case Protocol::Server::ProfileEvents:
             break;
 
         case Protocol::Server::EndOfStream:

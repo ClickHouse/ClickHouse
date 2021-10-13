@@ -2,13 +2,11 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -46,8 +44,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
+        const String & compression_method_);
 
     Poco::URI uri;
     String compression_method;
@@ -57,7 +54,6 @@ protected:
     // For `url` table function, we use settings from current query context.
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
 
     virtual std::string getReadMethod() const;
 
@@ -117,8 +113,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {});
+        const String & compression_method_);
 
     String getName() const override
     {
@@ -131,8 +126,6 @@ public:
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
-
-    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
 };
 
 
@@ -158,13 +151,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    struct Configuration
-    {
-        String url;
-        String compression_method = "auto";
-        std::vector<std::pair<String, String>> headers;
-    };
 
 private:
     std::vector<Poco::URI> uri_options;

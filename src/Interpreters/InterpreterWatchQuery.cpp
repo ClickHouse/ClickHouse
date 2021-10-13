@@ -32,16 +32,10 @@ namespace ErrorCodes
 
 BlockIO InterpreterWatchQuery::execute()
 {
-    BlockIO res;
-    res.pipeline = QueryPipelineBuilder::getPipeline(buildQueryPipeline());
-    return res;
-}
-
-QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
-{
     if (!getContext()->getSettingsRef().allow_experimental_live_view)
         throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
+    BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
@@ -91,9 +85,10 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
         pipe.setQuota(getContext()->getQuota());
     }
 
-    QueryPipelineBuilder pipeline;
-    pipeline.init(std::move(pipe));
-    return pipeline;
+    res.pipeline.init(std::move(pipe));
+
+    return res;
 }
+
 
 }

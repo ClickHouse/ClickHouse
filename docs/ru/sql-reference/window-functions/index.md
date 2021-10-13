@@ -1,1 +1,0 @@
-../../../en/sql-reference/window-functions/index.md

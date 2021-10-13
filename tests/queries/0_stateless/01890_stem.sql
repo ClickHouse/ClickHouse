@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Tag no-fasttest: depends on libstemmer_c
-
 SET allow_experimental_nlp_functions = 1;
 
 SELECT stem('en', 'given');

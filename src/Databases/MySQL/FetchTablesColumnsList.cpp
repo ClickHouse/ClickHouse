@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Formats/MySQLSource.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -88,7 +88,8 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
 
     StreamSettings mysql_input_stream_settings(settings);
     auto result = std::make_unique<MySQLSource>(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(result));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(result)));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);

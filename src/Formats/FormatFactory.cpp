@@ -11,6 +11,7 @@
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Processors/Formats/Impl/NativeFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
@@ -59,7 +60,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.output_format_csv_null_representation;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
@@ -137,6 +137,9 @@ InputFormatPtr FormatFactory::getInput(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
+    if (name == "Native")
+        return std::make_shared<NativeInputFormatFromNativeBlockInputStream>(sample, buf);
+
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
@@ -434,18 +437,6 @@ bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
 {
     const auto & target = getCreators(name);
     return target.is_column_oriented;
-}
-
-bool FormatFactory::isInputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.input_creator || it->second.input_processor_creator);
-}
-
-bool FormatFactory::isOutputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.output_creator || it->second.output_processor_creator);
 }
 
 FormatFactory & FormatFactory::instance()

@@ -6,7 +6,7 @@
 
 #if USE_NLP
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Poco/Util/Application.h>
 
 #include <memory>

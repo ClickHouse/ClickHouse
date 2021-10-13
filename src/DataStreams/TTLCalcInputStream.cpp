@@ -4,17 +4,18 @@
 namespace DB
 {
 
-TTLCalcTransform::TTLCalcTransform(
-    const Block & header_,
+TTLCalcInputStream::TTLCalcInputStream(
+    const BlockInputStreamPtr & input_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
-    : IAccumulatingTransform(header_, header_)
-    , data_part(data_part_)
-    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcTransform)"))
+    : data_part(data_part_)
+    , log(&Poco::Logger::get(storage_.getLogName() + " (TTLCalcInputStream)"))
 {
+    children.push_back(input_);
+    header = children.at(0)->getHeader();
     auto old_ttl_infos = data_part->ttl_infos;
 
     if (metadata_snapshot_->hasRowsTTL())
@@ -50,52 +51,27 @@ TTLCalcTransform::TTLCalcTransform(
             recompression_ttl, TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
-void TTLCalcTransform::consume(Chunk chunk)
+Block TTLCalcInputStream::readImpl()
 {
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = children.at(0)->read();
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
     if (!block)
-        return;
+        return block;
 
-    Chunk res;
-    for (const auto & col : getOutputPort().getHeader())
-        res.addColumn(block.getByName(col.name).column);
-
-    setReadyChunk(std::move(res));
-}
-
-Chunk TTLCalcTransform::generate()
-{
-    Block block;
-    for (const auto & algorithm : algorithms)
-        algorithm->execute(block);
-
-    if (!block)
-        return {};
-
-    Chunk res;
-    for (const auto & col : getOutputPort().getHeader())
-        res.addColumn(block.getByName(col.name).column);
+    Block res;
+    for (const auto & col : header)
+        res.insert(block.getByName(col.name));
 
     return res;
 }
 
-void TTLCalcTransform::finalize()
+void TTLCalcInputStream::readSuffixImpl()
 {
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
-}
-
-IProcessor::Status TTLCalcTransform::prepare()
-{
-    auto status = IAccumulatingTransform::prepare();
-    if (status == Status::Finished)
-        finalize();
-
-    return status;
 }
 
 }

@@ -6,12 +6,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
@@ -163,39 +162,39 @@ std::string ClickHouseDictionarySource::toString() const
 
 Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    QueryPipelineBuilder builder;
+    QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
     if (configuration.is_local)
     {
-        builder.init(executeQuery(query, context, true).pipeline);
+        pipeline = executeQuery(query, context, true).pipeline;
         auto converting = ActionsDAG::makeConvertingActions(
-            builder.getHeader().getColumnsWithTypeAndName(),
+            pipeline.getHeader().getColumnsWithTypeAndName(),
             empty_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
 
-        builder.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, std::make_shared<ExpressionActions>(converting));
         });
     }
     else
     {
-        builder.init(Pipe(std::make_shared<RemoteSource>(
+        pipeline.init(Pipe(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context), false, false)));
     }
 
     if (result_size_hint)
     {
-        builder.setProgressCallback([result_size_hint](const Progress & progress)
+        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
         {
             *result_size_hint += progress.total_rows_to_read;
         });
     }
 
-    return QueryPipelineBuilder::getPipe(std::move(builder));
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -204,15 +203,16 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (configuration.is_local)
     {
         auto query_context = Context::createCopy(context);
-        return readInvalidateQuery(executeQuery(request, query_context, true).pipeline);
+        auto pipe = QueryPipeline::getPipe(executeQuery(request, query_context, true).pipeline);
+        return readInvalidateQuery(std::move(pipe));
     }
     else
     {
         /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
         Block invalidate_sample_block;
-        QueryPipeline pipeline(std::make_shared<RemoteSource>(
+        Pipe pipe(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context), false, false));
-        return readInvalidateQuery(std::move(pipeline));
+        return readInvalidateQuery(std::move(pipe));
     }
 }
 

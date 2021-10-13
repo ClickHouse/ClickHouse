@@ -2,7 +2,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Core/SortCursor.h>
 
-#include <base/range.h>
+#include <common/range.h>
 
 namespace DB
 {

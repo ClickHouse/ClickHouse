@@ -7,9 +7,9 @@
 
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
-#include <base/types.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -19,7 +19,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -76,7 +75,6 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class QueryViewsLog;
 class ZooKeeperLog;
-class SessionLog;
 
 
 class ISystemLog
@@ -117,8 +115,6 @@ struct SystemLogs
     std::shared_ptr<QueryViewsLog> query_views_log;
     /// Used to log all actions of ZooKeeper client
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -489,11 +485,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        PushingPipelineExecutor executor(io.pipeline);
-
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        io.out->writePrefix();
+        io.out->write(block);
+        io.out->writeSuffix();
     }
     catch (...)
     {

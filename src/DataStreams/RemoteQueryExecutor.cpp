@@ -1,12 +1,9 @@
-#include <Common/ConcurrentBoundedQueue.h>
-
 #include <DataStreams/ConnectionCollector.h>
 #include <DataStreams/RemoteQueryExecutor.h>
 #include <DataStreams/RemoteQueryExecutorReadContext.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
-#include "Core/Protocol.h"
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
@@ -211,12 +208,6 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    /// Set initial_query_id to query_id for the clickhouse-benchmark.
-    ///
-    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
-    ///  due to it executes queries via RemoteBlockInputStream)
-    if (modified_client_info.initial_query_id.empty())
-        modified_client_info.initial_query_id = query_id;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -391,12 +382,6 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
-            break;
-
-        case Protocol::Server::ProfileEvents:
-            /// Pass profile events from remote server to client
-            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                profile_queue->emplace(std::move(packet.block));
             break;
 
         default:

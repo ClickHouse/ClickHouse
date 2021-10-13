@@ -28,6 +28,7 @@ class SafeThread(threading.Thread):
         if self.exception:
             raise self.exception
 
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node/configs/config.d/storage_conf.xml'.format(get_instances_dir()))
 
