@@ -134,7 +134,7 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, sample_block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
     };
 
@@ -161,7 +161,7 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, sample_block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
     };
 
