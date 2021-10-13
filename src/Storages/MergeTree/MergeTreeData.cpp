@@ -132,10 +132,14 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INCORRECT_QUERY;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
+    if (metadata.sampling_key.column_names.empty())
+        throw Exception("There are no columns in sampling expression", ErrorCodes::INCORRECT_QUERY);
+
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -5253,26 +5257,33 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_parts.store(parts, std::memory_order_release);
 }
 
-void MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
+bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    return insertQueryIdOrThrowNoLock(query_id, max_queries, lock);
+}
+
+bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) != query_id_set.end())
-        return;
+        return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
     query_id_set.insert(query_id);
+    return true;
 }
 
 void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    removeQueryIdNoLock(query_id, lock);
+}
+
+void MergeTreeData::removeQueryIdNoLock(const String & query_id, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) == query_id_set.end())
-    {
-        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
-        assert(false);
-    }
     else
         query_id_set.erase(query_id);
 }
