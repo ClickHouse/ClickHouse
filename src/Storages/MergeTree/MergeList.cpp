@@ -10,7 +10,7 @@ namespace DB
 {
 
 
-MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit)
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit, const std::string & query_id)
 {
     // Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
@@ -39,6 +39,9 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
     /// (NOTE: consider moving such code to ThreadFromGlobalPool and related places)
     prev_untracked_memory = current_thread->untracked_memory;
     current_thread->untracked_memory = 0;
+
+    prev_query_id = current_thread->getQueryId().toString();
+    current_thread->setQueryId(query_id);
 }
 
 
@@ -51,6 +54,7 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
 
     current_thread->untracked_memory_limit = prev_untracked_memory_limit;
     current_thread->untracked_memory = prev_untracked_memory;
+    current_thread->setQueryId(prev_query_id);
 }
 
 MergeListElement::MergeListElement(
@@ -66,6 +70,7 @@ MergeListElement::MergeListElement(
     , result_part_info{future_part->part_info}
     , num_parts{future_part->parts.size()}
     , max_untracked_memory(max_untracked_memory_)
+    , query_id(table_id.getShortName() + "::" + result_part_name)
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
