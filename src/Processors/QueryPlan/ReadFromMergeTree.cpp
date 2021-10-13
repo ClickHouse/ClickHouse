@@ -874,7 +874,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = selectRangesToRead(prepared_parts);
-    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
+    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
     if (result.parts_with_ranges.empty())
     {
