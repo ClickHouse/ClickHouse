@@ -986,8 +986,9 @@ if (ThreadFuzzer::instance().isEffective())
     if (config().has("keeper_server"))
     {
 #if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperDispatcher();
+        bool has_connection = has_zookeeper && global_context->tryCheckZooKeeperConnection();
+        /// Initialize keeper RAFT.
+        global_context->initializeKeeperDispatcher(has_connection);
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper

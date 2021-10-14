@@ -353,6 +353,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 void KeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
+
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
