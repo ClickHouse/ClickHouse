@@ -12,7 +12,7 @@ namespace ProfileEvents
 {
 
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
-void dumpToMapColumn(const Counters & counters, DB::IColumn * column, bool nonzero_only)
+void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {
     auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
     if (!column_map)
@@ -26,7 +26,7 @@ void dumpToMapColumn(const Counters & counters, DB::IColumn * column, bool nonze
     size_t size = 0;
     for (Event event = 0; event < Counters::num_counters; ++event)
     {
-        UInt64 value = counters[event].load(std::memory_order_relaxed);
+        UInt64 value = counters[event];
 
         if (nonzero_only && 0 == value)
             continue;

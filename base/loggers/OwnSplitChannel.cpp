@@ -100,7 +100,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
-        logs_queue->emplace(std::move(columns));
+        [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
     }
 
     /// Also log to system.text_log table, if message is not too noisy
