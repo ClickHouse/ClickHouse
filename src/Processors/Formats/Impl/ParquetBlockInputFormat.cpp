@@ -15,6 +15,7 @@
 
 #include <base/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -122,9 +123,9 @@ void ParquetBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorParquet(FormatFactory &factory)
+void registerInputFormatParquet(FormatFactory &factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
             "Parquet",
             [](ReadBuffer &buf,
                 const Block &sample,
@@ -143,7 +144,7 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorParquet(FormatFactory &)
+void registerInputFormatParquet(FormatFactory &)
 {
 }
 }

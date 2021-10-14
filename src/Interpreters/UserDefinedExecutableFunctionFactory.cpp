@@ -10,6 +10,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -43,36 +44,41 @@ public:
     bool useDefaultImplementationForNulls() const override { return true; }
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         const auto & configuration = executable_function->getConfiguration();
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & expected_argument_type = configuration.argument_types[i];
-            if (!areTypesEqual(expected_argument_type, arguments[i]))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Function {} for {} argument expected {} actual {}",
-                    getName(),
-                    i,
-                    expected_argument_type->getName(),
-                    arguments[i]->getName());
-        }
-
         return configuration.result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        const auto & configuration = executable_function->getConfiguration();
+        auto arguments_copy = arguments;
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto & column_with_type = arguments_copy[i];
+            column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
+
+            const auto & argument_type = configuration.argument_types[i];
+            if (areTypesEqual(arguments_copy[i].type, argument_type))
+                continue;
+
+            ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
+            column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
+            column_with_type.type = argument_type;
+
+            column_with_type = column_to_cast;
+        }
+
         std::unique_ptr<ShellCommand> process = getProcess();
 
         ColumnWithTypeAndName result(result_type, "result");
         Block result_block({result});
 
-        Block arguments_block(arguments);
+        Block arguments_block(arguments_copy);
         auto * process_in = &process->in;
 
-        const auto & configuration = executable_function->getConfiguration();
         auto process_pool = executable_function->getProcessPool();
         bool is_executable_pool_function = (process_pool != nullptr);
 
@@ -94,8 +100,8 @@ public:
                 writeChar('\n', out);
             }
 
-            auto output_stream = context->getOutputStream(configuration.format, out, arguments_block.cloneEmpty());
-            formatBlock(output_stream, arguments_block);
+            auto output_format = context->getOutputFormat(configuration.format, out, arguments_block.cloneEmpty());
+            formatBlock(output_format, arguments_block);
             if (!is_executable_pool_function)
                 out.close();
         }};

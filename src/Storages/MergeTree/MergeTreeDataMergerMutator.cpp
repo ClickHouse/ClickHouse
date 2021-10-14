@@ -17,11 +17,7 @@
 
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -328,7 +324,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
+    }
 
     if (!final && parts.size() == 1)
     {
@@ -342,6 +342,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
+        if (out_disable_reason)
+            *out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
         return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
@@ -426,7 +428,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -440,7 +442,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        prefix,
+        suffix,
         &data,
         &merges_blocker,
         &ttl_merges_blocker);

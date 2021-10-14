@@ -82,7 +82,7 @@ Load from config:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key>12345567812345678</key>
+        <key>1234567812345678</key>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -365,6 +365,15 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
+```  
+## hsts_max_age  
+  
+Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
+  
+**Example**  
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
 ```
 
 ## include_from {#server_configuration_parameters-include_from}
@@ -464,6 +473,30 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_backlog {#server_configuration_parameters-listen_backlog}
+
+Backlog (queue size of pending connections) of the listen socket.
+
+Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
+
+Usually this value does not need to be changed, since:
+- default value is large enough,
+- and for accepting client's connections server has separate thread.
+
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this
+counter grows for ClickHouse server it does not mean that this value need to be
+increased, since:
+- usually if 4096 is not enough it shows some internal ClickHouse scaling
+  issue, so it is better to report an issue.
+- and it does not mean that the server can handle more connections later (and
+  even if it can, clients can already goes away / disconnect).
+
+Examples:
+
+``` xml
+<listen_backlog>4096</listen_backlog>
 ```
 
 ## logger {#server_configuration_parameters-logger}

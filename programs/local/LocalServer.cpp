@@ -63,24 +63,26 @@ namespace ErrorCodes
 }
 
 
-void LocalServer::processError(const String & query) const
+void LocalServer::processError(const String &) const
 {
     if (ignore_error)
         return;
 
     if (is_interactive)
     {
+        String message;
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, getExceptionMessage(*server_exception, print_stack_trace, true));
-            fmt::print(stderr, "\n");
+            message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
-        if (client_exception)
+        else if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
-            fmt::print(stderr, "\n");
+            message = client_exception->message();
         }
+
+        fmt::print(stderr, "Received exception:\n{}\n", message);
+        fmt::print(stderr, "\n");
     }
     else
     {
@@ -414,17 +416,13 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+    setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
     is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
-    std::optional<InterruptListener> interrupt_listener;
-    if (is_interactive)
-    {
-        interrupt_listener.emplace();
-    }
-    else
+    if (!is_interactive)
     {
         /// We will terminate process on error
         static KillingErrorHandler error_handler;

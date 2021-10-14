@@ -25,14 +25,14 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeA
         auto key = arguments[i];
         keys.emplace_back(std::move(key));
     }
-    return storage_join->joinGet(keys, result_columns).column;
+    return storage_join->joinGet(keys, result_columns, getContext()).column;
 }
 
 template <bool or_null>
 ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(table_lock, storage_join, result_columns);
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, result_columns);
 }
 
 static std::pair<std::shared_ptr<StorageJoin>, String>
@@ -89,7 +89,7 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
     auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
 
-    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, attr_name, argument_types, return_type);
+    return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)

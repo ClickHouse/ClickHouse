@@ -282,8 +282,8 @@ class ExecutableFunctionJSON : public IExecutableFunction, WithContext
 {
 
 public:
-    explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_)
-        : null_presence(null_presence_), allow_simdjson(allow_simdjson_)
+    explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_, const DataTypePtr & json_return_type_)
+        : null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_)
     {
     }
 
@@ -297,7 +297,7 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, result_type, input_rows_count);
+        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
         if (null_presence.has_nullable)
             return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
         return temporary_result;
@@ -322,6 +322,7 @@ private:
 
     NullPresence null_presence;
     bool allow_simdjson;
+    DataTypePtr json_return_type;
 };
 
 
@@ -330,11 +331,16 @@ class FunctionBaseFunctionJSON : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
-        const NullPresence & null_presence_, bool allow_simdjson_, DataTypes argument_types_, DataTypePtr return_type_)
+        const NullPresence & null_presence_,
+        bool allow_simdjson_,
+        DataTypes argument_types_,
+        DataTypePtr return_type_,
+        DataTypePtr json_return_type_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
+        , json_return_type(std::move(json_return_type_))
     {
     }
 
@@ -354,7 +360,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson);
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, json_return_type);
     }
 
 private:
@@ -362,6 +368,7 @@ private:
     bool allow_simdjson;
     DataTypes argument_types;
     DataTypePtr return_type;
+    DataTypePtr json_return_type;
 };
 
 
@@ -388,21 +395,25 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
         if (null_presence.has_null_constant)
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
         else if (null_presence.has_nullable)
-            return_type = makeNullable(Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments)));
+            return_type = makeNullable(json_return_type);
         else
-            return_type = Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+            return_type = json_return_type;
+
+        /// Top-level LowCardinality columns are processed outside JSON parser.
+        json_return_type = removeLowCardinality(json_return_type);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type);
+                null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type);
     }
 };
 
@@ -422,6 +433,7 @@ struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKey
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
+struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
 
 
 template <typename JSONParser>
@@ -1338,6 +1350,39 @@ public:
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        return true;
+    }
+};
+
+template <typename JSONParser>
+class JSONExtractKeysImpl
+{
+public:
+    using Element = typename JSONParser::Element;
+
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_unique<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
+    {
+        if (!element.isObject())
+            return false;
+
+        auto object = element.getObject();
+
+        ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
+        auto & col_key = assert_cast<ColumnString &>(col_res.getData());
+
+        for (const auto & [key, value] : object)
+        {
+            col_key.insertData(key.data(), key.size());
+        }
+
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + object.size());
         return true;
     }
 };

@@ -10,7 +10,7 @@ namespace DB
 {
 
 
-MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr)
+MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit)
 {
     // Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
@@ -31,6 +31,9 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MemoryTracker * memory_
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(memory_tracker_ptr);
     }
+
+    prev_untracked_memory_limit = current_thread->untracked_memory_limit;
+    current_thread->untracked_memory_limit = untracked_memory_limit;
 }
 
 
@@ -40,15 +43,23 @@ MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
 
     if (background_thread_memory_tracker)
         background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+
+    current_thread->untracked_memory_limit = prev_untracked_memory_limit;
 }
 
-MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part)
+MergeListElement::MergeListElement(
+    const StorageID & table_id_,
+    FutureMergedMutatedPartPtr future_part,
+    UInt64 memory_profiler_step,
+    UInt64 memory_profiler_sample_probability,
+    UInt64 max_untracked_memory_)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
     , result_part_name{future_part->name}
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
     , num_parts{future_part->parts.size()}
+    , max_untracked_memory(max_untracked_memory_)
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
@@ -68,6 +79,10 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
+
+    memory_tracker.setDescription("Mutate/Merge");
+    memory_tracker.setProfilerStep(memory_profiler_step);
+    memory_tracker.setSampleProbability(memory_profiler_sample_probability);
 }
 
 MergeInfo MergeListElement::getInfo() const

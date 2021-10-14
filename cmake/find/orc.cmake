@@ -2,7 +2,7 @@ option (ENABLE_ORC "Enable ORC" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_ORC)
     if(USE_INTERNAL_ORC_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal ORC library with ENABLE_ORD=OFF")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal ORC library with ENABLE_ORC=OFF")
     endif()
     return()
 endif()

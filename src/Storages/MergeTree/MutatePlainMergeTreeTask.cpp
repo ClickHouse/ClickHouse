@@ -28,7 +28,14 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
-    merge_list_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_part);
+    const Settings & settings = storage.getContext()->getSettingsRef();
+    merge_list_entry = storage.getContext()->getMergeList().insert(
+        storage.getStorageID(),
+        future_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
+
     stopwatch = std::make_unique<Stopwatch>();
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
@@ -54,7 +61,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker, (*merge_list_entry)->max_untracked_memory);
 
     switch (state)
     {
