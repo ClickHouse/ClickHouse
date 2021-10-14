@@ -222,7 +222,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
-        if (isComma(join.kind))
+        if (join.kind == ASTTableJoin::Kind::Comma)
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (join.using_expression_list)

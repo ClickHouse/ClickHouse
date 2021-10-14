@@ -332,9 +332,9 @@ void JSONEachRowRowInputFormat::readSuffix()
 }
 
 
-void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
+void registerInputFormatJSONEachRow(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONEachRow", [](
+    factory.registerInputFormat("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,
@@ -343,7 +343,7 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
 
-    factory.registerInputFormatProcessor("JSONStringsEachRow", [](
+    factory.registerInputFormat("JSONStringsEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,

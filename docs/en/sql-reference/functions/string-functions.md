@@ -28,7 +28,7 @@ The function also works for [arrays](array-functions.md#function-empty) or [UUID
 
 **Returned value**
 
--   Returns `1` for an empty string or `0` for a non-empty string. 
+-   Returns `1` for an empty string or `0` for a non-empty string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -68,7 +68,7 @@ The function also works for [arrays](array-functions.md#function-notempty) or [U
 
 **Returned value**
 
--   Returns `1` for a non-empty string or `0` for an empty string string. 
+-   Returns `1` for a non-empty string or `0` for an empty string string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -311,6 +311,32 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 ┌─toValidUTF8('a����b')─┐
 │ a�b                   │
 └───────────────────────┘
+```
+
+## tokens {#tokens}
+
+Split string into tokens using non-alpha numeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+
+**Returned value**
+
+-   The resulting array of tokens from input string.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
 ```
 
 ## repeat {#repeat}

@@ -196,6 +196,10 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
+
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+
     return create_query;
 }
 

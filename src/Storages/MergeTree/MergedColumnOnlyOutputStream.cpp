@@ -56,11 +56,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_info.add(block);
 }
 
-void MergedColumnOnlyOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 MergeTreeData::DataPart::Checksums
 MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,

@@ -1,16 +1,19 @@
 #pragma once
 
-#include <Access/IAccessStorage.h>
-#include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/scope_guard.h>
-#include <Coordination/ThreadSafeQueue.h>
 #include <atomic>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+#include <base/scope_guard.h>
+
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ConcurrentBoundedQueue.h>
+
+#include <Access/IAccessStorage.h>
 
 
 namespace DB
@@ -36,7 +39,7 @@ private:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = false;
     ThreadFromGlobalPool worker_thread;
-    ThreadSafeQueue<UUID> refresh_queue;
+    ConcurrentBoundedQueue<UUID> refresh_queue;
 
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;

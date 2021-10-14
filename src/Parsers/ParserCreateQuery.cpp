@@ -26,6 +26,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
+{
+    ParserKeyword s_comment("COMMENT");
+    ParserStringLiteral string_literal_parser;
+    ASTPtr comment;
+
+    s_comment.ignore(pos, expected) && string_literal_parser.parse(pos, comment, expected);
+
+    return comment;
+}
+}
+
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken open(TokenType::OpeningRoundBracket);
@@ -314,7 +328,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by("SAMPLE BY");
     ParserKeyword s_ttl("TTL");
     ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_comment("COMMENT");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
@@ -329,7 +342,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr sample_by;
     ASTPtr ttl_table;
     ASTPtr settings;
-    ASTPtr comment_expression;
 
     if (!s_engine.ignore(pos, expected))
         return false;
@@ -387,13 +399,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (s_comment.ignore(pos, expected))
-        {
-            /// should be followed by a string literal
-            if (!string_literal_parser.parse(pos, comment_expression, expected))
-                return false;
-        }
-
         break;
     }
 
@@ -406,8 +411,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->ttl_table, ttl_table);
 
     storage->set(storage->settings, settings);
-
-    storage->set(storage->comment, comment_expression);
 
     node = storage;
     return true;
@@ -481,7 +484,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (attach && s_from.ignore(pos, expected))
     {
-        ParserLiteral from_path_p;
+        ParserStringLiteral from_path_p;
         if (!from_path_p.parse(pos, from_path, expected))
             return false;
     }
@@ -568,7 +571,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             }
         }
     }
-
+    auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
@@ -589,6 +592,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+
+    if (comment)
+        query->set(query->comment, comment);
 
     if (query->storage && query->columns_list && query->columns_list->primary_key)
     {
@@ -803,7 +809,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     }
 
     storage_p.parse(pos, storage, expected);
-
+    auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
@@ -816,6 +822,8 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->cluster = cluster_str;
 
     query->set(query->storage, storage);
+    if (comment)
+        query->set(query->comment, comment);
 
     return true;
 }
@@ -896,7 +904,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
-        ParserLiteral literal_p;
+        ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }
@@ -934,6 +942,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!select_p.parse(pos, select, expected))
         return false;
 
+    auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
@@ -958,6 +967,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    if (comment)
+        query->set(query->comment, comment);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
@@ -1039,6 +1050,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    auto comment = parseComment(pos, expected);
+
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
     query->is_dictionary = true;
@@ -1055,6 +1068,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
     query->cluster = cluster_str;
+
+    if (comment)
+        query->set(query->comment, comment);
 
     return true;
 }

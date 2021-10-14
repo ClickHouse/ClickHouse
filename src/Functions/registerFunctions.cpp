@@ -19,6 +19,7 @@ void registerFunctionChar(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
+void registerFunctionCastOrDefault(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
 void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
@@ -36,6 +37,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
+void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -52,9 +54,6 @@ void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
 void registerFunctionsSnowflake(FunctionFactory & factory);
-#if !defined(ARCADIA_BUILD)
-void registerFunctionBayesAB(FunctionFactory &);
-#endif
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 
@@ -84,6 +83,7 @@ void registerFunctions()
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
     registerFunctionsConversion(factory);
+    registerFunctionCastOrDefault(factory);
     registerFunctionsDateTime(factory);
     registerFunctionsEmbeddedDictionaries(factory);
     registerFunctionsExternalDictionaries(factory);
@@ -101,6 +101,7 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
+    registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
@@ -117,10 +118,6 @@ void registerFunctions()
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
-
-#if !defined(ARCADIA_BUILD)
-    registerFunctionBayesAB(factory);
-#endif
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

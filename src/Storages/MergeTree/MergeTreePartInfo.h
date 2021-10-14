@@ -5,8 +5,8 @@
 #include <tuple>
 #include <vector>
 #include <array>
-#include <common/types.h>
-#include <common/DayNum.h>
+#include <base/types.h>
+#include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -60,11 +60,16 @@ struct MergeTreePartInfo
     /// True if contains rhs (this part is obtained by merging rhs with some other parts or mutating rhs)
     bool contains(const MergeTreePartInfo & rhs) const
     {
+        /// Containing part may have equal level iff block numbers are equal (unless level is MAX_LEVEL)
+        /// (e.g. all_0_5_2 does not contain all_0_4_2, but all_0_5_3 or all_0_4_2_9 do)
+        bool strictly_contains_block_range = (min_block == rhs.min_block && max_block == rhs.max_block) || level > rhs.level
+            || level == MAX_LEVEL || level == LEGACY_MAX_LEVEL;
         return partition_id == rhs.partition_id        /// Parts for different partitions are not merged
             && min_block <= rhs.min_block
             && max_block >= rhs.max_block
             && level >= rhs.level
-            && mutation >= rhs.mutation;
+            && mutation >= rhs.mutation
+            && strictly_contains_block_range;
     }
 
     /// Return part mutation version, if part wasn't mutated return zero

@@ -5,7 +5,7 @@
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 

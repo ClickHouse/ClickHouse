@@ -10,7 +10,7 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace ProfileEvents
 {
@@ -64,7 +64,7 @@ struct QueryViewsLogElement
     UInt64 written_rows{};
     UInt64 written_bytes{};
     Int64 peak_memory_usage{};
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     ViewStatus status = ViewStatus::QUERY_START;
     Int32 exception_code{};

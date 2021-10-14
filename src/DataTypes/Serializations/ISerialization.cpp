@@ -5,7 +5,7 @@
 #include <IO/Operators.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/EnumReflection.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB

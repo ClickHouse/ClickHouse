@@ -5,7 +5,7 @@
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -55,7 +55,11 @@ DictionaryPtr DictionaryFactory::create(
         if (found != registered_layouts.end())
         {
             const auto & layout_creator = found->second.layout_create_function;
-            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
+            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
+            if (config.hasProperty(config_prefix + ".comment"))
+                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
+
+            return result;
         }
     }
 
