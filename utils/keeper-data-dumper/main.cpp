@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
         Poco::Logger::root().setLevel("trace");
     }
     auto * logger = &Poco::Logger::get("keeper-dumper");
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
