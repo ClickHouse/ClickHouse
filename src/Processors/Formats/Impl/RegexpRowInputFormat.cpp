@@ -163,9 +163,9 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     return true;
 }
 
-void registerInputFormatProcessorRegexp(FormatFactory & factory)
+void registerInputFormatRegexp(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Regexp", [](
+    factory.registerInputFormat("Regexp", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
