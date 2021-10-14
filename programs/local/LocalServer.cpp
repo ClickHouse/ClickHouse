@@ -565,6 +565,8 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
+    bool enable_objects_loader = false;
+
     if (config().has("path"))
     {
         String path = global_context->getPath();
@@ -576,6 +578,7 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+        enable_objects_loader = true;
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
@@ -598,6 +601,9 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
+
+    /// Persist SQL user defined objects only if user_defined folder was created
+    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
