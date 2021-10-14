@@ -924,7 +924,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.select);
     }
 
-
     if (create.columns_list)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
