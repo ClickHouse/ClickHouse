@@ -270,6 +270,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
             break;
         }
+        case ASTAlterCommand::REMOVE_SAMPLE_BY:
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
