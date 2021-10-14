@@ -11,10 +11,10 @@ class Context;
 class InterpreterCreateFunctionQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextPtr context_, bool is_internal_)
+    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextPtr context_, bool persist_function_)
         : WithContext(context_)
         , query_ptr(query_ptr_)
-        , is_internal(is_internal_) {}
+        , persist_function(persist_function_) {}
 
     BlockIO execute() override;
 
@@ -26,7 +26,7 @@ private:
     static void validateFunctionRecursiveness(ASTPtr node, const String & function_to_create);
 
     ASTPtr query_ptr;
-    bool is_internal;
+    bool persist_function;
 };
 
 }
