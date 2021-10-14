@@ -4,7 +4,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <pcg_random.hpp>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace Poco::Util

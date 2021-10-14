@@ -8,17 +8,18 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/UUIDGenerator.h>
+#include <Poco/File.h>
 #include <Poco/Process.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
@@ -165,7 +166,10 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline);
+
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
+
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

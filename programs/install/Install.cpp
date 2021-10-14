@@ -20,8 +20,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
-#include <base/getResource.h>
-#include <base/sleep.h>
+#include <common/getResource.h>
+#include <common/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -71,12 +71,6 @@ namespace ErrorCodes
 
 }
 
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
-
-static constexpr auto CLICKHOUSE_BRIDGE_USER = "clickhouse-bridge";
-static constexpr auto CLICKHOUSE_BRIDGE_GROUP = "clickhouse-bridge";
 
 using namespace DB;
 namespace po = boost::program_options;
@@ -153,6 +147,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             << argv[0]
             << " install [options]\n";
         std::cout << desc << '\n';
+        return 1;
     }
 
     try
@@ -290,7 +285,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 bool is_symlink = fs::is_symlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::absolute(fs::read_symlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
@@ -326,34 +321,26 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         std::string user = options["user"].as<std::string>();
         std::string group = options["group"].as<std::string>();
 
-        auto create_group = [](const String & group_name)
-        {
-            std::string command = fmt::format("groupadd -r {}", group_name);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        };
-
         if (!group.empty())
         {
-            fmt::print("Creating clickhouse group if it does not exist.\n");
-            create_group(group);
+            {
+                fmt::print("Creating clickhouse group if it does not exist.\n");
+                std::string command = fmt::format("groupadd -r {}", group);
+                fmt::print(" {}\n", command);
+                executeScript(command);
+            }
         }
         else
             fmt::print("Will not create clickhouse group");
 
-        auto create_user = [](const String & user_name, const String & group_name)
-        {
-            std::string command = group_name.empty()
-                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
-                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group_name, user_name);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        };
-
         if (!user.empty())
         {
             fmt::print("Creating clickhouse user if it does not exist.\n");
-            create_user(user, group);
+            std::string command = group.empty()
+                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user)
+                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group, user);
+            fmt::print(" {}\n", command);
+            executeScript(command);
 
             if (group.empty())
                 group = user;
@@ -485,15 +472,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
-        auto change_ownership = [](const String & file_name, const String & user_name, const String & group_name)
+        /// Chmod and chown configs
         {
-            std::string command = fmt::format("chown --recursive {}:{} '{}'", user_name, group_name, file_name);
+            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, config_dir.string());
             fmt::print(" {}\n", command);
             executeScript(command);
-        };
-
-        /// Chmod and chown configs
-        change_ownership(config_dir.string(), user, group);
+        }
 
         /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
         fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
@@ -571,49 +555,24 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Data directory is not accessible to anyone except clickhouse.
         fs::permissions(data_path, fs::perms::owner_all, fs::perm_options::replace);
 
-        fs::path odbc_bridge_path = bin_dir / "clickhouse-odbc-bridge";
-        fs::path library_bridge_path = bin_dir / "clickhouse-library-bridge";
-
-        if (fs::exists(odbc_bridge_path) || fs::exists(library_bridge_path))
-        {
-            create_group(CLICKHOUSE_BRIDGE_GROUP);
-            create_user(CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
-
-            if (fs::exists(odbc_bridge_path))
-                change_ownership(odbc_bridge_path, CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
-            if (fs::exists(library_bridge_path))
-                change_ownership(library_bridge_path, CLICKHOUSE_BRIDGE_USER, CLICKHOUSE_BRIDGE_GROUP);
-        }
+        /// Set up password for default user.
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
+        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
-        /// dpkg or apt installers can ask for non-interactive work explicitly.
-
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
-
-        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
-
-        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
-        bool can_ask_password = !noninteractive && stdout_is_a_tty;
-
-        /// Set up password for default user.
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+            fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",
                        users_config_file.string(), users_d.string());
         }
-        else if (!can_ask_password)
+        else if (!is_interactive)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+            fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                        users_config_file.string(), users_d.string());
         }
         else
         {
-            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
-            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
-
             char buf[1000] = {};
             std::string password;
             if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
@@ -641,7 +600,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in file {}.\n", password_file);
 #else
                 out << "<yandex>\n"
                     "    <users>\n"
@@ -652,12 +611,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in plaintext in file {}.\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                            users_config_file.string(), users_d.string());
         }
 
@@ -682,6 +641,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
             "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+        fmt::print(" {}\n", command);
         executeScript(command);
 #endif
 
@@ -880,8 +840,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
+            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
+            copyData(sh->err, stderr);
 
             sh->tryWait();
         }
@@ -962,7 +922,7 @@ namespace
             if (isRunning(pid_file))
             {
                 throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after {} tries (delay: {} ms)",
+                    "The server process still exists after %zu ms",
                     num_kill_check_tries, kill_check_delay_ms);
             }
         }

@@ -6,8 +6,9 @@
 #include <thread>
 #include <mutex>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>

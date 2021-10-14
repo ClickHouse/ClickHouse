@@ -7,12 +7,16 @@
 namespace DB
 {
 
+class Context;
+
+
 /** Return single row with single column "statement" of type String with text of query to CREATE specified table.
   */
-class InterpreterShowCreateQuery : public IInterpreter, WithContext
+class InterpreterShowCreateQuery : public IInterpreter
 {
 public:
-    InterpreterShowCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterShowCreateQuery(const ASTPtr & query_ptr_, const Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -20,8 +24,9 @@ public:
 
 private:
     ASTPtr query_ptr;
+    const Context & context;
 
-    QueryPipeline executeImpl();
+    BlockInputStreamPtr executeImpl();
 };
 
 

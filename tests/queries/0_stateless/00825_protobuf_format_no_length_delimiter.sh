@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas
@@ -32,7 +31,7 @@ echo "Binary representation:"
 hexdump -C $BINARY_FILE_PATH
 
 echo
-(cd $SCHEMADIR && $PROTOC_BINARY --decode Message 00825_protobuf_format_no_length_delimiter.proto) < $BINARY_FILE_PATH
+(cd $SCHEMADIR && protoc --decode Message 00825_protobuf_format_no_length_delimiter.proto) < $BINARY_FILE_PATH
 
 # Check the input in the ProtobufSingle format.
 echo

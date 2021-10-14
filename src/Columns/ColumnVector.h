@@ -4,21 +4,13 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
-#include <Core/TypeId.h>
-#include <base/TypeName.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
@@ -30,7 +22,6 @@ struct CompareHelper
 {
     static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
     static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
-    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -77,11 +68,6 @@ struct FloatCompareHelper
         return a > b;
     }
 
-    static constexpr bool equals(T a, T b, int nan_direction_hint)
-    {
-        return compare(a, b, nan_direction_hint) == 0;
-    }
-
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
         const bool isnan_a = std::isnan(a);
@@ -104,13 +90,12 @@ struct FloatCompareHelper
 template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
 template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
-
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!is_decimal<T>);
+    static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
@@ -118,7 +103,6 @@ private:
 
     struct less;
     struct greater;
-    struct equals;
 
 public:
     using ValueType = T;
@@ -134,7 +118,7 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return is_arithmetic_v<T>; }
+    bool isNumeric() const override { return IsNumber<T>; }
 
     size_t size() const override
     {
@@ -169,8 +153,6 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
-
-    const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -237,8 +219,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getDataType() const override { return TypeId<T>::value; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -247,7 +229,6 @@ public:
         assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
-
 
     void get(size_t n, Field & res) const override
     {
@@ -262,39 +243,28 @@ public:
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
-        if constexpr (is_arithmetic_v<T>)
-            return UInt64(data[n]);
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
+        return UInt64(data[n]);
     }
 
     /// Out of range conversion is permitted.
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
-        if constexpr (is_arithmetic_v<T>)
-            return Int64(data[n]);
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
+        return Int64(data[n]);
     }
 
     bool getBool(size_t n) const override
     {
-        if constexpr (is_arithmetic_v<T>)
-            return bool(data[n]);
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
+        return bool(data[n]);
     }
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<T>(x));
+        data.push_back(DB::get<NearestFieldType<T>>(x));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-
-    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
@@ -398,6 +368,5 @@ extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
-extern template class ColumnVector<UUID>;
 
 }

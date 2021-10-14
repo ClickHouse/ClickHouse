@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
@@ -10,29 +10,21 @@
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <base/range.h>
+#include <ext/range.h>
 #include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
@@ -116,7 +108,7 @@ public:
                 document_ok = parser.parse(json, document);
             }
 
-            for (const auto i : collections::range(0, input_rows_count))
+            for (const auto i : ext::range(0, input_rows_count))
             {
                 if (!col_json_const)
                 {
@@ -278,145 +270,40 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class ExecutableFunctionJSON : public IExecutableFunction, WithContext
+class FunctionJSON : public IFunction
 {
-
 public:
-    explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_)
-        : null_presence(null_presence_), allow_simdjson(allow_simdjson_)
-    {
-    }
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(const Context & context_) : context(context_) {}
 
+    static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (null_presence.has_null_constant)
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
-        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, result_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
-    }
-
-private:
-    template <class Parser>
-    ColumnPtr
-    chooseAndRunJSONParserOne(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        /// Only implementations with prepare() can handle NULL.
-        ///
-        /// (and right now this file is pretty complex already, and adding
-        /// support of Nullable for others will make it even more complex)
-        if (null_presence.has_nullable && !Impl<Parser>::supportNullable())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not support Nullable", Name::name);
-
-        return FunctionJSONHelpers::Executor<Name, Impl, Parser>::run(arguments, result_type, input_rows_count);
-    }
-
-    ColumnPtr
-    chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
+        /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (allow_simdjson)
-            return chooseAndRunJSONParserOne<SimdJSONParser>(arguments, result_type, input_rows_count);
+        if (context.getSettingsRef().allow_simdjson)
+            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
 #if USE_RAPIDJSON
-        return chooseAndRunJSONParserOne<RapidJSONParser>(arguments, result_type, input_rows_count);
+        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
 #else
-        return chooseAndRunJSONParserOne<DummyJSONParser>(arguments, result_type, input_rows_count);
+        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
     }
 
-    NullPresence null_presence;
-    bool allow_simdjson;
-};
-
-
-template <typename Name, template<typename> typename Impl>
-class FunctionBaseFunctionJSON : public IFunctionBase
-{
-public:
-    explicit FunctionBaseFunctionJSON(
-        const NullPresence & null_presence_, bool allow_simdjson_, DataTypes argument_types_, DataTypePtr return_type_)
-        : null_presence(null_presence_)
-        , allow_simdjson(allow_simdjson_)
-        , argument_types(std::move(argument_types_))
-        , return_type(std::move(return_type_))
-    {
-    }
-
-    String getName() const override { return Name::name; }
-
-    const DataTypes & getArgumentTypes() const override
-    {
-        return argument_types;
-    }
-
-    const DataTypePtr & getResultType() const override
-    {
-        return return_type;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
-    {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson);
-    }
-
 private:
-    NullPresence null_presence;
-    bool allow_simdjson;
-    DataTypes argument_types;
-    DataTypePtr return_type;
-};
-
-
-/// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
-/// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
-template <typename Name, template<typename> typename Impl>
-class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
-{
-public:
-    static constexpr auto name = Name::name;
-
-    String getName() const override { return name; }
-
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<JSONOverloadResolver>(context_);
-    }
-
-    explicit JSONOverloadResolver(ContextPtr context_) : WithContext(context_) {}
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
-    {
-        NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type;
-        if (null_presence.has_null_constant)
-            return_type = makeNullable(std::make_shared<DataTypeNothing>());
-        else if (null_presence.has_nullable)
-            return_type = makeNullable(Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments)));
-        else
-            return_type = Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
-
-        DataTypes argument_types;
-        argument_types.reserve(arguments.size());
-        for (const auto & argument : arguments)
-            argument_types.emplace_back(argument.type);
-        return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-            null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type);
-    }
+    const Context & context;
 };
 
 
@@ -446,7 +333,6 @@ public:
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -475,7 +361,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -500,7 +385,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -531,7 +415,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view & last_key)
     {
@@ -566,7 +449,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -609,7 +491,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -637,7 +518,7 @@ public:
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
-        else if (element.isBool() && is_integer<NumberType> && convert_bool_to_integer)
+        else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
         {
             value = static_cast<NumberType>(element.getBool());
         }
@@ -649,7 +530,6 @@ public:
         return true;
     }
 };
-
 
 template <typename JSONParser>
 using JSONExtractInt8Impl = JSONExtractNumericImpl<JSONParser, Int8>;
@@ -685,7 +565,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -711,7 +590,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -725,8 +603,6 @@ public:
     }
 };
 
-template <typename JSONParser>
-class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -737,8 +613,8 @@ struct JSONExtractTree
     class Node
     {
     public:
-        Node() = default;
-        virtual ~Node() = default;
+        Node() {}
+        virtual ~Node() {}
         virtual bool insertResultToColumn(IColumn &, const Element &) = 0;
     };
 
@@ -752,71 +628,12 @@ struct JSONExtractTree
         }
     };
 
-    class LowCardinalityNode : public Node
-    {
-    public:
-        LowCardinalityNode(DataTypePtr dictionary_type_, std::unique_ptr<Node> impl_)
-            : dictionary_type(dictionary_type_), impl(std::move(impl_)) {}
-        bool insertResultToColumn(IColumn & dest, const Element & element) override
-        {
-            auto from_col = dictionary_type->createColumn();
-            if (impl->insertResultToColumn(*from_col, element))
-            {
-                StringRef value = from_col->getDataAt(0);
-                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data, value.size);
-                return true;
-            }
-            return false;
-        }
-    private:
-        DataTypePtr dictionary_type;
-        std::unique_ptr<Node> impl;
-    };
-
-    class UUIDNode : public Node
-    {
-    public:
-        bool insertResultToColumn(IColumn & dest, const Element & element) override
-        {
-            if (!element.isString())
-                return false;
-
-            auto uuid = parseFromString<UUID>(element.getString());
-            assert_cast<ColumnUUID &>(dest).insert(uuid);
-            return true;
-        }
-    };
-
-    template <typename DecimalType>
-    class DecimalNode : public Node
-    {
-    public:
-        DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
-        bool insertResultToColumn(IColumn & dest, const Element & element) override
-        {
-            if (!element.isDouble())
-                return false;
-
-            const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-            auto result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale());
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
-            return true;
-        }
-    private:
-        DataTypePtr data_type;
-    };
-
     class StringNode : public Node
     {
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            if (element.isString())
-                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
-            else if (element.isNull())
-                return false;
-            else
-                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 
@@ -1050,17 +867,6 @@ struct JSONExtractTree
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
             case TypeIndex::String: return std::make_unique<StringNode>();
             case TypeIndex::FixedString: return std::make_unique<FixedStringNode>();
-            case TypeIndex::UUID: return std::make_unique<UUIDNode>();
-            case TypeIndex::LowCardinality:
-            {
-                auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
-                auto impl = build(function_name, dictionary_type);
-                return std::make_unique<LowCardinalityNode>(dictionary_type, std::move(impl));
-            }
-            case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
-            case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
-            case TypeIndex::Decimal64: return std::make_unique<DecimalNode<Decimal64>>(type);
-            case TypeIndex::Decimal32: return std::make_unique<DecimalNode<Decimal32>>(type);
             case TypeIndex::Enum8:
                 return std::make_unique<EnumNode<Int8>>(static_cast<const DataTypeEnum8 &>(*type).getValues());
             case TypeIndex::Enum16:
@@ -1111,7 +917,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
-    static bool supportNullable() { return true; }
 
     void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
     {
@@ -1153,7 +958,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
-    static bool supportNullable() { return true; }
 
     void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
     {
@@ -1205,7 +1009,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1310,7 +1113,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1343,7 +1145,6 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool supportNullable() { return false; }
 
     bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {

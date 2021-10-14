@@ -4,7 +4,6 @@
 #include <optional>
 #include <shared_mutex>
 #include <deque>
-#include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -21,6 +20,7 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <Core/Block.h>
 
@@ -36,36 +36,27 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-    using RawBlockPtr = const Block *;
-    using UsedFlagsForBlock = std::vector<std::atomic_bool>;
-
-    /// For multiple dijuncts each empty in hashmap stores flags for particular block
-    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
-    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
-
+    std::vector<std::atomic_bool> flags;
     bool need_flags;
 
 public:
+
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void reinit(size_t size_);
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-    void reinit(const Block * block_ptr);
-
     bool getUsedSafe(size_t i) const;
-    bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
-    void setUsed(const T & f);
+    template <bool use_flags>
+    void setUsed(size_t i);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
-    bool getUsed(const T & f);
+    template <bool use_flags>
+    bool getUsed(size_t i);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
-    bool setUsedOnce(const T & f);
+    template <bool use_flags>
+    bool setUsedOnce(size_t i);
 };
 
 }
@@ -143,14 +134,10 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
-
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addJoinedBlock(const Block & block, bool check_limits) override;
-
-    void checkTypesOfKeys(const Block & block) const override;
 
     /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
@@ -166,17 +153,16 @@ public:
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
+    bool hasTotals() const override { return totals; }
 
-    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
+    void joinTotals(Block & block) const override;
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -191,7 +177,11 @@ public:
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
-    const ColumnWithTypeAndName & rightAsofKeyColumn() const;
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const
+    {
+        /// It should be nullable if nullable_right_side is true
+        return savedBlockSample().getByName(key_names_right.back());
+    }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -230,15 +220,15 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
-        std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
-        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
-        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>   key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
+        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
+        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
+        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)
         {
@@ -312,16 +302,14 @@ public:
     using MapsAsof = MapsTemplate<AsofRowRefs>;
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
-
-    using RawBlockPtr = const Block *;
-    using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
+    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
 
     struct RightTableData
     {
         Type type = Type::EMPTY;
         bool empty = true;
 
-        std::vector<MapsVariant> maps;
+        MapsVariant maps;
         Block sample_block; /// Block as it would appear in the BlockList
         BlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
@@ -329,8 +317,6 @@ public:
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
     };
-
-    using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
@@ -341,22 +327,23 @@ public:
 
     void reuseJoinedData(const HashJoin & join);
 
-    RightTableDataPtr getJoinedData() const { return data; }
+    std::shared_ptr<RightTableData> getJoinedData() const
+    {
+        return data;
+    }
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
-    bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
 
 private:
-    template<bool> friend class NotJoinedHash;
-
+    friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// This join was created from StorageJoin and it is already filled.
-    bool from_storage_join = false;
+    /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
+    const Names & key_names_right;
 
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
@@ -365,14 +352,14 @@ private:
     ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
+    std::shared_ptr<RightTableData> data;
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
-    RightTableDataPtr data;
-    std::vector<Sizes> key_sizes;
+    Sizes key_sizes;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -393,7 +380,7 @@ private:
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
     std::shared_lock<std::shared_mutex> storage_join_lock;
 
-    void dataMapInit(MapsVariant &);
+    void init(Type type_);
 
     const Block & savedBlockSample() const { return data->sample_block; }
 
@@ -404,8 +391,9 @@ private:
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
+        const Names & key_names_left,
         const Block & block_with_columns_to_add,
-        const std::vector<const Maps *> & maps_,
+        const Maps & maps,
         bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;

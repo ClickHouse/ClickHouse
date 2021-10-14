@@ -6,8 +6,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
-#include <base/unaligned.h>
+#include <ext/range.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -317,7 +317,7 @@ class ReverseIndex
 {
 public:
     ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
-        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
+        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), external_saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -352,14 +352,14 @@ public:
         if (!use_saved_hash)
             return nullptr;
 
-        UInt64 * ptr = saved_hash_ptr.load();
+        UInt64 * ptr = external_saved_hash_ptr.load();
         if (!ptr)
         {
             auto hash = calcHashes();
             ptr = &hash->getData()[0];
             UInt64 * expected = nullptr;
-            if (saved_hash_ptr.compare_exchange_strong(expected, ptr))
-                saved_hash = std::move(hash);
+            if (external_saved_hash_ptr.compare_exchange_strong(expected, ptr))
+                external_saved_hash = std::move(hash);
             else
                 ptr = expected;
         }
@@ -379,7 +379,9 @@ private:
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
     mutable ColumnUInt64::MutablePtr saved_hash;
-    mutable std::atomic<UInt64 *> saved_hash_ptr;
+    /// For usage during GROUP BY
+    mutable ColumnUInt64::MutablePtr external_saved_hash;
+    mutable std::atomic<UInt64 *> external_saved_hash_ptr;
 
     void buildIndex();
 
@@ -447,7 +449,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     IteratorType iterator;
     bool inserted;
 
-    for (auto row : collections::range(num_prefix_rows_to_skip, size))
+    for (auto row : ext::range(num_prefix_rows_to_skip, size))
     {
         UInt64 hash;
         if constexpr (use_saved_hash)
@@ -471,7 +473,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
     auto size = column->size();
     auto hash = ColumnUInt64::create(size);
 
-    for (auto row : collections::range(0, size))
+    for (auto row : ext::range(0, size))
         hash->getElement(row) = getHash(column->getDataAt(row));
 
     return hash;

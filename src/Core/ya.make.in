@@ -1,0 +1,16 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/sparsehash
+    contrib/restricted/boost/libs
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

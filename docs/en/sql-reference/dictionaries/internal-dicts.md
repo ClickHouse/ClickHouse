@@ -31,7 +31,7 @@ You can also create these files yourself. The file format is as follows:
 
 -   region ID (`UInt32`)
 -   parent region ID (`UInt32`)
--   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
+-   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types don’t have values
 -   population (`UInt32`) — optional column
 
 `regions_names_*.txt`: TabSeparated (no header), columns:
@@ -50,3 +50,4 @@ We recommend periodically updating the dictionaries with the geobase. During an 
 
 There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn’t be used.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

@@ -25,8 +25,8 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
-    assert(n.items[1] != 0);
-    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.items[1]) >> 3)};
+    assert(n.high != 0);
+    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.high) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
@@ -46,8 +46,8 @@ struct StringHashTableHash
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
         size_t res = -1ULL;
-        res = _mm_crc32_u64(res, key.items[0]);
-        res = _mm_crc32_u64(res, key.items[1]);
+        res = _mm_crc32_u64(res, key.low);
+        res = _mm_crc32_u64(res, key.high);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
@@ -79,7 +79,7 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty //-V730
+struct StringHashTableEmpty
 {
     using Self = StringHashTableEmpty;
 
@@ -237,12 +237,7 @@ public:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
-    //
     // NOTE: It relies on Little Endianness
-    //
-    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
-    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
-    // since it copies 8 bytes at a time.
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {

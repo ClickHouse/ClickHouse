@@ -1,9 +1,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
-#include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 
 namespace DB
 {
@@ -46,7 +45,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -96,10 +95,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     }
                 }
 
-                auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
+                auto transform = std::make_shared<AggregatingSortedTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
-                    transform_params,
                     group_by_sort_description,
                     max_block_size);
 
@@ -161,11 +159,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
-}
-
-void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    params.explain(map);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

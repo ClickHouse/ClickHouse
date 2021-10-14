@@ -8,10 +8,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
 
-#include <base/unaligned.h>
-#include <base/sort.h>
+#include <common/unaligned.h>
+#include <common/sort.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -240,16 +239,6 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
-const char * ColumnArray::skipSerializedInArena(const char * pos) const
-{
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
-
-    for (size_t i = 0; i < array_size; ++i)
-        pos = getData().skipSerializedInArena(pos);
-
-    return pos;
-}
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
 {
@@ -386,8 +375,11 @@ bool ColumnArray::hasEqualValues() const
     return hasEqualValuesImpl<ColumnArray>();
 }
 
+namespace
+{
+
 template <bool positive>
-struct ColumnArray::Cmp
+struct Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -403,13 +395,12 @@ struct ColumnArray::Cmp
             res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
         else
             res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return positive ? res : -res;
     }
 };
+
+}
+
 
 void ColumnArray::reserve(size_t n)
 {
@@ -549,34 +540,6 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
-
-void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
-{
-    auto & offsets_data = getOffsets();
-    if (mask.size() < offsets_data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
-    offsets_data.resize(mask.size());
-    UInt64 last_offset = offsets_data[from];
-    while (index >= 0)
-    {
-        offsets_data[index] = last_offset;
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
-            --from;
-            last_offset = offsets_data[from];
-        }
-
-        --index;
-    }
-
-    if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
 
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
@@ -850,6 +813,82 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
         partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
+}
+
+template <typename Comparator>
+void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const
+{
+    if (equal_range.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_range.size();
+
+    if (limit)
+        --number_of_ranges;
+
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+
+        std::sort(res.begin() + first, res.begin() + last, less);
+        auto new_first = first;
+
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
@@ -1161,6 +1200,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         ColumnTuple::create(tuple_columns),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
+
 
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {

@@ -1,7 +1,7 @@
-# docker build -t clickhouse/deb-builder .
+# docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -36,32 +36,42 @@ RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
 # Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
-        alien \
-        clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
-        cmake \
-        debhelper \
-        devscripts \
-        gdb  \
-        git \
-        gperf \
-        lld-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION}-dev \
-        moreutils \
+        gcc-9 \
+        g++-9 \
+        clang-11 \
+        clang-tidy-11 \
+        lld-11 \
+        llvm-11 \
+        llvm-11-dev \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         ninja-build \
         perl \
-        pigz \
-        pixz \
         pkg-config \
+        devscripts \
+        debhelper \
+        git \
         tzdata \
+        gperf \
+        alien \
+        cmake \
+        gdb  \
+        moreutils \
+        pigz \
         --yes --no-install-recommends
 
-# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
-    && apt-get update \
-    && apt-get install gcc-11 g++-11 --yes
+# NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
+# Current workaround is to use latest version proposed repo. Remove as soon as
+# gcc-10.2 appear in stable repo.
+RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
 
+RUN apt-get update \
+    && apt-get install gcc-10 g++-10 --yes --no-install-recommends
+
+RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

@@ -6,8 +6,9 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <Common/FieldVisitors.h>
 #include <Common/PODArray_fwd.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,10 +21,9 @@
 
 #include <Common/ArenaAllocator.h>
 
-
+#include <iostream>
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

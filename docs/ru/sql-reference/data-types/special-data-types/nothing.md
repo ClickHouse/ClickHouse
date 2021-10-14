@@ -19,3 +19,4 @@ SELECT toTypeName(Array())
 └─────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/special_data_types/nothing/) <!--hide-->

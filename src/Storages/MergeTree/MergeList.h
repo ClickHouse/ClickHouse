@@ -7,9 +7,7 @@
 #include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/BackgroundProcessList.h>
-#include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <list>
@@ -53,33 +51,16 @@ struct MergeInfo
 };
 
 struct FutureMergedMutatedPart;
-using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
-
-/**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker to account all the memory used.
- */
-class MemoryTrackerThreadSwitcher : boost::noncopyable
-{
-public:
-    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit);
-    ~MemoryTrackerThreadSwitcher();
-private:
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
-    UInt64 prev_untracked_memory_limit;
-};
-
-using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {
-    const StorageID table_id;
+    const std::string database;
+    const std::string table;
     std::string partition_id;
 
     const std::string result_part_name;
     const std::string result_part_path;
-    MergeTreePartInfo result_part_info;
+    Int64 result_data_version{};
     bool is_mutation{};
 
     UInt64 num_parts{};
@@ -105,23 +86,17 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
-    UInt64 max_untracked_memory;
+    MemoryTracker * background_thread_memory_tracker;
+    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    MergeListElement(
-        const StorageID & table_id_,
-        FutureMergedMutatedPartPtr future_part,
-        UInt64 memory_profiler_step,
-        UInt64 memory_profiler_sample_probability,
-        UInt64 max_untracked_memory_);
+    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
     MergeInfo getInfo() const;
-
-    MergeListElement * ptr() { return this; }
 
     ~MergeListElement();
 };
@@ -147,27 +122,14 @@ public:
             --merges_with_ttl_counter;
     }
 
-    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
+    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
         {
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
-                && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
-                && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                merge_element.is_cancelled = true;
-        }
-    }
-
-    void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
-    {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
-        {
-            if (merge_element.table_id == table_id
-                && merge_element.partition_id == partition_id
-                && merge_element.result_part_info.min_block < delimiting_block_number)
+                && merge_element.result_data_version >= mutation_version)
                 merge_element.is_cancelled = true;
         }
     }

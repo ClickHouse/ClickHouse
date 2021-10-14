@@ -10,9 +10,9 @@ toc_priority: 150
 skewPop(expr)
 ```
 
-**Аргументы**
+**Параметры**
 
-`expr` — [выражение](../../syntax.md#syntax-expressions), возвращающее число.
+`expr` — [Выражение](../../syntax.md#syntax-expressions), возвращающее число.
 
 **Возвращаемое значение**
 
@@ -21,6 +21,7 @@ skewPop(expr)
 **Пример**
 
 ``` sql
-SELECT skewPop(value) FROM series_with_value_column;
+SELECT skewPop(value) FROM series_with_value_column
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewpop/) <!--hide-->

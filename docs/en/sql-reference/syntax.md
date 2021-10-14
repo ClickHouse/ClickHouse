@@ -104,28 +104,6 @@ There are many nuances to processing `NULL`. For example, if at least one of the
 
 In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
 
-### Heredoc {#heredeoc}
-
-A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is". 
-
-You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc. 
-
-**Example**
-
-Query:
-
-```sql
-SELECT $smth$SHOW CREATE VIEW my_view$smth$;
-```
-
-Result:
-
-```text
-┌─'SHOW CREATE VIEW my_view'─┐
-│ SHOW CREATE VIEW my_view   │
-└────────────────────────────┘
-```
-
 ## Functions {#functions}
 
 Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. In contrast to standard SQL, the brackets are required, even for an empty argument list. Example: `now()`.
@@ -193,7 +171,7 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception. You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias) to `1`.
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception.
 
 ## Asterisk {#asterisk}
 
@@ -205,4 +183,4 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
-[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->

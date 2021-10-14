@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -14,23 +14,23 @@ namespace DB
 {
 
 class ASTSelectQuery;
-class ASTTableIdentifier;
+class ASTIdentifier;
 struct ASTTableExpression;
+class Context;
+
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
 {
-    // TODO(ilezhankin): replace with ASTTableIdentifier
     String database;
     String table;
     String alias;
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    explicit DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
-    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
-
+    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
+    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;
@@ -61,7 +61,7 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    bool hasColumn(const String & name) const { return names.contains(name); }
+    bool hasColumn(const String & name) const { return names.count(name); }
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
@@ -75,17 +75,19 @@ struct TableWithColumnNamesAndTypes
 
     void addMaterializedColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(materialized_columns, addition);
+        addAdditionalColumns(alias_columns, addition);
     }
 
 private:
     void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
     {
         target.insert(target.end(), addition.begin(), addition.end());
-        for (const auto & col : addition)
+        for (auto & col : addition)
             names.insert(col.name);
     }
 
+
+private:
     NameSet names;
 };
 

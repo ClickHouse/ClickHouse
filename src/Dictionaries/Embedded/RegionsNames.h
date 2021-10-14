@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 #include <Poco/Exception.h>
-#include <base/StringRef.h>
-#include <base/types.h>
+#include <common/StringRef.h>
+#include <common/types.h>
 #include "GeodataProviders/INamesProvider.h"
 
 
@@ -84,7 +84,7 @@ public:
     {
         size_t language_id = static_cast<size_t>(language);
 
-        if (region_id >= names_refs[language_id].size()) //-V1051
+        if (region_id >= names_refs[language_id].size())
             return StringRef("", 0);
 
         StringRef ref = names_refs[language_id][region_id];

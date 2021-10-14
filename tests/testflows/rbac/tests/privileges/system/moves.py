@@ -18,7 +18,7 @@ def privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         table_name = f"table_name_{getuid()}"
 
-        Suite(run=check_privilege,
+        Suite(run=check_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[user_name,user_name,table_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -40,14 +40,13 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege,
+        Suite(run=check_privilege, flags=TE,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[role_name,user_name,table_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
-    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM MOVES", "table"),
     ("SYSTEM STOP MOVES", "table"),
@@ -62,8 +61,8 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, table_nam
     if node is None:
         node = self.context.node
 
-    Suite(test=start_moves)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
-    Suite(test=stop_moves)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=start_moves, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
+    Suite(test=stop_moves, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, table_name=table_name)
 
 @TestSuite
 def start_moves(self, privilege, on, grant_target_name, user_name, table_name, node=None):
@@ -79,19 +78,11 @@ def start_moves(self, privilege, on, grant_target_name, user_name, table_name, n
     with table(node, table_name):
 
         with Scenario("SYSTEM START MOVES without privilege"):
-
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user can't start moves"):
+            with When("I check the user can't start moves"):
                 node.query(f"SYSTEM START MOVES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM START MOVES with privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -99,7 +90,6 @@ def start_moves(self, privilege, on, grant_target_name, user_name, table_name, n
                 node.query(f"SYSTEM START MOVES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM START MOVES with revoked privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -124,19 +114,11 @@ def stop_moves(self, privilege, on, grant_target_name, user_name, table_name, no
     with table(node, table_name):
 
         with Scenario("SYSTEM STOP MOVES without privilege"):
-
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user can't stop moves"):
+            with When("I check the user can't stop moves"):
                 node.query(f"SYSTEM STOP MOVES {table_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
         with Scenario("SYSTEM STOP MOVES with privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -144,7 +126,6 @@ def stop_moves(self, privilege, on, grant_target_name, user_name, table_name, no
                 node.query(f"SYSTEM STOP MOVES {table_name}", settings = [("user", f"{user_name}")])
 
         with Scenario("SYSTEM STOP MOVES with revoked privilege"):
-
             with When(f"I grant {privilege} on the table"):
                 node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -159,8 +140,6 @@ def stop_moves(self, privilege, on, grant_target_name, user_name, table_name, no
 @Name("system moves")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_Moves("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM MOVES.

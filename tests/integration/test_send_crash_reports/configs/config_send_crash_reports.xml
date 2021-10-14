@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <send_crash_reports>
         <enabled>true</enabled>
         <debug>true</debug>
         <endpoint>http://6f33034cfe684dd7a3ab9875e57b1c8d@localhost:9500/5226277</endpoint>
     </send_crash_reports>
-</clickhouse>
+</yandex>

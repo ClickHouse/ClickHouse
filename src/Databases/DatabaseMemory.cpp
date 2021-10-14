@@ -1,12 +1,12 @@
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
+#include <Poco/File.h>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -16,13 +16,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
+DatabaseMemory::DatabaseMemory(const String & name_, const Context & context)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(
-    ContextPtr /*context*/,
+    const Context & /*context*/,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
@@ -33,7 +33,7 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    ContextPtr /*context*/,
+    const Context & /*context*/,
     const String & table_name,
     bool /*no_delay*/)
 {
@@ -42,17 +42,12 @@ void DatabaseMemory::dropTable(
     try
     {
         table->drop();
-        if (table->storesDataOnDisk())
-        {
-            assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
-            fs::path table_data_dir{getTableDataPath(table_name)};
-            if (fs::exists(table_data_dir))
-                fs::remove_all(table_data_dir);
-        }
+        Poco::File table_data_dir{getTableDataPath(table_name)};
+        if (table_data_dir.exists())
+            table_data_dir.remove(true);
     }
     catch (...)
     {
-        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table, lock);
         throw;
     }
@@ -69,14 +64,10 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
@@ -92,15 +83,15 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, getContext()))
+    if (auto table = tryGetTable(table_name, global_context))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::drop(ContextPtr local_context)
+void DatabaseMemory::drop(const Context & context)
 {
     /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(local_context->getPath() + data_path);
+    std::filesystem::remove_all(context.getPath() + data_path);
 }
 
 }

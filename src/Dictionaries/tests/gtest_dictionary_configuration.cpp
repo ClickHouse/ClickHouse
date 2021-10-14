@@ -8,7 +8,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/tests/gtest_global_context.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <gtest/gtest.h>
 
@@ -19,10 +19,10 @@ static bool registered = false;
 #pragma GCC diagnostic ignored "-Wunused-function"
 static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
-    const Poco::Util::XMLConfiguration & xml_config = dynamic_cast<const Poco::Util::XMLConfiguration &>(*config);
+    const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
-    xml_config.save(oss);
+    xml_config->save(oss);
     return oss.str();
 }
 
