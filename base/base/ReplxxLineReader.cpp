@@ -177,6 +177,10 @@ ReplxxLineReader::ReplxxLineReader(
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+
+    /// bind C-j to ENTER action.
+    rx.bind_key(Replxx::KEY::control('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMMIT_LINE, code); });
+
     /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
     /// it also binded to M-p/M-n).
