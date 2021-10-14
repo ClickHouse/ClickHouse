@@ -126,7 +126,7 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
                 {
                     return memory + data.second.memory_usage;
                 });
-            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)}; 
+            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
 
