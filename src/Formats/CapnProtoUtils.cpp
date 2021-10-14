@@ -123,7 +123,7 @@ static String getCapnProtoFullTypeName(const capnp::Type & type)
             String type_name = "Struct(" + boost::algorithm::join(non_union_field_names, ", ");
             /// Check if the struct contains unnamed union.
             if (!union_field_names.empty())
-                type_name += "," + union_name;
+                type_name += ", " + union_name;
             type_name += ")";
             return type_name;
         }
