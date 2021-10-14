@@ -22,7 +22,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <Processors/Pipe.h>

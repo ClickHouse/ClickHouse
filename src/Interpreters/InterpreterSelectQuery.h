@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -51,13 +50,6 @@ public:
         ContextPtr context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
-
-    /// Read data not from the table specified in the query, but from the prepared source `input`.
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextPtr context_,
-        const BlockInputStreamPtr & input_,
-        const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(

@@ -9,7 +9,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>

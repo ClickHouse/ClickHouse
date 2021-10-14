@@ -1,5 +1,4 @@
 #include <boost/program_options.hpp>
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>

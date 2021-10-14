@@ -1,7 +1,6 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

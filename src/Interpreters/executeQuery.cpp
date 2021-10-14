@@ -10,8 +10,6 @@
 #include <IO/copyData.h>
 
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/copyData.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
