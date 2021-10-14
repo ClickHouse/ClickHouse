@@ -25,10 +25,12 @@ struct FormatSettings
 
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
+    bool with_types_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
+    bool defaults_for_omitted_fields = true;
 
     enum class DateTimeInputFormat
     {

@@ -1,6 +1,10 @@
+"Hello, ""World""",123,"[1,2,3]",456,"['abc','def']","Newline
+here"
 "x","y","z","a","b"
 "Hello, ""World""",123,"[1,2,3]",456,"['abc','def']","Newline
 here"
+"x","y","z","a","b"
+"String","UInt8","Array(UInt8)","Tuple(UInt16, Array(String))","String"
 "Hello, ""World""",123,"[1,2,3]",456,"['abc','def']","Newline
 here"
 0,"0","[]","2000-01-01","2000-01-01 00:00:00"
