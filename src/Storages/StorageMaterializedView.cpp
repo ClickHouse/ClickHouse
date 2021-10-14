@@ -12,7 +12,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/AccessFlags.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>

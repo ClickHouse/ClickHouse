@@ -7,7 +7,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>

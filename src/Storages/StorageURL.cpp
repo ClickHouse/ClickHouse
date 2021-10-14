@@ -15,7 +15,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Poco/Net/HTTPRequest.h>

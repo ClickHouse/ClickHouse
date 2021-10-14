@@ -4,7 +4,6 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

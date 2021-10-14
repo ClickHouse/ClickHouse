@@ -9,7 +9,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/parseAddress.h>

@@ -3,7 +3,6 @@
 #include <Access/AccessFlags.h>
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>

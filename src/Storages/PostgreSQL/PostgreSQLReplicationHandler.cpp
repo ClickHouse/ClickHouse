@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/copyData.h>
 #include <Databases/DatabaseOnDisk.h>
 
 

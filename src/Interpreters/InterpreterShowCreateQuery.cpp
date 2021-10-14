@@ -3,7 +3,6 @@
 #include <Parsers/formatAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>

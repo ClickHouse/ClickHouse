@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
 #include <base/shared_ptr_helper.h>
 
