@@ -72,7 +72,7 @@ void TabSeparatedRowInputFormat::skipField()
     readEscapedStringInto(null_sink, *in);
 }
 
-void TabSeparatedRowInputFormat::skipRow()
+void TabSeparatedRowInputFormat::skipHeaderRow()
 {
     do
     {

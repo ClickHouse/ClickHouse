@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
@@ -64,13 +63,13 @@ String JSONCompactEachRowRowInputFormat::readFieldIntoString()
     return field;
 }
 
-void JSONCompactEachRowRowInputFormat::skipField(const String & column_name)
+void JSONCompactEachRowRowInputFormat::skipField(size_t file_column)
 {
     skipWhitespaceIfAny(*in);
-    skipJSONField(*in, column_name);
+    skipJSONField(*in, column_mapping->names_of_columns[file_column]);
 }
 
-void JSONCompactEachRowRowInputFormat::skipRow()
+void JSONCompactEachRowRowInputFormat::skipHeaderRow()
 {
     skipRowStartDelimiter();
     size_t i = 0;
@@ -78,7 +77,7 @@ void JSONCompactEachRowRowInputFormat::skipRow()
     {
         if (i >= column_mapping->names_of_columns.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "The number of columns in a row differs from the number of column names");
-        skipField(column_mapping->names_of_columns[i++]);
+        skipField(i++);
         skipWhitespaceIfAny(*in);
     }
     while (checkChar(',', *in));

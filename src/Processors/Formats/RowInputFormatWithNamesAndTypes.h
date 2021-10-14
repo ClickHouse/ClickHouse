@@ -28,21 +28,24 @@ protected:
     /// Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
 
-    virtual void skipField(const String & column_name) = 0;
-    virtual void skipRow() = 0;
+    virtual void skipField(size_t file_column) = 0;
+    virtual void skipNames() = 0;
+    virtual void skipTypes() = 0;
     virtual void skipRowStartDelimiter() {}
     virtual void skipFieldDelimiter() {}
     virtual void skipRowEndDelimiter() {}
 
 
     /// Methods for parsing with diagnostic info.
-    virtual void checkNullValueForNonNullable(DataTypePtr /*type*/) {}
-    virtual bool parseRowStartWithDiagnosticInfo(WriteBuffer & /*out*/) { return true; }
-    virtual bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) = 0;
-    virtual bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) = 0;
+    virtual void checkNullValueForNonNullable(DataTypePtr) {}
+    virtual bool parseRowStartWithDiagnosticInfo(WriteBuffer &) { return true; }
+    virtual bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer &) { return true; }
+    virtual bool parseRowEndWithDiagnosticInfo(WriteBuffer &) { return true;}
+    bool isGarbageAfterField(size_t, ReadBuffer::Position) override {return false; }
 
-    /// Read the list of names or types.
-    virtual std::vector<String> readHeaderRow() = 0;
+    virtual std::vector<String> readNames() = 0;
+    virtual std::vector<String> readTypes() = 0;
+
 
     const FormatSettings format_settings;
     DataTypes data_types;
