@@ -1,0 +1,73 @@
+#pragma once
+
+#include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/FormatFactory.h>
+
+namespace DB
+{
+
+/// Base class for input formats with -WithNames and -WithNamesAndTypes suffixes.
+class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
+{
+public:
+    /** with_names - in the first line the header with column names
+      * with_types - in the second line the header with column names
+      */
+    RowInputFormatWithNamesAndTypes(
+        const Block & header_,
+        ReadBuffer & in_,
+        const Params & params_,
+        bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+    void resetParser() override;
+
+protected:
+    /// Return false if there was no real value and we inserted default value.
+    virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
+
+    virtual void skipField(const String & column_name) = 0;
+    virtual void skipRow() = 0;
+    virtual void skipRowStartDelimiter() {}
+    virtual void skipFieldDelimiter() {}
+    virtual void skipRowEndDelimiter() {}
+
+
+    /// Methods for parsing with diagnostic info.
+    virtual void checkNullValueForNonNullable(DataTypePtr /*type*/) {}
+    virtual bool parseRowStartWithDiagnosticInfo(WriteBuffer & /*out*/) { return true; }
+    virtual bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) = 0;
+    virtual bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) = 0;
+
+    /// Read the list of names or types.
+    virtual std::vector<String> readHeaderRow() = 0;
+
+    const FormatSettings format_settings;
+    DataTypes data_types;
+
+private:
+    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
+    void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
+
+    void setupAllColumnsByTableSchema();
+    void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
+
+    bool with_names;
+    bool with_types;
+    std::unordered_map<String, size_t> column_indexes_by_names;
+};
+
+using RegisterFormatWithNamesAndTypesFunc = std::function<void(
+    const String & format_name,
+    bool with_names,
+    bool with_types)>;
+
+void registerInputFormatWithNamesAndTypes(const String & base_format_name, RegisterFormatWithNamesAndTypesFunc register_func);
+
+void registerFileSegmentationEngineForFormatWithNamesAndTypes(
+    FormatFactory & factory, const String & base_format_name, FormatFactory::FileSegmentationEngine segmentation_engine);
+
+}

@@ -130,7 +130,7 @@ void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISe
             serialization.serializeTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            serialization.serializeText(column, row_num, out, settings);
+            serialization.serializeTextRaw(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();
