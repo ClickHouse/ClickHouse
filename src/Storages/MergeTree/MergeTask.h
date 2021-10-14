@@ -58,7 +58,7 @@ public:
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
         const IMergeTreeDataPart * parent_part_,
-        String prefix_,
+        String suffix_,
         MergeTreeData * data_,
         ActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
@@ -83,7 +83,7 @@ public:
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
-            prepare_stage_ctx->prefix = std::move(prefix_);
+            prepare_stage_ctx->suffix = std::move(suffix_);
             prepare_stage_ctx->merging_params = std::move(merging_params_);
 
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -170,7 +170,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Dependencies
-        String prefix;
+        String suffix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};

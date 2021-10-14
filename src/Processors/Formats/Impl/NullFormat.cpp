@@ -1,30 +1,22 @@
-#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Formats/FormatFactory.h>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB
 {
 
-class NullOutputFormat : public IOutputFormat
+WriteBuffer NullOutputFormat::empty_buffer(nullptr, 0);
+
+void registerOutputFormatNull(FormatFactory & factory)
 {
-public:
-    NullOutputFormat(const Block & header, WriteBuffer & out_) : IOutputFormat(header, out_) {}
-
-    String getName() const override { return "NullOutputFormat"; }
-
-protected:
-    void consume(Chunk) override {}
-};
-
-void registerOutputFormatProcessorNull(FormatFactory & factory)
-{
-    factory.registerOutputFormatProcessor("Null", [](
-        WriteBuffer & buf,
+    factory.registerOutputFormat("Null", [](
+        WriteBuffer &,
         const Block & sample,
         const RowOutputFormatParams &,
         const FormatSettings &)
     {
-        return std::make_shared<NullOutputFormat>(sample, buf);
+        return std::make_shared<NullOutputFormat>(sample);
     });
 }
 

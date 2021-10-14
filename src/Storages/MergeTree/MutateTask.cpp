@@ -474,7 +474,7 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->default_codec = codec;
-    new_data_part->calculateColumnsSizesOnDisk();
+    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
     new_data_part->storage.lockSharedData(*new_data_part);
 }
 
@@ -653,7 +653,7 @@ public:
                 {},
                 projection_merging_params,
                 ctx->new_data_part.get(),
-                "tmp_merge_");
+                ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
@@ -831,8 +831,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
     }
 
@@ -1081,7 +1081,7 @@ private:
 
             if (!ctx->disk->isDirectory(it->path()))
                 ctx->disk->createHardLink(it->path(), destination);
-            else if (!startsWith("tmp_", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->disk->createDirectories(destination);

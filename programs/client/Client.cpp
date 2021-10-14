@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Core/Protocol.h"
 
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
@@ -44,8 +45,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
-#include <DataStreams/NullBlockOutputStream.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -61,7 +60,6 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include "TestTags.h"
 
 #ifndef __clang__
@@ -376,6 +374,9 @@ std::vector<String> Client::loadWarningMessages()
 
             case Protocol::Server::EndOfStream:
                 return messages;
+
+            case Protocol::Server::ProfileEvents:
+                continue;
 
             default:
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",

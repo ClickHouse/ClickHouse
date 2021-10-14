@@ -806,9 +806,9 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     return it->second;
 }
 
-void registerInputFormatProcessorAvro(FormatFactory & factory)
+void registerInputFormatAvro(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Avro", [](
+    factory.registerInputFormat("Avro", [](
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
@@ -817,7 +817,7 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
 
-    factory.registerInputFormatProcessor("AvroConfluent",[](
+    factory.registerInputFormat("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
@@ -834,7 +834,7 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorAvro(FormatFactory &)
+void registerInputFormatAvro(FormatFactory &)
 {
 }
 }
