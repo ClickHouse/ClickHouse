@@ -41,3 +41,4 @@ DROP TABLE test_table;
 DROP TABLE test_table_default;
 
 DROP DATABASE 02097_db;
+
