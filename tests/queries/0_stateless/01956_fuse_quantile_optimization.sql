@@ -71,3 +71,6 @@ SELECT quantileTimingWeighted([[[[['-214748364.8'], NULL]], [[[quantileTimingWei
 SELECT quantileTimingWeighted([quantileTimingWeighted(0.5)(1, 1)])(1, 1); -- { serverError ILLEGAL_AGGREGATION }
 
 DROP TABLE datetime;
+
+SET optimize_syntax_fuse_functions = 1;
+SELECT quantile(1 AS a), quantile(a AS b), quantile(b AS c);

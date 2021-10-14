@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <Processors/Pipe.h>
@@ -16,7 +15,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

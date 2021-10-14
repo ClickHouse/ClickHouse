@@ -9,8 +9,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeWriter.h>
 
 
 namespace ProfileEvents

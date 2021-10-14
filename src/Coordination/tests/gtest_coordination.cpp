@@ -21,7 +21,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <thread>
 #include <Coordination/KeeperLogStore.h>
@@ -1159,7 +1159,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest logs("./logs");
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();
@@ -1186,7 +1186,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
             state_machine->create_snapshot(s, when_done);
             CreateSnapshotTask snapshot_task;
-            snapshots_queue.pop(snapshot_task);
+            bool pop_result = snapshots_queue.pop(snapshot_task);
+            EXPECT_TRUE(pop_result);
+
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
         if (snapshot_created)
@@ -1308,7 +1310,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();

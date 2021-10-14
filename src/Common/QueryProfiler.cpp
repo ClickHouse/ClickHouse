@@ -5,9 +5,9 @@
 #include <Common/StackTrace.h>
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/errnoToString.h>
+#include <base/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <base/errnoToString.h>
 
 #include <random>
 
@@ -82,7 +82,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
-#if USE_UNWIND
+#if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+#elif !USE_UNWIND
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+#else
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
@@ -144,13 +158,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         tryCleanup();
         throw;
     }
-#else
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 
