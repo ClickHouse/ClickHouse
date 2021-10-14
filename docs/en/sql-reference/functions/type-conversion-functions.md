@@ -281,22 +281,24 @@ Result:
 
 ## toDate32OrDefault {#todate32-or-default}
 
-Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if invalid argument is received.
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the lower border value supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if invalid argument is received.
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT toDate32OrDefault('1955-01-01'), toDate32OrDefault('');
+SELECT
+    toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
+    toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
 ```
 
 Result:
 
 ``` text
-┌─toDate32OrDefault('1955-01-01')─┬─toDate32OrDefault('')─┐
-│                      1955-01-01 │            1970-01-01 │
-└─────────────────────────────────┴───────────────────────┘
+┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
+│                                              1930-01-01 │                                                2020-01-01 │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
