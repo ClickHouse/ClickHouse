@@ -1230,11 +1230,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const boost::program_options::error & e)
-    {
-        std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
