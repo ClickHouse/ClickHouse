@@ -180,10 +180,10 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 }
 
 
-void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
+void registerOutputFormatMsgPack(FormatFactory & factory)
 {
 
-    factory.registerOutputFormatProcessor("MsgPack", [](
+    factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -200,7 +200,7 @@ void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorMsgPack(FormatFactory &)
+void registerOutputFormatMsgPack(FormatFactory &)
 {
 }
 }

@@ -171,9 +171,9 @@ bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return !buf.eof();
 }
 
-void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
+void registerInputFormatJSONAsString(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONAsString", [](
+    factory.registerInputFormat("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
