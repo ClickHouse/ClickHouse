@@ -121,7 +121,7 @@ public:
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return requests_queue.isClosed(); }
+    bool isExpired() const override { return requests_queue.isFinished(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -187,7 +187,7 @@ public:
     /// it will do read in another session, that read may not see the
     /// already performed write.
 
-    void finalize()  override { finalize(false, false, "unknown"); }
+    void finalize(const String & reason)  override { finalize(false, false, reason); }
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 

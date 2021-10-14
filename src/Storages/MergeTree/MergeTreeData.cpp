@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
@@ -132,10 +131,14 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INCORRECT_QUERY;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
+    if (metadata.sampling_key.column_names.empty())
+        throw Exception("There are no columns in sampling expression", ErrorCodes::INCORRECT_QUERY);
+
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -1167,7 +1170,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    calculateColumnSizesImpl();
+    calculateColumnAndSecondaryIndexSizesImpl();
 
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
@@ -2352,7 +2355,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         {
             covered_part->remove_time.store(current_time, std::memory_order_relaxed);
             modifyPartState(covered_part, DataPartState::Outdated);
-            removePartContributionToColumnSizes(covered_part);
+            removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
             reduce_bytes += covered_part->getBytesOnDisk();
             reduce_rows += covered_part->rows_count;
             ++reduce_parts;
@@ -2361,7 +2364,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
 
         modifyPartState(part_it, DataPartState::Committed);
-        addPartContributionToColumnSizes(part);
+        addPartContributionToColumnAndSecondaryIndexSizes(part);
         addPartContributionToDataVolume(part);
     }
 
@@ -2404,7 +2407,7 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
     {
         if (part->getState() == IMergeTreeDataPart::State::Committed)
         {
-            removePartContributionToColumnSizes(part);
+            removePartContributionToColumnAndSecondaryIndexSizes(part);
             removePartContributionToDataVolume(part);
         }
 
@@ -2542,7 +2545,7 @@ restore_covered)
     if (part->getState() == DataPartState::Committed)
     {
         removePartContributionToDataVolume(part);
-        removePartContributionToColumnSizes(part);
+        removePartContributionToColumnAndSecondaryIndexSizes(part);
     }
     modifyPartState(it_part, DataPartState::Deleting);
 
@@ -2590,7 +2593,7 @@ restore_covered)
 
                 if ((*it)->getState() != DataPartState::Committed)
                 {
-                    addPartContributionToColumnSizes(*it);
+                    addPartContributionToColumnAndSecondaryIndexSizes(*it);
                     addPartContributionToDataVolume(*it);
                     modifyPartState(it, DataPartState::Committed); // iterator is not invalidated here
                 }
@@ -2621,7 +2624,7 @@ restore_covered)
 
             if ((*it)->getState() != DataPartState::Committed)
             {
-                addPartContributionToColumnSizes(*it);
+                addPartContributionToColumnAndSecondaryIndexSizes(*it);
                 addPartContributionToDataVolume(*it);
                 modifyPartState(it, DataPartState::Committed);
             }
@@ -2973,17 +2976,17 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
 }
 
-void MergeTreeData::calculateColumnSizesImpl()
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
 {
     column_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Committed);
     for (const auto & part : committed_parts_range)
-        addPartContributionToColumnSizes(part);
+        addPartContributionToColumnAndSecondaryIndexSizes(part);
 }
 
-void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
 {
     for (const auto & column : part->getColumns())
     {
@@ -2991,9 +2994,17 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
         ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
+
+    auto indexes_descriptions = getInMemoryMetadataPtr()->secondary_indices;
+    for (const auto & index : indexes_descriptions)
+    {
+        IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
+        IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
+        total_secondary_index_size.add(part_index_size);
+    }
 }
 
-void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
+void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
 {
     for (const auto & column : part->getColumns())
     {
@@ -3012,6 +3023,26 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
         log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
         log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
+    }
+
+    auto indexes_descriptions = getInMemoryMetadataPtr()->secondary_indices;
+    for (const auto & index : indexes_descriptions)
+    {
+        IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
+        IndexSize part_secondary_index_size = part->getSecondaryIndexSize(index.name);
+
+        auto log_subtract = [&](size_t & from, size_t value, const char * field)
+        {
+            if (value > from)
+                LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
+                    from, value, from - value, index.name, field);
+
+            from -= value;
+        };
+
+        log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
+        log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
+        log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
     }
 }
 
@@ -3477,11 +3508,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
-        auto input_format = FormatFactory::instance().getInput(
+        auto input_format = local_context->getInputFormat(
             "Values",
             buf,
             metadata_snapshot->getPartitionKey().sample_block,
-            local_context,
             local_context->getSettingsRef().max_block_size);
         auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
@@ -4043,7 +4073,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                     reduce_rows += covered_part->rows_count;
 
                     data.modifyPartState(covered_part, DataPartState::Outdated);
-                    data.removePartContributionToColumnSizes(covered_part);
+                    data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
                 }
                 reduce_parts += covered_parts.size();
 
@@ -4052,7 +4082,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 ++add_parts;
 
                 data.modifyPartState(part, DataPartState::Committed);
-                data.addPartContributionToColumnSizes(part);
+                data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
         }
         data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
@@ -5321,26 +5351,33 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_parts.store(parts, std::memory_order_release);
 }
 
-void MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
+bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    return insertQueryIdOrThrowNoLock(query_id, max_queries, lock);
+}
+
+bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) != query_id_set.end())
-        return;
+        return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
     query_id_set.insert(query_id);
+    return true;
 }
 
 void MergeTreeData::removeQueryId(const String & query_id) const
 {
     std::lock_guard lock(query_id_set_mutex);
+    removeQueryIdNoLock(query_id, lock);
+}
+
+void MergeTreeData::removeQueryIdNoLock(const String & query_id, const std::lock_guard<std::mutex> &) const
+{
     if (query_id_set.find(query_id) == query_id_set.end())
-    {
-        /// Do not throw exception, because this method is used in destructor.
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
-        assert(false);
-    }
     else
         query_id_set.erase(query_id);
 }

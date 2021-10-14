@@ -93,6 +93,11 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
         }
     }
 
+    auto function_alias = function.tryGetAlias();
+
+    if (!function_alias.empty())
+        function_body_to_update->setAlias(function_alias);
+
     return function_body_to_update;
 }
 
