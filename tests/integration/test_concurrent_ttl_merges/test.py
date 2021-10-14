@@ -140,9 +140,6 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
 
 def test_limited_ttl_merges_two_replicas(started_cluster):
     # Actually this test quite fast and often we cannot catch any merges.
-    node1.query("DROP TABLE IF EXISTS replicated_ttl_2")
-    node2.query("DROP TABLE IF EXISTS replicated_ttl_2")
-
     node1.query(
         "CREATE TABLE replicated_ttl_2 (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t2', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
     node2.query(
@@ -176,3 +173,6 @@ def test_limited_ttl_merges_two_replicas(started_cluster):
     # check them
     assert max(merges_with_ttl_count_node1) <= 2
     assert max(merges_with_ttl_count_node2) <= 2
+
+    node1.query("DROP TABLE replicated_ttl_2 SYNC")
+    node2.query("DROP TABLE replicated_ttl_2 SYNC")
