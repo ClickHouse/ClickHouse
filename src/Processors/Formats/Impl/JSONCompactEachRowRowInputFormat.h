@@ -45,13 +45,17 @@ private:
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
-    void skipField(const String & column_name) override;
-    void skipRow() override;
+    void skipField(size_t file_column) override;
+    void skipHeaderRow();
+    void skipNames() override { skipHeaderRow(); }
+    void skipTypes() override { skipHeaderRow(); }
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
 
-    Names readHeaderRow() override;
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
     String readFieldIntoString();
 
     bool yield_strings;
