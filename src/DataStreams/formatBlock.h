@@ -1,12 +1,14 @@
 #pragma once
-
-#include <DataStreams/IBlockStream_fwd.h>
+#include <memory>
 
 namespace DB
 {
 
 class Block;
 
-void formatBlock(BlockOutputStreamPtr & out, const Block & block);
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
+void formatBlock(OutputFormatPtr out, const Block & block);
 
 }
