@@ -106,6 +106,8 @@ fi
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
+clickhouse-client --query "SHOW CREATE TABLE test.hits"
+clickhouse-client --query "SHOW CREATE TABLE test.visits"
 
 function run_tests()
 {
