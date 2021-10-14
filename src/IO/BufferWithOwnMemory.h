@@ -101,6 +101,9 @@ private:
         if (!alignment)
             return value;
 
+        if (!(value % alignment))
+            return value;
+
         return (value + alignment - 1) / alignment * alignment;
     }
 
