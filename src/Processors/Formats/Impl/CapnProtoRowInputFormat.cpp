@@ -295,9 +295,9 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
-void registerInputFormatProcessorCapnProto(FormatFactory & factory)
+void registerInputFormatCapnProto(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         {
@@ -314,7 +314,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatProcessorCapnProto(FormatFactory &) {}
+    void registerInputFormatCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP
