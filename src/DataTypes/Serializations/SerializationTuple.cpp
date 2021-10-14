@@ -314,7 +314,7 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
@@ -340,7 +340,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (const auto i : collections::range(0, elems.size()))
     {
@@ -356,7 +356,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * tuple_state = checkAndGetDeserializeState<DeserializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);

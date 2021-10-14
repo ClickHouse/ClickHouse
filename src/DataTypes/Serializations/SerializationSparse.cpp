@@ -224,7 +224,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * state_sparse = checkAndGetDeserializeState<DeserializeStateSparse>(state, *this);
+    auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
     if (!settings.continuous_reading)
         state_sparse->reset();

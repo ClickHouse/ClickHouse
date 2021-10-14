@@ -289,22 +289,20 @@ public:
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
-    template <typename State, typename Serialization>
-    static State * checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &);
-
-    template <typename State, typename Serialization>
-    static State * checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &);
+protected:
+    template <typename State, typename StatePtr>
+    State * checkAndGetState(const StatePtr & state) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
 
-template <typename State, typename Serialization, typename StatePtr>
-static State * checkAndGetState(StatePtr & state)
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(Serialization).name()));
+            "Got empty state for {}", demangle(typeid(*this).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -312,24 +310,12 @@ static State * checkAndGetState(StatePtr & state)
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(Serialization).name()),
+                demangle(typeid(*this).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }
 
     return state_concrete;
-}
-
-template <typename State, typename Serialization>
-State * ISerialization::checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &)
-{
-    return checkAndGetState<State, Serialization>(state);
-}
-
-template <typename State, typename Serialization>
-State * ISerialization::checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &)
-{
-    return checkAndGetState<State, Serialization>(state);
 }
 
 }
