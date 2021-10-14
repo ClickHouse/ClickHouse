@@ -141,21 +141,12 @@ private:
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
+                            /// Identifier already qualified
                             if (identifier->compound())
                                 continue;
 
-                            auto storage_id = context->getExternalDictionariesLoader().getStorageID(identifier->name(), context);
-
-                            if (!storage_id.database_name.empty())
-                            {
-                                std::vector<std::string> name_parts = {storage_id.database_name, storage_id.table_name};
-                                child->children[i] = std::make_shared<ASTIdentifier>(std::move(name_parts));
-                            }
-                            else
-                            {
-                                std::vector<std::string> name_parts = {storage_id.table_name};
-                                child->children[i] = std::make_shared<ASTIdentifier>(std::move(name_parts));
-                            }
+                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
+                            child->children[i] = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
@@ -165,7 +156,8 @@ private:
                                 continue;
 
                             auto dictionary_name = literal_value.get<String>();
-                            literal_value = context->getExternalDictionariesLoader().getStorageID(dictionary_name, context).getFullTableName();
+                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+                            literal_value = qualified_dictionary_name.getFullName();
                         }
                     }
                     else if (is_operator_in && i == 1)

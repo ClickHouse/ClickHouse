@@ -27,7 +27,7 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    StorageID getStorageID(const std::string & dictionary_name, ContextPtr context) const;
+    QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
