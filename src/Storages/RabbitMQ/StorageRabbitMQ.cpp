@@ -1,5 +1,4 @@
 #include <amqpcpp.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>

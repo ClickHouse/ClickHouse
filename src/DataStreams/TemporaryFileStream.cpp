@@ -1,8 +1,6 @@
 #include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeReader.h>
 #include <DataStreams/NativeWriter.h>
-#include <DataStreams/copyData.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Compression/CompressedWriteBuffer.h>

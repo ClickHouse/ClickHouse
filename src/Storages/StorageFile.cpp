@@ -16,7 +16,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
@@ -479,8 +478,6 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    BlockInputStreams blocks_input;
-
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else

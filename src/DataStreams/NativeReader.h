@@ -1,8 +1,8 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
+#include <Core/Block.h>
 
 namespace DB
 {

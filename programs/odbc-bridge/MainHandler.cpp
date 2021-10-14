@@ -4,7 +4,6 @@
 #include "ODBCBlockInputStream.h"
 #include "ODBCBlockOutputStream.h"
 #include "getIdentifierQuote.h"
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>

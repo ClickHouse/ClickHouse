@@ -2,7 +2,6 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>

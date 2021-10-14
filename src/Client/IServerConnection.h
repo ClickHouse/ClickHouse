@@ -6,7 +6,6 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <Processors/Pipe.h>
