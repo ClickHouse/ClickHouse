@@ -186,7 +186,9 @@ struct MarkRangesIntersectionsIndex
         auto prev_end = ranges.front().end;
         for (auto it = std::next(ranges.begin()); it != ranges.end(); ++it)
         {
-            gaps.push_back(MarkRange{prev_end, it->begin});
+            /// Do not add empty gaps
+            if (prev_end != it->begin)
+                gaps.push_back(MarkRange{prev_end, it->begin});
             prev_end = it->end;
         }
 

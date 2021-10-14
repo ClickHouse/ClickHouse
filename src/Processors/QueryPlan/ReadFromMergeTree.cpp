@@ -132,18 +132,18 @@ Pipe ReadFromMergeTree::readFromPool(
 
     // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "Here!!!");
 
-    // String anime;
-    // for (const auto & part : parts_with_range)
-    // {
-    //     anime += part.data_part->name + '\n';
-    //     for (const auto & range : part.ranges)
-    //     {
-    //         anime += fmt::format("({} {}), ", range.begin, range.end);
-    //     }
-    //     anime += '\n';
-    // }
+    String anime;
+    for (const auto & part : parts_with_range)
+    {
+        anime += part.data_part->name + '\n';
+        for (const auto & range : part.ranges)
+        {
+            anime += fmt::format("({} {}), ", range.begin, range.end);
+        }
+        anime += '\n';
+    }
 
-    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), anime);
+    LOG_TRACE(&Poco::Logger::get("ReadFromMergeTree"), anime);
 
     auto pool = std::make_shared<MergeTreeReadPool>(
         max_streams,

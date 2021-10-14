@@ -27,6 +27,7 @@ private:
     void prepareNewTask() override {}
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {
+        // LOG_FATAL(&Poco::Logger::get("MergeTreeReverseSelectProcessor"), "finalizeNewTask");
         // std::cout << "MergeTreeReverseSelectProcessor" << std::endl;
     }
 

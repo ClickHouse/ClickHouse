@@ -175,7 +175,7 @@ void MergeTreeRangeReader::Stream::checkNotFinished() const
     {
         LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Current mark {}, last_mark {}", current_mark, last_mark);
         LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), StackTrace().toString());
-        throw Exception("Cannot read out of marks range.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS); // FIXME
     }
 
 }
@@ -766,6 +766,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             {
                 result.addRows(stream.finalize(result.columns));
                 stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
+
+                // LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Created new stream with begin/end {} {}", ranges.front().begin, ranges.front().end);
                 result.addRange(ranges.front());
                 ranges.pop_front();
             }

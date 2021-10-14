@@ -104,7 +104,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (!res)
             return false;
 
-        String result;
+        // String result;
 
         // result += fmt::format("Got task with ranges \n");
         // for (auto range : task->mark_ranges)
@@ -146,7 +146,12 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         task->mark_ranges = std::move(responce.mark_ranges);
 
         if (responce.denied)
+        {
+            // result += fmt::format("Is is denied !!!");
+            // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
             continue;
+        }
+
 
         // result += fmt::format("After coordination\n");
         // for (auto range : task->mark_ranges)
@@ -248,9 +253,9 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
             rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
         }
 
-        auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
-        if (unread_rows_in_current_granule >= rows_to_read)
-            return rows_to_read;
+        // auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
+        // if (unread_rows_in_current_granule >= rows_to_read)
+        //     return rows_to_read;
 
         return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };

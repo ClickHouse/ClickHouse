@@ -128,8 +128,6 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
 }
 
-MergeTreeReadTask::~MergeTreeReadTask() = default;
-
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)

@@ -72,18 +72,18 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
     auto partition_it = partitions.find(request.partition_id);
 
-    // SCOPE_EXIT({
-    //     String result;
-    //     for (const auto & partition : partitions)
-    //     {
-    //         result += partition.first;
-    //         result += partition.second.part_ranges.describe();
-    //         for (const auto & ranges : partition.second.mark_ranges_in_part)
-    //             result += fmt::format("{} {} \n", ranges.first, ranges.second.describe());
-    //     }
+    SCOPE_EXIT({
+        String result;
+        for (const auto & partition : partitions)
+        {
+            result += partition.first;
+            result += partition.second.part_ranges.describe();
+            for (const auto & ranges : partition.second.mark_ranges_in_part)
+                result += fmt::format("{} {} \n", ranges.first, ranges.second.describe());
+        }
 
-    //     LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Current state {}", result);
-    // });
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Current state {}", result);
+    });
 
     /// We are the first who wants to process parts in partition
     if (partition_it == partitions.end())

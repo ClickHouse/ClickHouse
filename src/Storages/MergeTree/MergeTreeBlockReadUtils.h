@@ -59,8 +59,6 @@ struct MergeTreeReadTask
         const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
         const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
         MergeTreeBlockSizePredictorPtr && size_predictor_);
-
-    virtual ~MergeTreeReadTask();
 };
 
 struct MergeTreeReadTaskColumns

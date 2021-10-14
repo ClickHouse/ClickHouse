@@ -106,7 +106,10 @@ public:
         size_t finalize(Columns & columns);
         void skip(size_t num_rows);
 
-        void finish() { current_mark = last_mark; }
+        void finish() {
+            // LOG_FATAL(&Poco::Logger::get("Stream"), "Finish is called! " + StackTrace().toString());
+            current_mark = last_mark;
+        }
         bool isFinished() const { return current_mark >= last_mark; }
 
         size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
