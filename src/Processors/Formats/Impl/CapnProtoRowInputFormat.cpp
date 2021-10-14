@@ -148,20 +148,25 @@ static void insertEnum(IColumn & column, const DataTypePtr & column_type, const 
     auto enumerant = *kj::_::readMaybe(enum_value.getEnumerant());
     auto enum_type = assert_cast<const DataTypeEnum<ValueType> *>(column_type.get());
     DataTypePtr nested_type = std::make_shared<DataTypeNumber<ValueType>>();
-    if (enum_comparing_mode == FormatSettings::EnumComparingMode::BY_VALUES)
-        insertSignedInteger(column, nested_type, Int64(enumerant.getOrdinal()));
-    else if (enum_comparing_mode == FormatSettings::EnumComparingMode::BY_NAMES)
-        insertSignedInteger(column, nested_type, Int64(enum_type->getValue(String(enumerant.getProto().getName()))));
-    else
+    switch (enum_comparing_mode)
     {
-        /// Find the same enum name case insensitive.
-        String enum_name = enumerant.getProto().getName();
-        for (auto & name : enum_type->getAllRegisteredNames())
+        case FormatSettings::EnumComparingMode::BY_VALUES:
+            insertSignedInteger(column, nested_type, Int64(enumerant.getOrdinal()));
+            return;
+        case FormatSettings::EnumComparingMode::BY_NAMES:
+            insertSignedInteger(column, nested_type, Int64(enum_type->getValue(String(enumerant.getProto().getName()))));
+            return;
+        case FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE:
         {
-            if (compareEnumNames(name, enum_name, enum_comparing_mode))
+            /// Find the same enum name case insensitive.
+            String enum_name = enumerant.getProto().getName();
+            for (auto & name : enum_type->getAllRegisteredNames())
             {
-                insertSignedInteger(column, nested_type, Int64(enum_type->getValue(name)));
-                break;
+                if (compareEnumNames(name, enum_name, enum_comparing_mode))
+                {
+                    insertSignedInteger(column, nested_type, Int64(enum_type->getValue(name)));
+                    break;
+                }
             }
         }
     }
