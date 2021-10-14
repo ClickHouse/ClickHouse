@@ -89,7 +89,7 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
         if (format_settings.with_names_use_header)
         {
             std::vector<bool> read_columns(data_types.size(), false);
-            auto column_names = readHeaderRow();
+            auto column_names = readNames();
             for (const auto & name : column_names)
                 addInputColumn(name, read_columns);
 
@@ -102,7 +102,7 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
         else
         {
             setupAllColumnsByTableSchema();
-            skipRow();
+            skipNames();
         }
     }
     else if (!column_mapping->is_set)
@@ -112,7 +112,7 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     {
         if (format_settings.with_types_use_header)
         {
-            auto types = readHeaderRow();
+            auto types = readTypes();
             if (types.size() != column_mapping->column_indexes_for_input_fields.size())
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -133,7 +133,7 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
             }
         }
         else
-            skipRow();
+            skipTypes();
     }
 }
 
@@ -167,7 +167,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
                 is_last_file_column,
                 column_mapping->names_of_columns[file_column]);
         else
-            skipField(column_mapping->names_of_columns[file_column]);
+            skipField(file_column);
 
         if (!is_last_file_column)
             skipFieldDelimiter();
@@ -202,7 +202,7 @@ void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & ty
     }
     else
     {
-        skipField(column_mapping->names_of_columns[file_column]);
+        skipField(file_column);
     }
 }
 

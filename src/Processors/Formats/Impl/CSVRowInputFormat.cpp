@@ -106,7 +106,7 @@ void CSVRowInputFormat::skipRowEndDelimiter()
     skipEndOfLine(*in);
 }
 
-void CSVRowInputFormat::skipRow()
+void CSVRowInputFormat::skipHeaderRow()
 {
     do
     {
