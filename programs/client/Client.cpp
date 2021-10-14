@@ -89,7 +89,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int AUTHENTICATION_FAILED;
 }
 
