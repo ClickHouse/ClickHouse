@@ -240,9 +240,9 @@ void XMLRowOutputFormat::writeStatistics()
 }
 
 
-void registerOutputFormatProcessorXML(FormatFactory & factory)
+void registerOutputFormatXML(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("XML", [](
+    factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

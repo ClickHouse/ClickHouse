@@ -9,7 +9,6 @@
 #include <Common/ThreadPool.h>
 
 #include <IO/ReadHelpers.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -97,7 +96,7 @@ public:
             max_block_size = configuration.number_of_rows_to_read;
         }
 
-        pipeline = QueryPipeline(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
+        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, command->out, sample_block, max_block_size)));
         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
     }
 
