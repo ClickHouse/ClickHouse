@@ -189,12 +189,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
-
-        if (metadata.comment.empty())
-            storage_ast.reset(storage_ast.comment);
-        else
-            storage_ast.set(storage_ast.comment, std::make_shared<ASTLiteral>(metadata.comment));
     }
+
+    if (metadata.comment.empty())
+        ast_create_query.reset(ast_create_query.comment);
+    else
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 }
 
 
@@ -532,11 +532,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        // TODO(nemkov): this is a precaution and should never happen, remove if there are no failed tests on CI/CD.
-        if (!ast_create_query.storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTCreateQuery lacks engine clause, but a comment is present.");
-
-        ast_create_query.storage->set(ast_create_query.storage->comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
