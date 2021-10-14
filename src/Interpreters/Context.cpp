@@ -1749,6 +1749,20 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+
+bool Context::tryCheckZooKeeperConnection() const
+{
+    try
+    {
+        getZooKeeper();
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 UInt32 Context::getZooKeeperSessionUptime() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -1776,10 +1790,11 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher() const
+void Context::initializeKeeperDispatcher(bool start_async) const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+
 
     if (shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
@@ -1787,8 +1802,12 @@ void Context::initializeKeeperDispatcher() const
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
+        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
+        if (start_async && !is_standalone_app)
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start, will wait for Keeper asynchronously");
+
         shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
+        shared->keeper_storage_dispatcher->initialize(config, is_standalone_app, start_async);
     }
 #endif
 }
