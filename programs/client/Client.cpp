@@ -996,7 +996,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 }
 
 
-void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void Client::addOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
@@ -1053,14 +1053,6 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
     (
         "types", po::value<std::string>(), "types"
     );
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
-    po::store(parsed, options);
 }
 
 

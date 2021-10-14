@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 }
@@ -1505,6 +1506,19 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     }
 }
 
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+{
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value());
+    parser.allow_unregistered();
+    po::parsed_options parsed = parser.run();
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
+    po::store(parsed, options);
+}
+
 
 void ClientBase::init(int argc, char ** argv)
 {
@@ -1562,7 +1576,8 @@ void ClientBase::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
     ;
 
-    addAndCheckOptions(options_description, options, common_arguments);
+    addOptions(options_description);
+    parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
