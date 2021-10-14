@@ -121,7 +121,7 @@ public:
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return requests_queue.isClosed(); }
+    bool isExpired() const override { return requests_queue.isFinished(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
