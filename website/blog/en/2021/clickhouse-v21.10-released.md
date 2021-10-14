@@ -22,6 +22,6 @@ We're always listening for new ideas, and we're happy to welcome new contributor
 
 Release 21.10
 
-Release Date: 2021-10-19
+Release Date: 2021-10-21
 
 Release Notes: [21.10](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md)
