@@ -236,9 +236,9 @@ void JSONCompactEachRowRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(*in);
 }
 
-void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
+void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONCompactEachRow", [](
+    factory.registerInputFormat("JSONCompactEachRow", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -247,7 +247,7 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
         return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, false, false);
     });
 
-    factory.registerInputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
+    factory.registerInputFormat("JSONCompactEachRowWithNamesAndTypes", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -256,7 +256,7 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
         return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, true, false);
     });
 
-    factory.registerInputFormatProcessor("JSONCompactStringsEachRow", [](
+    factory.registerInputFormat("JSONCompactStringsEachRow", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -265,7 +265,7 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
         return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, false, true);
     });
 
-    factory.registerInputFormatProcessor("JSONCompactStringsEachRowWithNamesAndTypes", [](
+    factory.registerInputFormat("JSONCompactStringsEachRowWithNamesAndTypes", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
