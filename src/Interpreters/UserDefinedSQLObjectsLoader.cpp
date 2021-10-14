@@ -83,6 +83,9 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
 
 void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     LOG_DEBUG(log, "loading user defined objects");
 
     String dir_path = context->getPath() + "user_defined/";
@@ -110,6 +113,9 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 
 void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     String dir_path = context->getPath() + "user_defined/";
     String file_path;
 
@@ -143,6 +149,9 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
 
 void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
 
@@ -160,6 +169,11 @@ void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQ
         throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path.string()));
 
     std::filesystem::remove(file_path);
+}
+
+void UserDefinedSQLObjectsLoader::enable(bool enable_persistence_)
+{
+    enable_persistence = enable_persistence_;
 }
 
 }
