@@ -74,7 +74,6 @@ Block getBlockWithAllStreamData(QueryPipeline pipeline)
     return block;
 }
 
-
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
     const auto & storage = storage_ast->as<ASTStorage &>();
