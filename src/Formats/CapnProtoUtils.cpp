@@ -422,7 +422,7 @@ void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Blo
                 getCapnProtoFullTypeName(field.getType()));
             if (!additional_error_message.empty())
                 e.addMessage(additional_error_message);
-            throw std::move(e);
+            throw e;
         }
     }
 }
