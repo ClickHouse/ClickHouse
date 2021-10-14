@@ -289,7 +289,7 @@ ZooKeeper::~ZooKeeper()
 {
     try
     {
-        finalize(false, false, "destructor called");
+        finalize(false, false, "Destructor called");
 
         if (send_thread.joinable())
             send_thread.join();
@@ -610,7 +610,7 @@ void ZooKeeper::sendThread()
     catch (...)
     {
         tryLogCurrentException(log);
-        finalize(true, false, "exception in sendThread");
+        finalize(true, false, "Exception in sendThread");
     }
 }
 
@@ -669,7 +669,7 @@ void ZooKeeper::receiveThread()
     catch (...)
     {
         tryLogCurrentException(log);
-        finalize(false, true, "exception in receiveThread");
+        finalize(false, true, "Exception in receiveThread");
     }
 }
 
