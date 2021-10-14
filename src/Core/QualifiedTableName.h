@@ -42,14 +42,16 @@ struct QualifiedTableName
         return hash_state.get64();
     }
 
-    std::vector<std::string> getParts() const {
+    std::vector<std::string> getParts() const
+    {
         if (database.empty())
             return {table};
         else
             return {database, table};
     }
 
-    std::string getFullName() const {
+    std::string getFullName() const
+    {
         if (database.empty())
             return table;
         else
