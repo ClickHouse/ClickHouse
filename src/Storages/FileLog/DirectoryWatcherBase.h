@@ -57,7 +57,7 @@ public:
         DirectoryEvent(const std::string & f, DirectoryEventType ev) : path(f), event(ev) { }
 
         /// The directory or file that has been changed.
-        const std::string & path;
+        const std::string path;
         /// The kind of event.
         DirectoryEventType event;
     };
