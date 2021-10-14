@@ -243,9 +243,9 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
     capnp::writeMessage(*output_stream, message);
 }
 
-void registerOutputFormatProcessorsCapnProto(FormatFactory & factory)
+void registerOutputFormatCapnProto(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("CapnProto", [](
+    factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

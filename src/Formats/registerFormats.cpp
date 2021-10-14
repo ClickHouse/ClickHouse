@@ -140,7 +140,7 @@ void registerFormats()
     registerOutputFormatMySQLWire(factory);
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
-    registerOutputFormatProcessorsCapnProto(factory);
+    registerOutputFormatCapnProto(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);

@@ -42,7 +42,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
     {
         /// That's not good to determine the type of error by its description, but
         /// this is the only way to do it here, because kj doesn't specify the type of error.
-        String description = String(e.getDescription().cStr());
+        auto description = std::string_view(e.getDescription().cStr());
         if (description.find("No such file or directory") != String::npos || description.find("no such directory") != String::npos)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open CapnProto schema, file {} doesn't exists", schema_info.absoluteSchemaPath());
 
@@ -82,7 +82,6 @@ static const std::map<capnp::schema::Type::Which, String> capnp_simple_type_name
         {capnp::schema::Type::Which::FLOAT64, "Float64"},
         {capnp::schema::Type::Which::TEXT, "Text"},
         {capnp::schema::Type::Which::DATA, "Data"},
-        {capnp::schema::Type::Which::ENUM, "Enum"},
         {capnp::schema::Type::Which::INTERFACE, "Interface"},
         {capnp::schema::Type::Which::ANY_POINTER, "AnyPointer"},
 };
@@ -100,40 +99,56 @@ static bool checkIfStructIsNamedUnion(const capnp::StructSchema & struct_schema)
 /// Get full name of type for better exception messages.
 static String getCapnProtoFullTypeName(const capnp::Type & type)
 {
-    if (type.isStruct())
+    switch (type.which())
     {
-        auto struct_schema = type.asStruct();
+        case capnp::schema::Type::Which::STRUCT:
+        {
+            auto struct_schema = type.asStruct();
 
-        auto non_union_fields = struct_schema.getNonUnionFields();
-        std::vector<String> non_union_field_names;
-        for (auto nested_field : non_union_fields)
-            non_union_field_names.push_back(String(nested_field.getProto().getName()) + " " + getCapnProtoFullTypeName(nested_field.getType()));
+            auto non_union_fields = struct_schema.getNonUnionFields();
+            std::vector<String> non_union_field_names;
+            for (auto nested_field : non_union_fields)
+                non_union_field_names.push_back(String(nested_field.getProto().getName()) + " " + getCapnProtoFullTypeName(nested_field.getType()));
 
-        auto union_fields = struct_schema.getUnionFields();
-        std::vector<String> union_field_names;
-        for (auto nested_field : union_fields)
-            union_field_names.push_back(String(nested_field.getProto().getName()) + " " + getCapnProtoFullTypeName(nested_field.getType()));
+            auto union_fields = struct_schema.getUnionFields();
+            std::vector<String> union_field_names;
+            for (auto nested_field : union_fields)
+                union_field_names.push_back(String(nested_field.getProto().getName()) + " " + getCapnProtoFullTypeName(nested_field.getType()));
 
-        String union_name = "Union(" + boost::algorithm::join(union_field_names, ", ") + ")";
-        /// Check if the struct is a named union.
-        if (non_union_field_names.empty())
-            return union_name;
+            String union_name = "Union(" + boost::algorithm::join(union_field_names, ", ") + ")";
+            /// Check if the struct is a named union.
+            if (non_union_field_names.empty())
+                return union_name;
 
-        String type_name = "Struct(" + boost::algorithm::join(non_union_field_names, ", ");
-        /// Check if the struct contains unnamed union.
-        if (!union_field_names.empty())
-            type_name += "," + union_name;
-        type_name += ")";
-        return type_name;
+            String type_name = "Struct(" + boost::algorithm::join(non_union_field_names, ", ");
+            /// Check if the struct contains unnamed union.
+            if (!union_field_names.empty())
+                type_name += "," + union_name;
+            type_name += ")";
+            return type_name;
+        }
+        case capnp::schema::Type::Which::LIST:
+            return "List(" + getCapnProtoFullTypeName(type.asList().getElementType()) + ")";
+        case capnp::schema::Type::Which::ENUM:
+        {
+            auto enum_schema = type.asEnum();
+            String enum_name = "Enum(";
+            auto enumerants = enum_schema.getEnumerants();
+            for (size_t i = 0; i != enumerants.size(); ++i)
+            {
+                enum_name += String(enumerants[i].getProto().getName()) + " = " + std::to_string(enumerants[i].getOrdinal());
+                if (i + 1 != enumerants.size())
+                    enum_name += ", ";
+            }
+            enum_name += ")";
+            return enum_name;
+        }
+        default:
+            auto it = capnp_simple_type_names.find(type.which());
+            if (it == capnp_simple_type_names.end())
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unknown CapnProto type");
+            return it->second;
     }
-
-    if (type.isList())
-        return "List(" + getCapnProtoFullTypeName(type.asList().getElementType()) + ")";
-
-    if (!capnp_simple_type_names.contains(type.which()))
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unknown CapnProto type");
-
-    return capnp_simple_type_names.at(type.which());
 }
 
 template <typename Type>
@@ -147,39 +162,38 @@ static bool checkEnums(const capnp::Type & capnp_type, const DataTypePtr column_
     const auto * enum_type = assert_cast<const DataTypeEnum<Type> *>(column_type.get());
     const auto & enum_values = dynamic_cast<const EnumValues<Type> &>(*enum_type);
 
-    auto names = enum_values.getSetOfAllNames(to_lower);
-    auto values = enum_values.getSetOfAllValues();
-
-    std::unordered_set<String> capn_enum_names;
-    std::unordered_set<Type> capn_enum_values;
-
     auto enumerants = enum_schema.getEnumerants();
-    /// In CapnProto Enum fields are numbered sequentially starting from zero.
-    if (mode == FormatSettings::EnumComparingMode::BY_VALUES && enumerants.size() > max_value)
+    if (mode == FormatSettings::EnumComparingMode::BY_VALUES)
     {
-        error_message += "Enum from CapnProto schema contains values that is out of range for Clickhouse Enum";
-        return false;
+        /// In CapnProto Enum fields are numbered sequentially starting from zero.
+        if (enumerants.size() > max_value)
+        {
+            error_message += "Enum from CapnProto schema contains values that is out of range for Clickhouse Enum";
+            return false;
+        }
+
+        auto values = enum_values.getSetOfAllValues();
+        std::unordered_set<Type> capn_enum_values;
+        for (auto enumerant : enumerants)
+            capn_enum_values.insert(Type(enumerant.getOrdinal()));
+        auto result = values == capn_enum_values;
+        if (!result)
+            error_message += "The set of values in Enum from CapnProto schema is different from the set of values in ClickHouse Enum";
+        return result;
     }
+
+    auto names = enum_values.getSetOfAllNames(to_lower);
+    std::unordered_set<String> capn_enum_names;
 
     for (auto enumerant : enumerants)
     {
         String name = enumerant.getProto().getName();
         capn_enum_names.insert(to_lower ? boost::algorithm::to_lower_copy(name) : name);
-        auto value = enumerant.getOrdinal();
-        capn_enum_values.insert(Type(value));
     }
 
-    if (mode == FormatSettings::EnumComparingMode::BY_NAMES || mode == FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE)
-    {
-        auto result = names == capn_enum_names;
-        if (!result)
-            error_message += "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum";
-        return result;
-    }
-
-    auto result = values == capn_enum_values;
+    auto result = names == capn_enum_names;
     if (!result)
-        error_message += "The set of values in Enum from CapnProto schema is different from the set of values in ClickHouse Enum";
+        error_message += "The set of names in Enum from CapnProto schema is different from the set of names in ClickHouse Enum";
     return result;
 }
 
