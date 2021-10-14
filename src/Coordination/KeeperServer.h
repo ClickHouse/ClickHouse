@@ -80,6 +80,12 @@ public:
     /// Wait server initialization (see callbackFunc)
     void waitInit();
 
+    /// Return true if KeeperServer initialized
+    bool checkInit() const
+    {
+        return initialized_flag;
+    }
+
     void shutdown();
 
     int getServerID() const { return server_id; }
