@@ -329,12 +329,14 @@ Type: [Array](../data-types/array.md).
 
 **Example**
 
-```
+``` sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
 
 ``` text
-SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
 ```
 
 ## repeat {#repeat}
