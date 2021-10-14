@@ -6,4 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_LOCAL} --unknown-option 2>&1 echo
-
+${CLICKHOUSE_CLIENT} --unknown-option 2>&1 echo
