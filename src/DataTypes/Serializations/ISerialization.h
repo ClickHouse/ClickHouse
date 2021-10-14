@@ -246,6 +246,14 @@ public:
         serializeText(column, row_num, ostr, settings);
     }
 
+    /** Text deserialization without escaping and quoting. Reads all data until first \n or \t
+     *  into a temporary string and then call deserializeWholeText. It was implemented this way
+     *  because this function is rarely used and because proper implementation requires a lot of
+     *  additional code in data types serialization and ReadHelpers.
+     */
+    virtual void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
+    virtual void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path);
