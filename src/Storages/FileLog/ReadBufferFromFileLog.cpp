@@ -110,16 +110,20 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} does not initialized", file_meta.file_name);
 
         auto & reader = file_ctx.reader.value();
+        StorageFileLog::assertStreamGood(reader);
+
         Record record;
         while (read_records_size < need_records_size && static_cast<UInt64>(reader.tellg()) < file_meta.last_open_end)
         {
             /// Need to get offset before reading record from stream
             record.offset = reader.tellg();
-            record.file_name = file_name;
-
             StorageFileLog::assertStreamGood(reader);
 
+            record.file_name = file_name;
+
+
             std::getline(reader, record.data);
+            StorageFileLog::assertStreamGood(reader);
 
             new_records.emplace_back(record);
             ++read_records_size;

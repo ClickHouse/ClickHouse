@@ -16,8 +16,7 @@ namespace ErrorCodes
     extern const int IO_SETUP_ERROR;
 }
 
-static constexpr int event_size = sizeof(struct inotify_event);
-static constexpr int buffer_size = 1024 * (NAME_MAX + event_size + 1);
+static constexpr int buffer_size = 4096;
 
 DirectoryWatcherBase::DirectoryWatcherBase(
     FileLogDirectoryWatcher & owner_, const std::string & path_, ContextPtr context_, int event_mask_)
@@ -64,7 +63,7 @@ void DirectoryWatcherBase::watchFunc()
     pfd.events = POLLIN;
     while (!stopped)
     {
-        if (poll(&pfd, 1, 5000) > 0 && pfd.revents & POLLIN)
+        if (poll(&pfd, 1, 500) > 0 && pfd.revents & POLLIN)
         {
             int n = read(fd, buffer.data(), buffer.size());
             int i = 0;
