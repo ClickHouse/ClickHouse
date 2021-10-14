@@ -360,10 +360,20 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 {
-    limit = limit ? std::min(limit, _size) : _size;
+    return permuteImpl(*this, perm, limit);
+}
 
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename Type>
+ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    assert(limit <= indexes.size());
+    if (limit == 0)
+        return ColumnSparse::create(values->cloneEmpty());
 
     if (offsets->empty())
     {
@@ -386,14 +396,14 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 
     if (execute_linear)
     {
-        PaddedPODArray<UInt64> indexes(_size);
+        PaddedPODArray<UInt64> values_index(_size);
         auto offset_it = begin();
         for (size_t i = 0; i < _size; ++i, ++offset_it)
-            indexes[i] = offset_it.getValueIndex();
+            values_index[i] = offset_it.getValueIndex();
 
         for (size_t i = 0; i < limit; ++i)
         {
-            size_t index = indexes[perm[i]];
+            size_t index = values_index[indexes[i]];
             if (index != 0)
             {
                 res_values->insertFrom(*values, index);
@@ -405,40 +415,12 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
     {
         for (size_t i = 0; i < limit; ++i)
         {
-            size_t index = getValueIndex(perm[i]);
+            size_t index = getValueIndex(indexes[i]);
             if (index != 0)
             {
                 res_values->insertFrom(*values, index);
                 res_offsets_data.push_back(i);
             }
-        }
-    }
-
-    return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
-}
-
-ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
-{
-    return selectIndexImpl(*this, indexes, limit);
-}
-
-template <typename Type>
-ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
-{
-    limit = limit ? std::min(limit, indexes.size()) : indexes.size();
-
-    auto res_offsets = offsets->cloneEmpty();
-    auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
-    auto res_values = values->cloneEmpty();
-    res_values->insertDefault();
-
-    for (size_t i = 0; i < limit; ++i)
-    {
-        size_t index = getValueIndex(indexes[i]);
-        if (index != 0)
-        {
-            res_values->insertFrom(*values, index);
-            res_offsets_data.push_back(i);
         }
     }
 
