@@ -420,11 +420,11 @@ void CSVRowInputFormat::resetParser()
 }
 
 
-void registerInputFormatProcessorCSV(FormatFactory & factory)
+void registerInputFormatCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
-        factory.registerInputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
+        factory.registerInputFormat(with_names ? "CSVWithNames" : "CSV", [=](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

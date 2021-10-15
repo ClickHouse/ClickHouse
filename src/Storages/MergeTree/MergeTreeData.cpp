@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
@@ -132,10 +131,14 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INCORRECT_QUERY;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
+    if (metadata.sampling_key.column_names.empty())
+        throw Exception("There are no columns in sampling expression", ErrorCodes::INCORRECT_QUERY);
+
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -3505,11 +3508,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
-        auto input_format = FormatFactory::instance().getInput(
+        auto input_format = local_context->getInputFormat(
             "Values",
             buf,
             metadata_snapshot->getPartitionKey().sample_block,
-            local_context,
             local_context->getSettingsRef().max_block_size);
         auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
