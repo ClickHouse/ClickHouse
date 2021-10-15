@@ -27,7 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -160,7 +160,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     prefetch_future = {};
 
-    /// TODO: it does not really seem to improve anything to call prefecth() here,
+    /// TODO: it does not really seem to improve anything to call prefetch() here,
     /// but it does not make any worse at the same time.
     /// Need to test, it might be useful because in fact sometimes (minority of cases though)
     /// we can read without prefetching several times in a row.

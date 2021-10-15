@@ -47,6 +47,8 @@ private:
     ReadSettings read_settings;
 
     bool use_external_buffer;
+
+    off_t last_offset = 0;
 };
 
 }

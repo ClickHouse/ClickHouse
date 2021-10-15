@@ -265,6 +265,9 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
+            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
+                return false;
+
             if (impl)
             {
                 if (use_external_buffer)
@@ -284,16 +287,13 @@ namespace detail
                 {
                     /**
                     * impl was initialized before, pass position() to it to make
-                    * sure there is no pending data which was not read, becuase
+                    * sure there is no pending data which was not read, because
                     * this branch means we read sequentially.
                     */
                     if (!working_buffer.empty())
                         impl->position() = position();
                 }
             }
-
-            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
-                return false;
 
             if (impl && !working_buffer.empty())
                 impl->position() = position();
@@ -322,7 +322,7 @@ namespace detail
                             || (bytes_read && !settings.http_retriable_read))
                             throw;
 
-                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), e.what());
+                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
                         impl.reset();
 
                         sleepForMilliseconds(milliseconds_to_wait);

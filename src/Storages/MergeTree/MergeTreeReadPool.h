@@ -139,6 +139,8 @@ private:
     mutable std::mutex mutex;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
+
+    bool stored_on_remote_disk = false;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;
