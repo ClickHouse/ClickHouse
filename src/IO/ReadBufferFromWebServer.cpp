@@ -23,7 +23,7 @@ namespace ErrorCodes
 static constexpr size_t HTTP_MAX_TRIES = 10;
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
-    const String & url_, ContextPtr context_, const ReadSettings & settings_, bool use_external_buffer_)
+    const String & url_, ContextPtr context_, const ReadSettings & settings_, bool use_external_buffer_, size_t)
     : SeekableReadBuffer(nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
@@ -108,7 +108,7 @@ void ReadBufferFromWebServer::initializeWithRetry()
                 if (i == num_tries - 1)
                     throw;
 
-                LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), e.what());
+                LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), "Error: {}, code: {}", e.what(), e.code());
                 sleepForMilliseconds(milliseconds_to_wait);
                 milliseconds_to_wait *= 2;
             }

@@ -45,8 +45,10 @@ public:
         const String & key_,
         UInt64 max_single_read_retries_,
         const ReadSettings & settings_,
-        bool use_external_buffer = false);
+        bool use_external_buffer = false,
+        size_t last_offset_ = 0);
 
+    size_t right = 0;
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
@@ -57,6 +59,7 @@ private:
 
     ReadSettings read_settings;
     bool use_external_buffer;
+    size_t last_offset;
 };
 
 }

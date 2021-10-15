@@ -23,24 +23,31 @@ public:
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
-        size_t file_size, const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
 
     void seekToStart();
 
+    void adjustForRange(size_t left_mark, size_t right_mark);
+
     ReadBuffer * data_buffer;
 
 private:
+    std::pair<size_t, size_t> getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark);
+
     DiskPtr disk;
     std::string path_prefix;
     std::string data_file_extension;
 
     size_t marks_count;
+    size_t file_size;
 
     MarkCache * mark_cache;
     bool save_marks_in_cache;
+
+    size_t last_right_offset = 0;
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 

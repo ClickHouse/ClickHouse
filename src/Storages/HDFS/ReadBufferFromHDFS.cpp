@@ -125,7 +125,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_)
+        size_t buf_size_, size_t)
     : SeekableReadBuffer(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_))
 {

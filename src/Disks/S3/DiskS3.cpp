@@ -205,6 +205,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
+        path,
         settings->client, bucket, metadata,
         settings->s3_max_single_read_retries, read_settings, threadpool_read);
 

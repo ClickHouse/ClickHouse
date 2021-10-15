@@ -27,7 +27,9 @@ struct ReadBufferFromHDFSImpl;
 
 public:
     ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+                       const Poco::Util::AbstractConfiguration & config_,
+                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+                       size_t last_offset = 0);
 
     ~ReadBufferFromHDFS() override;
 

@@ -20,7 +20,8 @@ public:
     explicit ReadBufferFromWebServer(
         const String & url_, ContextPtr context_,
         const ReadSettings & settings_ = {},
-        bool use_external_buffer_ = false);
+        bool use_external_buffer_ = false,
+        size_t last_offset = 0);
 
     bool nextImpl() override;
 

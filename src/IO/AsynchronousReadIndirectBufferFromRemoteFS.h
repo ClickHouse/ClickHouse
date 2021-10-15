@@ -47,6 +47,8 @@ public:
 
     void prefetch() override;
 
+    void setRightOffset(size_t offset);
+
 private:
     bool nextImpl() override;
 
@@ -68,8 +70,10 @@ private:
 
     String buffer_events;
 
-    size_t min_bytes_for_seek;
+    // size_t min_bytes_for_seek;
+
     size_t bytes_to_ignore = 0;
+    Int64 last_offset = 0;
 };
 
 }
