@@ -71,13 +71,13 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
-Keys can be hex or string. Their length must be equal to 16.
+Keys can be hex or string with a length equal to 16 bytes.
 
 **Example**
 
-Load from config:
+Loading from config:
 
 ```xml
 <encryption_codecs>
@@ -88,9 +88,9 @@ Load from config:
 ```
 
 !!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
 
-Load from config, when key is in hex:
+Loading from config, when the key is in hex:
 
 ```xml
 <encryption_codecs>
@@ -100,7 +100,7 @@ Load from config, when key is in hex:
 </encryption_codecs>
 ```
 
-Load key from environment variable:
+Loading key from the environment variable:
 
 ```xml
 <encryption_codecs>
@@ -110,9 +110,9 @@ Load key from environment variable:
 </encryption_codecs>
 ```
 
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
+Here `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
 
-All this methods can be applied for multiple keys:
+Each of these methods can be applied for multiple keys:
 
 ```xml
 <encryption_codecs>
@@ -124,9 +124,9 @@ All this methods can be applied for multiple keys:
 </encryption_codecs>
 ```
 
-Where `current_key_id` shows current key for encryption.
+Here `current_key_id` shows current key for encryption.
 
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
+Also, users can add nonce that must be 12 bytes long (by default encryption and decryption processes use nonce that consists of zero bytes):
 
 ```xml
 <encryption_codecs>
@@ -146,7 +146,7 @@ Or it can be set in hex:
 </encryption_codecs>
 ```
 
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
+Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
