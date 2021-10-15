@@ -20,11 +20,11 @@ _main() {
     while read line;
     do
         [[ -z "$line" ]] && continue
-        echo $line | sed -e 's/"\(.*\)"/" \1 ";/g'
+        echo $line | sed -e '/^#/d' -e 's/"\(.*\)"/" \1 ";/g'
     done < $dict_filename >> clickhouse.g
 }
 
 _main "$@"
 
-# Sample run: ./update.sh ../../../../tests/fuzz/ast.dict
+# Sample run: ./update.sh ${CLICKHOUSE_SOURCE_DIR}/tests/fuzz/all.dict
 # then run `python ./gen.py clickhouse.g out.cpp out.proto` to generate new files with tokens. Rebuild fuzzer
