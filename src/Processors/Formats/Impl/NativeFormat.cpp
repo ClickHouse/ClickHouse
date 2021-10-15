@@ -84,7 +84,7 @@ private:
 
 void registerInputFormatNative(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Native", [](
+    factory.registerInputFormat("Native", [](
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams &,
@@ -96,7 +96,7 @@ void registerInputFormatNative(FormatFactory & factory)
 
 void registerOutputFormatNative(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Native", [](
+    factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
