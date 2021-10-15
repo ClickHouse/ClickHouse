@@ -240,18 +240,6 @@ void blob_storage_demo()
     // should print a recent time and size 3
     std::cout << "Last modified date of uploaded blob: " << blobList.Value.LastModified.ToString()
         << ", size: " << blobList.Value.BlobSize << "\n";
-
-    // TODO: make sure "file.txt" exists or create it
-
-    // // overwrite "file.txt" blob with the data from the file "file.txt" in the same directory
-    // blockBlobClient.UploadFrom("file.txt");
-
-    // // once again, get list of blocks within the block
-    // blobList = blockBlobClient.GetBlockList();
-
-    // // should print a recent time and the size of file.txt
-    // std::cout << "Last modified date of uploaded blob: " << blobList.Value.LastModified.ToString()
-    //     << ", size: " << blobList.Value.BlobSize << "\n";
 }
 
 }
