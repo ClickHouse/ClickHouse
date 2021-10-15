@@ -184,6 +184,7 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
