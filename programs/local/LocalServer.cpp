@@ -652,6 +652,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
+        ("path", po::value<std::string>(), "Storage path")
         ;
 }
 
@@ -712,6 +713,11 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return code ? code : 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
