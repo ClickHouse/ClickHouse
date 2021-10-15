@@ -109,7 +109,10 @@ def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
     data = clickhouse_execute_http(base_args, query, timeout, settings, 'JSONEachRow')
     if not data:
         return None
-    return json.loads(data)
+    rows = []
+    for row in data.strip().split(b'\n'):
+        rows.append(json.loads(row))
+    return rows
 
 
 class Terminated(KeyboardInterrupt):
