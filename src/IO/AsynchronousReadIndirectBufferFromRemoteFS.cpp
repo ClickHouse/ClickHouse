@@ -36,13 +36,13 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
         Int32 priority_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t buf_size_,
-        size_t /* min_bytes_for_seek_ */)
+        size_t min_bytes_for_seek_)
     : ReadBufferFromFileBase(buf_size_, nullptr, 0)
     , reader(reader_)
     , priority(priority_)
     , impl(impl_)
     , prefetch_buffer(buf_size_)
-    // , min_bytes_for_seek(min_bytes_for_seek_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBuffers);
     buffer_events += impl->getFileName() + " : ";
@@ -69,15 +69,23 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 
 void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 {
-     if (hasPendingData())
-         return;
+    if (prefetch_future.valid())
+        return;
 
-     if (prefetch_future.valid())
-         return;
+    /// Everything is already read.
+    if (absolute_position == last_offset)
+        return;
 
-     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
-     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
-     buffer_events += "-- Prefetch (" + toString(absolute_position) + ") --";
+    if (absolute_position > last_offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                        absolute_position, last_offset);
+
+    /// Prefetch even in case hasPendingData() == true.
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
+
+    buffer_events += fmt::format("-- PREFETCH from offset: {}, upper bound: {} --",
+                                    toString(absolute_position), toString(last_offset));
 }
 
 
@@ -86,10 +94,15 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setRightOffset(size_t offset)
     buffer_events += "-- Set last offset " + toString(offset) + "--";
     if (prefetch_future.valid())
     {
-        buffer_events += "-- Cancelling because of offset update --";
-        ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
-        prefetch_future.wait();
-        prefetch_future = {};
+        std::cerr << buffer_events << std::endl;
+        /// TODO: Planning to put logical error here after more testing,
+        // because seems like future is never supposed to be valid at this point.
+        std::terminate();
+
+        // buffer_events += "-- Cancelling because of offset update --";
+        // ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
+        // prefetch_future.wait();
+        // prefetch_future = {};
     }
 
     last_offset = offset;
@@ -99,6 +112,14 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setRightOffset(size_t offset)
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
+    /// Everything is already read.
+    if (absolute_position == last_offset)
+        return false;
+
+    if (absolute_position > last_offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                        absolute_position, last_offset);
+
     ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBufferReads);
     size_t size = 0;
 
@@ -138,6 +159,13 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
 
     prefetch_future = {};
+
+    /// TODO: it does not really seem to improve anything to call prefecth() here,
+    /// but it does not make any worse at the same time.
+    /// Need to test, it might be useful because in fact sometimes (minority of cases though)
+    /// we can read without prefetching several times in a row.
+    prefetch();
+
     return size;
 }
 
@@ -192,16 +220,17 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     pos = working_buffer.end();
 
-    // if (static_cast<off_t>(absolute_position) >= getPosition()
-    //     && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
-    // {
-    //    /**
-    //     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
-    //     */
-    //    // bytes_to_ignore = absolute_position - getPosition();
-    //    impl->seek(absolute_position); /// SEEK_SET.
-    // }
-    // else
+    /// Note: we read in range [absolute_position, last_offset).
+    if (absolute_position < last_offset
+        && static_cast<off_t>(absolute_position) >= getPosition()
+        && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
+    {
+       /**
+        * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
+        */
+        bytes_to_ignore = absolute_position - getPosition();
+    }
+    else
     {
         buffer_events += "-- Impl seek --";
         impl->seek(absolute_position); /// SEEK_SET.

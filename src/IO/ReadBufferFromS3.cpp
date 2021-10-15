@@ -2,15 +2,17 @@
 
 #if USE_AWS_S3
 
-#    include <IO/ReadBufferFromIStream.h>
-#    include <IO/ReadBufferFromS3.h>
-#    include <Common/Stopwatch.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromS3.h>
+#include <Common/Stopwatch.h>
 
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/GetObjectRequest.h>
-#    include <base/logger_useful.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
 
-#    include <utility>
+#include <base/logger_useful.h>
+#include <base/sleep.h>
+
+#include <utility>
 
 
 namespace ProfileEvents
@@ -27,6 +29,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -49,19 +52,29 @@ bool ReadBufferFromS3::nextImpl()
     if (last_offset)
     {
         if (static_cast<off_t>(last_offset) == offset)
-        {
-            impl.reset();
-            working_buffer.resize(0);
             return false;
-        }
+
+        if (static_cast<off_t>(last_offset) < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
     }
 
     bool next_result = false;
 
-    /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
     if (impl)
     {
-        if (!use_external_buffer)
+        if (use_external_buffer)
+        {
+            /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not, because this branch
+            * means we are prefetching data.
+            */
+            impl->set(internal_buffer.begin(), internal_buffer.size());
+            assert(working_buffer.begin() != nullptr);
+            assert(!internal_buffer.empty());
+        }
+        else
         {
             /**
             * use_external_buffer -- means we read into the buffer which
@@ -74,32 +87,25 @@ bool ReadBufferFromS3::nextImpl()
             assert(!impl->hasPendingData());
         }
     }
-    else
-    {
-        /// `impl` is not initialized and we're about to read the first portion of data.
-        impl = initialize();
-        next_result = impl->hasPendingData();
-    }
 
-    if (use_external_buffer)
-    {
-        /**
-        * use_external_buffer -- means we read into the buffer which
-        * was passed to us from somewhere else. We do not check whether
-        * previously returned buffer was read or not, because this branch
-        * means we are prefetching data.
-        */
-        impl->set(internal_buffer.begin(), internal_buffer.size());
-        assert(working_buffer.begin() != nullptr);
-        assert(!internal_buffer.empty());
-    }
-
-    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+    size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
     {
         Stopwatch watch;
         try
         {
+            if (!impl)
+            {
+                impl = initialize();
+
+                if (use_external_buffer)
+                {
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
+            }
+
             /// Try to read a next portion of data.
             next_result = impl->next();
             watch.stop();
@@ -119,19 +125,11 @@ bool ReadBufferFromS3::nextImpl()
                 throw;
 
             /// Pause before next attempt.
-            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
             impl.reset();
-            impl = initialize();
-            if (use_external_buffer)
-            {
-                impl->set(internal_buffer.begin(), internal_buffer.size());
-                assert(working_buffer.begin() != nullptr);
-                assert(!internal_buffer.empty());
-            }
-            next_result = impl->hasPendingData();
         }
     }
 
@@ -173,10 +171,11 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    // auto right_offset = read_settings.remote_read_right_offset;
-
     if (last_offset)
     {
+        if (offset >= static_cast<off_t>(last_offset))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+
         req.SetRange(fmt::format("bytes={}-{}", offset, last_offset - 1));
         LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, last_offset - 1);
     }
