@@ -262,7 +262,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorsCapnProto(FormatFactory &) {}
+void registerOutputFormatCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP
