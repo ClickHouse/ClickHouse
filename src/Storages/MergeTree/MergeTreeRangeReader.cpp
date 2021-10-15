@@ -55,8 +55,11 @@ static void filterColumns(Columns & columns, const ColumnPtr & filter)
 
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
-        size_t from_mark, IMergeTreeReader * merge_tree_reader_)
+    size_t from_mark,
+    size_t current_task_last_mark_,
+    IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
+        , current_task_last_mark(current_task_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
@@ -73,7 +76,8 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t n
 {
     if (num_rows)
     {
-        size_t rows_read = merge_tree_reader->readRows(current_mark, continue_reading, num_rows, columns);
+        size_t rows_read = merge_tree_reader->readRows(
+            current_mark, current_task_last_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -151,13 +155,13 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
 
 
 MergeTreeRangeReader::Stream::Stream(
-        size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
+        size_t from_mark, size_t to_mark, size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
-        , stream(from_mark, merge_tree_reader)
+        , stream(from_mark, current_task_last_mark, merge_tree_reader)
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
@@ -280,9 +284,9 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception("Can't adjust last granule because no granules were added.", ErrorCodes::LOGICAL_ERROR);
 
     if (num_rows_to_subtract > rows_per_granule.back())
-        throw Exception("Can't adjust last granule because it has " + toString(rows_per_granule.back())
-                        + " rows, but try to subtract " + toString(num_rows_to_subtract) + " rows.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
+                        toString(rows_per_granule.back()), toString(num_rows_to_subtract));
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -750,6 +754,16 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     ReadResult result;
     result.columns.resize(merge_tree_reader->getColumns().size());
 
+    auto current_task_last_mark_range = std::max_element(ranges.begin(), ranges.end(),
+        [&](const MarkRange & range1, const MarkRange & range2)
+    {
+        return range1.end < range2.end;
+    });
+
+    size_t current_task_last_mark = 0;
+    if (current_task_last_mark_range != ranges.end())
+        current_task_last_mark = current_task_last_mark_range->end;
+
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
@@ -760,7 +774,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
+                stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
                 result.addRange(ranges.front());
                 ranges.pop_front();
             }
@@ -818,7 +832,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             num_rows += stream.finalize(columns);
             const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
-            stream = Stream(range.begin, range.end, merge_tree_reader);
+            stream = Stream(range.begin, range.end, 0, merge_tree_reader);
         }
 
         bool last = i + 1 == size;

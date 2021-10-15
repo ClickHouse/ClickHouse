@@ -13,28 +13,31 @@ namespace Aws
 namespace S3
 {
 class S3Client;
-}}
+}
+}
+
 namespace DB
 {
 
 class ReadBufferFromRemoteFSGather : public ReadBuffer
 {
-friend class ThreadPoolRemoteFSReader;
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    explicit ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_);
+    explicit ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const String & path_);
 
-    String getFileName() const { return metadata.metadata_file_path; }
+    String getFileName() const;
 
     void reset();
 
     void seek(off_t offset); /// SEEK_SET only.
 
-protected:
+    void setRightOffset(size_t offset);
+
     size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
-    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path) const = 0;
+protected:
+    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const = 0;
 
     RemoteMetadata metadata;
 
@@ -54,6 +57,10 @@ private:
     size_t buf_idx = 0;
 
     size_t bytes_to_ignore = 0;
+
+    size_t last_offset = 0;
+
+    String path;
 };
 
 
@@ -63,13 +70,14 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
+        const String & path_,
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_,
         bool threadpool_read_ = false)
-        : ReadBufferFromRemoteFSGather(metadata_)
+        : ReadBufferFromRemoteFSGather(metadata_, path_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
@@ -78,7 +86,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -94,12 +102,13 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromWebServerGather(
+            const String & path_,
             const String & uri_,
             RemoteMetadata metadata_,
             ContextPtr context_,
             size_t threadpool_read_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(metadata_)
+        : ReadBufferFromRemoteFSGather(metadata_, path_)
         , uri(uri_)
         , context(context_)
         , threadpool_read(threadpool_read_)
@@ -107,7 +116,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
 
 private:
     String uri;
@@ -123,11 +132,12 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromHDFSGather(
+            const String & path_,
             const Poco::Util::AbstractConfiguration & config_,
             const String & hdfs_uri_,
             IDiskRemote::Metadata metadata_,
             size_t buf_size_)
-        : ReadBufferFromRemoteFSGather(metadata_)
+        : ReadBufferFromRemoteFSGather(metadata_, path_)
         , config(config_)
         , buf_size(buf_size_)
     {
@@ -136,7 +146,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;

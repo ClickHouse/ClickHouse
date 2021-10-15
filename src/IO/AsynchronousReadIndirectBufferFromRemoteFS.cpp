@@ -2,6 +2,7 @@
 
 #include <Common/Stopwatch.h>
 #include <IO/ThreadPoolRemoteFSReader.h>
+#include <base/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -35,14 +36,16 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
         Int32 priority_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t buf_size_,
-        size_t min_bytes_for_seek_)
+        size_t /* min_bytes_for_seek_ */)
     : ReadBufferFromFileBase(buf_size_, nullptr, 0)
     , reader(reader_)
     , priority(priority_)
     , impl(impl_)
     , prefetch_buffer(buf_size_)
-    , min_bytes_for_seek(min_bytes_for_seek_)
+    // , min_bytes_for_seek(min_bytes_for_seek_)
 {
+    ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBuffers);
+    buffer_events += impl->getFileName() + " : ";
 }
 
 
@@ -66,15 +69,31 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 
 void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 {
-    if (hasPendingData())
-        return;
+     if (hasPendingData())
+         return;
 
+     if (prefetch_future.valid())
+         return;
+
+     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
+     buffer_events += "-- Prefetch (" + toString(absolute_position) + ") --";
+}
+
+
+void AsynchronousReadIndirectBufferFromRemoteFS::setRightOffset(size_t offset)
+{
+    buffer_events += "-- Set last offset " + toString(offset) + "--";
     if (prefetch_future.valid())
-        return;
+    {
+        buffer_events += "-- Cancelling because of offset update --";
+        ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
+        prefetch_future.wait();
+        prefetch_future = {};
+    }
 
-    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
-    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
-    buffer_events += "-- Prefetch --";
+    last_offset = offset;
+    impl->setRightOffset(offset);
 }
 
 
@@ -86,7 +105,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchReads);
-        buffer_events += "-- Read from prefetch --";
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
@@ -100,13 +118,17 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
                 absolute_position += size;
             }
         }
+
+        buffer_events += fmt::format("-- Read from prefetch from offset: {}, upper bound: {}, actually read: {} --",
+                                     toString(absolute_position), toString(last_offset), toString(size));
         watch.stop();
         ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
     }
     else
     {
-        buffer_events += "-- Read without prefetch --";
         size = readInto(memory.data(), memory.size()).get();
+        buffer_events += fmt::format("-- Read without prefetch from offset: {}, upper bound: {}, actually read: {} --",
+                                     toString(absolute_position), toString(last_offset), toString(size));
         if (size)
         {
             set(memory.data(), memory.size());
@@ -115,7 +137,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
     }
 
-    buffer_events += " + " + toString(size) + " + ";
     prefetch_future = {};
     return size;
 }
@@ -163,6 +184,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     if (prefetch_future.valid())
     {
+        buffer_events += "-- cancelling prefetch because of seek --";
         ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
@@ -170,16 +192,18 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     pos = working_buffer.end();
 
-    if (static_cast<off_t>(absolute_position) >= getPosition()
-        && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
+    // if (static_cast<off_t>(absolute_position) >= getPosition()
+    //     && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
+    // {
+    //    /**
+    //     * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
+    //     */
+    //    // bytes_to_ignore = absolute_position - getPosition();
+    //    impl->seek(absolute_position); /// SEEK_SET.
+    // }
+    // else
     {
-        /**
-         * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
-         */
-        bytes_to_ignore = absolute_position - getPosition();
-    }
-    else
-    {
+        buffer_events += "-- Impl seek --";
         impl->seek(absolute_position); /// SEEK_SET.
     }
 
@@ -189,14 +213,14 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
 void AsynchronousReadIndirectBufferFromRemoteFS::finalize()
 {
-    std::cerr << "\n\n\nBuffer events: " << buffer_events << std::endl;
-
     if (prefetch_future.valid())
     {
+        buffer_events += "-- cancelling prefetch in finalize --";
         ProfileEvents::increment(ProfileEvents::RemoteFSUnusedCancelledPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
     }
+    std::cerr << "Buffer events: " << buffer_events << std::endl;
 }
 
 
