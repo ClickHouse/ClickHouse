@@ -39,7 +39,6 @@
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsJSON.h>
 
 #include <Interpreters/Context.h>
 
