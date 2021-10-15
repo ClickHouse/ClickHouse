@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int NETWORK_ERROR;
 }
 
 static constexpr size_t HTTP_MAX_TRIES = 10;
