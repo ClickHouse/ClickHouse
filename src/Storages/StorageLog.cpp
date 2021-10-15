@@ -181,7 +181,10 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
             UInt64 offset = 0;
             if (!stream_for_prefix && mark_number)
+            {
+                std::lock_guard marks_lock(file_it->second.marks_mutex);
                 offset = file_it->second.marks[mark_number].offset;
+            }
 
             auto & data_file_path = file_it->second.data_file_path;
             auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
@@ -450,7 +453,10 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
         writeIntBinary(mark.second.offset, *marks_stream);
 
         size_t column_index = mark.first;
-        storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
+
+        auto & file = storage.files[storage.column_names_by_idx[column_index]];
+        std::lock_guard marks_lock(file.marks_mutex);
+        file.marks.push_back(mark.second);
     }
 }
 
