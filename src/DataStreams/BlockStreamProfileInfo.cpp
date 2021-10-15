@@ -46,12 +46,14 @@ void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs, bool sk
 
 size_t BlockStreamProfileInfo::getRowsBeforeLimit() const
 {
+    calculated_rows_before_limit = true;
     return rows_before_limit;
 }
 
 
 bool BlockStreamProfileInfo::hasAppliedLimit() const
 {
+    calculated_rows_before_limit = true;
     return applied_limit;
 }
 
