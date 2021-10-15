@@ -1,4 +1,4 @@
-#include "InternalTextLogs.h"
+#include <Client/InternalTextLogs.h>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/typeid_cast.h>

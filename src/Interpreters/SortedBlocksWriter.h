@@ -7,7 +7,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Processors/Pipe.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 
 namespace DB

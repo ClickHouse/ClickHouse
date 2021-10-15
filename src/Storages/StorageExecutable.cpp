@@ -3,7 +3,6 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
-#include <DataStreams/materializeBlock.h>
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>

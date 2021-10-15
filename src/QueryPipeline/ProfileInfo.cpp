@@ -1,4 +1,4 @@
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void BlockStreamProfileInfo::read(ReadBuffer & in)
+void ProfileInfo::read(ReadBuffer & in)
 {
     readVarUInt(rows, in);
     readVarUInt(blocks, in);
@@ -19,7 +19,7 @@ void BlockStreamProfileInfo::read(ReadBuffer & in)
 }
 
 
-void BlockStreamProfileInfo::write(WriteBuffer & out) const
+void ProfileInfo::write(WriteBuffer & out) const
 {
     writeVarUInt(rows, out);
     writeVarUInt(blocks, out);
@@ -30,7 +30,7 @@ void BlockStreamProfileInfo::write(WriteBuffer & out) const
 }
 
 
-void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info)
+void ProfileInfo::setFrom(const ProfileInfo & rhs, bool skip_block_size_info)
 {
     if (!skip_block_size_info)
     {
@@ -44,24 +44,24 @@ void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs, bool sk
 }
 
 
-size_t BlockStreamProfileInfo::getRowsBeforeLimit() const
+size_t ProfileInfo::getRowsBeforeLimit() const
 {
     return rows_before_limit;
 }
 
 
-bool BlockStreamProfileInfo::hasAppliedLimit() const
+bool ProfileInfo::hasAppliedLimit() const
 {
     return applied_limit;
 }
 
 
-void BlockStreamProfileInfo::update(Block & block)
+void ProfileInfo::update(Block & block)
 {
     update(block.rows(), block.bytes());
 }
 
-void BlockStreamProfileInfo::update(size_t num_rows, size_t num_bytes)
+void ProfileInfo::update(size_t num_rows, size_t num_bytes)
 {
     ++blocks;
     rows += num_rows;

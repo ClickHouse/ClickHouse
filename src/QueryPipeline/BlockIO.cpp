@@ -1,4 +1,4 @@
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/ProcessList.h>
 
 namespace DB

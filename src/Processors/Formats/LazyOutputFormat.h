@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB
@@ -25,7 +25,7 @@ public:
 
     bool isFinished() { return finished_processing && queue.size() == 0; }
 
-    BlockStreamProfileInfo & getProfileInfo() { return info; }
+    ProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
@@ -65,7 +65,7 @@ private:
     /// Is not used.
     static WriteBuffer out;
 
-    BlockStreamProfileInfo info;
+    ProfileInfo info;
 
     std::atomic<bool> finished_processing;
 };

@@ -1,6 +1,6 @@
 #if defined(OS_LINUX)
 
-#include <DataStreams/RemoteQueryExecutorReadContext.h>
+#include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>

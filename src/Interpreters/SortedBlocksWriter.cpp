@@ -4,8 +4,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Processors/Sources/TemporaryFileLazySource.h>
+#include <Formats/TemporaryFileStream.h>
 #include <Disks/IVolume.h>
 
 

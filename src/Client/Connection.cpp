@@ -9,8 +9,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -994,9 +994,9 @@ Progress Connection::receiveProgress() const
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo() const
+ProfileInfo Connection::receiveProfileInfo() const
 {
-    BlockStreamProfileInfo profile_info;
+    ProfileInfo profile_info;
     profile_info.read(*in);
     return profile_info;
 }

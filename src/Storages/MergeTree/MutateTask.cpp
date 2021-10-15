@@ -4,7 +4,7 @@
 #include <Common/escapeForFileName.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
-#include <DataStreams/SquashingTransform.h>
+#include <Common/SquashingTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Parsers/queryToString.h>

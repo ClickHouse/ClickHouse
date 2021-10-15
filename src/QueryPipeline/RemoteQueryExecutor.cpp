@@ -1,6 +1,6 @@
-#include <DataStreams/ConnectionCollector.h>
-#include <DataStreams/RemoteQueryExecutor.h>
-#include <DataStreams/RemoteQueryExecutorReadContext.h>
+#include <QueryPipeline/ConnectionCollector.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>

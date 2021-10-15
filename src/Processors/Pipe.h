@@ -4,7 +4,7 @@
 #include <Processors/PipelineResourcesHolder.h>
 #include <Processors/Chain.h>
 #include <Access/EnabledQuota.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
