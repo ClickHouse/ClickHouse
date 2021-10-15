@@ -15,7 +15,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -186,7 +185,7 @@ Pipe StorageExecutable::read(
 
         auto pipeline = std::make_shared<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(inputs[i])));
 
-        auto out = FormatFactory::instance().getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()), context);
+        auto out = context->getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));
 

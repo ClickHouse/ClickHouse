@@ -49,10 +49,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Formats/FormatSettings.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/RemoteQueryExecutor.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>

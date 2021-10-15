@@ -2,7 +2,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>

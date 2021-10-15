@@ -60,7 +60,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
 
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Poco/DirectoryIterator.h>

@@ -89,4 +89,3 @@ if (LINKER_NAME)
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
-

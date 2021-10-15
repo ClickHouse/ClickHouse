@@ -1,7 +1,7 @@
 #include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeWriter.h>
 #include <DataStreams/copyData.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -17,13 +17,13 @@ namespace DB
 TemporaryFileStream::TemporaryFileStream(const std::string & path)
     : file_in(path)
     , compressed_in(file_in)
-    , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+    , block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
 {}
 
 TemporaryFileStream::TemporaryFileStream(const std::string & path, const Block & header_)
     : file_in(path)
     , compressed_in(file_in)
-    , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header_, 0))
+    , block_in(std::make_unique<NativeReader>(compressed_in, header_, 0))
 {}
 
 /// Flush data from input stream into file for future reading
@@ -31,18 +31,15 @@ void TemporaryFileStream::write(const std::string & path, const Block & header, 
 {
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
-    NativeBlockOutputStream output(compressed_buf, 0, header);
+    NativeWriter output(compressed_buf, 0, header);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
-
-    output.writePrefix();
 
     Block block;
     while (executor.pull(block))
         output.write(block);
 
-    output.writeSuffix();
     compressed_buf.finalize();
 }
 
