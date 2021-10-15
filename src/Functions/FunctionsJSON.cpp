@@ -58,12 +58,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <class T, class = void>
-struct HasIndexOperator : std::false_type {};
-
-template <class T>
-struct HasIndexOperator<T, std::void_t<decltype(std::declval<T>()[0])>> : std::true_type {};
-
+template <typename T>
+concept HasIndexOperator = requires (T t)
+{
+    t[0];
+};
 
 /// Functions to parse JSONs and extract values from it.
 /// The first argument of all these functions gets a JSON,
@@ -285,7 +284,7 @@ private:
             return true;
         }
 
-        if constexpr (HasIndexOperator<typename JSONParser::Object>::value)
+        if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
             if (element.isObject())
             {
