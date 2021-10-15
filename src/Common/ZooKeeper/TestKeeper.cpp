@@ -493,7 +493,7 @@ TestKeeper::~TestKeeper()
 {
     try
     {
-        finalize();
+        finalize(__PRETTY_FUNCTION__);
         if (processing_thread.joinable())
             processing_thread.join();
     }
@@ -556,12 +556,12 @@ void TestKeeper::processingThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize();
+        finalize(__PRETTY_FUNCTION__);
     }
 }
 
 
-void TestKeeper::finalize()
+void TestKeeper::finalize(const String &)
 {
     {
         std::lock_guard lock(push_request_mutex);
@@ -661,7 +661,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
     }
     catch (...)
     {
-        finalize();
+        finalize(__PRETTY_FUNCTION__);
         throw;
     }
 }

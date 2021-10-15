@@ -67,7 +67,7 @@ Chunk KafkaSource::generateImpl()
         broken = true;
     }
 
-    if (!buffer || is_finished)
+    if (is_finished)
         return {};
 
     is_finished = true;

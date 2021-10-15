@@ -575,7 +575,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     return writeProjectionPartImpl(
         part_name,
         part_type,
-        "tmp_insert_" + part_name + ".proj" /* relative_path */,
+        part_name + ".tmp_proj" /* relative_path */,
         true /* is_temp */,
         parent_part,
         data,

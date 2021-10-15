@@ -19,7 +19,6 @@
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
-#include <Formats/FormatFactory.h>
 #include <base/find_symbols.h>
 
 
@@ -36,7 +35,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = FormatFactory::instance().getInput(format, *read_buffer, sample_block, context, DEFAULT_BLOCK_SIZE);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<Pipe>(std::move(input));

@@ -5,6 +5,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include "Core/Protocol.h"
 
 
 namespace DB
@@ -328,6 +329,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Extremes: [[fallthrough]];
         case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
+        case Protocol::Server::ProfileEvents:
         {
             if (state->block && state->block.value())
             {
