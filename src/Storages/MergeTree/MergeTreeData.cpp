@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
@@ -3509,11 +3508,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
         buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
-        auto input_format = FormatFactory::instance().getInput(
+        auto input_format = local_context->getInputFormat(
             "Values",
             buf,
             metadata_snapshot->getPartitionKey().sample_block,
-            local_context,
             local_context->getSettingsRef().max_block_size);
         auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
