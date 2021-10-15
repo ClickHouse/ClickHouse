@@ -664,10 +664,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
         });
     }
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
-    else
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
+    return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
