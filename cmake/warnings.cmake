@@ -43,16 +43,26 @@ if (COMPILER_CLANG)
     add_warning(range-loop-analysis)
     add_warning(redundant-parens)
     add_warning(reserved-id-macro)
-    add_warning(shadow-field) # clang 8+
+    add_warning(shadow-field)
     add_warning(shadow-uncaptured-local)
     add_warning(shadow)
-    add_warning(string-plus-int) # clang 8+
+    add_warning(string-plus-int)
     add_warning(undef)
     add_warning(unreachable-code-return)
     add_warning(unreachable-code)
     add_warning(unused-exception-parameter)
     add_warning(unused-macros)
     add_warning(unused-member-function)
+    add_warning(unneeded-internal-declaration)
+    add_warning(implicit-int-float-conversion)
+    add_warning(no-delete-null-pointer-checks)
+    add_warning(anon-enum-enum-conversion)
+    add_warning(assign-enum)
+    add_warning(bitwise-op-parentheses)
+    add_warning(int-in-bool-context)
+    add_warning(sometimes-uninitialized)
+    add_warning(tautological-bitwise-compare)
+
     # XXX: libstdc++ has some of these for 3way compare
     if (USE_LIBCXX)
         add_warning(zero-as-null-pointer-constant)
@@ -191,5 +201,30 @@ elseif (COMPILER_GCC)
         #     34 |   return __builtin___memcpy_chk (__dest, __src, __len, __bos0 (__dest));
         # For some reason (bug in gcc?) macro 'GCC diagnostic ignored "-Wstringop-overflow"' doesn't help.
         add_cxx_compile_options(-Wno-stringop-overflow)
+    endif()
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
+        # reinterpretAs.cpp:182:31: error: ‘void* memcpy(void*, const void*, size_t)’ copying an object of non-trivial type
+        # ‘using ToFieldType = using FieldType = using UUID = struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’
+        # {aka ‘struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’} from an array of ‘const char8_t’
+        add_cxx_compile_options(-Wno-error=class-memaccess)
+
+        # Maybe false positive...
+        # In file included from /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/memory:673,
+        # In function ‘void std::__1::__libcpp_operator_delete(_Args ...) [with _Args = {void*, long unsigned int}]’,
+        # inlined from ‘void std::__1::__do_deallocate_handle_size(void*, size_t, _Args ...) [with _Args = {}]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:271:34,
+        # inlined from ‘void std::__1::__libcpp_deallocate(void*, size_t, size_t)’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:285:41,
+        # inlined from ‘constexpr void std::__1::allocator<_Tp>::deallocate(_Tp*, size_t) [with _Tp = char]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/memory:849:39,
+        # inlined from ‘static constexpr void std::__1::allocator_traits<_Alloc>::deallocate(std::__1::allocator_traits<_Alloc>::allocator_type&, std::__1::allocator_traits<_Alloc>::pointer, std::__1::allocator_traits<_Alloc>::size_type) [with _Alloc = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/__memory/allocator_traits.h:476:24,
+        # inlined from ‘std::__1::basic_string<_CharT, _Traits, _Allocator>::~basic_string() [with _CharT = char; _Traits = std::__1::char_traits<char>; _Allocator = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/string:2219:35,
+        # inlined from ‘std::__1::basic_string<_CharT, _Traits, _Allocator>::~basic_string() [with _CharT = char; _Traits = std::__1::char_traits<char>; _Allocator = std::__1::allocator<char>]’ at /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/string:2213:1,
+        # inlined from ‘DB::JSONBuilder::JSONMap::Pair::~Pair()’ at /home/jakalletti/ClickHouse/ClickHouse/src/Common/JSONBuilder.h:90:12,
+        # inlined from ‘void DB::JSONBuilder::JSONMap::add(std::__1::string, DB::JSONBuilder::ItemPtr)’ at /home/jakalletti/ClickHouse/ClickHouse/src/Common/JSONBuilder.h:97:68,
+        # inlined from ‘virtual void DB::ExpressionStep::describeActions(DB::JSONBuilder::JSONMap&) const’ at /home/jakalletti/ClickHouse/ClickHouse/src/Processors/QueryPlan/ExpressionStep.cpp:102:12:
+        # /home/jakalletti/ClickHouse/ClickHouse/contrib/libcxx/include/new:247:20: error: ‘void operator delete(void*, size_t)’ called on a pointer to an unallocated object ‘7598543875853023301’ [-Werror=free-nonheap-object]
+        add_cxx_compile_options(-Wno-error=free-nonheap-object)
+
+        # AggregateFunctionAvg.h:203:100: error: ‘this’ pointer is null [-Werror=nonnull]
+        add_cxx_compile_options(-Wno-error=nonnull)
     endif()
 endif ()

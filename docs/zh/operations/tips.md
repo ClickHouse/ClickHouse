@@ -254,4 +254,4 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
             -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
     end script
 
-[原始文章](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/tips/) <!--hide-->

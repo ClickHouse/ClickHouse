@@ -24,6 +24,8 @@ ClickHouse не удаляет данные из таблица автомати
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+
 Столбцы:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип события, произошедшего при выполнении запроса. Значения:
@@ -181,4 +183,4 @@ used_table_functions:                  []
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/operations/system_tables/query_log) <!--hide-->

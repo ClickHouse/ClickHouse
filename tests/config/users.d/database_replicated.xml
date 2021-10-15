@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
@@ -9,4 +9,4 @@
             <distributed_ddl_entry_format_version>2</distributed_ddl_entry_format_version>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

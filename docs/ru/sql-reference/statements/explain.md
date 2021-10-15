@@ -413,4 +413,4 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/explain/) <!--hide-->

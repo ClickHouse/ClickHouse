@@ -1,9 +1,40 @@
 #include "ProgressIndication.h"
+#include <cstddef>
+#include <numeric>
+#include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <base/types.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
 
+
+namespace
+{
+    constexpr UInt64 ZERO = 0;
+
+    UInt64 calculateNewCoresNumber(DB::ThreadIdToTimeMap const & prev, DB::ThreadIdToTimeMap const& next)
+    {
+        if (next.find(ZERO) == next.end())
+            return ZERO;
+        auto accumulated = std::accumulate(next.cbegin(), next.cend(), ZERO,
+            [&prev](UInt64 acc, auto const & elem)
+            {
+                if (elem.first == ZERO)
+                    return acc;
+                auto thread_time = elem.second.time();
+                auto it = prev.find(elem.first);
+                if (it != prev.end())
+                    thread_time -= it->second.time();
+                return acc + thread_time;
+            });
+
+        auto elapsed = next.at(ZERO).time() - (prev.contains(ZERO) ? prev.at(ZERO).time() : ZERO);
+        if (elapsed == ZERO)
+            return ZERO;
+        return (accumulated + elapsed - 1) / elapsed;
+    }
+}
 
 namespace DB
 {
@@ -29,6 +60,8 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
+    host_active_cores.clear();
+    thread_data.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -41,6 +74,56 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
         if (write_progress_on_update)
             writeProgress();
     });
+}
+
+void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
+{
+    auto & thread_to_times = thread_data[host];
+    if (thread_to_times.contains(thread_id))
+        return;
+    thread_to_times[thread_id] = {};
+}
+
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
+{
+    for (auto & new_host_map : new_thread_data)
+    {
+        auto & host_map = thread_data[new_host_map.first];
+        auto new_cores = calculateNewCoresNumber(host_map, new_host_map.second);
+        host_active_cores[new_host_map.first] = new_cores;
+        host_map = std::move(new_host_map.second);
+    }
+}
+
+size_t ProgressIndication::getUsedThreadsCount() const
+{
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
+        [] (size_t acc, auto const & threads)
+        {
+            return acc + threads.second.size();
+        });
+}
+
+UInt64 ProgressIndication::getApproximateCoresNumber() const
+{
+    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), ZERO,
+        [](UInt64 acc, auto const & elem)
+        {
+            return acc + elem.second;
+        });
+}
+
+UInt64 ProgressIndication::getMemoryUsage() const
+{
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), ZERO,
+        [](UInt64 acc, auto const & host_data)
+        {
+            return acc + std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
+                [](UInt64 memory, auto const & data)
+                {
+                    return memory + data.second.memory_usage;
+                });
+        });
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -146,6 +229,23 @@ void ProgressIndication::writeProgress()
 
         /// Underestimate percentage a bit to avoid displaying 100%.
         message << ' ' << (99 * current_count / max_count) << '%';
+    }
+
+    // If approximate cores number is known, display it.
+    auto cores_number = getApproximateCoresNumber();
+    if (cores_number != 0)
+    {
+        // Calculated cores number may be not accurate
+        // so it's better to print min(threads, cores).
+        UInt64 threads_number = getUsedThreadsCount();
+        message << " Running " << threads_number << " threads on "
+            << std::min(cores_number, threads_number) << " cores";
+
+        auto memory_usage = getMemoryUsage();
+        if (memory_usage != 0)
+            message << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used.";
+        else
+            message << ".";
     }
 
     message << CLEAR_TO_END_OF_LINE;

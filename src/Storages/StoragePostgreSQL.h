@@ -5,16 +5,20 @@
 #endif
 
 #if USE_LIBPQXX
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
-
 
 class StoragePostgreSQL final : public shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
@@ -27,7 +31,8 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        const std::string & remote_table_schema_ = "");
+        const String & remote_table_schema_ = "",
+        const String & on_conflict = "");
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -42,12 +47,17 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+
 private:
     friend class PostgreSQLBlockOutputStream;
 
     String remote_table_name;
     String remote_table_schema;
+    String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }

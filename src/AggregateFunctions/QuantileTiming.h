@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
+#include <base/sort.h>
 
 
 namespace DB

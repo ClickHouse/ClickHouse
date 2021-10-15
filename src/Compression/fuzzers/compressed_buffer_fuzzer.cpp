@@ -17,6 +17,5 @@ try
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
     return 1;
 }

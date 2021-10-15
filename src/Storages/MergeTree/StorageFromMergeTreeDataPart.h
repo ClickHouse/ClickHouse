@@ -6,10 +6,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -71,6 +71,11 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const
     {
         return storage.getPartitionIDFromQuery(ast, context);
+    }
+
+    bool materializeTTLRecalculateOnly() const
+    {
+        return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
 
 protected:

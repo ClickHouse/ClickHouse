@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS t_subcolumns_local;
 DROP TABLE IF EXISTS t_subcolumns_dist;
 

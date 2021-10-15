@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>

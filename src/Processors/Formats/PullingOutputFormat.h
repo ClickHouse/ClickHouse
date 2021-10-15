@@ -24,6 +24,8 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
+    bool expectMaterializedColumns() const override { return false; }
+
 protected:
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }

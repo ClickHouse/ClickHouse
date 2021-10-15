@@ -9,8 +9,6 @@ class FieldVisitorWriteBinary
 {
 public:
     void operator() (const Null & x, WriteBuffer & buf) const;
-    void operator() (const NegativeInfinity & x, WriteBuffer & buf) const;
-    void operator() (const PositiveInfinity & x, WriteBuffer & buf) const;
     void operator() (const UInt64 & x, WriteBuffer & buf) const;
     void operator() (const UInt128 & x, WriteBuffer & buf) const;
     void operator() (const UInt256 & x, WriteBuffer & buf) const;

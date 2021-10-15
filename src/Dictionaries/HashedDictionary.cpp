@@ -367,8 +367,7 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -563,9 +562,9 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
         QueryPipeline pipeline;
         if (configuration.preallocate)
-            pipeline.init(source_ptr->loadAllWithSizeHint(&new_size));
+            pipeline = QueryPipeline(source_ptr->loadAllWithSizeHint(&new_size));
         else
-            pipeline.init(source_ptr->loadAll());
+            pipeline = QueryPipeline(source_ptr->loadAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;

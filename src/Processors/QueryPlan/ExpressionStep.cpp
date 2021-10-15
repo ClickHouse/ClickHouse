@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -52,7 +52,7 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
 

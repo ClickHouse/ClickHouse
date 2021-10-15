@@ -1,25 +1,24 @@
 #include "Keeper.h"
 
-#include <sys/stat.h>
-#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
-#include <Server/ProtocolServerAdapter.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Coordination/Defines.h>
+#include <filesystem>
+#include <IO/UseSSL.h>
+#include <Core/ServerUUID.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Core/ServerUUID.h>
-#include <filesystem>
-#include <IO/UseSSL.h>
+#include <sys/stat.h>
+#include <pwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -31,6 +30,7 @@
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
 #if defined(OS_LINUX)
@@ -300,9 +300,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     if (config().has("keeper_server.storage_path"))
         path = config().getString("keeper_server.storage_path");
     else if (config().has("keeper_server.log_storage_path"))
-        path = config().getString("keeper_server.log_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
     else if (config().has("keeper_server.snapshot_storage_path"))
-        path = config().getString("keeper_server.snapshot_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
@@ -359,7 +359,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-    global_context->initializeKeeperStorageDispatcher();
+    global_context->initializeKeeperDispatcher();
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -428,7 +428,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperStorageDispatcher();
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

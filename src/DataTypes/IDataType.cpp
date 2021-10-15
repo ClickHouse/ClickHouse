@@ -87,23 +87,38 @@ ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const IColumn &
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-Names IDataType::getSubcolumnNames() const
+void IDataType::forEachSubcolumn(const SubcolumnCallback & callback) const
 {
-    NameSet res;
-    getDefaultSerialization()->enumerateStreams([&res, this](const ISerialization::SubstreamPath & substream_path)
+    NameSet set;
+    getDefaultSerialization()->enumerateStreams([&, this](const ISerialization::SubstreamPath & substream_path)
     {
         ISerialization::SubstreamPath new_path;
         /// Iterate over path to try to get intermediate subcolumns for complex nested types.
         for (const auto & elem : substream_path)
         {
             new_path.push_back(elem);
-            auto subcolumn_name = ISerialization::getSubcolumnNameForStream(new_path);
-            if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
-                res.insert(subcolumn_name);
+            auto name = ISerialization::getSubcolumnNameForStream(new_path);
+            auto type = tryGetSubcolumnType(name);
+
+            /// Subcolumn names may repeat among several substream paths.
+            if (!name.empty() && type && !set.count(name))
+            {
+                callback(name, type, substream_path);
+                set.insert(name);
+            }
         }
     });
+}
 
-    return Names(std::make_move_iterator(res.begin()), std::make_move_iterator(res.end()));
+Names IDataType::getSubcolumnNames() const
+{
+    Names res;
+    forEachSubcolumn([&](const auto & name, const auto &, const auto &)
+    {
+        res.push_back(name);
+    });
+
+    return res;
 }
 
 void IDataType::insertDefaultInto(IColumn & column) const
@@ -145,7 +160,7 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
             return subcolumn_type.getSerialization(column.name, callback);
         };
 
-        auto type_in_storage = column.getTypeInStorage();
+        const auto & type_in_storage = column.getTypeInStorage();
         return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 

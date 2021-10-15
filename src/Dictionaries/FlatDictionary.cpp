@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries//DictionarySource.h>
@@ -322,8 +322,7 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -358,8 +357,7 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadAll());
+        QueryPipeline pipeline(source_ptr->loadAll());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;

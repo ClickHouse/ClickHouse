@@ -309,4 +309,4 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

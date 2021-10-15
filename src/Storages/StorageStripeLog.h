@@ -3,7 +3,7 @@
 #include <map>
 #include <shared_mutex>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>

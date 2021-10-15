@@ -121,4 +121,4 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

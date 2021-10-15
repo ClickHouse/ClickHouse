@@ -4,7 +4,7 @@
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>

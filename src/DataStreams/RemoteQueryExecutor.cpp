@@ -1,9 +1,12 @@
+#include <Common/ConcurrentBoundedQueue.h>
+
 #include <DataStreams/ConnectionCollector.h>
 #include <DataStreams/RemoteQueryExecutor.h>
 #include <DataStreams/RemoteQueryExecutorReadContext.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include "Core/Protocol.h"
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
@@ -13,15 +16,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+
 namespace CurrentMetrics
 {
-extern const Metric SyncDrainedConnections;
-extern const Metric ActiveSyncDrainedConnections;
+    extern const Metric SyncDrainedConnections;
+    extern const Metric ActiveSyncDrainedConnections;
 }
 
 namespace DB
@@ -32,6 +35,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int SYSTEM_ERROR;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -208,6 +212,12 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    /// Set initial_query_id to query_id for the clickhouse-benchmark.
+    ///
+    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
+    ///  due to it executes queries via RemoteBlockInputStream)
+    if (modified_client_info.initial_query_id.empty())
+        modified_client_info.initial_query_id = query_id;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -384,6 +394,13 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
                 log_queue->pushBlock(std::move(packet.block));
             break;
 
+        case Protocol::Server::ProfileEvents:
+            /// Pass profile events from remote server to client
+            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                if (!profile_queue->emplace(std::move(packet.block)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+
         default:
             got_unknown_packet_from_replica = true;
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
@@ -526,7 +543,18 @@ void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadCon
     was_cancelled = true;
 
     if (read_context && *read_context)
+    {
+        /// The timer should be set for query cancellation to avoid query cancellation hung.
+        ///
+        /// Since in case the remote server will abnormally terminated, neither
+        /// FIN nor RST packet will be sent, and the initiator will not know that
+        /// the connection died (unless tcp_keep_alive_timeout > 0).
+        ///
+        /// Also note that it is possible to get this situation even when
+        /// enough data already had been read.
+        (*read_context)->setTimer();
         (*read_context)->cancel();
+    }
 
     connections->sendCancel();
 

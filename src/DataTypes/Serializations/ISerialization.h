@@ -136,6 +136,9 @@ public:
         bool continuous_reading = true;
 
         bool position_independent_encoding = true;
+
+        bool native_format = false;
+
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
     };
