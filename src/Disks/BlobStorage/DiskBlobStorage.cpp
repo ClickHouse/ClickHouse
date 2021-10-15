@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BLOB_STORAGE_ERROR;
+}
+
 
 DiskBlobStorageSettings::DiskBlobStorageSettings(
     UInt64 max_single_read_retries_,
@@ -156,7 +161,8 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     {
         for (auto path : paths_keeper->paths)
         {
-            blob_container_client.DeleteBlob(path);
+            if (!blob_container_client.DeleteBlob(path).Value.Deleted)
+                throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
         }
     }
 }
