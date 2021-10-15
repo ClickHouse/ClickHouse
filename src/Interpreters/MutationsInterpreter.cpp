@@ -11,12 +11,13 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -156,7 +157,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -213,17 +214,23 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and and give it into ExpressionBlockInputStream
+    /// For some reason it may copy context and and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
-    BlockInputStreamPtr in = interpreter.execute().getInputStream();
+    auto io = interpreter.execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
-    Block block = in->read();
+    Block block;
+    while (!block.rows())
+        executor.pull(block);
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
         throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
             ErrorCodes::LOGICAL_ERROR);
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
@@ -301,6 +308,15 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
         key_columns.insert(merge_tree_data->merging_params.version_column);
 
     return key_columns;
+}
+
+static bool materializeTTLRecalculateOnly(const StoragePtr & storage)
+{
+    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+    if (!storage_from_merge_tree_data_part)
+        return false;
+
+    return storage_from_merge_tree_data_part->materializeTTLRecalculateOnly();
 }
 
 static void validateUpdateColumns(
@@ -394,8 +410,13 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
+    bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
     for (const MutationCommand & command : commands)
     {
+        if (command.type == MutationCommand::Type::UPDATE
+            || command.type == MutationCommand::Type::DELETE)
+            materialize_ttl_recalculate_only = false;
+
         for (const auto & kv : command.column_to_update_expression)
         {
             updated_columns.insert(kv.first);
@@ -529,6 +550,17 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            const auto & column = columns_desc.get(command.column_name);
+            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+        }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
@@ -569,7 +601,18 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (metadata_snapshot->hasRowsTTL())
+            if (materialize_ttl_recalculate_only)
+            {
+                // just recalculate ttl_infos without remove expired data
+                auto all_columns_vec = all_columns.getNames();
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
+                for (const auto & dependency : new_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                        dependencies.insert(dependency);
+                }
+            }
+            else if (metadata_snapshot->hasRowsTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -594,19 +637,19 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
                         dependencies.insert(dependency);
                 }
+            }
 
-                if (dependencies.empty())
-                {
-                    /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
-                    /// But we still have to read at least one column.
-                    dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
-                }
+            if (dependencies.empty())
+            {
+                /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
+                /// But we still have to read at least one column.
+                dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
         }
         else if (command.type == MutationCommand::READ_COLUMN)
@@ -816,7 +859,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -889,7 +932,7 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+QueryPipeline MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -900,24 +943,24 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
 
-    auto pipeline = addStreamsForLaterStages(stages, plan);
+    auto builder = addStreamsForLaterStages(stages, plan);
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder->getHeader()))
     {
-        pipeline->addSimpleTransform([&](const Block & header)
+        builder->addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
     if (!updated_header)
-        updated_header = std::make_unique<Block>(result_stream->getHeader());
+        updated_header = std::make_unique<Block>(pipeline.getHeader());
 
-    return result_stream;
+    return pipeline;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

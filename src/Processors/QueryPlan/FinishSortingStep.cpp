@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPipelineBuilder.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
@@ -54,7 +54,7 @@ void FinishSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FinishSortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     bool need_finish_sorting = (prefix_description.size() < result_description.size());
     if (pipeline.getNumStreams() > 1)
@@ -74,9 +74,9 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQ
 
     if (need_finish_sorting)
     {
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
-            if (stream_type != QueryPipeline::StreamType::Main)
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
             return std::make_shared<PartialSortingTransform>(header, result_description, limit);

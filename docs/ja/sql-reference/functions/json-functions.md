@@ -294,4 +294,4 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/json_functions/) <!--hide-->

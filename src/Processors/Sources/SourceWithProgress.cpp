@@ -47,9 +47,14 @@ void SourceWithProgress::setProcessListElement(QueryStatus * elem)
     }
 }
 
+bool SourceWithProgress::checkTimeLimit() const
+{
+    return limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode);
+}
+
 void SourceWithProgress::work()
 {
-    if (!limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode))
+    if (!checkTimeLimit())
     {
         cancel();
     }

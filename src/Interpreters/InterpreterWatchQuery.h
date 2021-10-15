@@ -31,6 +31,7 @@ public:
     InterpreterWatchQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
+    QueryPipelineBuilder buildQueryPipeline();
 
 private:
     ASTPtr query_ptr;

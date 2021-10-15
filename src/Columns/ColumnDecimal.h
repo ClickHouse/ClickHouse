@@ -6,13 +6,16 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
+#include <base/sort.h>
+#include <Core/TypeId.h>
+#include <base/TypeName.h>
 
 #include <cmath>
 
 
 namespace DB
 {
+
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -59,11 +62,9 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <typename T>
+template <is_decimal T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
-    static_assert(IsDecimalNumber<T>);
-
 private:
     using Self = ColumnDecimal;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -85,7 +86,7 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
@@ -210,16 +211,16 @@ protected:
     }
 };
 
-template <typename T>
+template <class> class ColumnVector;
+template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
+template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
+template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
+
+template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    size_t size = indexes.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
+    assert(limit <= indexes.size());
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();

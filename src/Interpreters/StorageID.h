@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>

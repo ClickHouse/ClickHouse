@@ -35,6 +35,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -49,6 +50,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -164,6 +166,12 @@ bool StorageFile::isColumnOriented() const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
+    struct stat buf;
+    int res = fstat(table_fd_, &buf);
+    if (-1 == res)
+        throwFromErrno("Cannot execute fstat", res, ErrorCodes::CANNOT_FSTAT);
+    total_bytes_to_read = buf.st_size;
+
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
     if (args.format_name == "Distributed")
@@ -208,6 +216,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
+    if (fs::exists(paths[0]))
+        total_bytes_to_read = fs::file_size(paths[0]);
 }
 
 StorageFile::StorageFile(CommonArguments args)
@@ -327,8 +337,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>();
-                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
+                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -382,19 +391,21 @@ public:
                     return metadata_snapshot->getSampleBlock();
                 };
 
-                auto format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                auto format = context->getInputFormat(
+                    storage->format_name, *read_buf, get_block_for_format(), max_block_size, storage->format_settings);
 
-                pipeline = std::make_unique<QueryPipeline>();
-                pipeline->init(Pipe(format));
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(format));
 
                 if (columns_description.hasDefaults())
                 {
-                    pipeline->addSimpleTransform([&](const Block & header)
+                    builder.addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
                     });
                 }
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
@@ -564,7 +575,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
@@ -574,18 +585,18 @@ public:
     void onStart() override
     {
         if (!prefix_written)
-            writer->writePrefix();
+            writer->doWritePrefix();
         prefix_written = true;
     }
 
     void consume(Chunk chunk) override
     {
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
     {
-        writer->writeSuffix();
+        writer->doWriteSuffix();
     }
 
     // void flush() override
@@ -598,7 +609,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_timed_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
     bool prefix_written{false};
 };
 

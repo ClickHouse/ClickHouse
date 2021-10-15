@@ -193,10 +193,6 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
-    if (remove_repository_callback_executed)
-        return;
-
-    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 

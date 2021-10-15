@@ -84,4 +84,4 @@ You can also calculate integer numbers from a date or date with time. The idea i
 数値の最小公倍数を返します。
 例外は、ゼロで除算するとき、または最小の負の数をマイナスで除算するときにスローされます。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

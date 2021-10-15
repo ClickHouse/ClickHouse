@@ -32,7 +32,7 @@ public:
 
     String getName() const override { return "SettingQuotaAndLimits"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     ContextPtr context;

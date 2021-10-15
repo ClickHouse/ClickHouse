@@ -3,7 +3,8 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include "Core/Protocol.h"
+#include <base/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -81,6 +82,7 @@ void ConnectionCollector::drainConnections(IConnections & connections) noexcept
         {
             case Protocol::Server::EndOfStream:
             case Protocol::Server::Log:
+            case Protocol::Server::ProfileEvents:
                 break;
 
             case Protocol::Server::Exception:

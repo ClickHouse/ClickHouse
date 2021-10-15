@@ -65,6 +65,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -75,14 +76,14 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <common/map.h>
-#include <common/scope_guard_safe.h>
+#include <base/map.h>
+#include <base/scope_guard_safe.h>
 #include <memory>
 
 
@@ -603,8 +604,8 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
     return res;
 }
 
@@ -854,7 +855,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -1132,8 +1133,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Optional step to convert key columns to common supertype.
-            /// Columns with changed types will be returned to user,
-            ///  so its only suitable for `USING` join.
             if (expressions.converting_join_columns)
             {
                 QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
@@ -1250,7 +1249,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     {
                         bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
                         executeTotalsAndHaving(
-                            query_plan, expressions.hasHaving(), expressions.before_having, aggregate_overflow_row, final);
+                            query_plan, expressions.hasHaving(), expressions.before_having, expressions.remove_having_filter, aggregate_overflow_row, final);
                     }
 
                     if (query.group_by_with_rollup)
@@ -1264,11 +1263,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                             throw Exception(
                                 "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING",
                                 ErrorCodes::NOT_IMPLEMENTED);
-                        executeHaving(query_plan, expressions.before_having);
+                        executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
                     }
                 }
                 else if (expressions.hasHaving())
-                    executeHaving(query_plan, expressions.before_having);
+                    executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
                 throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
@@ -1354,17 +1353,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                                  !query.arrayJoinExpressionList() &&
+                                  !query.arrayJoinExpressionList().first &&
                                   !query.distinct &&
                                   !expressions.hasLimitBy() &&
                                   !settings.extremes &&
                                   !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            bool limit_applied = false;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
-                limit_applied = true;
             }
 
             /** If there was more than one stream,
@@ -1386,7 +1383,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (query.limit_with_ties && apply_offset)
             {
                 executeLimit(query_plan);
-                limit_applied = true;
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
@@ -1400,6 +1396,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
+            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -1819,8 +1816,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             Block block_with_count{
                 {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
-            auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<SourceFromInputStream>(istream)), context);
+            auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)), context);
             prepared_count->setStepDescription("Optimized trivial count");
             query_plan.addStep(std::move(prepared_count));
             from_stage = QueryProcessingStage::WithMergeableState;
@@ -2137,10 +2134,10 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 }
 
 
-void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
+void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto having_step
-        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), false);
+        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), remove_filter);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
@@ -2148,7 +2145,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
 
 
 void InterpreterSelectQuery::executeTotalsAndHaving(
-    QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool overflow_row, bool final)
+    QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -2157,6 +2154,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
         overflow_row,
         expression,
         has_having ? getSelectQuery().having()->getColumnName() : "",
+        remove_filter,
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);

@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
@@ -45,6 +45,9 @@ public:
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
+
+    static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
+    static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
     static void setFatalErrorCallback(std::function<void()> callback);
 

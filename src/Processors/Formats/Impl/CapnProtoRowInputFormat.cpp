@@ -9,8 +9,8 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
-#include <common/logger_useful.h>
-#include <common/find_symbols.h>
+#include <base/logger_useful.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -206,7 +206,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
 kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
-    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -217,7 +217,7 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 
     // read size of each segment
     for (size_t i = 0; i <= segment_count; ++i)
-        in.readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
+        in->readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
 
     // calculate size of message
     const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
@@ -228,14 +228,14 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 
     // read full message
     ::memcpy(msg_chars.begin(), prefix_chars.begin(), prefix_size);
-    in.readStrict(msg_chars.begin() + prefix_size, data_size);
+    in->readStrict(msg_chars.begin() + prefix_size, data_size);
 
     return msg;
 }
 
 bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     auto array = readMessage();
@@ -295,9 +295,9 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
-void registerInputFormatProcessorCapnProto(FormatFactory & factory)
+void registerInputFormatCapnProto(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         {
@@ -314,7 +314,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatProcessorCapnProto(FormatFactory &) {}
+    void registerInputFormatCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP

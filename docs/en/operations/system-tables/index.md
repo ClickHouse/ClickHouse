@@ -71,4 +71,4 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 
 
@@ -140,9 +141,8 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
     }
 }
 
@@ -199,6 +199,29 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         }
     }
     return name_deps;
+}
+
+bool IStorage::isStaticStorage() const
+{
+    auto storage_policy = getStoragePolicy();
+    if (storage_policy)
+    {
+        for (const auto & disk : storage_policy->getDisks())
+            if (!disk->isReadOnly())
+                return false;
+        return true;
+    }
+    return false;
+}
+
+BackupEntries IStorage::backup(const ASTs &, ContextPtr) const
+{
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+RestoreDataTasks IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
+{
+    throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const

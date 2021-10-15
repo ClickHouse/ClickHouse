@@ -1166,7 +1166,7 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax = Requirement(
         'configuration file or of any configuration file inside the `config.d` directory.\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <my_ldap_server>\n'
         '        <host>localhost</host>\n'
         '        <port>636</port>\n'
@@ -1182,7 +1182,7 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax = Requirement(
         '        <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>\n'
         '        <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>\n'
         '    </my_ldap_server>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -1234,7 +1234,7 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Syntax = Requirement(
         '[ClickHouse] SHALL support `<ldap>` section with the following syntax\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <user_directories>\n'
         '        <ldap>\n'
         '            <server>my_ldap_server</server>\n'
@@ -1244,7 +1244,7 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Syntax = Requirement(
         '            </roles>\n'
         '        </ldap>\n'
         '    </user_directories>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -2403,7 +2403,7 @@ version: 2.0
 configuration file or of any configuration file inside the `config.d` directory.
 
 ```xml
-<yandex>
+<clickhouse>
     <my_ldap_server>
         <host>localhost</host>
         <port>636</port>
@@ -2419,7 +2419,7 @@ configuration file or of any configuration file inside the `config.d` directory.
         <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
         <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
     </my_ldap_server>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory
@@ -2441,7 +2441,7 @@ version: 1.0
 [ClickHouse] SHALL support `<ldap>` section with the following syntax
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <server>my_ldap_server</server>
@@ -2451,7 +2451,7 @@ version: 1.0
             </roles>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server
@@ -2587,15 +2587,15 @@ to result in contacting the [LDAP] server to verify user's username and password
 
 ## References
 
-* **Access Control and Account Management**: https://clickhouse.tech/docs/en/operations/access-rights/
+* **Access Control and Account Management**: https://clickhouse.com/docs/en/operations/access-rights/
 * **LDAP**: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 
 [SRS]: #srs
-[Access Control and Account Management]: https://clickhouse.tech/docs/en/operations/access-rights/
+[Access Control and Account Management]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS-007 ClickHouse Authentication of Users via LDAP]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [Git]: https://git-scm.com/

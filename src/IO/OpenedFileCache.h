@@ -65,6 +65,12 @@ public:
         it->second = res;
         return res;
     }
+
+    static OpenedFileCache & instance()
+    {
+        static OpenedFileCache res;
+        return res;
+    }
 };
 
 using OpenedFileCachePtr = std::shared_ptr<OpenedFileCache>;

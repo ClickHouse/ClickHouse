@@ -1,8 +1,8 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
 
-#if USE_AWS_S3 || USE_HDFS
 #include <IO/ReadBufferFromS3.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Disks/ReadIndirectBufferFromWebServer.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 template<typename T>
 ReadIndirectBufferFromRemoteFS<T>::ReadIndirectBufferFromRemoteFS(
-    IDiskRemote::Metadata metadata_)
+    RemoteMetadata metadata_)
     : metadata(std::move(metadata_))
 {
 }
@@ -137,6 +137,7 @@ template
 class ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>;
 #endif
 
-}
+template
+class ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>;
 
-#endif
+}

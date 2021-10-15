@@ -23,6 +23,7 @@
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -85,6 +86,14 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserStringLiteral out_file_p;
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
+
+        ParserKeyword s_compression_method("COMPRESSION");
+        if (s_compression_method.ignore(pos, expected))
+        {
+            ParserStringLiteral compression;
+            if (!compression.parse(pos, query_with_output.compression, expected))
+                return false;
+        }
 
         query_with_output.children.push_back(query_with_output.out_file);
     }

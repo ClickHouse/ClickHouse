@@ -20,4 +20,4 @@ This is similar to the `DUAL` table found in other DBMSs.
 1 rows in set. Elapsed: 0.001 sec.
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/one) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/one) <!--hide-->

@@ -1,3 +1,5 @@
+-- Tags: replica
+
 DROP TABLE IF EXISTS parallel_replicas;
 DROP TABLE IF EXISTS parallel_replicas_backup;
 

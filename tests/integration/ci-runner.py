@@ -207,11 +207,11 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def get_images_names():
-        return ["yandex/clickhouse-integration-tests-runner", "yandex/clickhouse-mysql-golang-client",
-                "yandex/clickhouse-mysql-java-client", "yandex/clickhouse-mysql-js-client",
-                "yandex/clickhouse-mysql-php-client", "yandex/clickhouse-postgresql-java-client",
-                "yandex/clickhouse-integration-test", "yandex/clickhouse-kerberos-kdc",
-                "yandex/clickhouse-integration-helper", ]
+        return ["clickhouse/integration-tests-runner", "clickhouse/mysql-golang-client",
+                "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
+                "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
+                "clickhouse/integration-test", "clickhouse/kerberos-kdc",
+                "clickhouse/integration-helper", ]
 
 
     def _can_run_with(self, path, opt):
@@ -343,7 +343,7 @@ class ClickhouseIntegrationTestsRunner:
         image_cmd = ''
         if self._can_run_with(os.path.join(repo_path, "tests/integration", "runner"), '--docker-image-version'):
             for img in self.get_images_names():
-                if img == "yandex/clickhouse-integration-tests-runner":
+                if img == "clickhouse/integration-tests-runner":
                     runner_version = self.get_single_image_version()
                     logging.info("Can run with custom docker image version %s", runner_version)
                     image_cmd += ' --docker-image-version={} '.format(runner_version)

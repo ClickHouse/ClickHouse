@@ -4,7 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
-#include <common/sleep.h>
+#include <base/sleep.h>
 
 namespace ProfileEvents
 {
