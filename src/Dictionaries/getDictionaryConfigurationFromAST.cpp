@@ -573,6 +573,15 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
 
+    if (query.comment)
+    {
+        AutoPtr<Element> comment_element(xml_document->createElement("comment"));
+        current_dictionary->appendChild(comment_element);
+        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
+
+        comment_element->appendChild(comment_value);
+    }
+
     conf->load(xml_document);
     return conf;
 }
