@@ -34,7 +34,7 @@ empty(x)
 Запрос:
 
 ```sql
-SELECT notempty('text');
+SELECT empty('text');
 ```
 
 Результат:
