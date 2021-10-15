@@ -454,14 +454,15 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 auto & attribute_container = std::get<AttributeContainerType<AttributeValueType>>(attribute.container);
                 attribute_container.emplace_back();
 
-                if (attribute_is_nullable) {
-                    attribute.is_index_null->emplace_back();
-                }
-
-                if (attribute_is_nullable && column_value_to_insert.isNull())
+                if (attribute_is_nullable)
                 {
-                    (*attribute.is_index_null).back() = true;
-                    return;
+                    attribute.is_index_null->emplace_back();
+
+                    if (column_value_to_insert.isNull())
+                    {
+                        (*attribute.is_index_null).back() = true;
+                        return;
+                    }
                 }
 
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
