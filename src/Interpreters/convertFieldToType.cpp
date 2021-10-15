@@ -203,6 +203,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
+        }
+
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
