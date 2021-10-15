@@ -26,14 +26,15 @@ def get_table_name(enctype):
 
 def create_table(enctype):
     table_name = get_table_name(enctype)
-    codec_clause = (" Codec(" + enctype + ")") if enctype else ""
+    codec_clause = (" Codec(LZ4, " + enctype + ")") if enctype else ""
+    policy_name = "local_policy"
     node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
     node.query(
         """
         CREATE TABLE {} (x Int32{})
         ENGINE=MergeTree() ORDER BY x
-        SETTINGS storage_policy='local_policy'
-        """.format(table_name, codec_clause))
+        SETTINGS storage_policy='{}'
+        """.format(table_name, codec_clause, policy_name))
 
 def insert_data(enctype, count):
     table_name = get_table_name(enctype)
@@ -113,9 +114,9 @@ def test_performance(capsys):
 
 # count = 10000000
 # num_repeats = 200
-# INSERT: median=0.17430853843688965 seconds, min=0.16551494598388672 seconds
-# SELECT: median=0.06177413463592529 seconds, min=0.059812307357788086 seconds
-# INSERT (AES_128_GCM_SIV): median=0.18237149715423584 seconds, min=0.17288613319396973, diff=+0.008062958717346191 seconds (+4.625682017444874%)
-# SELECT (AES_128_GCM_SIV): median=0.06309270858764648 seconds, min=0.06092333793640137, diff=+0.0013185739517211914 seconds (+2.134508171571153%)
-# INSERT (AES_256_GCM_SIV): median=0.18667304515838623 seconds, min=0.17716431617736816, diff=+0.012364506721496582 seconds (+7.093460155409019%)
-# SELECT (AES_256_GCM_SIV): median=0.06398308277130127 seconds, min=0.06182599067687988, diff=+0.0022089481353759766 seconds (+3.5758463447440074%)
+# INSERT: median=0.17302656173706055 seconds, min=0.1651153564453125 seconds
+# SELECT: median=0.06173574924468994 seconds, min=0.06009984016418457 seconds
+# INSERT (AES_128_GCM_SIV): median=0.20429766178131104 seconds, min=0.1951892375946045, diff=+0.03127110004425049 seconds (+18.073005514477916%)
+# SELECT (AES_128_GCM_SIV): median=0.06699442863464355 seconds, min=0.06418538093566895, diff=+0.005258679389953613 seconds (+8.518045790795883%)
+# INSERT (AES_256_GCM_SIV): median=0.20875346660614014 seconds, min=0.2007150650024414, diff=+0.03572690486907959 seconds (+20.648219851569323%)
+# SELECT (AES_256_GCM_SIV): median=0.06749582290649414 seconds, min=0.06517839431762695, diff=+0.005760073661804199 seconds (+9.330207752033784%)
