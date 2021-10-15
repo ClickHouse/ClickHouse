@@ -28,10 +28,17 @@ Type: [Float64](../../../sql-reference/data-types/float.md).
 Query:
 
 ``` sql
+CREATE TABLE entropy (`vals` UInt32,`strings` String) ENGINE = Memory;
+
+INSERT INTO entropy VALUES (1, 'A'), (1, 'A'), (1,'A'), (1,'A'), (2,'B'), (2,'B'), (2,'C'), (2,'D');
+
+SELECT entropy(vals), entropy(strings) FROM entropy;
 ```
 
 Result:
 
 ``` text
+┌─entropy(vals)─┬─entropy(strings)─┐
+│             1 │             1.75 │
+└───────────────┴──────────────────┘
 ```
-
