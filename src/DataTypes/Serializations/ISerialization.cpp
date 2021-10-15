@@ -103,7 +103,7 @@ namespace
 
 using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
-static String getNameForSubstreamPath(
+String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
