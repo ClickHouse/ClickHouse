@@ -63,24 +63,26 @@ namespace ErrorCodes
 }
 
 
-void LocalServer::processError(const String & query) const
+void LocalServer::processError(const String &) const
 {
     if (ignore_error)
         return;
 
     if (is_interactive)
     {
+        String message;
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, getExceptionMessage(*server_exception, print_stack_trace, true));
-            fmt::print(stderr, "\n");
+            message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
-        if (client_exception)
+        else if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
-            fmt::print(stderr, "\n");
+            message = client_exception->message();
         }
+
+        fmt::print(stderr, "Received exception:\n{}\n", message);
+        fmt::print(stderr, "\n");
     }
     else
     {
@@ -414,17 +416,13 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+    setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
     is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
-    std::optional<InterruptListener> interrupt_listener;
-    if (is_interactive)
-    {
-        interrupt_listener.emplace();
-    }
-    else
+    if (!is_interactive)
     {
         /// We will terminate process on error
         static KillingErrorHandler error_handler;
@@ -546,6 +544,17 @@ void LocalServer::processConfig()
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
+
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
@@ -567,6 +576,8 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
+    bool enable_objects_loader = false;
+
     if (config().has("path"))
     {
         String path = global_context->getPath();
@@ -578,6 +589,7 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+        enable_objects_loader = true;
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
@@ -600,6 +612,9 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
+
+    /// Persist SQL user defined objects only if user_defined folder was created
+    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
