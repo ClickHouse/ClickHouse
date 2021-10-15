@@ -20,6 +20,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 constexpr char test_file[] = "test.txt";
@@ -39,16 +41,6 @@ void checkReadAccess(IDisk & disk)
     auto file = disk.readFile(test_file, DBMS_DEFAULT_BUFFER_SIZE);
     String buf(test_str_size, '0');
     file->readStrict(buf.data(), test_str_size);
-
-#ifdef VERBOSE_DEBUG_MODE
-    std::cout << "buf: ";
-    for (size_t i = 0; i < test_str_size; i++)
-    {
-        std::cout << static_cast<uint8_t>(buf[i]) << " ";
-    }
-    std::cout << "\n";
-#endif
-
     if (buf != test_str)
         throw Exception("No read access to disk", ErrorCodes::PATH_ACCESS_DENIED);
 }
@@ -59,15 +51,14 @@ void checkRemoveAccess(IDisk & disk)
     if (!disk.checkUniqueId(test_file))
     {
         // TODO: improve error codes
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the file to exist, but did not find it: {}", test_file);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Expected the file to exist, but did not find it: {}", test_file);
     }
 
-    // TODO: implement actually removing the file from Blob Storage cloud, now it seems only the metadata file is removed
     disk.removeFile(test_file);
 
     if (disk.checkUniqueId(test_file))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the file not to exist, but found it: {}", test_file);
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Expected the file not to exist, but found it: {}", test_file);
     }
 }
 
@@ -107,7 +98,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         ContextPtr context,
         const DisksMap &)
     {
-        auto endpoint_url = config.getString(config_prefix + ".endpoint", "https://sadttmpstgeus.blob.core.windows.net/data"); // TODO: remove default url
+        auto endpoint_url = config.getString(config_prefix + ".endpoint");
         validate_endpoint_url(endpoint_url);
 
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
@@ -145,7 +136,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
             auto cache_file_predicate = [] (const String & path)
             {
                 return path.ends_with("idx") // index files.
-                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
+                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
                        || path.ends_with("txt") || path.ends_with("dat");
             };
 

@@ -42,17 +42,6 @@ void WriteBufferFromBlobStorage::nextImpl() {
     auto pos = working_buffer.begin();
     auto len = offset();
 
-#ifdef VERBOSE_DEBUG_MODE
-    std::cout << "offset(): " << offset() << "\n";
-    std::cout << "buffer contents: ";
-
-    for (size_t i = 0; i < offset(); i++)
-    {
-        std::cout << static_cast<uint8_t>(*(pos + i)) << " ";
-    }
-    std::cout << "\n";
-#endif
-
     auto block_blob_client = blob_container_client.GetBlockBlobClient(blob_path);
 
     if (len <= max_single_part_upload_size)

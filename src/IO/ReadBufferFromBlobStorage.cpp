@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
 
@@ -96,7 +97,7 @@ void ReadBufferFromBlobStorage::initialize()
     if (data_stream == nullptr)
     {
         // TODO: change error code
-        throw Exception("Null data stream obtained from blob Download", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
     }
 
     total_size = data_stream->Length();
