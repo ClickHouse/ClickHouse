@@ -55,7 +55,7 @@ public:
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
-        if (table) { res->columns = columns->clone(); res->children.push_back(res->table); }
+        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }
