@@ -119,8 +119,8 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
             writeChar('\n', out);
         }
 
-        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
-        formatBlock(output_stream, block);
+        auto output_format = context->getOutputFormat(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_format, block);
     };
     std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 

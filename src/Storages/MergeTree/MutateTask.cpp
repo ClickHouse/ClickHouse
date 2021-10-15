@@ -654,7 +654,7 @@ public:
                 {},
                 projection_merging_params,
                 ctx->new_data_part.get(),
-                "tmp_merge_");
+                ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
@@ -766,7 +766,6 @@ private:
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
 
-    Block block;
     size_t block_num = 0;
 
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
@@ -832,8 +831,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
     }
 
@@ -986,6 +985,7 @@ private:
         ctx->mutating_pipeline.reset();
 
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        ctx->out.reset();
     }
 
     enum class State
@@ -1082,7 +1082,7 @@ private:
 
             if (!ctx->disk->isDirectory(it->path()))
                 ctx->disk->createHardLink(it->path(), destination);
-            else if (!startsWith("tmp_", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->disk->createDirectories(destination);

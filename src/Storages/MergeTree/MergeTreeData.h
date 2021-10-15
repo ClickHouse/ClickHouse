@@ -800,11 +800,16 @@ public:
     /// section from config.xml.
     CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
+    std::lock_guard<std::mutex> getQueryIdSetLock() const { return std::lock_guard<std::mutex>(query_id_set_mutex); }
+
     /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
-    void insertQueryIdOrThrow(const String & query_id, size_t max_queries) const;
+    /// Returns false if the `query_id` already exists in the running set, otherwise return true.
+    bool insertQueryIdOrThrow(const String & query_id, size_t max_queries) const;
+    bool insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries, const std::lock_guard<std::mutex> &) const;
 
     /// Remove current query id after query finished.
     void removeQueryId(const String & query_id) const;
+    void removeQueryIdNoLock(const String & query_id, const std::lock_guard<std::mutex> &) const;
 
     /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
     DataTypePtr getPartitionValueType() const;
