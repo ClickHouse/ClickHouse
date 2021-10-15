@@ -262,6 +262,7 @@
     M(RemoteFSNewReaders, "Number of created impl objects") \
     M(RemoteFSAsyncBuffers, "Total number of AsycnhronousReadIndirectBufferFromREmoteFS buffers") \
     M(RemoteFSSimpleBuffers, "Total number of ReadIndirectBufferFromREmoteFS buffers") \
+    M(RemoteFSRedundantlyReadBytes, "") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
     M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \

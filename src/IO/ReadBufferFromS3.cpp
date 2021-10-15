@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_,
-    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_)
+    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_, size_t last_offset_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -40,11 +40,22 @@ ReadBufferFromS3::ReadBufferFromS3(
     , max_single_read_retries(max_single_read_retries_)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
+    , last_offset(last_offset_)
 {
 }
 
 bool ReadBufferFromS3::nextImpl()
 {
+    if (last_offset)
+    {
+        if (static_cast<off_t>(last_offset) == offset)
+        {
+            impl.reset();
+            working_buffer.resize(0);
+            return false;
+        }
+    }
+
     bool next_result = false;
 
     /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
@@ -162,16 +173,17 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    auto right_offset = read_settings.remote_read_right_offset;
-    if (right_offset)
+    // auto right_offset = read_settings.remote_read_right_offset;
+
+    if (last_offset)
     {
-        req.SetRange(fmt::format("bytes={}-{}", offset, right_offset));
-        LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, right_offset);
+        req.SetRange(fmt::format("bytes={}-{}", offset, last_offset - 1));
+        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, last_offset - 1);
     }
     else
     {
         req.SetRange(fmt::format("bytes={}-", offset));
-        LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);

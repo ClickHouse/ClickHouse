@@ -12,6 +12,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
 
+#include <base/logger_useful.h>
 #include <filesystem>
 #include <iostream>
 
@@ -27,31 +28,32 @@ namespace ErrorCodes
 
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t last_offset) const
 {
     return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
-        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read);
+        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, last_offset);
 }
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t last_offset) const
 {
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, last_offset);
 }
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t last_offset) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, last_offset);
 }
 #endif
 
 
-ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_)
+ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const String & path_)
     : ReadBuffer(nullptr, 0)
     , metadata(metadata_)
+    , path(path_)
 {
 }
 
@@ -91,7 +93,7 @@ void ReadBufferFromRemoteFSGather::initialize()
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || buf_idx != i)
             {
-                current_buf = createImplementationBuffer(file_path);
+                current_buf = createImplementationBuffer(file_path, last_offset);
                 buf_idx = i;
             }
 
@@ -126,8 +128,8 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 
     ++current_buf_idx;
 
-    const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
-    current_buf = createImplementationBuffer(path);
+    const auto & current_path = metadata.remote_fs_objects[current_buf_idx].first;
+    current_buf = createImplementationBuffer(current_path, last_offset);
 
     return readImpl();
 }
@@ -145,6 +147,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (bytes_to_ignore)
         current_buf->ignore(bytes_to_ignore);
 
+    LOG_DEBUG(&Poco::Logger::get("Gather"), "Reading from path: {}", path);
     auto result = current_buf->next();
 
     swap(*current_buf);
@@ -158,14 +161,32 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 
 void ReadBufferFromRemoteFSGather::seek(off_t offset)
 {
+    current_buf.reset();
     absolute_position = offset;
-    initialize();
+    // initialize();
+}
+
+
+void ReadBufferFromRemoteFSGather::setRightOffset(size_t offset)
+{
+    assert(last_offset < offset);
+    current_buf.reset();
+    last_offset = offset;
 }
 
 
 void ReadBufferFromRemoteFSGather::reset()
 {
     current_buf.reset();
+}
+
+
+String ReadBufferFromRemoteFSGather::getFileName() const
+{
+    return path;
+    // if (current_buf)
+    //     return fs::path(metadata.metadata_file_path) / metadata.remote_fs_objects[buf_idx].first;
+    // return metadata.metadata_file_path;
 }
 
 }

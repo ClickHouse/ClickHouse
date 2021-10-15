@@ -42,6 +42,7 @@ private:
     /* size_t nextimpl_working_buffer_offset; */
 
     bool nextImpl() override;
+
     void prefetch() override;
 
 public:
@@ -61,6 +62,7 @@ public:
     {
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
+
 };
 
 }
