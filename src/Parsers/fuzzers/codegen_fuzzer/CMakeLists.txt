@@ -13,24 +13,17 @@ configure_file(
     "${CURRENT_DIR_IN_BINARY}/update.sh"
     COPYONLY)
 
-# Delete this and uncomment the next block if you want to generage clickhouse.g automatically
 configure_file(
-    "${CURRENT_DIR_IN_SOURCES}/clickhouse.g"
-    "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+    "${CURRENT_DIR_IN_SOURCES}/clickhouse-template.g"
+    "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
     COPYONLY)
 
-# # Uncomment to generate clickhouse.g automatically
-# configure_file(
-#     "${CURRENT_DIR_IN_SOURCES}/clickhouse-template.g"
-#     "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
-#     COPYONLY)
-
-# # Note that it depends on all.dict file!
-# add_custom_command(
-#     OUTPUT
-#         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
-#     COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/all.dict"
-# )
+# Note that it depends on all.dict file!
+add_custom_command(
+    OUTPUT
+        "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/all.dict"
+)
 
 add_custom_command(
     OUTPUT

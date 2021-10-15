@@ -154,7 +154,7 @@ class Parser:
             elif self.cur_tok == TOKEN_VAR:
                 chain.append(Var(self.var_id))
             else:
-                self.fatal_parsing_error(f"unexpected token {self.tok}")
+                self.fatal_parsing_error(f"unexpected token {self.cur_tok}")
             self.get_next_token()
 
         if not chain:
