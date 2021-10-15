@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
@@ -57,6 +58,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+template <class T, class = void>
+struct HasIndexOperator : std::false_type {};
+
+template <class T>
+struct HasIndexOperator<T, std::void_t<decltype(std::declval<T>()[0])>> : std::true_type {};
 
 
 /// Functions to parse JSONs and extract values from it.
@@ -279,7 +286,7 @@ private:
             return true;
         }
 
-        if constexpr (FunctionJSONHelpersDetails::has_index_operator<typename JSONParser::Object>::value)
+        if constexpr (HasIndexOperator<typename JSONParser::Object>::value)
         {
             if (element.isObject())
             {
