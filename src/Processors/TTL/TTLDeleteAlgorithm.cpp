@@ -1,4 +1,4 @@
-#include <DataStreams/TTLDeleteAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
 
 namespace DB
 {

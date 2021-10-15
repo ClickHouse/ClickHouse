@@ -1,4 +1,4 @@
-#include <DataStreams/TTLColumnAlgorithm.h>
+#include <Processors/TTL/TTLColumnAlgorithm.h>
 
 namespace DB
 {

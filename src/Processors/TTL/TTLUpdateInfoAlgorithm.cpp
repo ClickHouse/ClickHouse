@@ -1,4 +1,4 @@
-#include <DataStreams/TTLUpdateInfoAlgorithm.h>
+#include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
 {
