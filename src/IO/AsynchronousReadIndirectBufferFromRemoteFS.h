@@ -70,10 +70,11 @@ private:
 
     String buffer_events;
 
-    // size_t min_bytes_for_seek;
+    size_t min_bytes_for_seek;
 
     size_t bytes_to_ignore = 0;
-    Int64 last_offset = 0;
+
+    size_t last_offset = 0;
 };
 
 }

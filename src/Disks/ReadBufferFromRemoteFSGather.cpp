@@ -163,7 +163,6 @@ void ReadBufferFromRemoteFSGather::seek(off_t offset)
 {
     current_buf.reset();
     absolute_position = offset;
-    // initialize();
 }
 
 
