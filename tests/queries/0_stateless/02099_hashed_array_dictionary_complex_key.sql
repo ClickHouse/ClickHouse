@@ -73,7 +73,7 @@ CREATE DICTIONARY hashed_array_dictionary_complex_key_complex_attributes
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_complex_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(());
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY());
 
 SELECT 'Dictionary hashed_array_dictionary_complex_key_complex_attributes';
 SELECT 'dictGet existing value';
