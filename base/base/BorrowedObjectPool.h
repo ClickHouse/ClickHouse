@@ -88,10 +88,12 @@ public:
     /// Return object into pool. Client must return same object that was borrowed.
     inline void returnObject(T && object_to_return)
     {
-        std::unique_lock<std::mutex> lock(objects_mutex);
+        {
+            std::lock_guard<std::mutex> lock(objects_mutex);
 
-        objects.emplace_back(std::move(object_to_return));
-        --borrowed_objects_size;
+            objects.emplace_back(std::move(object_to_return));
+            --borrowed_objects_size;
+        }
 
         condition_variable.notify_one();
     }

@@ -41,7 +41,7 @@ public:
 
     /// Provides information about the authentication type of a specified user.
     Authentication::Type getAuthenticationType(const String & user_name) const;
-    Authentication::Digest getPasswordDoubleSHA1(const String & user_name) const;
+
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
     Authentication::Type getAuthenticationTypeOrLogInFailure(const String & user_name) const;
 
@@ -67,6 +67,9 @@ public:
     ContextMutablePtr makeQueryContext() const { return makeQueryContext(getClientInfo()); }
     ContextMutablePtr makeQueryContext(const ClientInfo & query_client_info) const;
     ContextMutablePtr makeQueryContext(ClientInfo && query_client_info) const;
+
+    /// Releases the currently used session ID so it becomes available for reuse by another session.
+    void releaseSessionID();
 
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;

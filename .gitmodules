@@ -249,3 +249,6 @@
 [submodule "contrib/magic_enum"]
 	path = contrib/magic_enum
 	url = https://github.com/Neargye/magic_enum
+[submodule "contrib/sysroot"]
+	path = contrib/sysroot
+	url = https://github.com/ClickHouse-Extras/sysroot.git
