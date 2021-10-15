@@ -7,6 +7,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -35,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename SessionPtr>
@@ -110,13 +112,13 @@ namespace detail
         size_t bytes_read = 0;
         size_t start_byte = 0;
 
-        bool resumable_read = true;
+        bool with_partial_content = false;
         std::optional<size_t> total_bytes_to_read;
 
         /// Delayed exception in case retries with partial content are not satisfiable
         std::optional<Poco::Exception> exception;
-
         ReadSettings settings;
+        Poco::Logger * log;
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -135,12 +137,8 @@ namespace detail
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
 
-            bool partial_content = false;
-            if (bytes_read && resumable_read)
-            {
-                partial_content = true;
+            if (bytes_read && with_partial_content)
                 request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
-            }
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
@@ -159,7 +157,7 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                if (partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+                if (with_partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
                 {
                     /// If we retries some request, throw error from that request.
                     if (exception)
@@ -203,24 +201,28 @@ namespace detail
             , remote_host_filter {remote_host_filter_}
             , buffer_size {buffer_size_}
             , settings {settings_}
+            , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
         {
             /**
              *  Get first byte from `bytes=offset-`, `bytes=offset-end`.
              *  Now there are two places, where it can be set: 1. in DiskWeb (offset), 2. via config as part of named-collection.
-             *  Also header can be `bytes=-k` (read last k bytes), for this case retries in the middle of reading are disabled.
+             *  Other cases not supported.
              */
             auto range_header = std::find_if(http_header_entries_.begin(), http_header_entries_.end(),
                 [&](const HTTPHeaderEntry & header) { return std::get<0>(header) == "Range"; });
             if (range_header != http_header_entries_.end())
             {
-                if (method == Poco::Net::HTTPRequest::HTTP_POST)
-                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "POST request cannot have range headers");
-
+                if (method != Poco::Net::HTTPRequest::HTTP_GET)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Headers are allowed only with GET request");
                 auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
-                auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
-                if (ec != std::errc())
-                    resumable_read = false;
+                UInt64 start;
+                auto parsed = tryParse<UInt64>(start, range);
+                if (parsed)
+                    start_byte = start;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract start byte");
             }
+
 
             initialize();
         }
@@ -248,7 +250,7 @@ namespace detail
                 if (response.hasContentLength())
                     total_bytes_to_read = response.getContentLength();
                 else
-                    resumable_read = false;
+                    with_partial_content = false;
             }
 
             try
@@ -296,8 +298,7 @@ namespace detail
                     }
                     catch (const Poco::Exception & e)
                     {
-                        if (i == settings.http_max_tries - 1
-                            || (bytes_read && !resumable_read))
+                        if (bytes_read && !with_partial_content)
                             throw;
 
                         LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
@@ -312,6 +313,9 @@ namespace detail
                 }
                 milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
             }
+
+            if (!successful_read && exception)
+                exception->rethrow();
 
             if (!result)
                 return false;
