@@ -69,7 +69,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     else
     {
         settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (!database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
     }
 
     if (columns)
