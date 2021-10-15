@@ -67,6 +67,8 @@ void ReadIndirectBufferFromWebServer::initializeWithRetry()
     auto num_tries = std::max(read_settings.http_max_tries, HTTP_MAX_TRIES);
     size_t milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
     bool initialized = false;
+
+    std::optional<Poco::Exception> exception;
     for (size_t i = 0; (i < num_tries) && !initialized; ++i)
     {
         while (milliseconds_to_wait < read_settings.http_retry_max_backoff_ms)
@@ -79,16 +81,19 @@ void ReadIndirectBufferFromWebServer::initializeWithRetry()
             }
             catch (Poco::Exception & e)
             {
-                if (i == num_tries - 1)
-                    throw;
+                LOG_ERROR(log, "Error: {}, code: {}", e.what(), e.code());
+                exception.reset();
+                exception.emplace(e);
 
-                LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), "Error: {}, code: {}", e.what(), e.code());
                 sleepForMilliseconds(milliseconds_to_wait);
                 milliseconds_to_wait *= 2;
             }
         }
         milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
     }
+
+    if (!initialized && exception)
+        exception->rethrow();
 }
 
 
