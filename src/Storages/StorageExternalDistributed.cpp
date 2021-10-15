@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTHelpers.h>
 #include <Common/parseAddress.h>

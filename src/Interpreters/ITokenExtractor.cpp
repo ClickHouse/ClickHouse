@@ -6,7 +6,7 @@
 #include <Common/UTF8Helpers.h>
 
 #if defined(__SSE2__)
-#include <immintrin.h>
+#include <emmintrin.h>
 
 #if defined(__SSE4_2__)
 #include <nmmintrin.h>

@@ -89,9 +89,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception("Projection must have name in definition.", ErrorCodes::INCORRECT_QUERY);
 
-    if (startsWith(projection_definition->name, "tmp_"))
-        throw Exception("Projection's name cannot start with 'tmp_'", ErrorCodes::INCORRECT_QUERY);
-
     if (!projection_definition->query)
         throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
 
@@ -220,13 +217,13 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
 {
     auto builder = InterpreterSelectQuery(
-                  query_ast,
-                  context,
-                  Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                  SelectQueryOptions{
-                      type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                  : QueryProcessingStage::WithMergeableState})
-                  .buildQueryPipeline();
+                       query_ast,
+                       context,
+                       Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
+                       SelectQueryOptions{
+                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                                                                       : QueryProcessingStage::WithMergeableState})
+                       .buildQueryPipeline();
     builder.resize(1);
     builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
