@@ -32,6 +32,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Processors/QueryPipelineBuilder.h>
@@ -74,6 +75,10 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
 }
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 class StorageS3Source::DisclosedGlobIterator::Impl
 {
 
@@ -232,7 +237,7 @@ bool StorageS3Source::initialize()
     read_buf = wrapReadBufferWithCompressionMethod(
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
         chooseCompressionMethod(current_key, compression_hint));
-    auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size, format_settings);
+    auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
 
@@ -309,7 +314,7 @@ public:
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
@@ -318,7 +323,7 @@ public:
     {
         if (is_first_chunk)
         {
-            writer->writePrefix();
+            writer->doWritePrefix();
             is_first_chunk = false;
         }
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
@@ -328,7 +333,7 @@ public:
     {
         try
         {
-            writer->writeSuffix();
+            writer->doWriteSuffix();
             writer->flush();
             write_buf->finalize();
         }
@@ -344,7 +349,7 @@ private:
     Block sample_block;
     std::optional<FormatSettings> format_settings;
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
     bool is_first_chunk = true;
 };
 

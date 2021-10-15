@@ -9,6 +9,10 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
+#include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -38,17 +42,17 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-
-#include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/InternalTextLogsRowOutputStream.h>
+#include <DataStreams/InternalTextLogs.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace fs = std::filesystem;
 
@@ -70,6 +74,12 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
 }
 
 namespace DB
@@ -94,6 +104,9 @@ void interruptSignalHandler(int signum)
     if (exit_on_signal.test_and_set())
         _exit(signum);
 }
+
+ClientBase::~ClientBase() = default;
+ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
@@ -230,7 +243,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     initBlockOutputStream(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
-    /// block_out_stream, do not output it.
+    /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
@@ -238,11 +251,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.clearProgressOutput();
 
-    block_out_stream->write(block);
+    output_format->write(materializeBlock(block));
     written_first_block = true;
 
     /// Received data block is immediately displayed to the user.
-    block_out_stream->flush();
+    output_format->flush();
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
@@ -262,14 +275,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setTotals(block);
+    output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setExtremes(block);
+    output_format->setExtremes(block);
 }
 
 
@@ -283,19 +296,19 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 
 void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
 {
-    if (profile_info.hasAppliedLimit() && block_out_stream)
-        block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+    if (profile_info.hasAppliedLimit() && output_format)
+        output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 }
 
 
 void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 {
-    if (!block_out_stream)
+    if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
-            block_out_stream = std::make_shared<NullBlockOutputStream>(block);
+            output_format = std::make_shared<NullOutputFormat>(block);
             return;
         }
 
@@ -357,11 +370,11 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
         if (!need_render_progress)
-            block_out_stream = global_context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            block_out_stream = global_context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        block_out_stream->writePrefix();
+        output_format->doWritePrefix();
     }
 }
 
@@ -393,8 +406,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
-        logs_out_stream->writePrefix();
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
     }
 }
 
@@ -609,6 +621,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             onEndOfStream();
             return false;
 
+        case Protocol::Server::ProfileEvents:
+            onProfileEvents(packet.block);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -624,8 +640,8 @@ void ClientBase::onProgress(const Progress & value)
         return;
     }
 
-    if (block_out_stream)
-        block_out_stream->onProgress(value);
+    if (output_format)
+        output_format->onProgress(value);
 
     if (need_render_progress)
         progress_indication.writeProgress();
@@ -636,11 +652,8 @@ void ClientBase::onEndOfStream()
 {
     progress_indication.clearProgressOutput();
 
-    if (block_out_stream)
-        block_out_stream->writeSuffix();
-
-    if (logs_out_stream)
-        logs_out_stream->writeSuffix();
+    if (output_format)
+        output_format->doWriteSuffix();
 
     resetOutput();
 
@@ -652,10 +665,49 @@ void ClientBase::onEndOfStream()
 }
 
 
+void ClientBase::onProfileEvents(Block & block)
+{
+    const auto rows = block.rows();
+    if (rows == 0)
+        return;
+    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+    HostToThreadTimesMap thread_times;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto thread_id = array_thread_id[i];
+        auto host_name = host_names.getDataAt(i).toString();
+        if (thread_id != 0)
+            progress_indication.addThreadIdToList(host_name, thread_id);
+        auto event_name = names.getDataAt(i);
+        auto value = array_values[i];
+        if (event_name == user_time_name)
+        {
+            thread_times[host_name][thread_id].user_ms = value;
+        }
+        else if (event_name == system_time_name)
+        {
+            thread_times[host_name][thread_id].system_ms = value;
+        }
+        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        {
+            thread_times[host_name][thread_id].memory_usage = value;
+        }
+    }
+    progress_indication.updateThreadEventData(thread_times);
+}
+
+
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    block_out_stream.reset();
+    output_format.reset();
     logs_out_stream.reset();
 
     if (pager_cmd)
@@ -849,7 +901,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    auto source = FormatFactory::instance().getInput(current_format, buf, sample, global_context, insert_format_max_block_size);
+    auto source = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())

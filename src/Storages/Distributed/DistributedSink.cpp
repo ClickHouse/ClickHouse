@@ -14,7 +14,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeWriter.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -707,7 +707,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
@@ -725,7 +725,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
                 header_stream.write(block.cloneEmpty());
             }
 
@@ -739,9 +739,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            stream.writePrefix();
             stream.write(block);
-            stream.writeSuffix();
 
             out.finalize();
             if (fsync)

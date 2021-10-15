@@ -56,9 +56,9 @@ void BinaryRowInputFormat::readPrefix()
 }
 
 
-void registerInputFormatProcessorRowBinary(FormatFactory & factory)
+void registerInputFormatRowBinary(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("RowBinary", [](
+    factory.registerInputFormat("RowBinary", [](
         ReadBuffer & buf,
         const Block & sample,
         const IRowInputFormat::Params & params,
@@ -67,7 +67,7 @@ void registerInputFormatProcessorRowBinary(FormatFactory & factory)
         return std::make_shared<BinaryRowInputFormat>(buf, sample, params, false, false);
     });
 
-    factory.registerInputFormatProcessor("RowBinaryWithNamesAndTypes", [](
+    factory.registerInputFormat("RowBinaryWithNamesAndTypes", [](
         ReadBuffer & buf,
         const Block & sample,
         const IRowInputFormat::Params & params,

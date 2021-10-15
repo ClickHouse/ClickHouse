@@ -1707,7 +1707,7 @@ ClickHouse генерирует исключение
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
+Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае запрос выдаст неверный результат.
 
 Возможные значения:
 
@@ -3573,3 +3573,33 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` включена.
+
+Значение по умолчанию: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md) с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
