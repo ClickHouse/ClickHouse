@@ -22,7 +22,7 @@ map(key1, value1[, key2, value2, ...])
 
 **Returned value**
 
--  Data structure as `key:value` pairs.
+-   Data structure as `key:value` pairs.
 
 Type: [Map(key, value)](../../sql-reference/data-types/map.md).
 
@@ -165,9 +165,6 @@ Result:
 ## mapPopulateSeries {#function-mappopulateseries}
 
 Fills missing keys in the maps (key and value array pair), where keys are integers. Also, it supports specifying the max key, which is used to extend the keys array.
-Arguments are [maps](../../sql-reference/data-types/map.md) or two [arrays](../../sql-reference/data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
-
-For array arguments the number of elements in `keys` and `values` must be the same for each row.
 
 **Syntax**
 
@@ -176,7 +173,11 @@ mapPopulateSeries(keys, values[, max])
 mapPopulateSeries(map[, max])
 ```
 
+Arguments are [maps](../../sql-reference/data-types/map.md) or two [arrays](../../sql-reference/data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
+
 Generates a map (a tuple with two arrays or a value of `Map` type, depending on the arguments), where keys are a series of numbers, from minimum to maximum keys (or `max` argument if it specified) taken from the map with a step size of one, and corresponding values. If the value is not specified for the key, then it uses the default value in the resulting map. For repeated keys, only the first value (in order of appearing) gets associated with the key.
+
+For array arguments the number of elements in `keys` and `values` must be the same for each row.
 
 **Arguments**
 
@@ -191,14 +192,14 @@ or
 
 **Returned value**
 
--  Depending on the arguments returns a [map](../../sql-reference/data-types/map.md) or a [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
+-   Depending on the arguments returns a [map](../../sql-reference/data-types/map.md) or a [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
 
 **Example**
 
 Query with mapped arrays:
 
 ```sql
-select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type;
+SELECT mapPopulateSeries([1,2,4], [11,22,44], 5) AS res, toTypeName(res) AS type;
 ```
 
 Result:
