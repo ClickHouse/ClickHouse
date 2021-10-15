@@ -214,7 +214,7 @@ bool isStorageTouchedByMutations(
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and and give it into ExpressionBlockInputStream
+    /// For some reason it may copy context and and give it into ExpressionTransform
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
     auto io = interpreter.execute();
@@ -932,7 +932,7 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+QueryPipeline MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -956,12 +956,11 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (!updated_header)
-        updated_header = std::make_unique<Block>(result_stream->getHeader());
+        updated_header = std::make_unique<Block>(pipeline.getHeader());
 
-    return result_stream;
+    return pipeline;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

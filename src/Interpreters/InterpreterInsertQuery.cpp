@@ -1,35 +1,35 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/AccessFlags.h>
-#include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Columns/ColumnNullable.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/CheckConstraintsTransform.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/processColumnTransformers.h>
-#include <Interpreters/addMissingDefaults.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -398,18 +398,22 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
-        auto num_select_threads = pipeline.getNumThreads();
-
+        size_t num_select_threads = pipeline.getNumThreads();
+        size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
+        {
+            return a.getNumThreads() < b.getNumThreads();
+        })->getNumThreads();
         pipeline.addChains(std::move(out_chains));
+
+        pipeline.setMaxThreads(num_insert_threads);
+        /// Don't use more threads for insert then for select to reduce memory consumption.
+        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
+            pipeline.setMaxThreads(num_select_threads);
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
             return std::make_shared<EmptySink>(cur_header);
         });
-
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
 
         if (!allow_materialized)
         {

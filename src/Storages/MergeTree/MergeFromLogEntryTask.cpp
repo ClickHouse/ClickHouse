@@ -185,7 +185,13 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MergeFromLogEntryT
     auto table_id = storage.getStorageID();
 
     /// Add merge to list
-    merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
+    const Settings & settings = storage.getContext()->getSettingsRef();
+    merge_mutate_entry = storage.getContext()->getMergeList().insert(
+        storage.getStorageID(),
+        future_merged_part,
+        settings.memory_profiler_step,
+        settings.memory_profiler_sample_probability,
+        settings.max_untracked_memory);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();

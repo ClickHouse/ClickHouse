@@ -361,7 +361,9 @@ endif()
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
 
+target_include_directories(clickhouse_common_io BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+target_include_directories(clickhouse_common_io BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)

@@ -165,7 +165,7 @@ endif ()
 if(USE_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
 
-    add_subdirectory(snappy)
+    add_subdirectory(snappy-cmake)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
 endif()
@@ -217,6 +217,7 @@ function(add_llvm)
 
     # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
     set (CMAKE_INSTALL_RPATH "ON")
+    set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -279,7 +280,7 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_AMQPCPP OR USE_CASSANDRA)
-    add_subdirectory (libuv)
+    add_subdirectory (libuv-cmake)
 endif()
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
