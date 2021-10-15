@@ -1,4 +1,4 @@
-#include <DataStreams/TTLBlockInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -8,10 +8,10 @@
 #include <Storages/TTLMode.h>
 #include <Interpreters/Context.h>
 
-#include <DataStreams/TTLDeleteAlgorithm.h>
-#include <DataStreams/TTLColumnAlgorithm.h>
-#include <DataStreams/TTLAggregationAlgorithm.h>
-#include <DataStreams/TTLUpdateInfoAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
+#include <Processors/TTL/TTLColumnAlgorithm.h>
+#include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
 {

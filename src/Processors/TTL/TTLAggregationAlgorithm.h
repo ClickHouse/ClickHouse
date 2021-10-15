@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/ITTLAlgorithm.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 #include <Interpreters/Aggregator.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
