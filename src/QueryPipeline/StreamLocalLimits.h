@@ -1,6 +1,6 @@
 #pragma once
-#include <DataStreams/SizeLimits.h>
-#include <DataStreams/ExecutionSpeedLimits.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 
 namespace DB
 {

@@ -118,7 +118,7 @@ Block PullingPipelineExecutor::getExtremesBlock()
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
-BlockStreamProfileInfo & PullingPipelineExecutor::getProfileInfo()
+ProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
     return pulling_format->getProfileInfo();
 }

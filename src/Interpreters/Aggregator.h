@@ -19,7 +19,7 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
 

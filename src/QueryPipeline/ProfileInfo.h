@@ -13,7 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 /// Information for profiling. See IBlockInputStream.h
-struct BlockStreamProfileInfo
+struct ProfileInfo
 {
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time
@@ -22,7 +22,7 @@ struct BlockStreamProfileInfo
     size_t blocks = 0;
     size_t bytes = 0;
 
-    using BlockStreamProfileInfos = std::vector<const BlockStreamProfileInfo *>;
+    using ProfileInfos = std::vector<const ProfileInfo *>;
 
     /** Get the number of rows if there were no LIMIT.
       * If there is no LIMIT, 0 is returned.
@@ -42,7 +42,7 @@ struct BlockStreamProfileInfo
 
     /// Sets main fields from other object (see methods above).
     /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
-    void setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info);
+    void setFrom(const ProfileInfo & rhs, bool skip_block_size_info);
 
     /// Only for Processors.
     void setRowsBeforeLimit(size_t rows_before_limit_)

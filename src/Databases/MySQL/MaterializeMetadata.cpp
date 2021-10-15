@@ -5,7 +5,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/MySQLSource.h>
+#include <Processors/Sources/MySQLSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPipelineBuilder.h>
 #include <IO/ReadBufferFromFile.h>

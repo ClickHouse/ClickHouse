@@ -1,6 +1,6 @@
 #include "LibraryBridgeHelper.h"
 
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>

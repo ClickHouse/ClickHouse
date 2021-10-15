@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include <DataStreams/NativeReader.h>
+#include <Formats/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 

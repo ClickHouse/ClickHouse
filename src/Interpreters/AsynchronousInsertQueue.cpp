@@ -1,7 +1,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>

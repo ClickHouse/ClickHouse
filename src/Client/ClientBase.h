@@ -112,7 +112,7 @@ private:
     void onTotals(Block & block, ASTPtr parsed_query);
     void onExtremes(Block & block, ASTPtr parsed_query);
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
-    void onProfileInfo(const BlockStreamProfileInfo & profile_info);
+    void onProfileInfo(const ProfileInfo & profile_info);
     void onEndOfStream();
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);

@@ -2,7 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <base/types.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 class Stopwatch;
 

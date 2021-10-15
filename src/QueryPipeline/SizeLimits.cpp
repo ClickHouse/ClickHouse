@@ -1,4 +1,4 @@
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <string>
