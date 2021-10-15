@@ -1,3 +1,5 @@
+-- Tags: long
+
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
 EXPLAIN SYNTAX SELECT sum(n + 1), sum(1 + n), sum(n - 1), sum(1 - n) FROM (SELECT number n FROM numbers(10));

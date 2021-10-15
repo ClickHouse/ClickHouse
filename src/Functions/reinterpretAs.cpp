@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -67,9 +67,11 @@ public:
 
         const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
         if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is non-constant column of type " + arguments.back().type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument to {} must be a constant string describing type."
+                " Instead there is non-constant column of type {}",
+                getName(),
+                arguments.back().type->getName());
 
         DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
 
@@ -78,30 +80,34 @@ public:
         if (result_reinterpret_type.isFixedString())
         {
             if (!from_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                throw Exception("Cannot reinterpret " + from_type->getName() +
-                    " as FixedString because it is not fixed size and contiguous in memory",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as FixedString because it is not fixed size and contiguous in memory",
+                    from_type->getName());
         }
         else if (result_reinterpret_type.isString())
         {
             if (!from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-                throw Exception("Cannot reinterpret " + from_type->getName() +
-                    " as String because it is not contiguous in memory",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as String because it is not contiguous in memory",
+                    from_type->getName());
         }
         else if (canBeReinterpretedAsNumeric(result_reinterpret_type))
         {
             WhichDataType from_data_type(from_type);
 
             if (!canBeReinterpretedAsNumeric(from_data_type) && !from_data_type.isStringOrFixedString())
-                throw Exception("Cannot reinterpret " + from_type->getName() + " as " + to_type->getName()
-                    + " because only Numeric, String or FixedString can be reinterpreted in Numeric",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {} because only Numeric, String or FixedString can be reinterpreted in Numeric",
+                    from_type->getName(),
+                    to_type->getName());
         }
         else
-            throw Exception("Cannot reinterpret " + from_type->getName() + " as " + to_type->getName()
-                    + " because only reinterpretation in String, FixedString and Numeric types is supported",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Cannot reinterpret {} as {} because only reinterpretation in String, FixedString and Numeric types is supported",
+                from_type->getName(),
+                to_type->getName());
+        }
 
         return to_type;
     }
@@ -156,7 +162,6 @@ public:
             }
             else if constexpr (CanBeReinterpretedAsNumeric<ToType>)
             {
-                using ToColumnType = typename ToType::ColumnType;
                 using ToFieldType = typename ToType::FieldType;
 
                 if constexpr (std::is_same_v<FromType, DataTypeString>)
@@ -165,10 +170,10 @@ public:
 
                     auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
-                    const ColumnString::Chars & data_from = col_from->getChars();
-                    const ColumnString::Offsets & offsets_from = col_from->getOffsets();
+                    const auto & data_from = col_from->getChars();
+                    const auto & offsets_from = col_from->getOffsets();
                     size_t size = offsets_from.size();
-                    typename ToColumnType::Container & vec_res = col_res->getData();
+                    auto & vec_res = col_res->getData();
                     vec_res.resize(size);
 
                     size_t offset = 0;
@@ -192,10 +197,10 @@ public:
 
                     auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
-                    const ColumnString::Chars & data_from = col_from_fixed->getChars();
+                    const auto& data_from = col_from_fixed->getChars();
                     size_t step = col_from_fixed->getN();
                     size_t size = data_from.size() / step;
-                    typename ToColumnType::Container & vec_res = col_res->getData();
+                    auto & vec_res = col_res->getData();
                     vec_res.resize(size);
 
                     size_t offset = 0;
@@ -217,7 +222,7 @@ public:
                     using From = typename FromType::FieldType;
                     using To = typename ToType::FieldType;
 
-                    using FromColumnType = std::conditional_t<IsDecimalNumber<From>, ColumnDecimal<From>, ColumnVector<From>>;
+                    using FromColumnType = ColumnVectorOrDecimal<From>;
 
                     const auto * column_from = assert_cast<const FromColumnType*>(arguments[0].column.get());
 
@@ -243,8 +248,10 @@ public:
             return false;
         }))
         {
-            throw Exception("Cannot reinterpret " + from_type->getName() + " as " + result_type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Cannot reinterpret {} as {}",
+                from_type->getName(),
+                result_type->getName());
         }
 
         return result;
@@ -255,6 +262,7 @@ private:
         IsDataTypeDecimalOrNumber<T> ||
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
+        std::is_same_v<T, DataTypeDateTime64> ||
         std::is_same_v<T, DataTypeUUID>;
 
     static bool canBeReinterpretedAsNumeric(const WhichDataType & type)
@@ -359,9 +367,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
 
     static ColumnsWithTypeAndName addTypeColumnToArguments(const ColumnsWithTypeAndName & arguments)
     {
@@ -374,9 +385,9 @@ public:
             const auto & type = argument.type;
 
             if (!type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                throw Exception("Cannot reinterpret " + type->getName() +
-                    " as FixedString because it is not fixed size and contiguous in memory",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as FixedString because it is not fixed size and contiguous in memory",
+                    type->getName());
 
             size_t type_value_size_in_memory = type->getSizeOfValueInMemory();
             data_type = std::make_shared<DataTypeFixedString>(type_value_size_in_memory);

@@ -237,3 +237,8 @@ def test_materialize_with_enum(started_cluster, started_mysql_8_0, started_mysql
 def test_mysql_settings(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_5_7, "mysql57")
     materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_8_0, "mysql80")
+
+@pytest.mark.parametrize(('clickhouse_node'), [pytest.param(node_db_ordinary, id="ordinary"), pytest.param(node_db_atomic, id="atomic")])
+def test_large_transaction(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.materialized_mysql_large_transaction(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialize_with_ddl.materialized_mysql_large_transaction(clickhouse_node, started_mysql_5_7, "mysql57")

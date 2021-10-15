@@ -17,7 +17,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/CMakeLists.txt")
 endif ()
 
 set (USE_AMQPCPP 1)
-set (AMQPCPP_LIBRARY amqp-cpp)
+set (AMQPCPP_LIBRARY amqp-cpp ${OPENSSL_LIBRARIES})
 
 set (AMQPCPP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/include")
 list (APPEND AMQPCPP_INCLUDE_DIR

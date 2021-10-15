@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -51,11 +50,6 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
     writeImpl(block, permutation);
 }
 
-void MergedBlockOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
         bool sync,
@@ -93,7 +87,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsSizesOnDisk();
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
     new_part->storage.lockSharedData(*new_part);
@@ -135,8 +130,8 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
             new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
-            if (new_part->minmax_idx.initialized)
-                new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
+            if (new_part->minmax_idx->initialized)
+                new_part->minmax_idx->store(storage, volume->getDisk(), part_path, checksums);
             else if (rows_count)
                 throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                         + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);

@@ -2,23 +2,26 @@
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 namespace DB
 {
 
-class IMergedBlockOutputStream : public IBlockOutputStream
+class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_);
 
+    virtual ~IMergedBlockOutputStream() = default;
+
     using WrittenOffsetColumns = std::set<std::string>;
 
-    const MergeTreeIndexGranularity & getIndexGranularity()
+    virtual void write(const Block & block) = 0;
+
+    const MergeTreeIndexGranularity & getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
@@ -35,7 +38,6 @@ protected:
         NamesAndTypesList & columns,
         MergeTreeData::DataPart::Checksums & checksums);
 
-protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
@@ -44,5 +46,7 @@ protected:
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };
+
+using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;
 
 }

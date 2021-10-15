@@ -5,8 +5,8 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
+#include <base/CachedFn.h>
+#include <base/demangle.h>
 
 #include <cstring>
 #include <filesystem>
@@ -21,7 +21,7 @@
 #    include <libunwind.h>
 #endif
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     error.exceptions(std::ios::failbit);
@@ -41,8 +41,6 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
                 error << " Access: write.";
             else
                 error << " Access: read.";
-#else
-            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -188,6 +186,8 @@ static void * getCallerAddress(const ucontext_t & context)
 #elif defined(__APPLE__) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
 
+#elif defined(__FreeBSD__) && defined(__aarch64__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
 #elif defined(__powerpc64__)
@@ -197,7 +197,9 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
-void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(
+    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
+    size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
@@ -256,7 +258,6 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
     {
         frames[i].virtual_addr = frame_pointers[i];
     }
-    UNUSED(offset);
 #endif
 }
 
@@ -322,7 +323,7 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    bool fatal,
+    [[maybe_unused]] bool fatal,
     const StackTrace::FramePointers & frame_pointers,
     size_t offset,
     size_t size,
@@ -386,7 +387,6 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    UNUSED(fatal);
     std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
@@ -417,11 +417,7 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
 
 std::string StackTrace::toString() const
 {
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers, offset, size);
+    return toStringStatic(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -432,6 +428,23 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     for (size_t i = 0; i < size; ++i)
         frame_pointers_copy[i] = frame_pointers_[i];
 
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers_copy, offset, size);
+    return toStringStatic(frame_pointers_copy, offset, size);
+}
+
+static CachedFn<&toStringImpl> & cacheInstance()
+{
+    static CachedFn<&toStringImpl> cache;
+    return cache;
+}
+
+std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+    return cacheInstance()(frame_pointers, offset, size);
+}
+
+void StackTrace::dropCache()
+{
+    cacheInstance().drop();
 }

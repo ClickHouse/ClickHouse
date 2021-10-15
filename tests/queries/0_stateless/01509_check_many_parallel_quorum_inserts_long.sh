@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long, no-replicated-database
+# Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e
 
@@ -16,9 +18,10 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 function thread {
-    while true
-    do
+    i=0 retries=300
+    while [[ $i -lt $retries ]]; do # server can be dead
         $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2" && break
+        ((++i))
         sleep 0.1
     done
 }

@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <stdlib.h>
 
 #ifdef __SSE2__

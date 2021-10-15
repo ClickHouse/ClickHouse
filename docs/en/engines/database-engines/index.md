@@ -23,3 +23,5 @@ You can also use the following database engines:
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
 -   [Replicated](../../engines/database-engines/replicated.md)
+
+-   [SQLite](../../engines/database-engines/sqlite.md)

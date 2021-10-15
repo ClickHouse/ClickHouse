@@ -24,6 +24,8 @@ void registerDiskEncrypted(DiskFactory & factory);
 void registerDiskHDFS(DiskFactory & factory);
 #endif
 
+void registerDiskWebServer(DiskFactory & factory);
+
 
 void registerDisks()
 {
@@ -43,6 +45,8 @@ void registerDisks()
 #if USE_HDFS
     registerDiskHDFS(factory);
 #endif
+
+    registerDiskWebServer(factory);
 }
 
 }

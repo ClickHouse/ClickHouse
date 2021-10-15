@@ -87,8 +87,13 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
+    if (!initialized)
     {
         std::lock_guard lock(mutex);
+
+        /// Initialize as early as possible since if the code throws,
+        /// next() should not be called anymore.
+        initialized = true;
 
         startSendHeaders();
 
@@ -174,6 +179,8 @@ void WriteBufferFromHTTPServerResponse::finalize()
         if (out)
             out->finalize();
         out.reset();
+        /// Catch write-after-finalize bugs.
+        set(nullptr, 0);
     }
     catch (...)
     {

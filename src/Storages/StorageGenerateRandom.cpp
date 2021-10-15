@@ -24,7 +24,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <Functions/FunctionFactory.h>
 

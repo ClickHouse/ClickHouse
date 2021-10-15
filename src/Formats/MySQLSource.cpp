@@ -17,8 +17,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
-#include <common/range.h>
-#include <common/logger_useful.h>
+#include <base/range.h>
+#include <base/logger_useful.h>
 #include "MySQLSource.h"
 
 
@@ -100,12 +100,12 @@ void MySQLWithFailoverSource::onStart()
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
         {
             LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
-        }
 
-        if (++count_connect_attempts > settings->default_num_tries_on_connection_loss)
-        {
-            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
-            throw;
+            if (++count_connect_attempts > settings->default_num_tries_on_connection_loss)
+            {
+                LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
+                throw;
+            }
         }
     }
 

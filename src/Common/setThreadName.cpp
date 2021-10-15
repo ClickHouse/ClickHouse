@@ -22,6 +22,10 @@ namespace ErrorCodes
 }
 
 
+/// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
+static thread_local std::string thread_name;
+
+
 void setThreadName(const char * name)
 {
 #ifndef NDEBUG
@@ -40,24 +44,29 @@ void setThreadName(const char * name)
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
         DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
+
+    thread_name = name;
 }
 
-std::string getThreadName()
+const std::string & getThreadName()
 {
-    std::string name(16, '\0');
+    if (!thread_name.empty())
+        return thread_name;
+
+    thread_name.resize(16);
 
 #if defined(__APPLE__) || defined(OS_SUNOS)
-    if (pthread_getname_np(pthread_self(), name.data(), name.size()))
+    if (pthread_getname_np(pthread_self(), thread_name.data(), thread_name.size()))
         throw DB::Exception("Cannot get thread name with pthread_getname_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #elif defined(__FreeBSD__)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
-//    if (pthread_get_name_np(pthread_self(), name.data(), name.size()))
+//    if (pthread_get_name_np(pthread_self(), thread_name.data(), thread_name.size()))
 //        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #else
-    if (0 != prctl(PR_GET_NAME, name.data(), 0, 0, 0))
+    if (0 != prctl(PR_GET_NAME, thread_name.data(), 0, 0, 0))
         DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
-    name.resize(std::strlen(name.data()));
-    return name;
+    thread_name.resize(std::strlen(thread_name.data()));
+    return thread_name;
 }

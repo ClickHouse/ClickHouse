@@ -24,12 +24,12 @@
 #include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <common/sleep.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/logger_useful.h>
+#include <base/sleep.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
@@ -772,7 +772,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    zookeeper->createAncestors(fs::path(shard_path) / ""); /* appends "/" at the end of shard_path */
+    assert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
+    zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
+    zookeeper->createIfNotExists(shard_path, "");
 
     /// Leader replica creates is_executed_path node on successful query execution.
     /// We will remove create_shard_flag from zk operations list, if current replica is just waiting for leader to execute the query.
@@ -1154,29 +1156,7 @@ void DDLWorker::runMainThread()
 
             LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
                       queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
-            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
-            constexpr int queue_wait_timeout_ms = 10000;
-            bool updated = queue_updated_event->tryWait(queue_wait_timeout_ms);
-            if (!updated)
-            {
-                Coordination::Stat new_stat;
-                tryGetZooKeeper()->get(queue_dir, &new_stat);
-                bool queue_changed = memcmp(&queue_node_stat, &new_stat, sizeof(Coordination::Stat)) != 0;
-                bool watch_triggered = queue_updated_event->tryWait(0);
-                if (queue_changed && !watch_triggered)
-                {
-                    /// It should never happen.
-                    /// Maybe log message, abort() and system.zookeeper_log will help to debug it and remove timeout (#26036).
-                    LOG_TRACE(
-                        log,
-                        "Queue was not updated (stat: {}, {}, {}, {})",
-                        new_stat.version,
-                        new_stat.cversion,
-                        new_stat.numChildren,
-                        new_stat.pzxid);
-                    context->getZooKeeperLog()->flush();
-                }
-            }
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {

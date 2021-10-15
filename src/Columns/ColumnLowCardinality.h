@@ -266,7 +266,6 @@ public:
         static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
         size_t getSizeOfIndexType() const { return size_of_type; }
 
-        void check(size_t max_dictionary_size);
         void checkSizeOfType();
 
         ColumnPtr detachPositions() { return std::move(positions); }
@@ -334,9 +333,6 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
-
-    template <typename Cmp>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

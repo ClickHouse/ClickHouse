@@ -1,5 +1,5 @@
 #pragma once
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
@@ -7,16 +7,16 @@
 #include <DataStreams/ITTLAlgorithm.h>
 #include <DataStreams/TTLDeleteAlgorithm.h>
 
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 
 namespace DB
 {
 
-class TTLBlockInputStream : public IBlockInputStream
+class TTLTransform : public IAccumulatingTransform
 {
 public:
-    TTLBlockInputStream(
-        const BlockInputStreamPtr & input_,
+    TTLTransform(
+        const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -25,13 +25,15 @@ public:
     );
 
     String getName() const override { return "TTL"; }
-    Block getHeader() const override { return header; }
+
+    Status prepare() override;
 
 protected:
-    Block readImpl() override;
+    void consume(Chunk chunk) override;
+    Chunk generate() override;
 
     /// Finalizes ttl infos and updates data part
-    void readSuffixImpl() override;
+    void finalize();
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
@@ -41,7 +43,6 @@ private:
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
     Poco::Logger * log;
-    Block header;
 };
 
 }

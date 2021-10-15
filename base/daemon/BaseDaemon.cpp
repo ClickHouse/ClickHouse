@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
@@ -21,7 +25,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
@@ -34,12 +38,12 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/argsToConfig.h>
-#include <common/getThreadId.h>
-#include <common/coverage.h>
-#include <common/sleep.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/argsToConfig.h>
+#include <base/getThreadId.h>
+#include <base/coverage.h>
+#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>

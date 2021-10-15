@@ -22,4 +22,3 @@ target_link_libraries (transform_part_zk_nodes
         dbms
         string_utils
 )
-

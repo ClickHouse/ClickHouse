@@ -11,8 +11,8 @@ DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
-AMD64_BIN_URL="https://builds.clickhouse.tech/master/amd64/clickhouse"
-AARCH64_BIN_URL="https://builds.clickhouse.tech/master/aarch64/clickhouse"
+AMD64_BIN_URL="https://builds.clickhouse.com/master/amd64/clickhouse"
+AARCH64_BIN_URL="https://builds.clickhouse.com/master/aarch64/clickhouse"
 
 # Note: on older Ubuntu versions, 'axel' does not support IPv6. If you are using IPv6-only servers on very old Ubuntu, just don't install 'axel'.
 

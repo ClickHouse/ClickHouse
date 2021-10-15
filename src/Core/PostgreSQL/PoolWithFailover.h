@@ -10,7 +10,8 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace postgres
@@ -27,17 +28,13 @@ public:
     static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
 
     PoolWithFailover(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
     PoolWithFailover(
-        const std::string & database,
-        const RemoteDescription & addresses,
-        const std::string & user,
-        const std::string & password,
+        const DB::StoragePostgreSQLConfiguration & configuration,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
@@ -51,9 +48,10 @@ private:
     {
         String connection_string;
         PoolPtr pool;
+        String name_for_log;
 
-        PoolHolder(const String & connection_string_, size_t pool_size)
-            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)) {}
+        PoolHolder(const String & connection_string_, size_t pool_size, const String & name_for_log_)
+            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)), name_for_log(name_for_log_) {}
     };
 
     /// Highest priority is 0, the bigger the number in map, the less the priority

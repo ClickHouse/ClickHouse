@@ -31,6 +31,8 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -277,8 +279,8 @@ public:
     /// Clears queue state
     void clear();
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void initialize(const MergeTreeData::DataParts & parts);
+    /// Get set of parts from zookeeper
+    void initialize(zkutil::ZooKeeperPtr zookeeper);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.

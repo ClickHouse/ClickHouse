@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <common/map.h>
+#include <base/map.h>
 
 
 namespace DB

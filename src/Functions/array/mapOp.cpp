@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include "Columns/ColumnMap.h"
 #include "DataTypes/DataTypeMap.h"
 
@@ -231,12 +231,10 @@ private:
                             key = col_fixed->getDataAt(offset + j).toString();
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
                             key = col_str->getDataAt(offset + j).toString();
-                        else
-                            // should not happen
-                            throw Exception(
-                                "Expected String or FixedString, got " + std::string(getTypeName(arg.key_column->getDataType()))
-                                    + " in " + getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+                        else // should not happen
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Expected String or FixedString, got {} in {}",
+                                arg.key_column->getDataType(), getName());
                     }
                     else
                     {
