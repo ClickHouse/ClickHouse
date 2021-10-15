@@ -58,14 +58,14 @@ class Parser:
         self.var_id = -1
         self.cur_tok = None
         self.includes = []
-        
+
         self.proto = ''
         self.cpp = ''
 
     def parse_file(self, filename):
         with open(filename) as f:
             self.text = f.read()
-        
+
         while self.parse_statement() is not None:
             pass
 
@@ -90,12 +90,12 @@ class Parser:
 
     def parse_var_value(self):
         i = self.text.find(' ')
-        
+
         id_, self.text = self.text[1:i], self.text[i+1:]
         self.var_id = int(id_)
         self.cur_tok = TOKEN_VAR
         return TOKEN_VAR
-    
+
     def parse_txt_value(self):
         if self.text[0] != '"':
             raise Exception("parse_txt_value: expected quote at the start")
@@ -116,7 +116,7 @@ class Parser:
             else:
                 c, self.text = self.text[0], self.text[1:]
                 self.t += c
-        
+
         self.text = self.text[1:]
         self.cur_tok = TOKEN_TEXT
         return TOKEN_TEXT
@@ -137,7 +137,7 @@ class Parser:
         index = self.text.find('\n')
         self.text = self.text[index:]
 
-    
+
     def parse_statement(self):
         if self.skip_ws() is None:
             return None
@@ -146,7 +146,7 @@ class Parser:
         if self.cur_tok == TOKEN_SLASH:
             self.skip_line()
             return TOKEN_SLASH
-    
+
         chain = []
         while self.cur_tok != TOKEN_SEMI:
             if self.cur_tok == TOKEN_TEXT:
@@ -164,7 +164,7 @@ class Parser:
 
     def generate(self):
         self.proto = 'syntax = "proto3";\n\n'
-        self.cpp = '#include <iostream>\n#include <string>\n#include <vector>\n\n#include <libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h>\n\n'
+        self.cpp = '#include <iostream>\n#include <string>\n#include <vector>\n\n#include <libfuzzer/libfuzzer_macro.h>\n\n'
 
         for incl_file in self.includes:
             self.cpp += f'#include "{incl_file}"\n'
@@ -228,7 +228,7 @@ def main(args):
     p = Parser()
     p.add_include(include_filename)
     p.parse_file(input_file)
-    
+
     cpp, proto = p.generate()
 
     proto = proto.replace('\t', ' ' * 4)
@@ -246,4 +246,3 @@ if __name__ == '__main__':
         print(f"Usage {sys.argv[0]} <input_file> <outfile.cpp> <outfile.proto>")
         sys.exit(1)
     main(sys.argv[1:])
-
