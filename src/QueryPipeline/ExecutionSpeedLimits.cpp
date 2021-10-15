@@ -1,4 +1,4 @@
-#include <DataStreams/ExecutionSpeedLimits.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>

@@ -47,8 +47,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-#include <DataStreams/InternalTextLogs.h>
-#include <DataStreams/materializeBlock.h>
+#include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -284,7 +283,7 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 }
 
 
-void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
+void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
         output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());

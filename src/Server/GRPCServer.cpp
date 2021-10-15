@@ -9,8 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/materializeBlock.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -595,7 +594,7 @@ namespace
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
-        void addProfileInfoToResult(const BlockStreamProfileInfo & info);
+        void addProfileInfoToResult(const ProfileInfo & info);
         void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
@@ -1381,7 +1380,7 @@ namespace
         format->doWriteSuffix();
     }
 
-    void Call::addProfileInfoToResult(const BlockStreamProfileInfo & info)
+    void Call::addProfileInfoToResult(const ProfileInfo & info)
     {
         auto & stats = *result.mutable_stats();
         stats.set_rows(info.rows);

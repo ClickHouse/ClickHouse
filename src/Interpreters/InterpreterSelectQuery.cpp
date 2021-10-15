@@ -1,5 +1,3 @@
-#include <DataStreams/materializeBlock.h>
-
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Parsers/ASTFunction.h>

@@ -1,4 +1,4 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
+#include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
 #include <base/logger_useful.h>

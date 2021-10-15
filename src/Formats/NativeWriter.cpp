@@ -5,8 +5,8 @@
 #include <IO/VarInt.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <DataStreams/MarkInCompressedFile.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/MarkInCompressedFile.h>
+#include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -6,7 +6,7 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 
 #include <Processors/Pipe.h>
 #include <IO/ConnectionTimeouts.h>
@@ -30,7 +30,7 @@ struct Packet
     std::unique_ptr<Exception> exception;
     std::vector<String> multistring_message;
     Progress progress;
-    BlockStreamProfileInfo profile_info;
+    ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
 
     Packet() : type(Protocol::Server::Hello) {}

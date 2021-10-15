@@ -21,8 +21,8 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
 
-struct BlockStreamProfileInfo;
-using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & info)>;
+struct ProfileInfo;
+using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
 

@@ -4,8 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Formats/TemporaryFileStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>

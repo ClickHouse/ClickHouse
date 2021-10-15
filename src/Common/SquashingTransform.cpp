@@ -1,4 +1,4 @@
-#include <DataStreams/SquashingTransform.h>
+#include <Common/SquashingTransform.h>
 #include <iostream>
 
 

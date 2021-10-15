@@ -1,4 +1,4 @@
-#include <DataStreams/ConnectionCollector.h>
+#include <QueryPipeline/ConnectionCollector.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>

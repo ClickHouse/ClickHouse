@@ -16,7 +16,7 @@
 #    include <Processors/Transforms/CountingTransform.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/executeQuery.h>

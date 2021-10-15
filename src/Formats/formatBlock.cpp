@@ -1,5 +1,5 @@
 #include <Core/Block.h>
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPipeline.h>

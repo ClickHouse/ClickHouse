@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/MarkInCompressedFile.h>
+#include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
 
