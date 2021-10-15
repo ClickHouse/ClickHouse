@@ -2,7 +2,6 @@
 toc_priority: 302
 ---
 
-
 # entropy {#entropy}
 
 Calculates [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) of a column of values.
