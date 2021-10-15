@@ -69,6 +69,8 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+<!--
+
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
@@ -147,6 +149,8 @@ Or it can be set in hex:
 ```
 
 Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
+
+-->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
