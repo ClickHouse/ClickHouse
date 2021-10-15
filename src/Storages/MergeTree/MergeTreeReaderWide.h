@@ -40,7 +40,6 @@ private:
     FileStreams streams;
     Serializations serializations;
     DiskPtr disk;
-    std::map<String, std::set<size_t>> marks;
 
     void addStreams(const NameAndTypePair & name_and_type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
