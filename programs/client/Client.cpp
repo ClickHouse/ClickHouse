@@ -25,9 +25,6 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/NetException.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/PODArray.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include "Common/MemoryTracker.h"
@@ -35,13 +32,11 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
@@ -53,16 +48,12 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include "TestTags.h"
 
 #ifndef __clang__
@@ -1233,6 +1224,11 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
