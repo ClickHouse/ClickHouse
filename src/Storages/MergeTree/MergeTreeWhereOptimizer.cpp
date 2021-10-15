@@ -158,7 +158,7 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunctio
         else if (const auto * child_ident = child->as<ASTIdentifier>())
             fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
         else
-            continue;
+            return false;
 
         ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
         ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);

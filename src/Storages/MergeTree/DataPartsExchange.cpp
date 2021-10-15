@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeWriter.h>
 #include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
@@ -222,7 +222,7 @@ void Service::sendPartFromMemory(
 
         writeStringBinary(name, out);
         projection->checksums.write(out);
-        NativeBlockOutputStream block_out(out, 0, projection_sample_block);
+        NativeWriter block_out(out, 0, projection_sample_block);
         block_out.write(part_in_memory->block);
     }
 
@@ -230,7 +230,7 @@ void Service::sendPartFromMemory(
     if (!part_in_memory)
         throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 
-    NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
+    NativeWriter block_out(out, 0, metadata_snapshot->getSampleBlock());
     part->checksums.write(out);
     block_out.write(part_in_memory->block);
 
@@ -569,7 +569,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         if (!checksums.read(in))
             throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-        NativeBlockInputStream block_in(in, 0);
+        NativeReader block_in(in, 0);
         auto block = block_in.read();
         throttler->add(block.bytes());
 
@@ -599,7 +599,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     if (!checksums.read(in))
         throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-    NativeBlockInputStream block_in(in, 0);
+    NativeReader block_in(in, 0);
     auto block = block_in.read();
     throttler->add(block.bytes());
 

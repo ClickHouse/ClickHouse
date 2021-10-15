@@ -2,7 +2,7 @@
 
 #include <Access/AccessFlags.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeNullable.h>

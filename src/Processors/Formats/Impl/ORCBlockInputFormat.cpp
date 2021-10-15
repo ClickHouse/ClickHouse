@@ -124,9 +124,9 @@ void ORCBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorORC(FormatFactory &factory)
+void registerInputFormatORC(FormatFactory &factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
             "ORC",
             [](ReadBuffer &buf,
                 const Block &sample,
@@ -144,7 +144,7 @@ void registerInputFormatProcessorORC(FormatFactory &factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatProcessorORC(FormatFactory &)
+    void registerInputFormatORC(FormatFactory &)
     {
     }
 }

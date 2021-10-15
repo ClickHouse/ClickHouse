@@ -173,9 +173,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
     {
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(
-            query_info.minmax_count_projection_block.cloneEmpty(),
-            Chunk(query_info.minmax_count_projection_block.getColumns(), query_info.minmax_count_projection_block.rows())));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(query_info.minmax_count_projection_block));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_plan->addStep(std::move(read_from_pipe));
     }
@@ -851,6 +849,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
             leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
 
+        auto mark_cache = context->getIndexMarkCache();
+        auto uncompressed_cache = context->getIndexUncompressedCache();
+
         auto process_part = [&](size_t part_index)
         {
             auto & part = parts[part_index];
@@ -887,6 +888,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     total_granules,
                     granules_dropped,
+                    mark_cache.get(),
+                    uncompressed_cache.get(),
                     log);
 
                 index_and_condition.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
@@ -983,7 +986,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description),
+            .description = std::move(description), //-V1030
             .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
             .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }
@@ -993,47 +996,48 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
-    const RangesInDataParts & parts_with_ranges,
+    const ReadFromMergeTree::AnalysisResult & result,
     const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    // Check limitations. query_id is used as the quota RAII's resource key.
-    String query_id;
+    const auto data_settings = data.getSettings();
+    auto max_partitions_to_read
+        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
+    if (max_partitions_to_read > 0)
     {
-        const auto data_settings = data.getSettings();
-        auto max_partitions_to_read
-                = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
-        if (max_partitions_to_read > 0)
-        {
-            std::set<String> partitions;
-            for (const auto & part_with_ranges : parts_with_ranges)
-                partitions.insert(part_with_ranges.data_part->info.partition_id);
-            if (partitions.size() > size_t(max_partitions_to_read))
-                throw Exception(
-                        ErrorCodes::TOO_MANY_PARTITIONS,
-                        "Too many partitions to read. Current {}, max {}",
-                        partitions.size(),
-                        max_partitions_to_read);
-        }
+        std::set<String> partitions;
+        for (const auto & part_with_ranges : result.parts_with_ranges)
+            partitions.insert(part_with_ranges.data_part->info.partition_id);
+        if (partitions.size() > size_t(max_partitions_to_read))
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTITIONS,
+                "Too many partitions to read. Current {}, max {}",
+                partitions.size(),
+                max_partitions_to_read);
+    }
 
-        if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0)
+    if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0
+        && result.selected_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+    {
+        auto query_id = context->getCurrentQueryId();
+        if (!query_id.empty())
         {
-            size_t sum_marks = 0;
-            for (const auto & part : parts_with_ranges)
-                sum_marks += part.getMarksCount();
-
-            if (sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+            auto lock = data.getQueryIdSetLock();
+            if (data.insertQueryIdOrThrowNoLock(query_id, data_settings->max_concurrent_queries, lock))
             {
-                query_id = context->getCurrentQueryId();
-                if (!query_id.empty())
-                    data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
+                try
+                {
+                    return std::make_shared<QueryIdHolder>(query_id, data);
+                }
+                catch (...)
+                {
+                    /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
+                    data.removeQueryIdNoLock(query_id, lock);
+                    throw;
+                }
             }
         }
     }
-
-    if (!query_id.empty())
-        return std::make_shared<QueryIdHolder>(query_id, data);
-
     return nullptr;
 }
 
@@ -1425,6 +1429,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     size_t & total_granules,
     size_t & granules_dropped,
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
 {
     const std::string & path_prefix = part->getFullRelativePath() + index_helper->getFileName();
@@ -1450,6 +1456,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_helper, part,
         index_marks_count,
         ranges,
+        mark_cache,
+        uncompressed_cache,
         reader_settings);
 
     MarkRanges res;
