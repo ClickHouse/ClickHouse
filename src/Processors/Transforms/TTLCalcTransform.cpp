@@ -1,5 +1,5 @@
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/TTLUpdateInfoAlgorithm.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
 {

@@ -2,8 +2,8 @@
 
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <DataStreams/SquashingTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>

@@ -4,17 +4,18 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <DataStreams/ITTLAlgorithm.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
+#include <Processors/TTL/TTLDeleteAlgorithm.h>
 
 #include <base/DateLUT.h>
 
 namespace DB
 {
 
-class TTLCalcTransform : public IAccumulatingTransform
+class TTLTransform : public IAccumulatingTransform
 {
 public:
-    TTLCalcTransform(
+    TTLTransform(
         const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -23,7 +24,8 @@ public:
         bool force_
     );
 
-    String getName() const override { return "TTL_CALC"; }
+    String getName() const override { return "TTL"; }
+
     Status prepare() override;
 
 protected:
@@ -35,6 +37,8 @@ protected:
 
 private:
     std::vector<TTLAlgorithmPtr> algorithms;
+    const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    bool all_data_dropped = false;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;

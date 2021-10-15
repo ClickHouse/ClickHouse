@@ -1,4 +1,4 @@
-#include <DataStreams/ITTLAlgorithm.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 
