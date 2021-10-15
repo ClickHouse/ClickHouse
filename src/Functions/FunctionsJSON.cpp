@@ -1,5 +1,3 @@
-#include <type_traits>
-
 #include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
@@ -40,6 +38,7 @@
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsJSON.h>
 
 #include <Interpreters/Context.h>
 
@@ -157,12 +156,6 @@ private:
     BOOST_TTI_HAS_MEMBER_FUNCTION(reserve)
     BOOST_TTI_HAS_MEMBER_FUNCTION(prepare)
 
-    template <class T, class = void>
-    struct has_index_operator : std::false_type {};
-
-    template <class T>
-    struct has_index_operator<T, std::void_t<decltype(std::declval<T>()[0])>> : std::true_type {};
-
     /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
     /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
     /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
@@ -177,7 +170,7 @@ private:
 
     struct Move
     {
-        Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
+        explicit Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
         Move(MoveType type_, const String & key_) : type(type_), key(key_) {}
         MoveType type;
         size_t index = 0;
@@ -286,7 +279,7 @@ private:
             return true;
         }
 
-        if constexpr (has_index_operator<typename JSONParser::Object>::value)
+        if constexpr (FunctionJSONHelpersDetails::has_index_operator<typename JSONParser::Object>::value)
         {
             if (element.isObject())
             {
@@ -838,7 +831,7 @@ struct JSONExtractTree
     class DecimalNode : public Node
     {
     public:
-        DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
+        explicit DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
             if (!element.isDouble())
@@ -887,7 +880,7 @@ struct JSONExtractTree
     class EnumNode : public Node
     {
     public:
-        EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_) : name_value_pairs(name_value_pairs_)
+        explicit EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_) : name_value_pairs(name_value_pairs_)
         {
             for (const auto & name_value_pair : name_value_pairs)
             {
@@ -939,7 +932,7 @@ struct JSONExtractTree
     class NullableNode : public Node
     {
     public:
-        NullableNode(std::unique_ptr<Node> nested_) : nested(std::move(nested_)) {}
+        explicit NullableNode(std::unique_ptr<Node> nested_) : nested(std::move(nested_)) {}
 
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
@@ -957,7 +950,7 @@ struct JSONExtractTree
     class ArrayNode : public Node
     {
     public:
-        ArrayNode(std::unique_ptr<Node> nested_) : nested(std::move(nested_)) {}
+        explicit ArrayNode(std::unique_ptr<Node> nested_) : nested(std::move(nested_)) {}
 
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
@@ -1125,6 +1118,7 @@ struct JSONExtractTree
                 const auto & tuple = static_cast<const DataTypeTuple &>(*type);
                 const auto & tuple_elements = tuple.getElements();
                 std::vector<std::unique_ptr<Node>> elements;
+                elements.reserve(tuple_elements.size());
                 for (const auto & tuple_element : tuple_elements)
                     elements.emplace_back(build(function_name, tuple_element));
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
@@ -1148,7 +1142,7 @@ public:
             throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto & col = arguments.back();
-        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
             throw Exception{"The last argument of function " + String(function_name)
                                 + " should be a constant string specifying the return data type, illegal value: " + col.name,
@@ -1186,7 +1180,7 @@ public:
             throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto & col = arguments.back();
-        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
             throw Exception{"The last argument of function " + String(function_name)
                                 + " should be a constant string specifying the values' data type, illegal value: " + col.name,
@@ -1291,7 +1285,7 @@ private:
         }
         if (element.isString())
         {
-            writeJSONString(element.getString(), buf, format_settings());
+            writeJSONString(element.getString(), buf, formatSettings());
             return;
         }
         if (element.isArray())
@@ -1315,7 +1309,7 @@ private:
             {
                 if (std::exchange(need_comma, true))
                     writeChar(',', buf);
-                writeJSONString(key, buf, format_settings());
+                writeJSONString(key, buf, formatSettings());
                 writeChar(':', buf);
                 traverse(value, buf);
             }
@@ -1329,7 +1323,7 @@ private:
         }
     }
 
-    static const FormatSettings & format_settings()
+    static const FormatSettings & formatSettings()
     {
         static const FormatSettings the_instance = []
         {
