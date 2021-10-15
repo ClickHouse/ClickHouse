@@ -14,13 +14,14 @@
 void GenerateSentence(const Sentence&, std::string &, int);
 
 
-DEFINE_BINARY_PROTO_FUZZER(const Sentence& main) {
+DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
+{
     static std::string input;
     input.reserve(4096);
 
     GenerateSentence(main, input, 0);
-    if (input.size()) {
-
+    if (input.size())
+    {
         std::cout << input << std::endl;
 
         DB::ParserQueryWithOutput parser(input.data() + input.size());
@@ -30,9 +31,8 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main) {
             DB::WriteBufferFromOStream out(std::cerr, 4096);
             DB::formatAST(*ast, out);
             std::cerr << std::endl;
-        } catch (...) {
-
         }
+        catch (...) {}
 
         input.clear();
     }

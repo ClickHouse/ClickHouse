@@ -30,7 +30,7 @@ add_custom_command(
         "${CURRENT_DIR_IN_BINARY}/out.cpp"
         "${CURRENT_DIR_IN_BINARY}/out.proto"
     COMMAND python3 gen.py clickhouse.g out.cpp out.proto
-    # DEPENDS "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+    DEPENDS "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
 )
 
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS "${CURRENT_DIR_IN_BINARY}/out.proto")
