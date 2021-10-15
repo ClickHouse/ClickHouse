@@ -1,5 +1,4 @@
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/libprotobuf-mutator)
-set(NO_FUZZING_FLAGS "-fno-sanitize=fuzzer -fsanitize-coverage=0")
 
 add_library(protobuf-mutator
     ${LIBRARY_DIR}/src/libfuzzer/libfuzzer_macro.cc
@@ -10,8 +9,6 @@ add_library(protobuf-mutator
     ${LIBRARY_DIR}/src/utf8_fix.cc)
 
 target_include_directories(protobuf-mutator BEFORE PRIVATE "${LIBRARY_DIR}")
-# target_include_directories(protobuf-mutator BEFORE PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
+target_include_directories(protobuf-mutator BEFORE PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 
-target_link_libraries(protobuf-mutator ${PROTOBUF_LIBRARIES})
-set_target_properties(protobuf-mutator PROPERTIES
-                      COMPILE_FLAGS "${NO_FUZZING_FLAGS}")
+target_link_libraries(protobuf-mutator ${Protobuf_LIBRARY})

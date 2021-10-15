@@ -11,7 +11,6 @@
 
 #include "out.pb.h"
 
-
 void GenerateSentence(const Sentence&, std::string &, int);
 
 
