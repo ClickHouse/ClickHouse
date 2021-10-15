@@ -77,8 +77,6 @@ struct ReadSettings
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
-    size_t remote_read_right_offset = 0; /// Right offset for range reading.
-
     bool http_retriable_read = true;
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

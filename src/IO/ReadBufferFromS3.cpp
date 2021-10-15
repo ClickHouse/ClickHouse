@@ -51,11 +51,11 @@ bool ReadBufferFromS3::nextImpl()
 {
     if (last_offset)
     {
-        if (static_cast<off_t>(last_offset) == offset)
+        if (last_offset == offset)
             return false;
 
-        if (static_cast<off_t>(last_offset) < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+        if (last_offset < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
     }
 
     bool next_result = false;
@@ -173,8 +173,8 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 
     if (last_offset)
     {
-        if (offset >= static_cast<off_t>(last_offset))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+        if (offset >= last_offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
 
         req.SetRange(fmt::format("bytes={}-{}", offset, last_offset - 1));
         LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, last_offset - 1);

@@ -23,7 +23,11 @@ namespace ErrorCodes
 static constexpr size_t HTTP_MAX_TRIES = 10;
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
-    const String & url_, ContextPtr context_, const ReadSettings & settings_, bool use_external_buffer_, size_t)
+    const String & url_,
+    ContextPtr context_,
+    const ReadSettings & settings_,
+    bool use_external_buffer_,
+    size_t last_offset_)
     : SeekableReadBuffer(nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
@@ -31,6 +35,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     , buf_size(settings_.remote_fs_buffer_size)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
+    , last_offset(last_offset_)
 {
 }
 
@@ -41,11 +46,13 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
 
-    auto right_offset = read_settings.remote_read_right_offset;
-    if (right_offset)
+    if (last_offset)
     {
-        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-{}", offset, right_offset)));
-        LOG_DEBUG(log, "Reading with range: {}-{}", offset, right_offset);
+        if (last_offset < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+
+        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-{}", offset, last_offset - 1)));
+        LOG_DEBUG(log, "Reading with range: {}-{}", offset, last_offset);
     }
     else
     {
@@ -120,6 +127,15 @@ void ReadBufferFromWebServer::initializeWithRetry()
 
 bool ReadBufferFromWebServer::nextImpl()
 {
+    if (last_offset)
+    {
+        if (last_offset == offset)
+            return false;
+
+        if (last_offset < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+    }
+
     if (impl)
     {
         if (use_external_buffer)

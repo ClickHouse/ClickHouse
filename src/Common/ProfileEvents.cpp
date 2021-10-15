@@ -255,7 +255,7 @@
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Total number of prefetches") \
     M(RemoteFSSeekCancelledPrefetches, "Number of cancelled prefecthes because of seek") \
-    M(RemoteFSUnusedCancelledPrefetches, "Number of prefetches prending in buffer desctructor") \
+    M(RemoteFSUnusedCancelledPrefetches, "Number of prefetches pending in buffer destructor") \
     M(RemoteFSPrefetchReads, "Total number of reads from prefecthed buffer") \
     M(RemoteFSAsyncBufferReads, "Number of nextImpl() calls for async buffer") \
     M(RemoteFSSimpleBufferReads, "Number of nextImpl() calls for non-async buffer") \

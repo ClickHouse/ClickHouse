@@ -42,6 +42,12 @@ MergeTreeReadPool::MergeTreeReadPool(
 {
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts_ranges, check_columns_);
+    auto min_marks_for_concurrent_read = min_marks_for_concurrent_read_;
+    if (stored_on_remote_disk)
+    {
+        do_not_steal_tasks = true;
+        min_marks_for_concurrent_read = std::max(min_marks_for_concurrent_read, sum_marks_ / threads_);
+    }
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read_);
 }
 
@@ -89,8 +95,11 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     auto & part = parts_with_idx[part_idx];
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
-    /// Get whole part to read if it is small enough.
-    auto need_marks = std::min(marks_in_part, min_marks_to_read);
+    size_t need_marks;
+    if (stored_on_remote_disk) /// For better performance with remote disks
+        need_marks = marks_in_part;
+    else /// Get whole part to read if it is small enough.
+        need_marks = std::min(marks_in_part, min_marks_to_read);
 
     /// Do not leave too little rows in part for next time.
     if (marks_in_part > need_marks &&
@@ -223,7 +232,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         /// Turn off tasks stealing in case there is remote disk.
         if (part.data_part->isStoredOnRemoteDisk())
-            do_not_steal_tasks = true;
+            stored_on_remote_disk = true;
 
         /// Read marks for every data part.
         size_t sum_marks = 0;
