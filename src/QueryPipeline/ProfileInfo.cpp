@@ -46,12 +46,14 @@ void ProfileInfo::setFrom(const ProfileInfo & rhs, bool skip_block_size_info)
 
 size_t ProfileInfo::getRowsBeforeLimit() const
 {
+    calculated_rows_before_limit = true;
     return rows_before_limit;
 }
 
 
 bool ProfileInfo::hasAppliedLimit() const
 {
+    calculated_rows_before_limit = true;
     return applied_limit;
 }
 
