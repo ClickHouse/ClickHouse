@@ -77,6 +77,7 @@ namespace ErrorCodes
 #define END_HILITE "\033[0m"
 
 #if defined(OS_DARWIN)
+/// Until createUser() and createGroup() are implemented, only sudo-less installations are supported/default for macOS.
 static constexpr auto DEFAULT_CLICKHOUSE_SERVER_USER = "";
 static constexpr auto DEFAULT_CLICKHOUSE_SERVER_GROUP = "";
 static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_USER = "";
@@ -152,6 +153,9 @@ static void createGroup(const String & group_name)
     if (!group_name.empty())
     {
 #if defined(OS_DARWIN)
+
+        // TODO: implement.
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a group in macOS");
 #else
         std::string command = fmt::format("groupadd -r {}", group_name);
@@ -166,6 +170,9 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
     if (!user_name.empty())
     {
 #if defined(OS_DARWIN)
+
+        // TODO: implement.
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a user in macOS");
 #else
         std::string command = group_name.empty()
