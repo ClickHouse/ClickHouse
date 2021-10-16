@@ -70,11 +70,11 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
-void registerOutputFormatCSV(FormatFactory & factory)
+void registerOutputFormatProcessorCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
-        factory.registerOutputFormat(with_names ? "CSVWithNames" : "CSV", [=](
+        factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,

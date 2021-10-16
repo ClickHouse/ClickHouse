@@ -14,5 +14,3 @@ CREATE TABLE default.concurrent_kill_4\n(\n    `key` UInt64,\n    `value` Int64\
 Metadata version on replica 5 equal with first replica, OK
 CREATE TABLE default.concurrent_kill_5\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/01593_concurrent_alter_mutations_kill_many_replicas_long_default/{shard}\', \'{replica}5\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
 499999500000
-Replication did not hang: synced all replicas of concurrent_kill_
-Consistency: 1

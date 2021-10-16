@@ -9,7 +9,7 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <base/getThreadId.h>
+#include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
 
@@ -100,7 +100,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
-        [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
+        logs_queue->emplace(std::move(columns));
     }
 
     /// Also log to system.text_log table, if message is not too noisy

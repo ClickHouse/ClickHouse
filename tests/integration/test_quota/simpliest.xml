@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <quotas>
         <myQuota>
         </myQuota>
     </quotas>
-</clickhouse>
+</yandex>

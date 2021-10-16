@@ -26,6 +26,23 @@ namespace ErrorCodes
 
 IDataType::~IDataType() = default;
 
+String IDataType::getName() const
+{
+    if (custom_name)
+    {
+        return custom_name->getName();
+    }
+    else
+    {
+        return doGetName();
+    }
+}
+
+String IDataType::doGetName() const
+{
+    return getFamilyName();
+}
+
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
     /// Update the average value size hint if amount of read rows isn't too small
@@ -87,38 +104,23 @@ ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const IColumn &
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-void IDataType::forEachSubcolumn(const SubcolumnCallback & callback) const
+Names IDataType::getSubcolumnNames() const
 {
-    NameSet set;
-    getDefaultSerialization()->enumerateStreams([&, this](const ISerialization::SubstreamPath & substream_path)
+    NameSet res;
+    getDefaultSerialization()->enumerateStreams([&res, this](const ISerialization::SubstreamPath & substream_path)
     {
         ISerialization::SubstreamPath new_path;
         /// Iterate over path to try to get intermediate subcolumns for complex nested types.
         for (const auto & elem : substream_path)
         {
             new_path.push_back(elem);
-            auto name = ISerialization::getSubcolumnNameForStream(new_path);
-            auto type = tryGetSubcolumnType(name);
-
-            /// Subcolumn names may repeat among several substream paths.
-            if (!name.empty() && type && !set.count(name))
-            {
-                callback(name, type, substream_path);
-                set.insert(name);
-            }
+            auto subcolumn_name = ISerialization::getSubcolumnNameForStream(new_path);
+            if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
+                res.insert(subcolumn_name);
         }
     });
-}
 
-Names IDataType::getSubcolumnNames() const
-{
-    Names res;
-    forEachSubcolumn([&](const auto & name, const auto &, const auto &)
-    {
-        res.push_back(name);
-    });
-
-    return res;
+    return Names(std::make_move_iterator(res.begin()), std::make_move_iterator(res.end()));
 }
 
 void IDataType::insertDefaultInto(IColumn & column) const
@@ -160,7 +162,7 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
             return subcolumn_type.getSerialization(column.name, callback);
         };
 
-        const auto & type_in_storage = column.getTypeInStorage();
+        auto type_in_storage = column.getTypeInStorage();
         return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 

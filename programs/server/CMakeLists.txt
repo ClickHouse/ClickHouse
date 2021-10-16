@@ -13,6 +13,7 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_common_config
         clickhouse_common_io
         clickhouse_common_zookeeper
+        clickhouse_dictionaries
         clickhouse_functions
         clickhouse_parsers
         clickhouse_storages_system

@@ -1,4 +1,4 @@
 <!-- Ignore limit of concurrent queries in tests -->
-<clickhouse>
+<yandex>
     <max_concurrent_queries>0</max_concurrent_queries>
-</clickhouse>
+</yandex>

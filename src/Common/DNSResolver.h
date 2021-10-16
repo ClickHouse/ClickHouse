@@ -2,10 +2,10 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

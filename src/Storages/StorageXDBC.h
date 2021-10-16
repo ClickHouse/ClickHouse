@@ -3,10 +3,6 @@
 #include <Storages/StorageURL.h>
 #include <Bridge/XDBCBridgeHelper.h>
 
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -37,7 +33,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     std::string getName() const override;
 private:

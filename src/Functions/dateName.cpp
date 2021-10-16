@@ -1,4 +1,4 @@
-#include <base/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
@@ -57,8 +57,6 @@ public:
     String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 

@@ -1,5 +1,3 @@
--- Tags: shard
-
 DROP TABLE IF EXISTS x;
 DROP TABLE IF EXISTS x_dist;
 DROP TABLE IF EXISTS y;

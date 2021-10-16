@@ -1,3 +1,0 @@
-<clickhouse>
-  <http_port replace="replace">31337</http_port>
-</clickhouse>

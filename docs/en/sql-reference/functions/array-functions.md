@@ -7,89 +7,19 @@ toc_title: Arrays
 
 ## empty {#function-empty}
 
-Checks whether the input array is empty.
+Returns 1 for an empty array, or 0 for a non-empty array.
+The result type is UInt8.
+The function also works for strings.
 
-**Syntax**
-
-``` sql
-empty([x])
-```
-
-An array is considered empty if it does not contain any elements.
-
-!!! note "Note"
-    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
-
-The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
-
-**Arguments**
-
--   `[x]` — Input array. [Array](../data-types/array.md).
-
-**Returned value**
-
--   Returns `1` for an empty array or `0` for a non-empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT empty([]);
-```
-
-Result:
-
-```text
-┌─empty(array())─┐
-│              1 │
-└────────────────┘
-```
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM table` transforms to `SELECT arr.size0 = 0 FROM TABLE`.
 
 ## notEmpty {#function-notempty}
 
-Checks whether the input array is non-empty.
+Returns 0 for an empty array, or 1 for a non-empty array.
+The result type is UInt8.
+The function also works for strings.
 
-**Syntax**
-
-``` sql
-notEmpty([x])
-```
-
-An array is considered non-empty if it contains at least one element.
-
-!!! note "Note"
-    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
-
-The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
-
-**Arguments**
-
--   `[x]` — Input array. [Array](../data-types/array.md).
-
-**Returned value**
-
--   Returns `1` for a non-empty array or `0` for an empty array.
-
-Type: [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT notEmpty([1,2]);
-```
-
-Result:
-
-```text
-┌─notEmpty([1, 2])─┐
-│                1 │
-└──────────────────┘
-```
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 
 ## length {#array_functions-length}
 
@@ -138,7 +68,7 @@ range([start, ] end [, step])
 **Implementation details**
 
 -   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
--   An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+-   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
 
 
 **Examples**
@@ -860,13 +790,13 @@ arrayDifference(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 
 Returns an array of differences between adjacent elements.
 
-Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **Example**
 
@@ -912,7 +842,7 @@ arrayDistinct(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -952,7 +882,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays.
+Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
 
 Example:
 

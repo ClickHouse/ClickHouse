@@ -17,15 +17,11 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    const char * getQueryKindString() const override { return "Select"; }
-
     enum class Mode
     {
         Unspecified,
         ALL,
-        DISTINCT,
-        EXCEPT,
-        INTERSECT
+        DISTINCT
     };
 
     using UnionModes = std::vector<Mode>;

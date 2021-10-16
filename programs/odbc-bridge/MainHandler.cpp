@@ -16,9 +16,7 @@
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 
 #include <mutex>
@@ -135,15 +133,10 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             quoting_style = getQuotingStyle(connection_handler);
 #endif
             auto & read_buf = request.getStream();
-            auto input_format = getContext()->getInputFormat(format, read_buf, *sample_block, max_block_size);
-            auto sink = std::make_shared<ODBCSink>(std::move(connection_handler), db_name, table_name, *sample_block, getContext(), quoting_style);
-
-            QueryPipeline pipeline(std::move(input_format));
-            pipeline.complete(std::move(sink));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
+            auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
+            ODBCBlockOutputStream output_stream(std::move(connection_handler), db_name, table_name, *sample_block, getContext(), quoting_style);
+            copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
         else
@@ -151,14 +144,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            auto writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, out, *sample_block, getContext());
-            auto source = std::make_shared<ODBCSource>(std::move(connection_handler), query, *sample_block, max_block_size);
-
-            QueryPipeline pipeline(std::move(source));
-            pipeline.complete(std::move(writer));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
+            ODBCBlockInputStream inp(std::move(connection_handler), query, *sample_block, max_block_size);
+            copyData(inp, *writer);
         }
     }
     catch (...)

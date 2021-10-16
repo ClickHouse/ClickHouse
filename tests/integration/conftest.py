@@ -1,3 +1,4 @@
+import subprocess
 from helpers.cluster import run_and_check
 import pytest
 import logging

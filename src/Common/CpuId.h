@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #if defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>

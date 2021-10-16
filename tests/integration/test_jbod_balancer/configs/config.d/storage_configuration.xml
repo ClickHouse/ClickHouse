@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <storage_configuration>
         <disks>
             <default>
@@ -26,4 +26,4 @@
             </jbod>
         </policies>
     </storage_configuration>
-</clickhouse>
+</yandex>

@@ -13,7 +13,7 @@ struct NameCountSubstringsCaseInsensitive
     static constexpr auto name = "countSubstringsCaseInsensitive";
 };
 
-using FunctionCountSubstringsCaseInsensitive = FunctionsStringSearch<CountSubstringsImpl<NameCountSubstringsCaseInsensitive, PositionCaseInsensitiveASCII>>;
+using FunctionCountSubstringsCaseInsensitive = FunctionsStringSearch<CountSubstringsImpl<PositionCaseInsensitiveASCII>, NameCountSubstringsCaseInsensitive>;
 
 }
 

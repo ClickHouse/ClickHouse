@@ -1,1 +1,0 @@
-../../en/operations/storing-data.md

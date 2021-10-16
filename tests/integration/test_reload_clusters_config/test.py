@@ -36,7 +36,7 @@ def started_cluster():
 
 
 base_config = '''
-<clickhouse>
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -65,11 +65,11 @@ base_config = '''
             </shard>
         </test_cluster2>
     </remote_servers>
-</clickhouse>
+</yandex>
 '''
 
 test_config1 = '''
-<clickhouse>
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -94,11 +94,11 @@ test_config1 = '''
             </shard>
         </test_cluster2>
     </remote_servers>
-</clickhouse>
+</yandex>
 '''
 
 test_config2 = '''
-<clickhouse>
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -114,11 +114,11 @@ test_config2 = '''
             </shard>
         </test_cluster>
     </remote_servers>
-</clickhouse>
+</yandex>
 '''
 
 test_config3 = '''
-<clickhouse>
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -156,7 +156,7 @@ test_config3 = '''
             </shard>
         </test_cluster3>
     </remote_servers>
-</clickhouse>
+</yandex>
 '''
 
 

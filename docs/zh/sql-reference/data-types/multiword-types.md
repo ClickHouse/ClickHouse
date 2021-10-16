@@ -1,1 +1,0 @@
-../../../en/sql-reference/data-types/multiword-types.md
