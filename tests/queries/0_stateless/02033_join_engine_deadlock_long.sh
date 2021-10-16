@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, deadlock, no-parallel
+# Tags: long, deadlock
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +29,7 @@ populate_table_bg () {
         $CLICKHOUSE_CLIENT --query "
             INSERT INTO join_block_test
             SELECT toString(number) as id, number * number as num
-            FROM system.numbers LIMIT 3000000
+            FROM system.numbers LIMIT 500000
         " >/dev/null
     ) &
 }
