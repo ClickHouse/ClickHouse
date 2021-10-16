@@ -9,7 +9,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -468,7 +467,6 @@ void QueryPipelineBuilder::initRowsBeforeLimit()
 
     /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
     std::vector<LimitTransform *> limits;
-    std::vector<SourceFromInputStream *> sources;
     std::vector<RemoteSource *> remote_sources;
 
     std::unordered_set<IProcessor *> visited;
@@ -497,9 +495,6 @@ void QueryPipelineBuilder::initRowsBeforeLimit()
                 visited_limit = true;
                 limits.emplace_back(limit);
             }
-
-            if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
-                sources.emplace_back(source);
 
             if (auto * source = typeid_cast<RemoteSource *>(processor))
                 remote_sources.emplace_back(source);
@@ -533,15 +528,12 @@ void QueryPipelineBuilder::initRowsBeforeLimit()
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty() || !remote_sources.empty()))
+    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
         for (auto & limit : limits)
             limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-        for (auto & source : sources)
-            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
         for (auto & source : remote_sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);

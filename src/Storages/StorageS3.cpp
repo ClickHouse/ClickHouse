@@ -30,9 +30,9 @@
 
 #include <Formats/FormatFactory.h>
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Processors/QueryPipelineBuilder.h>
@@ -52,7 +52,6 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>

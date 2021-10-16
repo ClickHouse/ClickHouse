@@ -38,8 +38,6 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    /// Streams of read data
-    BlockInputStreams streams;
 };
 
 }
