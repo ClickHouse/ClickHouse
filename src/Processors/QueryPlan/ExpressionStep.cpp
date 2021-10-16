@@ -4,7 +4,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Interpreters/JoinSwitcher.h>
 
 #include <Common/JSONBuilder.h>

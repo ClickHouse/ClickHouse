@@ -14,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeReader.h>
 #include <DataStreams/NativeWriter.h>
 

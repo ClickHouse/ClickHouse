@@ -14,8 +14,6 @@
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
 #    include <Processors/Transforms/CountingTransform.h>
-#    include <DataStreams/OneBlockInputStream.h>
-#    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Formats/MySQLSource.h>

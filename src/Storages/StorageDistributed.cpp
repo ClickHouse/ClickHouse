@@ -59,7 +59,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/EmptySink.h>
 
 #include <Core/Field.h>

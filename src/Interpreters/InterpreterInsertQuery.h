@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
