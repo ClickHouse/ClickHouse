@@ -4,7 +4,6 @@
 #include <Processors/QueryPipelineBuilder.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/NativeReader.h>
 
 namespace DB
