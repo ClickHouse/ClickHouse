@@ -622,6 +622,9 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
 
         if (attribute.string_arena)
             bytes_allocated += attribute.string_arena->size();
+
+        if (attribute.is_index_null.has_value())
+            bytes_allocated += (*attribute.is_index_null).size();
     }
 
     bytes_allocated += complex_key_arena.size();
@@ -634,14 +637,12 @@ template <DictionaryKeyType dictionary_key_type>
 Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<HashedArrayDictionary::KeyType> keys;
+    keys.reserve(key_attribute.container.size());
 
-    for (auto & [key, value] : key_attribute.container)
+    for (auto & [key, _] : key_attribute.container)
         keys.emplace_back(key);
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
-    else
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
+    return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
 }
 
 template class HashedArrayDictionary<DictionaryKeyType::Simple>;
