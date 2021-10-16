@@ -628,6 +628,11 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
         if (attributes[i].string_arena)
             bytes_allocated += attributes[i].string_arena->size();
+
+        bytes_allocated += sizeof(attributes[i].is_nullable_set);
+
+        if (attributes[i].is_nullable_set.has_value())
+            bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
     bytes_allocated += complex_key_arena.size();
