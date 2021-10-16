@@ -117,6 +117,8 @@ struct ReplaceRegexpImpl
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
                 res_offset += bytes_to_copy;
                 start_pos += bytes_to_copy + match.length();
+                
+                /// To avoid infinite loop.
                 if (is_first_match && match.length() == 0 && !replace_one && input.length() > 1)
                 {
                     start_pos += 1;
@@ -140,7 +142,7 @@ struct ReplaceRegexpImpl
                     }
                 }
 
-                if (replace_one || !is_first_match) /// Stop after match of zero length, to avoid infinite loop.
+                if (replace_one || !is_first_match)
                     can_finish_current_string = true;
                 is_first_match = false;
             }
