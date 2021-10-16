@@ -110,7 +110,7 @@ struct ReplaceRegexpImpl
                 res_data.resize(res_data.size() + bytes_to_copy);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
                 res_offset += bytes_to_copy;
-                start_pos += bytes_to_copy + match.length();
+                start_pos += bytes_to_copy + (match.length() > 0 ? match.length() : 1);
 
                 /// Do substitution instructions
                 for (const auto & it : instructions)
@@ -129,7 +129,7 @@ struct ReplaceRegexpImpl
                     }
                 }
 
-                if (replace_one || match.length() == 0) /// Stop after match of zero length, to avoid infinite loop.
+                if (replace_one) /// Stop after match of zero length, to avoid infinite loop.
                     can_finish_current_string = true;
             }
             else
