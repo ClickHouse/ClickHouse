@@ -19,6 +19,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 
+#include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
@@ -29,7 +30,6 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/VarInt.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -40,6 +40,9 @@ static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
 {
+
+template <typename Allocator>
+struct Memory;
 
 namespace ErrorCodes
 {
@@ -1290,7 +1293,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
   */
-void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
+void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * current);
 
 /** This function is negative to eof().
   * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
@@ -1299,7 +1302,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
-bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
+bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * & current);
 
 
 struct PcgDeserializer
