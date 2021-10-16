@@ -24,10 +24,10 @@ then
         DIR="freebsd"
     elif [ "${ARCH}" = "aarch64" ]
     then
-        #DIR="freebsd-aarch64"
+        DIR="freebsd-aarch64"
     elif [ "${ARCH}" = "powerpc64le" ]
     then
-        #DIR="freebsd-powerpc64le"
+        DIR="freebsd-powerpc64le"
     fi
 elif [ "${OS}" = "Darwin" ]
 then

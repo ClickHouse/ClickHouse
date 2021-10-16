@@ -1,4 +1,3 @@
----
 toc_priority: 58
 toc_title: Usage Recommendations
 ---
@@ -60,7 +59,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1024 KB is sufficient for all RAID configurations.
+A block size of 64 KB is sufficient for most RAID configurations. The average clickhouse-server write size is approximately 1 MB (1024 KB), and thus the recommended stripe size is also 1 MB. The block size can be optimized if needed when set to 1 MB divided by the number of non-parity disks in the RAID array, such that each write is parallelized across all available non-parity disks.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
