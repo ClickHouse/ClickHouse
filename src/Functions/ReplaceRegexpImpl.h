@@ -142,7 +142,7 @@ struct ReplaceRegexpImpl
                     }
                 }
 
-                if (replace_one || !is_first_match)
+                if (replace_one || (!is_first_match && match.length() == 0))
                     can_finish_current_string = true;
                 is_first_match = false;
             }
