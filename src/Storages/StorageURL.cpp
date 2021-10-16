@@ -12,6 +12,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
@@ -204,7 +205,7 @@ StorageURLSink::StorageURLSink(
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
             compression_method, 3);
-    writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block,
+    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
 }
 
@@ -213,7 +214,7 @@ void StorageURLSink::consume(Chunk chunk)
 {
     if (is_first_chunk)
     {
-        writer->writePrefix();
+        writer->doWritePrefix();
         is_first_chunk = false;
     }
 
@@ -222,7 +223,7 @@ void StorageURLSink::consume(Chunk chunk)
 
 void StorageURLSink::onFinish()
 {
-    writer->writeSuffix();
+    writer->doWriteSuffix();
     writer->flush();
     write_buf->finalize();
 }

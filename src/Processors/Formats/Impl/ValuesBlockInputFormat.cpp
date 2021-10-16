@@ -543,9 +543,9 @@ void ValuesBlockInputFormat::resetParser()
     total_rows = 0;
 }
 
-void registerInputFormatProcessorValues(FormatFactory & factory)
+void registerInputFormatValues(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Values", [](
+    factory.registerInputFormat("Values", [](
         ReadBuffer & buf,
         const Block & header,
         const RowInputFormatParams & params,
