@@ -60,7 +60,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.metadata = metadata;
     other.key_size = key_size;
     other.is_minmax_count_projection = is_minmax_count_projection;
-    other.has_primary_key_minmax = has_primary_key_minmax;
+    other.primary_key_max_column_name = primary_key_max_column_name;
 
     return other;
 }
@@ -188,7 +188,6 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     {
         select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
         select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
-        result.has_primary_key_minmax = true;
     }
     for (const auto & column : minmax_columns)
     {
@@ -208,6 +207,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
+    if (!primary_key_asts.empty())
+        result.primary_key_max_column_name = result.sample_block.getNames()[ProjectionDescription::PRIMARY_KEY_MAX_COLUMN_POS];
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));

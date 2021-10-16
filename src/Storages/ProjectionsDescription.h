@@ -62,8 +62,8 @@ struct ProjectionDescription
 
     bool is_minmax_count_projection = false;
 
-    /// If a primary key expression is used in the minmax_count projection, this flag will be true.
-    bool has_primary_key_minmax = false;
+    /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
+    String primary_key_max_column_name;
 
     /// Parse projection from definition AST
     static ProjectionDescription
