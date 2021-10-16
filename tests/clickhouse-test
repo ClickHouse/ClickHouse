@@ -1395,7 +1395,6 @@ if __name__ == '__main__':
     http_port = os.getenv("CLICKHOUSE_PORT_HTTP")
     if http_port is not None:
         args.http_port = int(http_port)
-        args.client += f" --port={http_port}"
     else:
         args.http_port = 8123
 
