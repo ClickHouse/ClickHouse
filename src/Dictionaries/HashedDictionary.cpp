@@ -626,6 +626,11 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
         if (attributes[i].string_arena)
             bytes_allocated += attributes[i].string_arena->size();
+
+        bytes_allocated += sizeof(attributes[i].is_nullable_set);
+
+        if (attributes[i].is_nullable_set.has_value())
+            bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
     bytes_allocated += complex_key_arena.size();
@@ -664,10 +669,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
         });
     }
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
-    else
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), keys, column_names), max_block_size));
+    return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
