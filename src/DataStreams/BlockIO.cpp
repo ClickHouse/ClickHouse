@@ -1,6 +1,5 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/ProcessList.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 namespace DB
 {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>

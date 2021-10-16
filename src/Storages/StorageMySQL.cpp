@@ -9,7 +9,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/parseAddress.h>
@@ -18,7 +17,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
