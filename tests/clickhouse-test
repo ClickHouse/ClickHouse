@@ -110,7 +110,7 @@ def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
     if not data:
         return None
     rows = []
-    for row in data.strip().split(b'\n'):
+    for row in data.strip().splitlines():
         rows.append(json.loads(row))
     return rows
 
@@ -478,19 +478,19 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += '\n'.join(open(self.stdout_file).read().split('\n')[:100])
+                    description += '\n'.join(open(self.stdout_file).read().splitlines()[:100])
                     description += '\n'
 
                 description += "\nstdout:\n{}\n".format(stdout)
                 return TestResult(self.name, TestStatus.FAIL, reason, total_time, description)
 
         if stderr:
-            description += "\n{}\n".format('\n'.join(stderr.split('\n')[:100]))
+            description += "\n{}\n".format('\n'.join(stderr.splitlines()[:100]))
             description += "\nstdout:\n{}\n".format(stdout)
             return TestResult(self.name, TestStatus.FAIL, FailureReason.STDERR, total_time, description)
 
         if 'Exception' in stdout:
-            description += "\n{}\n".format('\n'.join(stdout.split('\n')[:100]))
+            description += "\n{}\n".format('\n'.join(stdout.splitlines()[:100]))
             return TestResult(self.name, TestStatus.FAIL, FailureReason.EXCEPTION, total_time, description)
 
         if '@@SKIP@@' in stdout:
