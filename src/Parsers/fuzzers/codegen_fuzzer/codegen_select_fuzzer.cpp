@@ -25,7 +25,7 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
         std::cout << input << std::endl;
 
         DB::ParserQueryWithOutput parser(input.data() + input.size());
-        try 
+        try
         {
             DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
