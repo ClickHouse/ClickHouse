@@ -86,6 +86,8 @@ struct ColumnSize
     }
 };
 
+using IndexSize = ColumnSize;
+
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
   * - the definition in which files (or not in files) the data is stored;
@@ -162,6 +164,11 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Optional size information of each secondary index.
+    /// Valid only for MergeTree family.
+    using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
+    virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
+
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
@@ -218,6 +225,7 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 

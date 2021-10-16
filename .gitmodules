@@ -213,6 +213,7 @@
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse-Extras/boringssl.git
+	branch = MergeWithUpstream
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
@@ -249,3 +250,6 @@
 [submodule "contrib/magic_enum"]
 	path = contrib/magic_enum
 	url = https://github.com/Neargye/magic_enum
+[submodule "contrib/sysroot"]
+	path = contrib/sysroot
+	url = https://github.com/ClickHouse-Extras/sysroot.git

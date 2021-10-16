@@ -85,7 +85,6 @@ Pipe StorageS3Cluster::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
-    S3::URI s3_uri(Poco::URI{filename});
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);

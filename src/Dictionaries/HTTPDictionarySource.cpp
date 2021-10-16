@@ -133,7 +133,7 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, sample_block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
     };
 
@@ -160,7 +160,7 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, sample_block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
         formatBlock(output_format, block);
     };
 
@@ -252,7 +252,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format =config.getString(settings_config_prefix + ".format", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries) //-V1030
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);

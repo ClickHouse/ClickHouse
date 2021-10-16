@@ -32,9 +32,6 @@ ASTPtr ASTStorage::clone() const
     if (settings)
         res->set(res->settings, settings->clone());
 
-    if (comment)
-        res->set(res->comment, comment->clone());
-
     return res;
 }
 
@@ -75,12 +72,6 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
     }
-    if (comment)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "COMMENT " << (s.hilite ? hilite_none : "");
-        comment->formatImpl(s, state, frame);
-    }
-
 }
 
 
@@ -217,6 +208,9 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (comment)
+        res->set(res->comment, comment->clone());
+
     cloneOutputOptions(*res);
 
     return res;
@@ -244,6 +238,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
         if (storage)
             storage->formatImpl(settings, state, frame);
+
+        if (comment)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+            comment->formatImpl(settings, state, frame);
+        }
 
         return;
     }
@@ -404,6 +404,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
         tables->formatImpl(settings, state, frame);
+    }
+
+    if (comment)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
 }
 
