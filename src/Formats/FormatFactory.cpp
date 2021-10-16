@@ -4,11 +4,9 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
