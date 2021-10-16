@@ -142,7 +142,7 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
-                    if (!is_interactive)
+                    if (!is_interactive && !ignore_error)
                         throw;
 
                     // Surprisingly, this is a client error. A server error would
@@ -472,7 +472,7 @@ catch (const DB::Exception & e)
     cleanup();
 
     bool print_stack_trace = config().getBool("stacktrace", false);
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
