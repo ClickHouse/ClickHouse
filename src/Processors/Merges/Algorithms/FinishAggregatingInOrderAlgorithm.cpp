@@ -25,12 +25,14 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     SortDescription description_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t merge_threads_)
     : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
     , description(std::move(description_))
     , max_block_size(max_block_size_)
+    , pool(merge_threads_)
 {
     /// Replace column names in description to positions.
     for (auto & column_description : description)
@@ -58,6 +60,12 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
+    if (finished)
+    {
+        auto res = popResult();
+        return Status(std::move(res), results.empty());
+    }
+
     if (!inputs_to_update.empty())
     {
         Status status(inputs_to_update.back());
@@ -81,7 +89,13 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     }
 
     if (!best_input)
-        return Status{aggregate(), true};
+    {
+        aggregate();
+        pool.wait();
+        finished = true;
+        auto res = popResult();
+        return Status(std::move(res), results.empty());
+    }
 
     /// Chunk at best_input will be aggregated entirely.
     auto & best_state = states[*best_input];
@@ -112,17 +126,34 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
     /// Do not merge blocks, if there are too few rows.
     if (accumulated_rows >= max_block_size)
-        status.chunk = aggregate();
+        aggregate();
 
+    status.chunk = popResult();
     return status;
 }
 
-Chunk FinishAggregatingInOrderAlgorithm::aggregate()
+Chunk FinishAggregatingInOrderAlgorithm::popResult()
 {
-    auto aggregated = params->aggregator.mergeBlocks(blocks, false);
-    blocks.clear();
+    std::lock_guard lock(results_mutex);
+
+    if (results.empty())
+        return {};
+
+    auto res = std::move(results.back());
+    results.pop_back();
+    return res;
+}
+
+void FinishAggregatingInOrderAlgorithm::aggregate()
+{
     accumulated_rows = 0;
-    return {aggregated.getColumns(), aggregated.rows()};
+    pool.scheduleOrThrowOnError([this, blocks_list = std::move(blocks)]() mutable
+    {
+        auto aggregated = params->aggregator.mergeBlocks(blocks_list, false);
+
+        std::lock_guard lock(results_mutex);
+        results.emplace_back(aggregated.getColumns(), aggregated.rows());
+    });
 }
 
 void FinishAggregatingInOrderAlgorithm::addToAggregation()
