@@ -129,7 +129,7 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
             {
                 if (current_exception)
                     current_exception->rethrow();
-                continue;
+                return true;
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
