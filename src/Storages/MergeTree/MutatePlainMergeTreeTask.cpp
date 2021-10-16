@@ -40,6 +40,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -61,7 +62,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker, (*merge_list_entry)->max_untracked_memory);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_list_entry);
 
     switch (state)
     {

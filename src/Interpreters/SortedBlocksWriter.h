@@ -8,7 +8,6 @@
 #include <Core/SortDescription.h>
 #include <Processors/Pipe.h>
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
 
 
 namespace DB
