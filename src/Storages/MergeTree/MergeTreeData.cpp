@@ -4407,12 +4407,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug",
             ErrorCodes::LOGICAL_ERROR);
 
-    auto block = metadata_snapshot->minmax_count_projection->sample_block;
+    auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
     bool need_primary_key_max_column = false;
-    String primary_key_max_column_name;
-    if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
+    const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
+    if (!primary_key_max_column_name.empty())
     {
-        primary_key_max_column_name = block.getNames()[ProjectionDescription::PRIMARY_KEY_MAX_COLUMN_POS];
         need_primary_key_max_column = std::any_of(
             required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
     }
@@ -4462,7 +4461,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
-        if (metadata_snapshot->minmax_count_projection->has_primary_key_minmax)
+        if (!primary_key_max_column_name.empty())
         {
             const auto & primary_key_column = *part->index[0];
             auto primary_key_column_size = primary_key_column.size();
