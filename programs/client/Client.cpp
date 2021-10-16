@@ -231,9 +231,6 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
-                    if (!is_interactive)
-                        throw;
-
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
