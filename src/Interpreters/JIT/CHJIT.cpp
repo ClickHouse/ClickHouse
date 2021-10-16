@@ -156,7 +156,7 @@ public:
                     throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
-                InvalidateCache = false;
+                invalidate_cache = false;
             }
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);

@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Core/Protocol.h"
 
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
@@ -373,6 +374,9 @@ std::vector<String> Client::loadWarningMessages()
 
             case Protocol::Server::EndOfStream:
                 return messages;
+
+            case Protocol::Server::ProfileEvents:
+                continue;
 
             default:
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",

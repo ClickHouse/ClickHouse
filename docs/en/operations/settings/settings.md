@@ -1808,7 +1808,7 @@ Default value: 1000
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
 
 Possible values:
 
@@ -3784,3 +3784,33 @@ Result:
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization is disabled.
+-   1 — Automatic `PREWHERE` optimization is enabled.
+
+Default value: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
+-   1 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
