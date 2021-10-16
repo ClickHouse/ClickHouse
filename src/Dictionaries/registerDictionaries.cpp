@@ -28,6 +28,7 @@ void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory);
+void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
@@ -60,6 +61,7 @@ void registerDictionaries()
         registerDictionaryTrie(factory);
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
+        registerDictionaryArrayHashed(factory);
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
