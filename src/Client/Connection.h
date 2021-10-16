@@ -60,6 +60,8 @@ public:
 
     ~Connection() override;
 
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
+
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
