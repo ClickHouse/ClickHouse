@@ -514,18 +514,15 @@ void LocalServer::processConfig()
 
     format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
+
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
     else
         insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
 
-    /// Skip networking
-
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
-
-    global_context->initializeBackgroundExecutors();
 
     setupUsers();
 

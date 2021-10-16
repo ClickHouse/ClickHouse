@@ -2895,8 +2895,15 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
     shared->async_insert_queue = ptr;
 }
 
+bool Context::isBackgroundExecutorsInitialized() const
+{
+    return is_background_executors_initialized;
+}
+
 void Context::initializeBackgroundExecutors()
 {
+    assert(!is_background_executors_initialized);
+
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
@@ -2943,6 +2950,8 @@ void Context::initializeBackgroundExecutors()
 
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
         getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
+
+    is_background_executors_initialized = true;
 }
 
 

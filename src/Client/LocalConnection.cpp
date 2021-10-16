@@ -266,16 +266,16 @@ bool LocalConnection::poll(size_t)
         }
     }
 
-    if (state->is_finished && send_progress && !state->sent_progress)
-    {
-        state->sent_progress = true;
-        next_packet_type = Protocol::Server::Progress;
-        return true;
-    }
-
     if (state->is_finished)
     {
         finishQuery();
+        return true;
+    }
+
+    if (send_progress && !state->sent_progress)
+    {
+        state->sent_progress = true;
+        next_packet_type = Protocol::Server::Progress;
         return true;
     }
 
@@ -292,7 +292,8 @@ bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
-    if (block)
+
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
