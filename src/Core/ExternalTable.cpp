@@ -1,5 +1,4 @@
 #include <boost/program_options.hpp>
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
@@ -12,7 +11,6 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Formats/IInputFormat.h>

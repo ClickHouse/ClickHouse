@@ -248,6 +248,9 @@ void IPolygonDictionary::calculateBytesAllocated()
 {
     /// Index allocated by subclass not counted because it take a small part in relation to attributes and polygons
 
+    if (configuration.store_polygon_key_column)
+        bytes_allocated += key_attribute_column->allocatedBytes();
+
     for (const auto & column : attributes_columns)
         bytes_allocated += column->allocatedBytes();
 

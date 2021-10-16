@@ -8,7 +8,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 
