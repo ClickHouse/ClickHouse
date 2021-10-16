@@ -18,7 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <base/logger_useful.h>
 

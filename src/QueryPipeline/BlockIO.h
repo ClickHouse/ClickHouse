@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB

@@ -1,6 +1,6 @@
 #include <Core/SortCursor.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>

@@ -12,7 +12,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 

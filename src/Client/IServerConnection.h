@@ -8,7 +8,7 @@
 
 #include <QueryPipeline/ProfileInfo.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 

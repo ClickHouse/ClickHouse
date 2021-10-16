@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Formats/NativeReader.h>

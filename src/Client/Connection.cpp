@@ -25,8 +25,8 @@
 #include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Processors/Pipe.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>

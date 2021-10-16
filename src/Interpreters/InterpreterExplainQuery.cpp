@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/printPipeline.h>
+#include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
 

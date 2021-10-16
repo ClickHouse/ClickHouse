@@ -2,7 +2,7 @@
 
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 

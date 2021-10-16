@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

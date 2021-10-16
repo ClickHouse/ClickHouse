@@ -7,7 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>

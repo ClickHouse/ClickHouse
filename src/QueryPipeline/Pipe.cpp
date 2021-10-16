@@ -1,4 +1,4 @@
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>

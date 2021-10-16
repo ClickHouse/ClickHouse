@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/quoteString.h>

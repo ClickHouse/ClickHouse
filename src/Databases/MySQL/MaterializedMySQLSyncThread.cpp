@@ -9,7 +9,7 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
