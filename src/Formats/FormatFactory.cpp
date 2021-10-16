@@ -13,6 +13,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
 
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
