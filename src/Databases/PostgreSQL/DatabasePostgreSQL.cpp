@@ -39,15 +39,15 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration_,
-        postgres::PoolWithFailoverPtr pool_,
-        bool cache_tables_)
+        const String & postgres_dbname,
+        postgres::PoolWithFailoverPtr connection_pool_,
+        const bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
-    , configuration(configuration_)
-    , pool(std::move(pool_))
+    , dbname(postgres_dbname)
+    , connection_pool(std::move(connection_pool_))
     , cache_tables(cache_tables_)
 {
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -55,28 +55,11 @@ DatabasePostgreSQL::DatabasePostgreSQL(
 }
 
 
-String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
-{
-    if (configuration.schema.empty())
-        return fmt::format("{}.{}", configuration.database, table_name);
-    return fmt::format("{}.{}.{}", configuration.database, configuration.schema, table_name);
-}
-
-
-String DatabasePostgreSQL::formatTableName(const String & table_name) const
-{
-    if (configuration.schema.empty())
-        return doubleQuoteString(table_name);
-    return fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name));
-}
-
-
 bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto connection_holder = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto tables_list = fetchTablesList();
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -86,19 +69,33 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
-    auto connection_holder = pool->get();
-    auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto table_names = fetchTablesList();
 
     for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, local_context, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+}
+
+
+std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
+{
+    std::unordered_set<std::string> tables;
+    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
+        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
+    auto connection_holder = connection_pool->get();
+    pqxx::read_transaction tx(connection_holder->get());
+
+    for (auto table_name : tx.stream<std::string>(query))
+        tables.insert(std::get<0>(table_name));
+
+    return tables;
 }
 
 
@@ -111,7 +108,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection_holder = pool->get();
+    auto connection_holder = connection_pool->get();
     pqxx::nontransaction tx(connection_holder->get());
 
     try
@@ -120,11 +117,8 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
         pqxx::result result = tx.exec(fmt::format(
                     "SELECT '{}'::regclass, tablename "
                     "FROM pg_catalog.pg_tables "
-                    "WHERE schemaname != 'pg_catalog' AND {} "
-                    "AND tablename = '{}'",
-                    formatTableName(table_name),
-                    (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(configuration.schema)),
-                    formatTableName(table_name)));
+                    "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' "
+                    "AND tablename = '{}'", table_name, table_name));
     }
     catch (pqxx::undefined_table const &)
     {
@@ -162,22 +156,26 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, const bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr local_context, const bool table_checked) const
 {
     if (!cache_tables || !cached_tables.count(table_name))
     {
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
 
-        auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), formatTableName(table_name)).columns;
+        auto use_nulls = local_context->getSettingsRef().external_table_functions_use_nulls;
+        auto columns = fetchPostgreSQLTableStructure(connection_pool->get(), doubleQuoteString(table_name), use_nulls);
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
+            StorageID(database_name, table_name),
+            connection_pool,
+            table_name,
+            ColumnsDescription{*columns},
+            ConstraintsDescription{},
+            String{});
 
         if (cache_tables)
             cached_tables[table_name] = storage;
@@ -201,14 +199,10 @@ void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!checkPostgresTable(table_name))
-        throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
-                        getTableNameForLogs(table_name), database_name);
+        throw Exception(fmt::format("Cannot attach table {}.{} because it does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
 
     if (!detached_or_dropped.count(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                        "Cannot attach PostgreSQL table {} because it already exists",
-                        getTableNameForLogs(table_name), database_name);
+        throw Exception(fmt::format("Cannot attach table {}.{}. It already exists", database_name, table_name), ErrorCodes::TABLE_ALREADY_EXISTS);
 
     if (cache_tables)
         cached_tables[table_name] = storage;
@@ -226,10 +220,10 @@ StoragePtr DatabasePostgreSQL::detachTable(const String & table_name)
     std::lock_guard<std::mutex> lock{mutex};
 
     if (detached_or_dropped.count(table_name))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot detach table {}. It is already dropped/detached", getTableNameForLogs(table_name));
+        throw Exception(fmt::format("Cannot detach table {}.{}. It is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
     if (!checkPostgresTable(table_name))
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot detach table {}, because it does not exist", getTableNameForLogs(table_name));
+        throw Exception(fmt::format("Cannot detach table {}.{} because it does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -257,10 +251,10 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!checkPostgresTable(table_name))
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot drop table {} because it does not exist", getTableNameForLogs(table_name));
+        throw Exception(fmt::format("Cannot drop table {}.{} because it does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
 
     if (detached_or_dropped.count(table_name))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
+        throw Exception(fmt::format("Table {}.{} is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     FS::createFile(mark_table_removed);
@@ -278,7 +272,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};
@@ -303,8 +297,7 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
-    auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto actual_tables = fetchTablesList();
 
     if (cache_tables)
     {
@@ -347,10 +340,6 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 
@@ -361,7 +350,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     if (!storage)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", getTableNameForLogs(table_name));
+            throw Exception(fmt::format("PostgreSQL table {}.{} does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
 
         return nullptr;
     }
@@ -394,9 +383,9 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
-    /// Remove extra engine argument (`schema` and `use_table_cache`)
-    if (storage_engine_arguments->children.size() >= 5)
-        storage_engine_arguments->children.resize(4);
+    /// Remove extra engine argument (`use_table_cache`)
+    if (storage_engine_arguments->children.size() > 4)
+        storage_engine_arguments->children.resize(storage_engine_arguments->children.size() - 1);
 
     /// Add table_name to engine arguments
     assert(storage_engine_arguments->children.size() >= 2);

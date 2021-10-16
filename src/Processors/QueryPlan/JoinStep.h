@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "Join"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -40,7 +40,7 @@ public:
     FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     JoinPtr join;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -18,12 +18,12 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public IStorage
 {
-    friend class SetOrJoinSink;
+    friend class SetOrJoinBlockOutputStream;
 
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
@@ -51,10 +51,10 @@ private:
     void restoreFromFile(const String & file_path);
 
     /// Insert the block into the state.
-    virtual void insertBlock(const Block & block, ContextPtr context) = 0;
+    virtual void insertBlock(const Block & block) = 0;
     /// Call after all blocks were inserted.
     virtual void finishInsert() = 0;
-    virtual size_t getSize(ContextPtr context) const = 0;
+    virtual size_t getSize() const = 0;
 };
 
 
@@ -81,9 +81,9 @@ public:
 private:
     SetPtr set;
 
-    void insertBlock(const Block & block, ContextPtr) override;
+    void insertBlock(const Block & block) override;
     void finishInsert() override;
-    size_t getSize(ContextPtr) const override;
+    size_t getSize() const override;
 
 protected:
     StorageSet(

@@ -11,7 +11,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
-#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -21,15 +20,12 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/SessionLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -40,7 +36,6 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
 
@@ -280,14 +275,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->dropUncompressedCache();
             break;
-        case Type::DROP_INDEX_MARK_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
-            break;
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
-            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
@@ -305,6 +292,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.reloadDictionary(query.table, getContext());
+
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -335,22 +323,6 @@ BlockIO InterpreterSystemQuery::execute()
             external_models_loader.reloadAllTriedToLoad();
             break;
         }
-        case Type::RELOAD_FUNCTION:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
-
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
-            break;
-        }
-        case Type::RELOAD_FUNCTIONS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
-
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
-            break;
-        }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES);
             system_context->getEmbeddedDictionaries().reload();
@@ -363,7 +335,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if defined(__ELF__) && !defined(__FreeBSD__)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
+            (void)SymbolIndex::instance(true);
             break;
 #else
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
@@ -444,22 +416,13 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
                 [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
-                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); }
+                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
-        case Type::STOP_THREAD_FUZZER:
-            ThreadFuzzer::stop();
-            break;
-        case Type::START_THREAD_FUZZER:
-            ThreadFuzzer::start();
-            break;
+            throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -700,7 +663,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
@@ -754,8 +717,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -771,12 +732,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_MODELS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
-            break;
-        }
-        case Type::RELOAD_FUNCTION: [[fallthrough]];
-        case Type::RELOAD_FUNCTIONS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
             break;
         }
         case Type::RELOAD_CONFIG:
@@ -894,8 +849,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_LISTEN_QUERIES: break;
         case Type::START_LISTEN_QUERIES: break;
-        case Type::STOP_THREAD_FUZZER: break;
-        case Type::START_THREAD_FUZZER: break;
         case Type::UNKNOWN: break;
         case Type::END: break;
     }

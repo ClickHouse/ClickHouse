@@ -23,8 +23,6 @@ enum class OpNum : int32_t
     Exists = 3,
     Get = 4,
     Set = 5,
-    GetACL = 6,
-    SetACL = 7,
     SimpleList = 8,
     Sync = 9,
     Heartbeat = 11,

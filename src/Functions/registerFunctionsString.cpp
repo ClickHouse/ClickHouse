@@ -1,6 +1,5 @@
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
-#    include "config_core.h"
 #endif
 
 namespace DB
@@ -30,7 +29,6 @@ void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
 void registerFunctionTrim(FunctionFactory &);
-void registerFunctionPadString(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
@@ -38,22 +36,12 @@ void registerFunctionCountMatches(FunctionFactory &);
 void registerFunctionEncodeXMLComponent(FunctionFactory &);
 void registerFunctionDecodeXMLComponent(FunctionFactory &);
 void registerFunctionExtractTextFromHTML(FunctionFactory &);
-void registerFunctionToStringCutToZero(FunctionFactory &);
+
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
 void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
-#endif
-
-#if USE_NLP
-void registerFunctionStem(FunctionFactory &);
-void registerFunctionSynonyms(FunctionFactory &);
-void registerFunctionLemmatize(FunctionFactory &);
-#endif
-
-#if USE_ICU
-void registerFunctionNormalizeUTF8(FunctionFactory &);
 #endif
 
 void registerFunctionsString(FunctionFactory & factory)
@@ -80,7 +68,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
     registerFunctionTrim(factory);
-    registerFunctionPadString(factory);
     registerFunctionRegexpQuoteMeta(factory);
     registerFunctionNormalizeQuery(factory);
     registerFunctionNormalizedQueryHash(factory);
@@ -88,22 +75,10 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionEncodeXMLComponent(factory);
     registerFunctionDecodeXMLComponent(factory);
     registerFunctionExtractTextFromHTML(factory);
-    registerFunctionToStringCutToZero(factory);
-
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);
     registerFunctionTryBase64Decode(factory);
-#endif
-
-#if USE_NLP
-    registerFunctionStem(factory);
-    registerFunctionSynonyms(factory);
-    registerFunctionLemmatize(factory);
-#endif
-
-#if USE_ICU
-    registerFunctionNormalizeUTF8(factory);
 #endif
 }
 

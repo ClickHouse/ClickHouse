@@ -11,9 +11,7 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLSource.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -84,7 +82,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -196,10 +194,6 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 
@@ -238,7 +232,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             wait_update_tables_name.emplace_back(table_modification_time.first);
     }
 
-    std::map<String, ColumnsDescription> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, local_context);
+    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, local_context);
 
     for (const auto & table_and_columns : tables_and_columns)
     {
@@ -287,12 +281,9 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
 
     std::map<String, UInt64> tables_with_modification_time;
     StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
-    auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(result));
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
 
-    Block block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(block))
+    while (Block block = result.read())
     {
         size_t rows = block.rows();
         for (size_t index = 0; index < rows; ++index)
@@ -305,7 +296,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
     return tables_with_modification_time;
 }
 
-std::map<String, ColumnsDescription>
+std::map<String, NamesAndTypesList>
 DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
@@ -408,7 +399,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

@@ -14,7 +14,7 @@
 namespace DB
 {
 
-NamesAndTypesList TextLogElement::getNamesAndTypes()
+Block TextLogElement::createBlock()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -26,29 +26,28 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
                 {"Notice",         static_cast<Int8>(Message::PRIO_NOTICE)},
                 {"Information",    static_cast<Int8>(Message::PRIO_INFORMATION)},
                 {"Debug",          static_cast<Int8>(Message::PRIO_DEBUG)},
-                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)},
-                {"Test",           static_cast<Int8>(Message::PRIO_TEST)},
+                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)}
         });
 
     return
     {
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"microseconds", std::make_shared<DataTypeUInt32>()},
+        {std::make_shared<DataTypeDate>(),                                                    "event_date"},
+        {std::make_shared<DataTypeDateTime>(),                                                "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                                             "event_time_microseconds"},
+        {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
 
-        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
+        {std::make_shared<DataTypeUInt64>(),                                                  "thread_id"},
 
-        {"level", std::move(priority_datatype)},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"message", std::make_shared<DataTypeString>()},
+        {std::move(priority_datatype),                                                        "level"},
+        {std::make_shared<DataTypeString>(),                                                  "query_id"},
+        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "logger_name"},
+        {std::make_shared<DataTypeString>(),                                                  "message"},
 
-        {"revision", std::make_shared<DataTypeUInt32>()},
+        {std::make_shared<DataTypeUInt32>(),                                                  "revision"},
 
-        {"source_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"source_line", std::make_shared<DataTypeUInt64>()}
+        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "source_file"},
+        {std::make_shared<DataTypeUInt64>(),                                                  "source_line"}
     };
 }
 

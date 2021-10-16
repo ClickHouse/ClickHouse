@@ -27,7 +27,7 @@ public:
 
     DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
 
-    std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }
+    std::string doGetName() const override { return std::string("Interval") + kind.toString(); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }
 
@@ -36,7 +36,6 @@ public:
     bool isParametric() const override { return true; }
     bool cannotBeStoredInTables() const override { return true; }
     bool isCategorial() const override { return false; }
-    bool canBeInsideNullable() const override { return true; }
 };
 
 }

@@ -7,11 +7,12 @@
 
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
-#include <base/types.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
+#include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -19,7 +20,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -52,8 +52,7 @@ namespace DB
         /// fields
 
         static std::string name();
-        static NamesAndTypesList getNamesAndTypes();
-        static NamesAndAliases getNamesAndAliases();
+        static Block createBlock();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -74,9 +73,6 @@ class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
-class QueryViewsLog;
-class ZooKeeperLog;
-class SessionLog;
 
 
 class ISystemLog
@@ -113,12 +109,6 @@ struct SystemLogs
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    /// Used to log queries of materialized and live views
-    std::shared_ptr<QueryViewsLog> query_views_log;
-    /// Used to log all actions of ZooKeeper client
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -461,18 +451,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// is called from single thread.
         prepareTable();
 
-        ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
-
-        for (auto name_and_type : log_element_names_and_types)
-            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-        Block block(std::move(log_element_columns));
-
+        Block block = LogElement::createBlock();
         MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
-
         block.setColumns(std::move(columns));
 
         /// We write to table indirectly, using InterpreterInsertQuery.
@@ -489,11 +471,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        PushingPipelineExecutor executor(io.pipeline);
-
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        io.out->writePrefix();
+        io.out->write(block);
+        io.out->writeSuffix();
     }
     catch (...)
     {
@@ -520,14 +500,11 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
-        auto metadata_columns = table->getInMemoryMetadataPtr()->getColumns();
-        auto old_query = InterpreterCreateQuery::formatColumns(metadata_columns);
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        const Block expected = LogElement::createBlock();
+        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
 
-        auto ordinary_columns = LogElement::getNamesAndTypes();
-        auto alias_columns = LogElement::getNamesAndAliases();
-        auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
-
-        if (serializeAST(*old_query) != serializeAST(*current_query))
+        if (!blocksHaveEqualStructure(actual, expected))
         {
             /// Rename the existing table.
             int suffix = 0;
@@ -598,10 +575,10 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->database = table_id.database_name;
     create->table = table_id.table_name;
 
-    auto ordinary_columns = LogElement::getNamesAndTypes();
-    auto alias_columns = LogElement::getNamesAndAliases();
+    Block sample = LogElement::createBlock();
+
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
     create->set(create->columns_list, new_columns_list);
 
     ParserStorage storage_parser;

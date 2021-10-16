@@ -73,11 +73,11 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
 }
 
 
-void registerOutputFormatTabSeparated(FormatFactory & factory)
+void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
 {
     for (const auto * name : {"TabSeparated", "TSV"})
     {
-        factory.registerOutputFormat(name, [](
+        factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -90,7 +90,7 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
     {
-        factory.registerOutputFormat(name, [](
+        factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -103,7 +103,7 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
-        factory.registerOutputFormat(name, [](
+        factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -116,7 +116,7 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
-        factory.registerOutputFormat(name, [](
+        factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,

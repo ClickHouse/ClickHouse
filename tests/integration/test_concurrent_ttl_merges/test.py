@@ -5,8 +5,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/fast_background_pool.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/fast_background_pool.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/fast_background_pool.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/fast_background_pool.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -140,6 +140,7 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
 
 def test_limited_ttl_merges_two_replicas(started_cluster):
     # Actually this test quite fast and often we cannot catch any merges.
+    # To check for sure just add some sleeps in mergePartsToTemporaryPart
     node1.query("DROP TABLE IF EXISTS replicated_ttl_2")
     node2.query("DROP TABLE IF EXISTS replicated_ttl_2")
 

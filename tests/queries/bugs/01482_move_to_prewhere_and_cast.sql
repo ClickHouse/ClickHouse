@@ -1,6 +1,3 @@
--- Tags: no-polymorphic-parts
--- Tag no-polymorphic-parts: bug, shoud be fixed
-
 DROP TABLE IF EXISTS APPLICATION;
 DROP TABLE IF EXISTS DATABASE_IO;
 

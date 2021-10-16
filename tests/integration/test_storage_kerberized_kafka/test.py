@@ -21,9 +21,10 @@ import socket
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kerberized_kafka=True,
-                                clickhouse_path_dir="clickhouse_path")
+                                clickhouse_path_dir="clickhouse_path"
+                                )
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
@@ -55,9 +56,6 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
 def kafka_cluster():
     try:
         cluster.start()
-        if instance.is_debug_build():
-            # https://github.com/ClickHouse/ClickHouse/issues/27651
-            pytest.skip("librdkafka calls system function for kinit which does not pass harmful check in debug build")
         yield cluster
     finally:
         cluster.shutdown()

@@ -21,8 +21,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <common/phdr_cache.h>
+#include <common/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -58,12 +58,6 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
@@ -125,18 +119,12 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-    {"keeper-converter", mainEntryClickHouseKeeperConverter},
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
@@ -328,7 +316,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
+} checker;
 
 }
 

@@ -23,8 +23,8 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 The table structure can differ from the original PostgreSQL table structure:
 
 -   Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
--   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+-   Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is 1, if 0 - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
 
@@ -34,7 +34,6 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 -   `schema` — Non-default table schema. Optional.
--   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 ## Implementation Details {#implementation-details}
 
@@ -51,13 +50,7 @@ PostgreSQL `Array` types are converted into ClickHouse arrays.
 !!! info "Note"
     Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 
-Supports multiple replicas that must be listed by `|`. For example:
-
-```sql
-CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
-```
-
-Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`.
+Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`. 
 
 In the example below replica `example01-1` has the highest priority:
 
@@ -149,4 +142,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

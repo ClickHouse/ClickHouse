@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -16,8 +16,6 @@
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
-
-#include <memory>
 
 namespace CurrentMetrics
 {
@@ -63,7 +61,7 @@ protected:
     uint8_t sequence_id = 0;
 
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
-    std::unique_ptr<Session> session;
+    ContextMutablePtr connection_context;
 
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;

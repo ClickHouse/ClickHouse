@@ -4,7 +4,7 @@
 #include <optional>
 #include <mutex>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -22,7 +22,7 @@ namespace DB
   */
 class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemorySink;
+friend class MemoryBlockOutputStream;
 friend struct shared_ptr_helper<StorageMemory>;
 
 public:
@@ -47,7 +47,7 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 

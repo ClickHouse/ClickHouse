@@ -1,10 +1,9 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -17,9 +16,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-
 
 namespace DB
 {
@@ -80,13 +77,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     Block scalar;
     if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
-    {
         scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
-    }
     else if (data.scalars.count(scalar_query_hash_str))
-    {
         scalar = data.scalars[scalar_query_hash_str];
-    }
     else
     {
         auto subquery_context = Context::createCopy(data.getContext());
@@ -126,24 +119,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (block.rows() == 0)
             {
-                auto types = interpreter.getSampleBlock().getDataTypes();
-                if (types.size() != 1)
-                    types = {std::make_shared<DataTypeTuple>(types)};
-
-                auto & type = types[0];
-                if (!type->isNullable())
-                {
-                    if (!type->canBeInsideNullable())
-                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                                        type->getName());
-
-                    type = makeNullable(type);
-                }
-
-                ASTPtr ast_new = std::make_shared<ASTLiteral>(Null());
-                ast_new = addTypeConversionToAST(std::move(ast_new), type->getName());
-
+                /// Interpret subquery with empty result as Null literal
+                auto ast_new = std::make_unique<ASTLiteral>(Null());
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
                 return;
@@ -153,8 +130,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
 
             Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-                ;
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block));
 
             if (tmp_block.rows() != 0)
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
@@ -164,24 +140,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         size_t columns = block.columns();
 
         if (columns == 1)
-        {
-            auto & column = block.getByPosition(0);
-            /// Here we wrap type to nullable if we can.
-            /// It is needed cause if subquery return no rows, it's result will be Null.
-            /// In case of many columns, do not check it cause tuple can't be nullable.
-            if (!column.type->isNullable() && column.type->canBeInsideNullable())
-            {
-                column.type = makeNullable(column.type);
-                column.column = makeNullable(column.column);
-            }
             scalar = block;
-        }
         else
         {
-            scalar.insert({
-                ColumnTuple::create(block.getColumns()),
-                std::make_shared<DataTypeTuple>(block.getDataTypes()),
-                "tuple"});
+
+            ColumnWithTypeAndName ctn;
+            ctn.type = std::make_shared<DataTypeTuple>(block.getDataTypes());
+            ctn.column = ColumnTuple::create(block.getColumns());
+            scalar.insert(ctn);
         }
     }
 

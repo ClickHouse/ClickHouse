@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <climits>
 #include <AggregateFunctions/ReservoirSampler.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>

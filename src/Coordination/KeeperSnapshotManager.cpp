@@ -10,7 +10,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/copyData.h>
 #include <filesystem>
-#include <memory>
 
 namespace DB
 {
@@ -33,12 +32,9 @@ namespace
         return parse<uint64_t>(name_parts[1]);
     }
 
-    std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
+    std::string getSnapshotFileName(uint64_t up_to_log_idx)
     {
-        auto base = std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
-        if (compress_zstd)
-            base += ".zstd";
-        return base;
+        return std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
     }
 
     std::string getBaseName(const String & path)
@@ -102,10 +98,6 @@ namespace
             }
             node.acl_id = acl_map.convertACLs(acls);
         }
-
-        /// Some strange ACLID during deserialization from ZooKeeper
-        if (node.acl_id == std::numeric_limits<uint64_t>::max())
-            node.acl_id = 0;
 
         acl_map.addUsage(node.acl_id);
 
@@ -222,18 +214,15 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
     storage.zxid = result->get_last_log_idx();
     storage.session_id_counter = session_id;
 
-    /// Before V1 we serialized ACL without acl_map
     if (current_version >= SnapshotVersion::V1)
     {
         size_t acls_map_size;
-
         readBinary(acls_map_size, in);
         size_t current_map_size = 0;
         while (current_map_size < acls_map_size)
         {
             uint64_t acl_id;
             readBinary(acl_id, in);
-
             size_t acls_size;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
@@ -343,13 +332,9 @@ KeeperStorageSnapshot::~KeeperStorageSnapshot()
     storage->disableSnapshotMode();
 }
 
-KeeperSnapshotManager::KeeperSnapshotManager(
-    const std::string & snapshots_path_, size_t snapshots_to_keep_,
-    bool compress_snapshots_zstd_,
-    const std::string & superdigest_, size_t storage_tick_time_)
+KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, const std::string & superdigest_, size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
-    , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
 {
@@ -360,23 +345,11 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
     for (const auto & p : fs::directory_iterator(snapshots_path))
     {
-        const auto & path = p.path();
-
-        if (!path.has_filename())
-            continue;
-
-        if (startsWith(path.filename(), "tmp_")) /// Unfinished tmp files
+        if (startsWith(p.path(), "tmp_")) /// Unfinished tmp files
         {
             std::filesystem::remove(p);
             continue;
         }
-
-        /// Not snapshot file
-        if (!startsWith(path.filename(), "snapshot_"))
-        {
-            continue;
-        }
-
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
         existing_snapshots[snapshot_up_to] = p.path();
     }
@@ -389,7 +362,7 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
+    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
     std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
     std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
@@ -435,46 +408,22 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
     return writer.getBuffer();
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot)
 {
-    std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
-    auto * buffer_raw_ptr = writer.get();
-    std::unique_ptr<WriteBuffer> compressed_writer;
-    if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-    else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+    WriteBufferFromNuraftBuffer writer;
+    CompressedWriteBuffer compressed_writer(writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
-    compressed_writer->finalize();
-    return buffer_raw_ptr->getBuffer();
-}
-
-
-bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
-{
-    static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
-    ReadBufferFromNuraftBuffer reader(buffer);
-    uint32_t magic_from_buffer;
-    reader.readStrict(reinterpret_cast<char *>(&magic_from_buffer), sizeof(magic_from_buffer));
-    buffer->pos(0);
-    return magic_from_buffer == ZSTD_COMPRESSED_MAGIC;
+    KeeperStorageSnapshot::serialize(snapshot, compressed_writer);
+    compressed_writer.finalize();
+    return writer.getBuffer();
 }
 
 SnapshotMetaAndStorage KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
-    bool is_zstd_compressed = isZstdCompressed(buffer);
-
-    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
-    std::unique_ptr<ReadBuffer> compressed_reader;
-
-    if (is_zstd_compressed)
-        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
-    else
-        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
-
+    ReadBufferFromNuraftBuffer reader(buffer);
+    CompressedReadBuffer compressed_reader(reader);
     auto storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest);
-    auto snapshot_metadata = KeeperStorageSnapshot::deserialize(*storage, *compressed_reader);
+    auto snapshot_metadata = KeeperStorageSnapshot::deserialize(*storage, compressed_reader);
     return std::make_pair(snapshot_metadata, std::move(storage));
 }
 

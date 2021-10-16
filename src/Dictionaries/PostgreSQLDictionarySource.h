@@ -9,9 +9,10 @@
 #if USE_LIBPQXX
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <base/LocalDateTime.h>
-#include <base/logger_useful.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <common/LocalDateTime.h>
+#include <common/logger_useful.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <pqxx/pqxx>
 
 
 namespace DB
@@ -26,7 +27,6 @@ public:
         const String db;
         const String schema;
         const String table;
-        const String query;
         const String where;
         const String invalidate_query;
         const String update_field;
@@ -43,10 +43,10 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    Pipe loadAll() override;
-    Pipe loadUpdatedAll() override;
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadAll() override;
+    BlockInputStreamPtr loadUpdatedAll() override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -58,7 +58,7 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
-    Pipe loadBase(const String & query);
+    BlockInputStreamPtr loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     const Configuration configuration;

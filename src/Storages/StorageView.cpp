@@ -16,7 +16,6 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -159,8 +158,8 @@ void StorageView::read(
     {
         throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                             "Query from view {} returned Nullable column having not Nullable type in structure. "
-                            "If query from view has JOIN, it may be cause by different values of 'join_use_nulls' setting. "
-                            "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                            "If query from view has JOIN, it may be cause by different values of 'json_use_nulls' setting. "
+                            "You may explicitly specify 'json_use_nulls' in 'CREATE VIEW' query to avoid this error",
                             getStorageID().getFullTableName());
     }
 

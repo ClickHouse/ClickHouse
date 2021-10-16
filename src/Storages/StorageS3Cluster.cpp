@@ -11,9 +11,11 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <Core/UUID.h>
+#include "DataStreams/RemoteBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -22,20 +24,20 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
-#include <DataStreams/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -88,6 +90,7 @@ Pipe StorageS3Cluster::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+    S3::URI s3_uri(Poco::URI{filename});
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
@@ -103,6 +106,7 @@ Pipe StorageS3Cluster::read(
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
+    connections.reserve(cluster->getShardCount());
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -111,27 +115,19 @@ Pipe StorageS3Cluster::read(
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & node : replicas)
         {
-            auto connection = std::make_shared<Connection>(
+            connections.emplace_back(std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
                 node.user, node.password, node.cluster, node.cluster_secret,
                 "S3ClusterInititiator",
                 node.compression,
                 node.secure
-            );
-
+            ));
 
             /// For unknown reason global context is passed to IStorage::read() method
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_info.query),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                callback);
+                    *connections.back(), queryToString(query_info.query), header, context,
+                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

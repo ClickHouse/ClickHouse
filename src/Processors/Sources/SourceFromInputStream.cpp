@@ -1,6 +1,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 
 namespace DB
 {
@@ -107,6 +108,10 @@ void SourceFromInputStream::work()
 
     if (is_stream_finished)
         return;
+
+    /// Don't cancel for RemoteBlockInputStream (otherwise readSuffix can stack)
+    if (!typeid_cast<const RemoteBlockInputStream *>(stream.get()))
+        stream->cancel(false);
 
     if (rows_before_limit)
     {

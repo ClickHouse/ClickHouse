@@ -9,9 +9,9 @@
 #include <unordered_map>
 #include <atomic>
 
-#include <llvm/IR/LLVMContext.h> // Y_IGNORE
-#include <llvm/IR/Module.h> // Y_IGNORE
-#include <llvm/Target/TargetMachine.h> // Y_IGNORE
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Target/TargetMachine.h>
 
 namespace DB
 {
@@ -52,31 +52,32 @@ public:
 
     ~CHJIT();
 
-    struct CompiledModule
+    struct CompiledModuleInfo
     {
         /// Size of compiled module code in bytes
         size_t size;
-
         /// Module identifier. Should not be changed by client
         uint64_t identifier;
-
-        /// Vector of compiled functions. Should not be changed by client.
-        /// It is client responsibility to cast result function to right signature.
-        /// After call to deleteCompiledModule compiled functions from module become invalid.
-        std::unordered_map<std::string, void *> function_name_to_symbol;
-
+        /// Vector of compiled function nameds. Should not be changed by client
+        std::vector<std::string> compiled_functions;
     };
 
     /** Compile module. In compile function client responsibility is to fill module with necessary
       * IR code, then it will be compiled by CHJIT instance.
-      * Return compiled module.
+      * Return compiled module info.
       */
-    CompiledModule compileModule(std::function<void (llvm::Module &)> compile_function);
+    CompiledModuleInfo compileModule(std::function<void (llvm::Module &)> compile_function);
 
     /** Delete compiled module. Pointers to functions from module become invalid after this call.
       * It is client responsibility to be sure that there are no pointers to compiled module code.
       */
-    void deleteCompiledModule(const CompiledModule & module_info);
+    void deleteCompiledModule(const CompiledModuleInfo & module_info);
+
+    /** Find compiled function using module_info, and function_name.
+      * It is client responsibility to case result function to right signature.
+      * After call to deleteCompiledModule compiled functions from module become invalid.
+      */
+    void * findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const;
 
     /** Register external symbol for CHJIT instance to use, during linking.
       * It can be function, or global constant.
@@ -92,7 +93,7 @@ private:
 
     std::unique_ptr<llvm::Module> createModuleForCompilation();
 
-    CompiledModule compileModule(std::unique_ptr<llvm::Module> module);
+    CompiledModuleInfo compileModule(std::unique_ptr<llvm::Module> module);
 
     std::string getMangledName(const std::string & name_to_mangle) const;
 
@@ -106,6 +107,7 @@ private:
     std::unique_ptr<JITCompiler> compiler;
     std::unique_ptr<JITSymbolResolver> symbol_resolver;
 
+    std::unordered_map<std::string, void *> name_to_symbol;
     std::unordered_map<uint64_t, std::unique_ptr<JITModuleMemoryManager>> module_identifier_to_memory_manager;
     uint64_t current_module_key = 0;
     std::atomic<size_t> compiled_code_size = 0;

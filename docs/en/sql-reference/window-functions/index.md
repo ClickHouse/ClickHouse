@@ -5,6 +5,9 @@ toc_title: Window Functions
 
 # [experimental] Window Functions
 
+!!! warning "Warning"
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in the future releases. Set `allow_experimental_window_functions = 1` to enable it.
+
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
 | Feature | Support or workaround |

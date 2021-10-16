@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Core/NamesAndAliases.h>
 #include <Access/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -31,8 +31,8 @@ public:
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
-    static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
@@ -50,11 +50,6 @@ public:
     void setForceAttach(bool force_attach_)
     {
         force_attach = force_attach_;
-    }
-
-    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
-    {
-        load_database_without_tables = load_database_without_tables_;
     }
 
     /// Obtain information about columns, their types, default values and column comments,
@@ -79,7 +74,7 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
+    TableProperties setProperties(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
@@ -99,7 +94,6 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
-    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

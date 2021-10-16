@@ -4,6 +4,7 @@
 namespace DB
 {
 
+
 SharedLibraryHandlerPtr SharedLibraryHandlerFactory::get(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);

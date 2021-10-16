@@ -1,8 +1,6 @@
-#include <Interpreters/IdentifierSemantic.h>
-
 #include <Common/typeid_cast.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
@@ -162,7 +160,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return ColumnMatch::DBAndTable;
+        return ColumnMatch::DbAndTable;
 
     /// alias.column
     if (doesIdentifierBelongTo(identifier, db_and_table.alias))
@@ -199,7 +197,7 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
         case ColumnMatch::TableAlias:
             to_strip = 1;
             break;
-        case ColumnMatch::DBAndTable:
+        case ColumnMatch::DbAndTable:
             to_strip = 2;
             break;
         default:
@@ -282,10 +280,7 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    const auto & settings = context->getSettingsRef();
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
-                                             settings.asterisk_include_alias_columns,
-                                             settings.asterisk_include_materialized_columns);
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

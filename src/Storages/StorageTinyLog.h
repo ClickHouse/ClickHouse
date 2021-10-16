@@ -2,7 +2,7 @@
 
 #include <map>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
@@ -18,7 +18,7 @@ namespace DB
 class StorageTinyLog final : public shared_ptr_helper<StorageTinyLog>, public IStorage
 {
     friend class TinyLogSource;
-    friend class TinyLogSink;
+    friend class TinyLogBlockOutputStream;
     friend struct shared_ptr_helper<StorageTinyLog>;
 
 public:
@@ -33,7 +33,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -45,7 +45,6 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
-    ColumnSizeByName getColumnSizes() const override;
 protected:
     StorageTinyLog(
         DiskPtr disk_,
@@ -72,7 +71,7 @@ private:
     Files files;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 

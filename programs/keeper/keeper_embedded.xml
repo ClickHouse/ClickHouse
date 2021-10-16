@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <logger>
         <level>trace</level>
         <console>true</console>
@@ -18,4 +18,4 @@
             </server>
         </raft_configuration>
     </keeper_server>
-</clickhouse>
+</yandex>

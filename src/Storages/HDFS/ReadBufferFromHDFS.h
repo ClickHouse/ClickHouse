@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
@@ -10,7 +8,7 @@
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h> // Y_IGNORE
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
 

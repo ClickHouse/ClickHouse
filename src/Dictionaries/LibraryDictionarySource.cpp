@@ -2,7 +2,7 @@
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -41,15 +41,14 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-    auto dictionaries_lib_path = context->getDictionariesLibPath();
     bool path_checked = false;
     if (fs::is_symlink(path))
-        path_checked = symlinkStartsWith(path, dictionaries_lib_path);
+        path_checked = symlinkStartsWith(path, context->getDictionariesLibPath());
     else
-        path_checked = pathStartsWith(path, dictionaries_lib_path);
+        path_checked = pathStartsWith(path, context->getDictionariesLibPath());
 
     if (created_from_ddl && !path_checked)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, dictionaries_lib_path);
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
     if (!fs::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
@@ -112,21 +111,21 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-Pipe LibraryDictionarySource::loadAll()
+BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     return bridge_helper->loadAll();
 }
 
 
-Pipe LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     return bridge_helper->loadIds(ids);
 }
 
 
-Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
@@ -187,11 +186,11 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, created_from_ddl);
     };
 
     factory.registerSource("library", create_table_source);

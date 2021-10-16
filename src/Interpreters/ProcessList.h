@@ -22,7 +22,6 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-#include <vector>
 
 
 namespace CurrentMetrics
@@ -35,7 +34,6 @@ namespace DB
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -66,7 +64,7 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };
@@ -103,10 +101,13 @@ protected:
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    mutable std::mutex executors_mutex;
+    mutable std::mutex query_streams_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    /// Streams with query results, point to BlockIO from executeQuery()
+    /// This declaration is compatible with notes about BlockIO::process_list_entry:
+    ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
+    BlockInputStreamPtr query_stream_in;
+    BlockOutputStreamPtr query_stream_out;
 
     enum QueryStreamsStatus
     {
@@ -167,15 +168,21 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    /// Copies pointers to in/out streams
+    void setQueryStreams(const BlockIO & io);
+
+    /// Frees in/out streams
+    void releaseQueryStreams();
+
+    /// It means that ProcessListEntry still exists, but stream was already destroyed
+    bool streamsAreReleased();
+
+    /// Get query in/out pointers from BlockIO
+    bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
-
-    /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
-
-    /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
 };
 
 
@@ -186,7 +193,7 @@ struct ProcessListForUserInfo
     Int64 peak_memory_usage;
 
     // Optional field, filled by request.
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
 };
 
 

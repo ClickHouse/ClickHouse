@@ -7,6 +7,8 @@ Columns:
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/functions) <!--hide-->
+
 **Example**
 
 ```sql
@@ -27,7 +29,5 @@ Columns:
 │ JSONExtractInt           │            0 │                0 │          │
 └──────────────────────────┴──────────────┴──────────────────┴──────────┘
 
-10 rows in set. Elapsed: 0.002 sec.
+10 rows in set. Elapsed: 0.002 sec. 
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/functions) <!--hide-->

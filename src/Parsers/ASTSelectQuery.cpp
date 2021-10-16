@@ -319,15 +319,23 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
-    bool is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
-    return {array_join->expression_list, is_left};
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
+    return array_join->expression_list;
 }
+
+
+ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+{
+    bool is_left;
+    return arrayJoinExpressionList(is_left);
+}
+
 
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
@@ -428,21 +436,6 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
     if (!positions.count(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
-}
-
-void ASTSelectQuery::setFinal() // NOLINT method can be made const
-{
-    auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
-
-    if (tables_in_select_query.children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables list is empty, it's a bug");
-
-    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
-
-    if (!tables_element.table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
-
-    tables_element.table_expression->as<ASTTableExpression &>().final = true;
 }
 
 }

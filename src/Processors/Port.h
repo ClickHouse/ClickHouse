@@ -394,7 +394,7 @@ public:
         pushData({.chunk = std::move(chunk), .exception = {}});
     }
 
-    void ALWAYS_INLINE pushException(std::exception_ptr exception)
+    void ALWAYS_INLINE push(std::exception_ptr exception)
     {
         pushData({.chunk = {}, .exception = std::move(exception)});
     }

@@ -18,8 +18,6 @@ $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 -nm -q "
     INSERT INTO dist_01683 VALUES (1),(2);
 
     SET insert_distributed_sync=0;
-    -- force log messages from the 'SYSTEM FLUSH DISTRIBUTED' context
-    SYSTEM STOP DISTRIBUTED SENDS dist_01683;
     INSERT INTO dist_01683 VALUES (1),(2);
     SYSTEM FLUSH DISTRIBUTED dist_01683;
 

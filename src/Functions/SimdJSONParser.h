@@ -5,9 +5,9 @@
 #endif
 
 #if USE_SIMDJSON
-#    include <base/types.h>
+#    include <common/types.h>
 #    include <Common/Exception.h>
-#    include <base/defines.h>
+#    include <common/defines.h>
 #    include <simdjson.h>
 
 
@@ -49,8 +49,6 @@ struct SimdJSONParser
         ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
-
-        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
 
     private:
         simdjson::dom::element element;

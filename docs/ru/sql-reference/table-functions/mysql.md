@@ -29,26 +29,14 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
     - `0` - выполняется запрос `INSERT INTO`.
     - `1` - выполняется запрос `REPLACE INTO`.
 
--   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое в запрос `INSERT`. Может быть передано только с помощью  `replace_query = 0` (если вы одновременно передадите `replace_query = 1` и `on_duplicate_clause`, будет сгенерировано исключение).
+-   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое в запрос `INSERT`. Может быть передано только с помощью  `replace_query = 0` (если вы одновременно передадите `replace_query = 1` и `on_duplicate_clause`, будет сгенерировано исключение). 
 
-        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`.
+        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. 
         Выражения, которые могут использоваться в качестве `on_duplicate_clause` в секции `ON DUPLICATE KEY`, можно посмотреть в документации по [MySQL](http://www.mysql.ru/docs/).
 
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
-
-Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
-
-```sql
-SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
-```
-
-или
-
-```sql
-SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
-```
 
 **Возвращаемое значение**
 
@@ -104,7 +92,7 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 └────────┴───────┘
 ```
 
-**Смотрите также**
+**Смотрите также** 
 
 -   [Движок таблиц ‘MySQL’](../../sql-reference/table-functions/mysql.md)
 -   [Использование MySQL как источника данных для внешнего словаря](../../sql-reference/table-functions/mysql.md#dicts-external_dicts_dict_sources-mysql)

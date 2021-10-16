@@ -1,9 +1,0 @@
-SET max_block_size = 6, join_algorithm = 'partial_merge';
-
-{% for i in range(4, 16) -%}
-SELECT count() == {{ i }}  FROM (SELECT 100 AS s) AS js1 ALL RIGHT JOIN ( SELECT number AS s FROM numbers({{ i }}) ) AS js2 USING (s);
-{% endfor -%}
-
-{% for i in range(4, 16) -%}
-SELECT count() == {{ i + 1 }}  FROM (SELECT 100 AS s) AS js1 ALL FULL JOIN ( SELECT number AS s FROM numbers({{ i }}) ) AS js2 USING (s);
-{% endfor -%}

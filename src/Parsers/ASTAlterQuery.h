@@ -31,14 +31,11 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
-        MATERIALIZE_COLUMN,
-
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
-        RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
 
@@ -70,10 +67,6 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
-
-        MODIFY_DATABASE_SETTING,
-
-        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;
@@ -148,9 +141,6 @@ public:
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
 
-    /// FOR RESET_SETTING
-    ASTPtr settings_resets;
-
     /// For MODIFY_QUERY
     ASTPtr select;
 
@@ -214,15 +204,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
-    {
-        TABLE,
-        DATABASE,
-        LIVE_VIEW,
-        UNKNOWN,
-    };
-
-    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
+    bool is_live_view{false}; /// true for ALTER LIVE VIEW
 
     ASTExpressionList * command_list = nullptr;
 
@@ -238,8 +220,6 @@ public:
     {
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
-
-    const char * getQueryKindString() const override { return "Alter"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

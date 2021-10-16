@@ -18,7 +18,7 @@ namespace
         if (!func.arguments || (func.arguments->children.size() <= argument_pos))
             return;
         auto arg = func.arguments->children[argument_pos];
-        auto * identifier = arg->as<ASTIdentifier>();
+        auto identifier = arg->as<ASTIdentifier>();
         if (!identifier)
             return;
         if (aliases.contains(identifier->name()))

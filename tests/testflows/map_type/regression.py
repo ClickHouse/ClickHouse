@@ -89,13 +89,6 @@ xfails = {
         [(Fail, "LowCardinality(FixedString) as key not supported")],
     "tests/table map with value string/LowCardinality(String) for key and value":
         [(Fail, "LowCardinality(String) as key not supported")],
-    # JSON related
-    "tests/table map with duplicated keys/Map(Int64, String))":
-        [(Fail, "new bug due to JSON changes")],
-    "tests/table map with key integer/UInt64":
-        [(Fail, "new bug due to JSON changes")],
-    "tests/table map with value integer/UInt64":
-        [(Fail, "new bug due to JSON changes")]
 }
 
 xflags = {
@@ -109,9 +102,10 @@ xflags = {
 @Specifications(
     SRS018_ClickHouse_Map_Data_Type
 )
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Map type regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
@@ -119,6 +113,8 @@ def regression(self, local, clickhouse_binary_path, stress=None):
 
     if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "map_type_env")) as cluster:

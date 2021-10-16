@@ -1,5 +1,3 @@
--- Tags: shard
-
 DROP TABLE IF EXISTS group_uniq_arr_int;
 CREATE TABLE group_uniq_arr_int ENGINE = Memory AS
 	SELECT g as id, if(c == 0, [v], if(c == 1, emptyArrayInt64(), [v, v])) as v FROM
