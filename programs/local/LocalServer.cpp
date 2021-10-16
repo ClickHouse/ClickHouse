@@ -579,6 +579,11 @@ void LocalServer::processConfig()
     {
         String path = global_context->getPath();
 
+        /// When tables are loaded from .sql we initialize background executors
+        /// regardless there are MergeTree tables or not, because no better place was found.
+        /// In other cases it will be initialized only when there are mergeTree tables.
+        global_context->initializeBackgroundExecutors();
+
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
