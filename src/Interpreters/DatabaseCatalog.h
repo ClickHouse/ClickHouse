@@ -123,8 +123,6 @@ class DatabaseCatalog : boost::noncopyable, WithMutableContext
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
-    static constexpr const char * INFORMATION_SCHEMA = "information_schema";
-    static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();

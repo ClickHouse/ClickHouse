@@ -1,11 +1,10 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <DataStreams/NativeReader.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <DataStreams/materializeBlock.h>
-#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
@@ -56,8 +55,9 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
         {
+            block_in->readPrefix();
         }
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -70,6 +70,7 @@ namespace
             auto block = block_in->read();
             if (!block)
             {
+                block_in->readSuffix();
                 block_in.reset();
                 return {};
             }
@@ -80,7 +81,7 @@ namespace
     private:
         ReadBufferFromFile file_in;
         CompressedReadBuffer compressed_in;
-        std::unique_ptr<NativeReader> block_in;
+        BlockInputStreamPtr block_in;
     };
 }
 

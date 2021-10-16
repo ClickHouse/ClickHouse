@@ -1,5 +1,3 @@
--- Tags: zookeeper, no-parallel
-
 DROP TABLE IF EXISTS versioned_collapsing_table;
 
 CREATE TABLE versioned_collapsing_table(

@@ -17,8 +17,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
-#include <base/logger_useful.h>
+#include <common/range.h>
+#include <common/logger_useful.h>
 #include "MySQLSource.h"
 
 

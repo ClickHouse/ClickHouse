@@ -11,12 +11,13 @@ namespace DB
 {
 
 class Context;
+
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool force_restore);
+    bool has_force_restore_data_flag);
 
 /** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
@@ -74,8 +75,6 @@ public:
     void checkMetadataFilenameAvailability(const String & to_table_name) const;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
 
-    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
-
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -99,9 +98,6 @@ protected:
 
     const String metadata_path;
     const String data_path;
-
-    /// For alter settings.
-    std::mutex modify_settings_mutex;
 };
 
 }

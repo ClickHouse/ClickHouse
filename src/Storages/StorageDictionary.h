@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
@@ -73,6 +73,7 @@ private:
     Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
 
+    std::atomic<bool> remove_repository_callback_executed = false;
     scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();

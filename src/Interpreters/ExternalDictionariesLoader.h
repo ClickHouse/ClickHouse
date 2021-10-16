@@ -27,8 +27,6 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
-
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
@@ -44,7 +42,7 @@ protected:
     std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     /// Try convert qualified dictionary name to persistent UUID
-    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
+    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;

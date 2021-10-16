@@ -4,6 +4,10 @@
 #include <IO/OpenedFileCache.h>
 #include <Common/CurrentMetrics.h>
 
+#ifndef O_DIRECT
+#define O_DIRECT 00040000
+#endif
+
 
 namespace CurrentMetrics
 {
@@ -61,19 +65,21 @@ public:
 
 /** Similar to ReadBufferFromFilePRead but also transparently shares open file descriptors.
   */
-class ReadBufferFromFilePReadWithDescriptorsCache : public ReadBufferFromFileDescriptorPRead
+class ReadBufferFromFilePReadWithCache : public ReadBufferFromFileDescriptorPRead
 {
 private:
+    static OpenedFileCache cache;
+
     std::string file_name;
     OpenedFileCache::OpenedFilePtr file;
 
 public:
-    ReadBufferFromFilePReadWithDescriptorsCache(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+    ReadBufferFromFilePReadWithCache(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
         char * existing_memory = nullptr, size_t alignment = 0)
         : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment),
         file_name(file_name_)
     {
-        file = OpenedFileCache::instance().get(file_name, flags);
+        file = cache.get(file_name, flags);
         fd = file->getFD();
     }
 

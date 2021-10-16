@@ -50,4 +50,4 @@ PREWHERE，FINAL 和 SAMPLE 对缓冲表不起作用。这些条件将传递到�
 
 请注意，一次插入一行数据是没有意义的，即使对于 Buffer 表也是如此。这将只产生每秒几千行的速度，而插入更大的数据块每秒可以产生超过一百万行（参见 «性能» 部分）。
 
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/buffer/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/buffer/) <!--hide-->

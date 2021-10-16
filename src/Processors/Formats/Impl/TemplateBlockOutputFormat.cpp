@@ -227,9 +227,9 @@ void TemplateBlockOutputFormat::finalize()
 }
 
 
-void registerOutputFormatTemplate(FormatFactory & factory)
+void registerOutputFormatProcessorTemplate(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Template", [](
+    factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -267,7 +267,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
-    factory.registerOutputFormat("CustomSeparated", [](
+    factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,

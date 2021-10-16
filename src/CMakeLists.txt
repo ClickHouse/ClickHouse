@@ -45,7 +45,6 @@ if (COMPILER_GCC)
 endif ()
 
 add_subdirectory (Access)
-add_subdirectory (Backups)
 add_subdirectory (Columns)
 add_subdirectory (Common)
 add_subdirectory (Core)
@@ -181,7 +180,6 @@ macro(add_object_library name common_path)
 endmacro()
 
 add_object_library(clickhouse_access Access)
-add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
@@ -212,7 +210,6 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
-add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
@@ -262,7 +259,7 @@ dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickH
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
-    dbms_target_link_libraries (PUBLIC ${REQUIRED_LLVM_LIBRARIES})
+    dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
@@ -350,20 +347,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-if (NOT_UNBUNDLED)
-    dbms_target_link_libraries (
-        PUBLIC
-            boost::circular_buffer
-            boost::heap
-    )
-endif()
-
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
 
-target_include_directories(clickhouse_common_io BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
-target_include_directories(clickhouse_common_io BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)
@@ -486,8 +473,6 @@ endif()
 if (USE_DATASKETCHES)
     target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
 endif ()
-
-target_link_libraries (clickhouse_common_io PRIVATE lz4)
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 

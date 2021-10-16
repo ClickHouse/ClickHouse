@@ -15,7 +15,7 @@
 #include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <base/range.h>
+#include <common/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -93,8 +93,14 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         ++arg_num;
 
-        auto qualified_name = QualifiedTableName::parseFromString(remote_database);
-        if (qualified_name.database.empty())
+        size_t dot = remote_database.find('.');
+        if (dot != String::npos)
+        {
+            /// NOTE Bad - do not support identifiers in backquotes.
+            remote_table = remote_database.substr(dot + 1);
+            remote_database = remote_database.substr(0, dot);
+        }
+        else
         {
             if (arg_num >= args.size())
             {
@@ -102,15 +108,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             }
             else
             {
-                std::swap(qualified_name.database, qualified_name.table);
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }
-
-        remote_database = std::move(qualified_name.database);
-        remote_table = std::move(qualified_name.table);
     }
 
     /// Cluster function may have sharding key for insert

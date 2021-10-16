@@ -7,7 +7,7 @@
 #endif
 
 #if USE_MYSQL
-#    include <base/LocalDateTime.h>
+#    include <common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"

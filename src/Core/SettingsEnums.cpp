@@ -79,8 +79,8 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
      {"warning",     LogsLevel::warning},
      {"information", LogsLevel::information},
      {"debug",       LogsLevel::debug},
-     {"trace",       LogsLevel::trace},
-     {"test",        LogsLevel::test}})
+     {"trace",       LogsLevel::trace}})
+
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
     {{"QUERY_START",                QUERY_START},

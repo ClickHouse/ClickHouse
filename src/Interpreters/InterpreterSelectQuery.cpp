@@ -65,7 +65,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -76,14 +75,14 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <base/map.h>
-#include <base/scope_guard_safe.h>
+#include <common/map.h>
+#include <common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -604,8 +603,8 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+    res.pipeline = std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
     return res;
 }
 
@@ -855,7 +854,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -1133,6 +1132,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             /// Optional step to convert key columns to common supertype.
+            /// Columns with changed types will be returned to user,
+            ///  so its only suitable for `USING` join.
             if (expressions.converting_join_columns)
             {
                 QueryPlanStepPtr convert_join_step = std::make_unique<ExpressionStep>(
@@ -1353,15 +1354,17 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                                  !query.arrayJoinExpressionList().first &&
+                                  !query.arrayJoinExpressionList() &&
                                   !query.distinct &&
                                   !expressions.hasLimitBy() &&
                                   !settings.extremes &&
                                   !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            bool limit_applied = false;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
+                limit_applied = true;
             }
 
             /** If there was more than one stream,
@@ -1383,6 +1386,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (query.limit_with_ties && apply_offset)
             {
                 executeLimit(query_plan);
+                limit_applied = true;
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
@@ -1396,7 +1400,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
-            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -1816,8 +1819,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             Block block_with_count{
                 {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
-            auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)), context);
+            auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
+            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<SourceFromInputStream>(istream)), context);
             prepared_count->setStepDescription("Optimized trivial count");
             query_plan.addStep(std::move(prepared_count));
             from_stage = QueryProcessingStage::WithMergeableState;
@@ -2077,9 +2080,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes,
         settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set
-            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                && query_analyzer->hasConstAggregationKeys()),
+        settings.empty_result_for_aggregation_by_empty_set || (keys.empty() && query_analyzer->hasConstAggregationKeys()),
         context->getTemporaryVolume(),
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,

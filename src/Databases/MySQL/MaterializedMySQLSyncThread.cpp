@@ -9,11 +9,9 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <Processors/QueryPipeline.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Sources/SourceFromSingleChunk.h>
-#    include <Processors/Transforms/CountingTransform.h>
+#    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -25,8 +23,8 @@
 #    include <Storages/StorageMergeTree.h>
 #    include <Common/quoteString.h>
 #    include <Common/setThreadName.h>
-#    include <base/sleep.h>
-#    include <base/bit_cast.h>
+#    include <common/sleep.h>
+#    include <common/bit_cast.h>
 
 namespace DB
 {
@@ -114,7 +112,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin_use_v1_row_events", "OFF"}
     };
 
-    QueryPipeline pipeline(std::move(variables_input));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(variables_input)));
 
     PullingPipelineExecutor executor(pipeline);
     Block variables_block;
@@ -234,8 +233,7 @@ void MaterializedMySQLSyncThread::stopSynchronization()
     if (!sync_quit && background_thread_pool)
     {
         sync_quit = true;
-        if (background_thread_pool->joinable())
-            background_thread_pool->join();
+        background_thread_pool->join();
         client.disconnect();
     }
 }
@@ -249,7 +247,7 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
-        checkMySQLVariables(pool.get(/* wait_timeout= */ UINT64_MAX), getContext()->getSettingsRef());
+        checkMySQLVariables(pool.get(), getContext()->getSettingsRef());
     }
     catch (const mysqlxx::ConnectionFailed & e)
     {
@@ -289,7 +287,7 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
     }
 }
 
-static inline QueryPipeline
+static inline BlockOutputStreamPtr
 getTableOutput(const String & database_name, const String & table_name, ContextMutablePtr query_context, bool insert_materialized = false)
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
@@ -313,7 +311,10 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
     BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
-    return std::move(res.pipeline);
+    if (!res.out)
+        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    return res.out;
 }
 
 static inline void dumpDataForTables(
@@ -331,21 +332,25 @@ static inline void dumpDataForTables(
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
             tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
-            auto pipeline = getTableOutput(database_name, table_name, query_context);
+            auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             auto input = std::make_unique<MySQLSource>(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                pipeline.getHeader(), mysql_input_stream_settings);
-            auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
-            Pipe pipe(std::move(input));
-            pipe.addTransform(counting);
-            pipeline.complete(std::move(pipe));
+                out->getHeader(), mysql_input_stream_settings);
+
+            QueryPipeline pipeline;
+            pipeline.init(Pipe(std::move(input)));
+            PullingPipelineExecutor executor(pipeline);
 
             Stopwatch watch;
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
 
-            const Progress & progress = counting->getProgress();
+            out->writePrefix();
+            Block block;
+            while (executor.pull(block))
+                out->write(block);
+            out->writeSuffix();
+
+            const Progress & progress = out->getProgress();
             LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
@@ -724,7 +729,7 @@ void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPt
         {
             /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
             /// To ensure that the synchronization continues, we need to handle these events
-            metadata.fetchMasterVariablesValue(pool.get(/* wait_timeout= */ UINT64_MAX));
+            metadata.fetchMasterVariablesValue(pool.get());
             client.setBinlogChecksum(metadata.binlog_checksum);
         }
         else if (receive_event->header.type != HEARTBEAT_EVENT)
@@ -795,12 +800,9 @@ void MaterializedMySQLSyncThread::Buffers::commit(ContextPtr context)
         for (auto & table_name_and_buffer : data)
         {
             auto query_context = createQueryContext(context);
-            auto input = std::make_shared<SourceFromSingleChunk>(table_name_and_buffer.second->first);
-            auto pipeline = getTableOutput(database, table_name_and_buffer.first, query_context, true);
-            pipeline.complete(Pipe(std::move(input)));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            OneBlockInputStream input(table_name_and_buffer.second->first);
+            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
+            copyData(input, *out);
         }
 
         data.clear();

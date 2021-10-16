@@ -2,7 +2,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
-    IRowInputFormat(header_, in_, std::move(params_)), buf(*in)
+    IRowInputFormat(header_, in_, std::move(params_)), buf(in)
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -32,35 +32,6 @@ void JSONAsStringRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
     buf.reset();
-}
-
-void JSONAsStringRowInputFormat::readPrefix()
-{
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
-
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == '[')
-    {
-        ++buf.position();
-        data_in_square_brackets = true;
-    }
-}
-
-void JSONAsStringRowInputFormat::readSuffix()
-{
-    skipWhitespaceIfAny(buf);
-    if (data_in_square_brackets)
-    {
-        assertChar(']', buf);
-        skipWhitespaceIfAny(buf);
-    }
-    if (!buf.eof() && *buf.position() == ';')
-    {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
-    }
-    assertEOF(buf);
 }
 
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
@@ -142,23 +113,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
 bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (!allow_new_rows)
-        return false;
-
     skipWhitespaceIfAny(buf);
-    if (!buf.eof())
-    {
-        if (!data_in_square_brackets && *buf.position() == ';')
-        {
-            /// ';' means the end of query, but it cannot be before ']'.
-            return allow_new_rows = false;
-        }
-        else if (data_in_square_brackets && *buf.position() == ']')
-        {
-            /// ']' means the end of query.
-            return allow_new_rows = false;
-        }
-    }
 
     if (!buf.eof())
         readJSONObject(*columns[0]);
@@ -171,9 +126,9 @@ bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return !buf.eof();
 }
 
-void registerInputFormatJSONAsString(FormatFactory & factory)
+void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
 {
-    factory.registerInputFormat("JSONAsString", [](
+    factory.registerInputFormatProcessor("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -186,11 +141,6 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
-}
-
-void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
-{
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 }

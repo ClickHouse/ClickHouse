@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <log_queries>1</log_queries>
@@ -29,4 +29,4 @@
         <default>
         </default>
     </quotas>
-</clickhouse>
+</yandex>
