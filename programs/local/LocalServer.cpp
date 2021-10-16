@@ -32,7 +32,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
@@ -128,9 +127,8 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-                this_query_begin = this_query_end; /// It's expected syntax error, skip the line
-                current_exception.reset();
+                if (current_exception)
+                    current_exception->rethrow();
                 continue;
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
