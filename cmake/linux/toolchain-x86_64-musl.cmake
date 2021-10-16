@@ -6,9 +6,9 @@ set (CMAKE_C_COMPILER_TARGET "x86_64-linux-musl")
 set (CMAKE_CXX_COMPILER_TARGET "x86_64-linux-musl")
 set (CMAKE_ASM_COMPILER_TARGET "x86_64-linux-musl")
 
-set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-x86_64-musl/x86_64-linux-musl-cross")
+set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-x86_64-musl")
 
-set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/x86_64-linux-musl")
+set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}")
 
 find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-13" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
 find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-13" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9")
