@@ -11,6 +11,10 @@
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -60,6 +64,17 @@ namespace
         readVectorBinary(names, buf);
         return names;
     }
+}
+
+
+static void writeData(Block data, OutputFormatPtr format)
+{
+    auto source = std::make_shared<SourceFromSingleChunk>(std::move(data));
+    QueryPipeline pipeline(std::move(source));
+    pipeline.complete(std::move(format));
+
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
 }
 
 
@@ -173,7 +188,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             ReadBufferFromString read_block_buf(params.get("null_values"));
-            auto format = FormatFactory::instance().getInput(FORMAT, read_block_buf, *sample_block, getContext(), DEFAULT_BLOCK_SIZE);
+            auto format = getContext()->getInputFormat(FORMAT, read_block_buf, *sample_block, DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto sample_block_with_nulls = reader->read();
 
@@ -221,8 +236,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto input = library_handler->loadAll();
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
-            copyData(*input, *output);
+            auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
+            writeData(std::move(input), std::move(output));
         }
         else if (method == "loadIds")
         {
@@ -239,8 +254,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto input = library_handler->loadIds(ids);
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
-            copyData(*input, *output);
+            auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
+            writeData(std::move(input), std::move(output));
         }
         else if (method == "loadKeys")
         {
@@ -265,7 +280,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             auto & read_buf = request.getStream();
-            auto format = FormatFactory::instance().getInput(FORMAT, read_buf, *requested_sample_block, getContext(), DEFAULT_BLOCK_SIZE);
+            auto format = getContext()->getInputFormat(FORMAT, read_buf, *requested_sample_block, DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto block = reader->read();
 
@@ -278,8 +293,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto input = library_handler->loadKeys(block.getColumns());
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
-            copyData(*input, *output);
+            auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
+            writeData(std::move(input), std::move(output));
         }
     }
     catch (...)
