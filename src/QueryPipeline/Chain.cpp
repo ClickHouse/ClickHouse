@@ -1,5 +1,5 @@
 #include <IO/WriteHelpers.h>
-#include <Processors/Chain.h>
+#include <QueryPipeline/Chain.h>
 
 namespace DB
 {

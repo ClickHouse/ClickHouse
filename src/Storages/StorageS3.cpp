@@ -35,7 +35,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/narrowBlockInputStreams.h>
 
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -52,7 +52,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 

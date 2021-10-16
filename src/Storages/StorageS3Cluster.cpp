@@ -24,7 +24,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowBlockInputStreams.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>

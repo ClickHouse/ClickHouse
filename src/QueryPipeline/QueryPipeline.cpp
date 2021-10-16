@@ -1,10 +1,10 @@
 #include <queue>
-#include <Processors/Chain.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>

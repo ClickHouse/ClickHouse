@@ -4,8 +4,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/Chain.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>

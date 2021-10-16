@@ -11,7 +11,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>

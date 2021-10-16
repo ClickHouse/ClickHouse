@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/PipelineResourcesHolder.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 
 namespace DB
 {

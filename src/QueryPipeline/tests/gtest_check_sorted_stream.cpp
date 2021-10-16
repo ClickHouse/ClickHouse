@@ -5,8 +5,8 @@
 #include <Processors/Sources/BlocksListSource.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypesNumber.h>
 
 

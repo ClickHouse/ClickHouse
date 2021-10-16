@@ -6,7 +6,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
 
 

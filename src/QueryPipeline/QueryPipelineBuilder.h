@@ -2,8 +2,8 @@
 
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 

@@ -1,4 +1,4 @@
-#include <Processors/PipelineResourcesHolder.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB

@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>

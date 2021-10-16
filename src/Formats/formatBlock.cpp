@@ -2,7 +2,7 @@
 #include <Formats/formatBlock.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 namespace DB
