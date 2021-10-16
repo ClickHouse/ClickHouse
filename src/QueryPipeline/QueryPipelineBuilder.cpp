@@ -1,4 +1,4 @@
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/LimitTransform.h>

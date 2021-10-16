@@ -4,10 +4,10 @@
 #include <Processors/Sources/BlocksListSource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
 

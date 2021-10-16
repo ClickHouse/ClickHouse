@@ -32,7 +32,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>

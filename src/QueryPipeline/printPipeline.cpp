@@ -1,4 +1,4 @@
-#include <Processors/printPipeline.h>
+#include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <set>
 #include <map>

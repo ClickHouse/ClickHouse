@@ -13,7 +13,7 @@
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Processors/Sources/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>

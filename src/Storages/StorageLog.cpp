@@ -23,7 +23,7 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <cassert>

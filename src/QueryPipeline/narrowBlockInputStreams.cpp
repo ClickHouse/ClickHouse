@@ -1,7 +1,7 @@
 #include <random>
 #include <Common/thread_local_rng.h>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include "narrowBlockInputStreams.h"
 
 

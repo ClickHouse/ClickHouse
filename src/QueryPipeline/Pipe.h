@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/PipelineResourcesHolder.h>
-#include <Processors/Chain.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/Chain.h>
 #include <Access/EnabledQuota.h>
 #include <QueryPipeline/SizeLimits.h>
 
