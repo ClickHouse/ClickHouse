@@ -1,6 +1,5 @@
 #include "StorageXDBC.h"
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>

@@ -39,6 +39,7 @@ namespace DB
 
 class AlterCommands;
 class MergeTreePartsMover;
+class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
 struct JobAndPool;
@@ -536,7 +537,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 
@@ -1143,6 +1144,21 @@ private:
 
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
+
+    void loadDataPartsFromDisk(
+        DataPartsVector & broken_parts_to_detach,
+        DataPartsVector & duplicate_parts_to_remove,
+        ThreadPool & pool,
+        size_t num_parts,
+        std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
+        bool skip_sanity_checks,
+        const MergeTreeSettingsPtr & settings);
+
+    void loadDataPartsFromWAL(
+        DataPartsVector & broken_parts_to_detach,
+        DataPartsVector & duplicate_parts_to_remove,
+        MutableDataPartsVector & parts_from_wal,
+        DataPartsLock & part_lock);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

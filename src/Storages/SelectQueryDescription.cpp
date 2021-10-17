@@ -48,7 +48,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
 {
     if (add_default_db)
     {
-        AddDefaultDatabaseVisitor visitor(context->getCurrentDatabase(), false, nullptr);
+        AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
         visitor.visit(query);
     }
 
