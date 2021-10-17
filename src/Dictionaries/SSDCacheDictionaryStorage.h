@@ -18,6 +18,7 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/HashTable/HashMap.h>
 #include <IO/AIO.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>

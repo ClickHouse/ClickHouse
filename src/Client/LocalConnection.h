@@ -56,6 +56,8 @@ public:
 
     ~LocalConnection() override;
 
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
+
     static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
 
     void setDefaultDatabase(const String & database) override;
@@ -76,7 +78,7 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id_/* = "" */,
+        const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
