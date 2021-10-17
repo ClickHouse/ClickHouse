@@ -98,9 +98,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (storage.file_checker.empty())
-            return {};
-
         Block res;
         start();
 
@@ -339,7 +336,7 @@ Pipe StorageStripeLog::read(
     Pipes pipes;
 
     String index_file = table_path + "index.mrk";
-    if (!disk->exists(index_file))
+    if (file_checker.empty() || !disk->exists(index_file))
     {
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }

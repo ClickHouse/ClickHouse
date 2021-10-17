@@ -25,6 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
 #include <cassert>
@@ -119,9 +120,6 @@ Chunk LogSource::generate()
     Block res;
 
     if (rows_read == rows_limit)
-        return {};
-
-    if (storage.file_checker.empty())
         return {};
 
     /// How many rows to read for the next block.
@@ -665,6 +663,9 @@ Pipe StorageLog::read(
     std::shared_lock lock(rwlock, lock_timeout);
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    if (file_checker.empty())
+        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
 
     Pipes pipes;
 
