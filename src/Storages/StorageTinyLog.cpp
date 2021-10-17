@@ -36,7 +36,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 
