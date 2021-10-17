@@ -35,7 +35,7 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const String & path, const String & prefix_path);
 
-/// Same as pathStartsWith, but wihtout canonization, i.e. allowed to check symlinks.
+/// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
 /// (Path is made absolute and normalized)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
