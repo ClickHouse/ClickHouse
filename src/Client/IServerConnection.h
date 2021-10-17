@@ -56,6 +56,14 @@ class IServerConnection : boost::noncopyable
 public:
     virtual ~IServerConnection() = default;
 
+    enum class Type
+    {
+        SERVER,
+        LOCAL
+    };
+
+    virtual Type getConnectionType() const = 0;
+
     virtual void setDefaultDatabase(const String & database) = 0;
 
     virtual void getServerVersion(
