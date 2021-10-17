@@ -141,7 +141,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
     const StorageMetadataPtr &,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo & query_info,
+    SelectQueryExpressionAnalyzer * query_analyzer) const
 {
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
@@ -169,7 +170,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 ++selected_table_size;
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
-                    table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
+                    table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info, query_analyzer));
             }
 
             iterator->next();

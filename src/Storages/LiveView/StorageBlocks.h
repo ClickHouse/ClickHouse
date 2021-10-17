@@ -33,8 +33,12 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        const StorageMetadataPtr &,
+        SelectQueryInfo &,
+        SelectQueryExpressionAnalyzer *) const override
     {
         return to_stage;
     }

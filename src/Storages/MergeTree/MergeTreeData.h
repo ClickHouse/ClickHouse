@@ -372,13 +372,17 @@ public:
         ContextPtr query_context) const;
 
     bool getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
+        ContextPtr query_context,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        SelectQueryExpressionAnalyzer * query_analyzer) const;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & info) const override;
+        SelectQueryInfo & info,
+        SelectQueryExpressionAnalyzer * analyzer) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
 

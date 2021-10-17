@@ -35,9 +35,10 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum to_stage,
         const StorageMetadataPtr &,
-        SelectQueryInfo & info) const override
+        SelectQueryInfo & info,
+        SelectQueryExpressionAnalyzer * analyzer) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info, analyzer);
     }
 
     Pipe watch(

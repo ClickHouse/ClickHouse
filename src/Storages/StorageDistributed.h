@@ -56,8 +56,12 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        const StorageMetadataPtr &,
+        SelectQueryInfo &,
+        SelectQueryExpressionAnalyzer *) const override;
 
     Pipe read(
         const Names & column_names,

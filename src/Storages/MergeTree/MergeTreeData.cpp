@@ -4508,7 +4508,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
 
 bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
-    ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
+    ContextPtr query_context,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    SelectQueryExpressionAnalyzer * query_analyzer) const
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
@@ -4534,6 +4537,15 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
     const auto & analysis_result = select.getAnalysisResult();
+    auto local_query_analyzer = select.detachQueryAnalyzer();
+
+    if (query_analyzer)
+    {
+        auto & prepared_sets = local_query_analyzer->getPreparedSets();
+        auto & subquery_for_sets = local_query_analyzer->getSubqueriesForSets();
+        query_analyzer->getPreparedSets().merge(std::move(prepared_sets));
+        query_analyzer->getSubqueriesForSets().merge(std::move(subquery_for_sets));
+    }
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -4554,7 +4566,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     NameSet keys;
     std::unordered_map<std::string_view, size_t> key_name_pos_map;
     size_t pos = 0;
-    for (const auto & desc : select.getQueryAnalyzer()->aggregationKeys())
+    for (const auto & desc : local_query_analyzer->aggregationKeys())
     {
         keys.insert(desc.name);
         key_name_pos_map.insert({desc.name, pos++});
@@ -4660,7 +4672,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             bool match = true;
             Block aggregates;
             // Let's first check if all aggregates are provided by current projection
-            for (const auto & aggregate : select.getQueryAnalyzer()->aggregates())
+            for (const auto & aggregate : local_query_analyzer->aggregates())
             {
                 const auto * column = sample_block.findByName(aggregate.column_name);
                 if (column)
@@ -4829,8 +4841,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
     {
-        selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
-        selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+        selected_candidate->aggregation_keys = local_query_analyzer->aggregationKeys();
+        selected_candidate->aggregate_descriptions = local_query_analyzer->aggregates();
     }
 
     query_info.projection = std::move(*selected_candidate);
@@ -4842,11 +4854,12 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo & query_info,
+    SelectQueryExpressionAnalyzer * query_analyzer) const
 {
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
-        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
+        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info, query_analyzer))
         {
             if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;

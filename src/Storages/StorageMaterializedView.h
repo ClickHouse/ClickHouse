@@ -66,8 +66,12 @@ public:
 
     void shutdown() override;
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        const StorageMetadataPtr &,
+        SelectQueryInfo &,
+        SelectQueryExpressionAnalyzer *) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;

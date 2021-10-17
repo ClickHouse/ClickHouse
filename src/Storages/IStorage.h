@@ -62,6 +62,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 struct StreamLocalLimits;
 class EnabledQuota;
 struct SelectQueryInfo;
+class SelectQueryExpressionAnalyzer;
 
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
 using DatabaseAndTableName = std::pair<String, String>;
@@ -259,11 +260,18 @@ public:
       * And to store optimized cluster (after optimize_skip_unused_shards).
       * It will also store needed stuff for projection query pipeline.
       *
+      * SelectQueryExpressionAnalyzer is required because during projection analysis, sets are built
+      * in this method and should be reused.
+      *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        const StorageMetadataPtr &,
+        SelectQueryInfo &,
+        SelectQueryExpressionAnalyzer * = nullptr) const
     {
         return QueryProcessingStage::FetchColumns;
     }

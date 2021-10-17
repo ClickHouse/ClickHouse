@@ -57,8 +57,12 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr,
+        QueryProcessingStage::Enum,
+        const StorageMetadataPtr &,
+        SelectQueryInfo &,
+        SelectQueryExpressionAnalyzer *) const override;
 
     Pipe read(
         const Names & column_names,
