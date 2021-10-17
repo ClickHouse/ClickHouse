@@ -52,17 +52,14 @@ RUN apt-get update \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)
-#
-# flush_memory_ms is required for TSan to decrease memory usage,
-# but note, that it may increase number of false-positive reports.
-RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=2 flush_memory_ms=2000 memory_limit_mb=50000'" >> /etc/environment; \
+RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=2'" >> /etc/environment; \
   echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
   echo "MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'" >> /etc/environment; \
   echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_suppressions.txt'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 # Sanitizer options for current shell (not current, but the one that will be spawned on "docker run")
 # (but w/o verbosity for TSAN, otherwise test.reference will not match)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=2 flush_memory_ms=2000 memory_limit_mb=50000'
+ENV TSAN_OPTIONS='halt_on_error=1 history_size=2'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
