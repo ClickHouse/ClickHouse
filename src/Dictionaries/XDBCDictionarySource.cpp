@@ -3,7 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <DataTypes/DataTypeString.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -17,7 +16,8 @@
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace DB
