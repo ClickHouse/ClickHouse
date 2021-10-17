@@ -14,7 +14,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
