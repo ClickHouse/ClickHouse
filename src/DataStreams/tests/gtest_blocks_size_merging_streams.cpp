@@ -6,7 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Pipe.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPipeline.h>
 
 using namespace DB;
@@ -88,15 +88,18 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
     pipe.addTransform(std::move(transform));
 
     QueryPipeline pipeline(std::move(pipe));
-    pipeline.setNumThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    PullingPipelineExecutor executor(pipeline);
 
     size_t total_rows = 0;
-    auto block1 = stream->read();
-    auto block2 = stream->read();
-    auto block3 = stream->read();
+    Block block1;
+    Block block2;
+    Block block3;
+    executor.pull(block1);
+    executor.pull(block2);
+    executor.pull(block3);
 
-    EXPECT_EQ(stream->read(), Block());
+    Block tmp_block;
+    ASSERT_FALSE(executor.pull(tmp_block));
 
     for (const auto & block : {block1, block2, block3})
         total_rows += block.rows();
@@ -132,14 +135,17 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
     pipe.addTransform(std::move(transform));
 
     QueryPipeline pipeline(std::move(pipe));
-    pipeline.setNumThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    PullingPipelineExecutor executor(pipeline);
 
-    auto block1 = stream->read();
-    auto block2 = stream->read();
-    auto block3 = stream->read();
+    Block block1;
+    Block block2;
+    Block block3;
+    executor.pull(block1);
+    executor.pull(block2);
+    executor.pull(block3);
 
-    EXPECT_EQ(stream->read(), Block());
+    Block tmp_block;
+    ASSERT_FALSE(executor.pull(tmp_block));
 
     EXPECT_EQ(block1.rows(), (1000 + 1500 + 1400) / 3);
     EXPECT_EQ(block2.rows(), (1000 + 1500 + 1400) / 3);

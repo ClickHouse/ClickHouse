@@ -19,7 +19,6 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>

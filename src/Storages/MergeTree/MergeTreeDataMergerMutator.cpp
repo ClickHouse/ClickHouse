@@ -28,7 +28,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/interpolate.h>
@@ -444,6 +443,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         parent_part,
         suffix,
         &data,
+        this,
         &merges_blocker,
         &ttl_merges_blocker);
 }
@@ -773,5 +773,11 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+
+bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
+{
+    std::lock_guard lock(tmp_parts_lock);
+    return tmp_parts.contains(basename);
+}
 
 }

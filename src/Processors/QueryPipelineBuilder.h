@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Pipe.h>
