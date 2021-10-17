@@ -669,10 +669,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
         });
     }
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
-    else
-        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), keys, column_names), max_block_size));
+    return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -736,8 +733,18 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
-        const std::string & layout_prefix = sparse ? ".layout.sparse_hashed" : ".layout.hashed";
-        const bool preallocate = config.getBool(config_prefix + layout_prefix + ".preallocate", false);
+        std::string dictionary_layout_name;
+
+        if (dictionary_key_type == DictionaryKeyType::Simple)
+            dictionary_layout_name = "hashed";
+        else
+            dictionary_layout_name = "complex_key_hashed";
+
+        if (sparse)
+            dictionary_layout_name = "sparse_" + dictionary_layout_name;
+
+        const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
+        const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
 
         HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
 
