@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -695,6 +694,16 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
+    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    void dropIndexUncompressedCache() const;
+
+    /// Create a cache of index marks of specified size. This can be done only once.
+    void setIndexMarkCache(size_t cache_size_in_bytes);
+    std::shared_ptr<MarkCache> getIndexMarkCache() const;
+    void dropIndexMarkCache() const;
 
     /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);

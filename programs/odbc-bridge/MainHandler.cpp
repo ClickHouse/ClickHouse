@@ -4,7 +4,6 @@
 #include "ODBCBlockInputStream.h"
 #include "ODBCBlockOutputStream.h"
 #include "getIdentifierQuote.h"
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -15,9 +14,9 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <base/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 

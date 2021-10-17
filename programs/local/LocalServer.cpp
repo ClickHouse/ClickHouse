@@ -32,7 +32,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
@@ -128,10 +127,9 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-                this_query_begin = this_query_end; /// It's expected syntax error, skip the line
-                current_exception.reset();
-                continue;
+                if (current_exception)
+                    current_exception->rethrow();
+                return true;
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
@@ -543,6 +541,17 @@ void LocalServer::processConfig()
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
+
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
 
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.

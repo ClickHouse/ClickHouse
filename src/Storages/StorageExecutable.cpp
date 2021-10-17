@@ -3,7 +3,6 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
-#include <DataStreams/materializeBlock.h>
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>
@@ -11,8 +10,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
