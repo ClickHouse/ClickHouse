@@ -39,6 +39,7 @@ namespace DB
 
 class AlterCommands;
 class MergeTreePartsMover;
+class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
 struct JobAndPool;
@@ -536,7 +537,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 

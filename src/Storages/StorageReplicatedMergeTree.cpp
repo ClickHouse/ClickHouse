@@ -478,7 +478,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
         /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0);
+        clearOldTemporaryDirectories(merger_mutator, 0);
         clearOldWriteAheadLogs();
     }
 
