@@ -16,6 +16,8 @@ export FILE="test_symlink_${CLICKHOUSE_DATABASE}"
 symlink_path=${user_files_path}/${FILE}
 file_path=$CUR_DIR/${FILE}
 
+chmod +w ${file_path}
+
 function cleanup()
 {
     rm ${symlink_path} ${file_path}
