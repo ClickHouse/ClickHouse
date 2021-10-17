@@ -1,6 +1,7 @@
 option (USE_UNWIND "Enable libunwind (better stacktraces)" ${ENABLE_LIBRARIES})
 
 if (USE_UNWIND)
+    add_subdirectory(contrib/libunwind-cmake)
     set (UNWIND_LIBRARIES unwind)
     set (EXCEPTION_HANDLING_LIBRARY ${UNWIND_LIBRARIES})
 

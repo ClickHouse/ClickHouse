@@ -21,15 +21,6 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-if (USE_INTERNAL_LIBCXX_LIBRARY AND NOT MISSING_INTERNAL_LIBCXX_LIBRARY)
-    add_subdirectory(libcxxabi-cmake)
-    add_subdirectory(libcxx-cmake)
-endif ()
-
-if (USE_UNWIND)
-    add_subdirectory(libunwind-cmake)
-endif ()
-
 add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (magic-enum-cmake)
 add_subdirectory (boost-cmake)
