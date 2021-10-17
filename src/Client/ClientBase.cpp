@@ -516,6 +516,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
+    bool break_on_timeout = connection->getConnectionType() != IServerConnection::Type::LOCAL;
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -546,7 +547,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 else
                 {
                     double elapsed = receive_watch.elapsedSeconds();
-                    if (elapsed > receive_timeout.totalSeconds())
+                    if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
                         std::cout << "Timeout exceeded while receiving data from server."
                                     << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
