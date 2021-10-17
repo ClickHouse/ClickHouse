@@ -2589,6 +2589,7 @@ void Context::setFormatSchemaPath(const String & path)
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
+    assert(hasQueryContext());
     return getQueryContext()->sample_block_cache;
 }
 
