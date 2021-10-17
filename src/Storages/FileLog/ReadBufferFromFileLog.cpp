@@ -47,7 +47,7 @@ bool ReadBufferFromFileLog::poll()
     if (new_records.empty())
     {
         buffer_status = BufferStatus::NO_RECORD_RETURNED;
-        LOG_TRACE(log, "No records returned");
+        LOG_TRACE(log, "No new records to read");
         return false;
     }
     else
@@ -107,16 +107,19 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         auto & file_meta = StorageFileLog::findInMap(file_infos.meta_by_inode, file_ctx.inode);
 
         if (!file_ctx.reader)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} does not initialized", file_meta.file_name);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Ifstream for file {} is not initialized", file_meta.file_name);
 
         auto & reader = file_ctx.reader.value();
         StorageFileLog::assertStreamGood(reader);
 
         Record record;
-        while (read_records_size < need_records_size && static_cast<UInt64>(reader.tellg()) < file_meta.last_open_end)
+        while (read_records_size < need_records_size)
         {
             /// Need to get offset before reading record from stream
-            record.offset = reader.tellg();
+            auto offset = reader.tellg();
+            if (static_cast<UInt64>(offset) < file_meta.last_open_end)
+                break;
+            record.offset = offset;
             StorageFileLog::assertStreamGood(reader);
 
             record.file_name = file_name;

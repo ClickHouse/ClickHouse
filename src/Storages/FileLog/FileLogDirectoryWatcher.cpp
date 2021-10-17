@@ -2,8 +2,9 @@
 
 namespace DB
 {
-FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, ContextPtr context_)
+FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_)
     : path(path_)
+    , storage(storage_)
     , log(&Poco::Logger::get("FileLogDirectoryWatcher(" + path + ")"))
     , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
 {
@@ -39,11 +40,11 @@ void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent e
 
     if (auto it = events.find(event_path); it != events.end())
     {
-        it->second.emplace_back(info);
+        it->second.file_events.emplace_back(info);
     }
     else
     {
-        events.emplace(event_path, std::vector<EventInfo>{info});
+        events.emplace(event_path, FileEvents{.file_events = std::vector<EventInfo>{info}});
     }
 }
 
@@ -57,11 +58,11 @@ void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent
 
     if (auto it = events.find(event_path); it != events.end())
     {
-        it->second.emplace_back(info);
+        it->second.file_events.emplace_back(info);
     }
     else
     {
-        events.emplace(event_path, std::vector<EventInfo>{info});
+        events.emplace(event_path, FileEvents{.file_events = std::vector<EventInfo>{info}});
     }
 }
 
@@ -80,14 +81,17 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
     /// Already have MODIFY event for this file
     if (auto it = events.find(event_path); it != events.end())
     {
-        if (it->second.back().type == ev.event)
+        if (it->second.received_modification_event)
             return;
         else
-            it->second.emplace_back(info);
+        {
+            it->second.received_modification_event = true;
+            it->second.file_events.emplace_back(info);
+        }
     }
     else
     {
-        events.emplace(event_path, std::vector<EventInfo>{info});
+        events.emplace(event_path, FileEvents{.received_modification_event = true, .file_events = std::vector<EventInfo>{info}});
     }
 }
 
@@ -100,11 +104,11 @@ void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEve
 
     if (auto it = events.find(event_path); it != events.end())
     {
-        it->second.emplace_back(info);
+        it->second.file_events.emplace_back(info);
     }
     else
     {
-        events.emplace(event_path, std::vector<EventInfo>{info});
+        events.emplace(event_path, FileEvents{.file_events = std::vector<EventInfo>{info}});
     }
 }
 
@@ -117,18 +121,18 @@ void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent
 
     if (auto it = events.find(event_path); it != events.end())
     {
-        it->second.emplace_back(info);
+        it->second.file_events.emplace_back(info);
     }
     else
     {
-        events.emplace(event_path, std::vector<EventInfo>{info});
+        events.emplace(event_path, FileEvents{.file_events = std::vector<EventInfo>{info}});
     }
 }
 
 void FileLogDirectoryWatcher::onError(Exception e)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    LOG_ERROR(log, "Error happened during watching directory {}: {}", path, error.error_msg);
+    LOG_ERROR(log, "Error happened during watching directory: {}", error.error_msg);
     error.has_error = true;
     error.error_msg = e.message();
 }
