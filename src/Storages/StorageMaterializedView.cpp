@@ -11,7 +11,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/AccessFlags.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -20,7 +19,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>

@@ -1,9 +1,7 @@
 #include <Storages/Kafka/KafkaSource.h>
 
-#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/logger_useful.h>
 #include <Interpreters/Context.h>
