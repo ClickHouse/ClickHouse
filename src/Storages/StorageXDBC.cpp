@@ -7,7 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
