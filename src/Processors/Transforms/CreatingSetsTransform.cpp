@@ -1,7 +1,6 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/IJoin.h>

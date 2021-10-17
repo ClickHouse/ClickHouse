@@ -22,13 +22,9 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Formats/FormatFactory.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <DataStreams/RemoteQueryExecutor.h>

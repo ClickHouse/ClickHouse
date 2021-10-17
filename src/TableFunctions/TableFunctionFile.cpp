@@ -2,7 +2,6 @@
 
 #include "registerTableFunctions.h"
 #include <Access/AccessFlags.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>

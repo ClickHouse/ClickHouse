@@ -6,6 +6,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeWriter.h>
 #include <DataStreams/NativeReader.h>
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
