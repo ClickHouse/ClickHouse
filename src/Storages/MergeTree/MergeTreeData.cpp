@@ -1343,7 +1343,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1359,35 +1359,44 @@ void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifet
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it->name(), "tmp_"))
+            const std::string & basename = it->name();
+            if (!startsWith(basename, "tmp_"))
             {
-                try
+                continue;
+            }
+            const std::string & full_path = fullPath(disk, it->path());
+            if (merger_mutator.hasTemporaryPart(basename))
+            {
+                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                continue;
+            }
+
+            try
+            {
+                if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
-                    {
-                        LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
-                        disk->removeRecursive(it->path());
-                    }
+                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
+                    disk->removeRecursive(it->path());
                 }
-                /// see getModificationTime()
-                catch (const ErrnoException & e)
+            }
+            /// see getModificationTime()
+            catch (const ErrnoException & e)
+            {
+                if (e.getErrno() == ENOENT)
                 {
-                    if (e.getErrno() == ENOENT)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
-                catch (const fs::filesystem_error & e)
+                else
+                    throw;
+            }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
                 {
-                    if (e.code() == std::errc::no_such_file_or_directory)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
+                else
+                    throw;
             }
         }
     }
