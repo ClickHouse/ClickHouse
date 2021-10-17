@@ -8,6 +8,7 @@ namespace DB
 
 class ASTFunction;
 class ASTFunctionWithKeyValueArguments;
+class ASTStorage;
 
 /// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
 /// from column default expressions (joinGet, dictGet, etc)
@@ -33,6 +34,7 @@ public:
 private:
     static void visit(const ASTFunction & function, Data & data);
     static void visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data);
+    static void visit(const ASTStorage & storage, Data & data);
 
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };

@@ -6,13 +6,17 @@
 
 #if USE_MYSQL
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -64,6 +68,8 @@ private:
     MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }

@@ -39,9 +39,9 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 
 ClickHouse supports a [declarative query language based on SQL](../sql-reference/index.md) that is identical to the ANSI SQL standard in [many cases](../sql-reference/ansi.md).
 
-Supported queries include [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), subqueries in [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md) clause, [IN](../sql-reference/operators/in.md) operator, and scalar subqueries.
+Supported queries include [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), subqueries in [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md) clause, [IN](../sql-reference/operators/in.md) operator, [window functions](../sql-reference/window-functions/index.md) and scalar subqueries.
 
-Correlated (dependent) subqueries and window functions are not supported at the time of writing but might become available in the future.
+Correlated (dependent) subqueries are not supported at the time of writing but might become available in the future.
 
 ## Vector Computation Engine {#vector-engine}
 

@@ -1,5 +1,5 @@
 #pragma once
-#include <common/defines.h>
+#include <base/defines.h>
 #include <boost/context/stack_context.hpp>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>

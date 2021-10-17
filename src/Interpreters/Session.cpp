@@ -259,9 +259,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        // must have been set in makeQueryContext or makeSessionContext
-        assert(user);
-        if (auto session_log = getSessionLog())
+        if (auto session_log = getSessionLog(); session_log && user)
             session_log->addLogOut(session_id, user->getName(), getClientInfo());
     }
 }
@@ -284,11 +282,6 @@ Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String &
 
         throw;
     }
-}
-
-Authentication::Digest Session::getPasswordDoubleSHA1(const String & user_name) const
-{
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getPasswordDoubleSHA1();
 }
 
 void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
@@ -467,7 +460,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (!notified_session_log_about_login)
     {
-        if (auto session_log = getSessionLog())
+        if (auto session_log = getSessionLog(); session_log && user)
         {
             session_log->addLoginSuccess(
                     session_id,
@@ -479,6 +472,15 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     return query_context;
+}
+
+
+void Session::releaseSessionID()
+{
+    if (!named_session)
+        return;
+    named_session->release();
+    named_session = nullptr;
 }
 
 }

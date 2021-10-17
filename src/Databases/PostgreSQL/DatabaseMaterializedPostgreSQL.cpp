@@ -5,7 +5,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -66,7 +66,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             *settings,
             /* is_materialized_postgresql_database = */ true);
 
-    NameSet tables_to_replicate;
+    std::set<String> tables_to_replicate;
     try
     {
         tables_to_replicate = replication_handler->fetchRequiredTables();

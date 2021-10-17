@@ -27,10 +27,14 @@ public:
     void storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast);
     void removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name);
 
+    /// For ClickHouse local if path is not set we can disable loader.
+    void enable(bool enable_persistence);
+
 private:
     String makeFilePath(ContextPtr context, UserDefinedSQLObjectType object_type, const String & name);
     void loadUserDefinedObject(ContextPtr context, UserDefinedSQLObjectType object_type, const std::string_view & object_name, const String & file_path);
     Poco::Logger * log;
+    bool enable_persistence = true;
 };
 
 }

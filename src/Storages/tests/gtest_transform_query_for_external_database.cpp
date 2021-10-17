@@ -249,3 +249,22 @@ TEST(TransformQueryForExternalDatabase, Strict)
     /// !isCompatible() takes place
     EXPECT_THROW(check(state, 1, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
 }
+
+TEST(TransformQueryForExternalDatabase, Null)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NOT NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+
+    check(state, 1,
+          "SELECT field FROM table WHERE isNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE isNotNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+}

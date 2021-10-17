@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 # pylint: disable=too-many-return-statements
+# pylint: disable=global-variable-not-assigned
+
 import enum
 import shutil
 import sys
@@ -11,15 +13,16 @@ import re
 import copy
 import traceback
 import math
+# Not requests, to avoid requiring extra dependency.
+import http.client
+import urllib.parse
+import json
 
 from argparse import ArgumentParser
-from typing import Tuple, Union, Optional, TextIO, Dict, Set, List
-import shlex
+from typing import Tuple, Union, Optional, Dict, Set, List
 import subprocess
 from subprocess import Popen
 from subprocess import PIPE
-from subprocess import CalledProcessError
-from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
@@ -42,19 +45,75 @@ except ImportError:
     USE_JINJA = False
     print('WARNING: jinja2 not installed! Template tests will be skipped.')
 
-DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_timeout"
-
 MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    DISTRIBUTED_DDL_TIMEOUT_MSG  # FIXME
+    "is executing longer than distributed_ddl_task_timeout" # FIXME
 ]
 
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
+
+class HTTPError(Exception):
+    def __init__(self, message=None, code=None):
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+    def __str__(self):
+        return 'Code: {}. {}'.format(self.code, self.message)
+
+# Helpers to execute queries via HTTP interface.
+def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default_format=None):
+    client = http.client.HTTPConnection(
+        host=base_args.tcp_host,
+        port=base_args.http_port,
+        timeout=timeout)
+
+    timeout = int(timeout)
+    params = {
+        'query': query,
+
+        # hung check in stress tests may remove the database,
+        # hence we should use 'system'.
+        'database': 'system',
+
+        'connect_timeout': timeout,
+        'receive_timeout': timeout,
+        'send_timeout': timeout,
+
+        'http_connection_timeout': timeout,
+        'http_receive_timeout': timeout,
+        'http_send_timeout': timeout,
+    }
+    if settings is not None:
+        params.update(settings)
+    if default_format is not None:
+        params['default_format'] = default_format
+
+    client.request('POST', '/?' + base_args.client_options_query_str + urllib.parse.urlencode(params))
+    res = client.getresponse()
+    data = res.read()
+    if res.status != 200:
+        raise HTTPError(data.decode(), res.status)
+
+    return data
+
+def clickhouse_execute(base_args, query, timeout=30, settings=None):
+    return clickhouse_execute_http(base_args, query, timeout, settings).strip()
+
+def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
+    data = clickhouse_execute_http(base_args, query, timeout, settings, 'JSONEachRow')
+    if not data:
+        return None
+    rows = []
+    for row in data.strip().splitlines():
+        rows.append(json.loads(row))
+    return rows
+
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -68,6 +127,7 @@ def stop_tests():
     global restarted_tests
 
     with stop_tests_triggered_lock:
+        print("Stopping tests")
         if not stop_tests_triggered.is_set():
             stop_tests_triggered.set()
 
@@ -98,17 +158,13 @@ def get_db_engine(args, database_name):
 
 def get_zookeeper_session_uptime(args):
     try:
-        query = b"SELECT zookeeperSessionUptime()"
-
         if args.replicated_database:
-            query = b"SELECT min(materialize(zookeeperSessionUptime())) " \
-                    b"FROM clusterAllReplicas('test_cluster_database_replicated', system.one) "
-
-        clickhouse_proc = open_client_process(args.client)
-
-        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
-
-        return int(stdout.decode('utf-8').strip())
+            return int(clickhouse_execute(args, """
+            SELECT min(materialize(zookeeperSessionUptime()))
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.one)
+            """))
+        else:
+            return int(clickhouse_execute(args, 'SELECT zookeeperSessionUptime()'))
     except:
         return None
 
@@ -124,22 +180,14 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist(args):
-    try:
-        query = b"SHOW PROCESSLIST FORMAT Vertical"
-
-        if args.replicated_database:
-            query = b"SELECT materialize((hostName(), tcpPort())) as host, * " \
-                    b"FROM clusterAllReplicas('test_cluster_database_replicated', system.processes) " \
-                    b"WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
-
-        clickhouse_proc = open_client_process(args.client)
-
-        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
-
-        return False, stdout.decode('utf-8')
-    except Exception as ex:
-        print("Exception", ex)
-        return True, ""
+    if args.replicated_database:
+        return clickhouse_execute_json(args, """
+        SELECT materialize((hostName(), tcpPort())) as host, *
+        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+        WHERE query NOT LIKE '%system.processes%'
+        """)
+    else:
+        return clickhouse_execute_json(args, 'SHOW PROCESSLIST')
 
 
 # collect server stacktraces using gdb
@@ -305,12 +353,13 @@ class TestCase:
         return None
 
     @staticmethod
-    def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
+    def configure_testcase_args(args, case_file, suite_tmp_dir):
         testcase_args = copy.deepcopy(args)
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
         testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
+        testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
             database = testcase_args.database
@@ -325,23 +374,9 @@ class TestCase:
 
             database = 'test_{suffix}'.format(suffix=random_str())
 
-            with open(stderr_file, 'w') as stderr:
-                client_cmd = testcase_args.testcase_client + " " \
-                             + get_additional_client_options(args)
-
-                clickhouse_proc_create = open_client_process(
-                    universal_newlines=True,
-                    client_args=client_cmd,
-                    stderr_file=stderr)
-
-                try:
-                    clickhouse_proc_create.communicate(
-                        ("CREATE DATABASE " + database + get_db_engine(testcase_args, database)),
-                        timeout=testcase_args.timeout)
-                except TimeoutExpired:
-                    total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
-                    return clickhouse_proc_create, "", "Timeout creating database {} before test".format(
-                        database), total_time
+            clickhouse_execute(args, "CREATE DATABASE " + database + get_db_engine(testcase_args, database), settings={
+                'log_comment': testcase_args.testcase_basename,
+            })
 
             os.environ["CLICKHOUSE_DATABASE"] = database
             # Set temporary directory to match the randomly generated database,
@@ -412,49 +447,50 @@ class TestCase:
     def process_result_impl(self, proc, stdout: str, stderr: str, total_time: float):
         description = ""
 
-        if proc.returncode is None:
-            try:
-                proc.kill()
-            except OSError as e:
-                if e.errno != ESRCH:
-                    raise
+        if proc:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except OSError as e:
+                    if e.errno != ESRCH:
+                        raise
 
-            if stderr:
-                description += stderr
-            return TestResult(self.name, TestStatus.FAIL, FailureReason.TIMEOUT, total_time, description)
+                if stderr:
+                    description += stderr
+                return TestResult(self.name, TestStatus.FAIL, FailureReason.TIMEOUT, total_time, description)
 
-        if proc.returncode != 0:
-            reason = FailureReason.EXIT_CODE
-            description += str(proc.returncode)
+            if proc.returncode != 0:
+                reason = FailureReason.EXIT_CODE
+                description += str(proc.returncode)
 
-            if stderr:
-                description += "\n"
-                description += stderr
+                if stderr:
+                    description += "\n"
+                    description += stderr
 
-            # Stop on fatal errors like segmentation fault. They are sent to client via logs.
-            if ' <Fatal> ' in stderr:
-                reason = FailureReason.SERVER_DIED
+                # Stop on fatal errors like segmentation fault. They are sent to client via logs.
+                if ' <Fatal> ' in stderr:
+                    reason = FailureReason.SERVER_DIED
 
-            if self.testcase_args.stop \
-                    and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) \
-                    and 'Received exception from server' not in stderr:
-                reason = FailureReason.SERVER_DIED
+                if self.testcase_args.stop \
+                        and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) \
+                        and 'Received exception from server' not in stderr:
+                    reason = FailureReason.SERVER_DIED
 
-            if os.path.isfile(self.stdout_file):
-                description += ", result:\n\n"
-                description += '\n'.join(open(self.stdout_file).read().split('\n')[:100])
-                description += '\n'
+                if os.path.isfile(self.stdout_file):
+                    description += ", result:\n\n"
+                    description += '\n'.join(open(self.stdout_file).read().splitlines()[:100])
+                    description += '\n'
 
-            description += "\nstdout:\n{}\n".format(stdout)
-            return TestResult(self.name, TestStatus.FAIL, reason, total_time, description)
+                description += "\nstdout:\n{}\n".format(stdout)
+                return TestResult(self.name, TestStatus.FAIL, reason, total_time, description)
 
         if stderr:
-            description += "\n{}\n".format('\n'.join(stderr.split('\n')[:100]))
+            description += "\n{}\n".format('\n'.join(stderr.splitlines()[:100]))
             description += "\nstdout:\n{}\n".format(stdout)
             return TestResult(self.name, TestStatus.FAIL, FailureReason.STDERR, total_time, description)
 
         if 'Exception' in stdout:
-            description += "\n{}\n".format('\n'.join(stdout.split('\n')[:100]))
+            description += "\n{}\n".format('\n'.join(stdout.splitlines()[:100]))
             return TestResult(self.name, TestStatus.FAIL, FailureReason.EXCEPTION, total_time, description)
 
         if '@@SKIP@@' in stdout:
@@ -510,19 +546,8 @@ class TestCase:
 
     @staticmethod
     def send_test_name_failed(suite: str, case: str) -> bool:
-        clickhouse_proc = open_client_process(args.client, universal_newlines=True)
-
-        failed_to_check = False
-
         pid = os.getpid()
-        query = f"SELECT 'Running test {suite}/{case} from pid={pid}';"
-
-        try:
-            clickhouse_proc.communicate((query), timeout=20)
-        except:
-            failed_to_check = True
-
-        return failed_to_check or clickhouse_proc.returncode != 0
+        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
 
     def run_single_test(self, server_logs_level, client_options):
         args = self.testcase_args
@@ -545,7 +570,7 @@ class TestCase:
         # >> append to stderr (but not stdout since it is not used there),
         # because there are also output of per test database creation
         if not args.database:
-            pattern = '{test} > {stdout} 2>> {stderr}'
+            pattern = '{test} > {stdout} 2> {stderr}'
         else:
             pattern = '{test} > {stdout} 2> {stderr}'
 
@@ -566,28 +591,14 @@ class TestCase:
             need_drop_database = not maybe_passed
 
         if need_drop_database:
-            with open(self.stderr_file, 'a') as stderr:
-                clickhouse_proc_create = open_client_process(client, universal_newlines=True, stderr_file=stderr)
-
             seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
-
             try:
-                drop_database_query = "DROP DATABASE " + database
-                if args.replicated_database:
-                    drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-                clickhouse_proc_create.communicate((drop_database_query), timeout=seconds_left)
-            except TimeoutExpired:
-                # kill test process because it can also hung
-                if proc.returncode is None:
-                    try:
-                        proc.kill()
-                    except OSError as e:
-                        if e.errno != ESRCH:
-                            raise
-
+                clickhouse_execute(args, "DROP DATABASE " + database, timeout=seconds_left, settings={
+                    'log_comment': args.testcase_basename,
+                })
+            except socket.timeout:
                 total_time = (datetime.now() - start_time).total_seconds()
-                return clickhouse_proc_create, "", f"Timeout dropping database {database} after test", total_time
-
+                return None, "", f"Timeout dropping database {database} after test", total_time
             shutil.rmtree(args.test_tmp_dir)
 
         total_time = (datetime.now() - start_time).total_seconds()
@@ -618,12 +629,15 @@ class TestCase:
             if skip_reason is not None:
                 return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0., "")
 
-            if args.testname and self.send_test_name_failed(suite.suite, self.case):
-                description = "\nServer does not respond to health check\n"
-                return TestResult(self.name, TestStatus.FAIL, FailureReason.SERVER_DIED, 0., description)
+            if args.testname:
+                try:
+                    self.send_test_name_failed(suite.suite, self.case)
+                except:
+                    return TestResult(self.name, TestStatus.FAIL, FailureReason.SERVER_DIED, 0.,
+                        "\nServer does not respond to health check\n")
 
             self.runs_count += 1
-            self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path, self.stderr_file)
+            self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path)
             proc, stdout, stderr, total_time = self.run_single_test(server_logs_level, client_options)
 
             result = self.process_result_impl(proc, stdout, stderr, total_time)
@@ -788,12 +802,7 @@ class TestSuite:
     @staticmethod
     def readTestSuite(args, suite_dir_name: str):
         def is_data_present():
-            clickhouse_proc = open_client_process(args.client)
-            (stdout, stderr) = clickhouse_proc.communicate(b"EXISTS TABLE test.hits")
-            if clickhouse_proc.returncode != 0:
-                raise CalledProcessError(clickhouse_proc.returncode, args.client, stderr)
-
-            return stdout.startswith(b'1')
+            return int(clickhouse_execute(args, 'EXISTS TABLE test.hits'))
 
         base_dir = os.path.abspath(args.queries)
         tmp_dir = os.path.abspath(args.tmp)
@@ -869,7 +878,7 @@ def run_tests_array(all_tests_with_params):
 
     while True:
         if is_concurrent:
-            case = queue.get()
+            case = queue.get(timeout=args.timeout * 1.1)
             if not case:
                 break
         else:
@@ -955,42 +964,26 @@ def run_tests_array(all_tests_with_params):
 server_logs_level = "warning"
 
 
-def check_server_started(client, retry_count):
+def check_server_started(args):
     print("Connecting to ClickHouse server...", end='')
 
     sys.stdout.flush()
-
+    retry_count = args.server_check_retries
     while retry_count > 0:
-        clickhouse_proc = open_client_process(client)
-        (stdout, stderr) = clickhouse_proc.communicate(b"SELECT 1")
-
-        if clickhouse_proc.returncode == 0 and stdout.startswith(b"1"):
+        try:
+            clickhouse_execute(args, 'SELECT 1')
             print(" OK")
             sys.stdout.flush()
             return True
-
-        if clickhouse_proc.returncode == 210:
-            # Connection refused, retry
+        except (ConnectionRefusedError, ConnectionResetError):
             print('.', end='')
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
             continue
 
-        code: int = clickhouse_proc.returncode
-
-        print(f"\nClient invocation failed with code {code}:\n\
-            stdout: {stdout}\n\
-            stderr: {stderr}\n\
-            args: {''.join(clickhouse_proc.args)}\n")
-
-        sys.stdout.flush()
-
-        return False
-
     print('\nAll connection tries failed')
     sys.stdout.flush()
-
     return False
 
 
@@ -1006,60 +999,36 @@ class BuildFlags():
     POLYMORPHIC_PARTS = 'polymorphic-parts'
 
 
-def collect_build_flags(client):
-    clickhouse_proc = open_client_process(client)
-    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+def collect_build_flags(args):
     result = []
 
-    if clickhouse_proc.returncode == 0:
-        if b'-fsanitize=thread' in stdout:
-            result.append(BuildFlags.THREAD)
-        elif b'-fsanitize=address' in stdout:
-            result.append(BuildFlags.ADDRESS)
-        elif b'-fsanitize=undefined' in stdout:
-            result.append(BuildFlags.UNDEFINED)
-        elif b'-fsanitize=memory' in stdout:
-            result.append(BuildFlags.MEMORY)
-    else:
-        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+    value = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    if b'-fsanitize=thread' in value:
+        result.append(BuildFlags.THREAD)
+    elif b'-fsanitize=address' in value:
+        result.append(BuildFlags.ADDRESS)
+    elif b'-fsanitize=undefined' in value:
+        result.append(BuildFlags.UNDEFINED)
+    elif b'-fsanitize=memory' in value:
+        result.append(BuildFlags.MEMORY)
 
-    clickhouse_proc = open_client_process(client)
-    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+    value = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+    if b'Debug' in value:
+        result.append(BuildFlags.DEBUG)
+    elif b'RelWithDebInfo' in value or b'Release' in value:
+        result.append(BuildFlags.RELEASE)
 
-    if clickhouse_proc.returncode == 0:
-        if b'Debug' in stdout:
-            result.append(BuildFlags.DEBUG)
-        elif b'RelWithDebInfo' in stdout or b'Release' in stdout:
-            result.append(BuildFlags.RELEASE)
-    else:
-        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+    value = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+    if value in (b'ON', b'1'):
+        result.append(BuildFlags.UNBUNDLED)
 
-    clickhouse_proc = open_client_process(client)
-    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+    value = clickhouse_execute(args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'")
+    if value == b'Ordinary':
+        result.append(BuildFlags.ORDINARY_DATABASE)
 
-    if clickhouse_proc.returncode == 0:
-        if b'ON' in stdout or b'1' in stdout:
-            result.append(BuildFlags.UNBUNDLED)
-    else:
-        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
-
-    clickhouse_proc = open_client_process(client)
-    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.settings WHERE name = 'default_database_engine'")
-
-    if clickhouse_proc.returncode == 0:
-        if b'Ordinary' in stdout:
-            result.append(BuildFlags.ORDINARY_DATABASE)
-    else:
-        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
-
-    clickhouse_proc = open_client_process(client)
-    (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
-
-    if clickhouse_proc.returncode == 0:
-        if stdout == b'0\n':
-            result.append(BuildFlags.POLYMORPHIC_PARTS)
-    else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+    value = int(clickhouse_execute(args, "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"))
+    if value == 0:
+        result.append(BuildFlags.POLYMORPHIC_PARTS)
 
     return result
 
@@ -1086,16 +1055,6 @@ def extract_key(key: str) -> str:
         args.configserver + key)[1]
 
 
-def open_client_process(
-    client_args: str,
-    universal_newlines: bool = False,
-    stderr_file: Optional[TextIO] = None):
-    return Popen(
-        shlex.split(client_args), stdin=PIPE, stdout=PIPE,
-        stderr=stderr_file if stderr_file is not None else PIPE,
-        universal_newlines=True if universal_newlines else None)
-
-
 def do_run_tests(jobs, test_suite: TestSuite, parallel):
     if jobs > 1 and len(test_suite.parallel_tests) > 0:
         print("Found", len(test_suite.parallel_tests), "parallel tests and", len(test_suite.sequential_tests), "sequential tests")
@@ -1120,10 +1079,10 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
             pool.map_async(run_tests_array, parallel_tests_array)
 
             for suit in test_suite.parallel_tests:
-                queue.put(suit)
+                queue.put(suit, timeout=args.timeout * 1.1)
 
             for _ in range(jobs):
-                queue.put(None)
+                queue.put(None, timeout=args.timeout * 1.1)
 
             queue.close()
 
@@ -1165,7 +1124,7 @@ def main(args):
     global server_logs_level
     global restarted_tests
 
-    if not check_server_started(args.client, args.server_check_retries):
+    if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
             If you are using split build, you have to specify -c option."
         if args.hung_check:
@@ -1175,13 +1134,12 @@ def main(args):
             print_stacktraces()
         raise Exception(msg)
 
-    args.build_flags = collect_build_flags(args.client)
+    args.build_flags = collect_build_flags(args)
 
     if args.skip:
         args.skip = set(args.skip)
 
     base_dir = os.path.abspath(args.queries)
-    tmp_dir = os.path.abspath(args.tmp)
 
     # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
@@ -1212,17 +1170,12 @@ def main(args):
         create_database_retries = 0
         while create_database_retries < MAX_RETRIES:
             start_time = datetime.now()
-
-            client_cmd = args.client + " " + get_additional_client_options(args)
-
-            clickhouse_proc_create = open_client_process(client_cmd, universal_newlines=True)
-
-            (stdout, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
-
-            total_time = (datetime.now() - start_time).total_seconds()
-
-            if not need_retry(args, stdout, stderr, total_time):
-                break
+            try:
+                clickhouse_execute(args, "CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name))
+            except HTTPError as e:
+                total_time = (datetime.now() - start_time).total_seconds()
+                if not need_retry(args, e.message, e.message, total_time):
+                    break
             create_database_retries += 1
 
     if args.database and args.database != "test":
@@ -1249,18 +1202,14 @@ def main(args):
 
         # Some queries may execute in background for some time after test was finished. This is normal.
         for _ in range(1, 60):
-            timeout, processlist = get_processlist(args)
-            if timeout or not processlist:
+            processlist = get_processlist(args)
+            if not processlist:
                 break
             sleep(1)
 
-        if timeout or processlist:
-            if processlist:
-                print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
-                print(processlist)
-            else:
-                print(colored("Seems like server hung and cannot respond to queries", args, "red", attrs=["bold"]))
-
+        if processlist:
+            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+            print(json.dumps(processlist, indent=4))
 
             print_stacktraces()
             exit_code.value = 1
@@ -1305,16 +1254,12 @@ def find_binary(name):
 def get_additional_client_options(args):
     if args.client_option:
         return ' '.join('--' + option for option in args.client_option)
-
     return ''
-
 
 def get_additional_client_options_url(args):
     if args.client_option:
         return '&'.join(args.client_option)
-
     return ''
-
 
 if __name__ == '__main__':
     stop_time = None
@@ -1430,17 +1375,35 @@ if __name__ == '__main__':
             parser.print_help()
             sys.exit(1)
 
-        if args.configclient:
-            args.client += ' --config-file=' + args.configclient
+    if args.configclient:
+        args.client += ' --config-file=' + args.configclient
 
-        if os.getenv("CLICKHOUSE_HOST"):
-            args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
+    tcp_host = os.getenv("CLICKHOUSE_HOST")
+    if tcp_host is not None:
+        args.tcp_host = tcp_host
+        args.client += f' --host={tcp_host}'
+    else:
+        args.tcp_host = 'localhost'
 
-        args.tcp_port = int(os.getenv("CLICKHOUSE_PORT_TCP", "9000"))
-        args.client += f" --port={args.tcp_port}"
+    tcp_port = os.getenv("CLICKHOUSE_PORT_TCP")
+    if tcp_port is not None:
+        args.tcp_port = int(tcp_port)
+        args.client += f" --port={tcp_port}"
+    else:
+        args.tcp_port = 9000
 
-        if os.getenv("CLICKHOUSE_DATABASE"):
-            args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
+    http_port = os.getenv("CLICKHOUSE_PORT_HTTP")
+    if http_port is not None:
+        args.http_port = int(http_port)
+    else:
+        args.http_port = 8123
+
+    client_database = os.getenv("CLICKHOUSE_DATABASE")
+    if client_database is not None:
+        args.client += f' --database={client_database}'
+        args.client_database = client_database
+    else:
+        args.client_database = 'default'
 
     if args.client_option:
         # Set options for client
@@ -1457,7 +1420,11 @@ if __name__ == '__main__':
         else:
             os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
-        os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+        client_options_query_str = get_additional_client_options_url(args)
+        args.client_options_query_str = client_options_query_str + '&'
+        os.environ['CLICKHOUSE_URL_PARAMS'] += client_options_query_str
+    else:
+        args.client_options_query_str = ''
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

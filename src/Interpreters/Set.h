@@ -2,13 +2,13 @@
 
 #include <shared_mutex>
 #include <Core/Block.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

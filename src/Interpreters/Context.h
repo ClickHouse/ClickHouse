@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -14,7 +13,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -103,14 +102,22 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+template <class Queue>
 class MergeTreeBackgroundExecutor;
-using MergeTreeBackgroundExecutorPtr = std::shared_ptr<MergeTreeBackgroundExecutor>;
+class MergeMutateRuntimeQueue;
+class OrdinaryRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
 
+class IInputFormat;
 class IOutputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -549,27 +556,25 @@ public:
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
 
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
-
     /// I/O formats.
-    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Don't use streams. Better look at getOutputFormat...
-    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
-
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
@@ -689,6 +694,16 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
+    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    void dropIndexUncompressedCache() const;
+
+    /// Create a cache of index marks of specified size. This can be done only once.
+    void setIndexMarkCache(size_t cache_size_in_bytes);
+    std::shared_ptr<MarkCache> getIndexMarkCache() const;
+    void dropIndexMarkCache() const;
 
     /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);
@@ -847,9 +862,10 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutors();
 
-    MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
-    MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
-    MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
+    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

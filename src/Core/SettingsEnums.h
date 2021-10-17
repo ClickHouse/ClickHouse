@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 

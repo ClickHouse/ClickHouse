@@ -23,7 +23,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -121,6 +121,9 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
 
 void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     LOG_DEBUG(log, "loading user defined objects");
 
     String dir_path = context->getPath() + "user_defined/";
@@ -156,6 +159,9 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 
 void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
 {
+    if (unlikely(!enable_persistence))
+        return;
+  
     String file_path = makeFilePath(context, object_type, object_name);
 
     if (std::filesystem::exists(file_path))
@@ -181,8 +187,11 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
 
 void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
 {
-    String file_path = makeFilePath(context, object_type, object_name);
+    if (unlikely(!enable_persistence))
+        return;
 
+    String file_path = makeFilePath(context, object_type, object_name);
+  
     if (!std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined {} {} was not stored on disk",
                         userDefinedObjectTypeToString(object_type), backQuote(object_name));
@@ -190,6 +199,11 @@ void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQ
     LOG_DEBUG(log, "Removing user defined object {} in file {}", backQuote(object_name), file_path);
 
     std::filesystem::remove(file_path);
+}
+
+void UserDefinedSQLObjectsLoader::enable(bool enable_persistence_)
+{
+    enable_persistence = enable_persistence_;
 }
 
 }

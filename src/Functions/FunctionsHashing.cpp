@@ -9,11 +9,13 @@ namespace DB
 void registerFunctionsHashing(FunctionFactory & factory)
 {
 #if USE_SSL
+    factory.registerFunction<FunctionMD4>();
     factory.registerFunction<FunctionHalfMD5>();
     factory.registerFunction<FunctionMD5>();
     factory.registerFunction<FunctionSHA1>();
     factory.registerFunction<FunctionSHA224>();
     factory.registerFunction<FunctionSHA256>();
+    factory.registerFunction<FunctionSHA384>();
     factory.registerFunction<FunctionSHA512>();
 #endif
     factory.registerFunction<FunctionSipHash64>();

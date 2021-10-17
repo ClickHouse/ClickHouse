@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <algorithm>
 #include <cassert>
 
@@ -42,7 +42,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
         if (!part_info.contains(it->first))
         {
             if (!part_info.isDisjoint(it->first))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug.", name, it->first.getPartName());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartName());
             ++it;
             break;
         }
@@ -65,7 +65,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     }
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.", name, it->first.getPartName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartName());
 
     part_info_to_name.emplace(part_info, name);
     return true;

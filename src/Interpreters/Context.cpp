@@ -14,11 +14,11 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -75,13 +75,14 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
-#include <common/logger_useful.h>
-#include <common/EnumReflection.h>
+#include <base/logger_useful.h>
+#include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
@@ -107,9 +108,10 @@ namespace CurrentMetrics
 
 
     extern const Metric DelayedInserts;
-    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundCommonPoolTask;
 
 }
 
@@ -187,10 +189,14 @@ struct ContextSharedPart
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
-    ConfigurationPtr external_models_config;
+
+    ExternalLoaderXMLConfigRepository * external_models_config_repository = nullptr;
     scope_guard models_repository_guard;
 
+    ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
     scope_guard dictionaries_xmls;
+
+    ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
     scope_guard user_defined_executable_functions_xmls;
 
 #if USE_NLP
@@ -204,6 +210,8 @@ struct ContextSharedPart
     std::unique_ptr<AccessControlManager> access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
+    mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
@@ -239,9 +247,10 @@ struct ContextSharedPart
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
-    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
-    MergeTreeBackgroundExecutorPtr moves_executor;
-    MergeTreeBackgroundExecutorPtr fetch_executor;
+    MergeMutateBackgroundExecutorPtr merge_mutate_executor;
+    OrdinaryBackgroundExecutorPtr moves_executor;
+    OrdinaryBackgroundExecutorPtr fetch_executor;
+    OrdinaryBackgroundExecutorPtr common_executor;
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -319,6 +328,8 @@ struct ContextSharedPart
             fetch_executor->wait();
         if (moves_executor)
             moves_executor->wait();
+        if (common_executor)
+            common_executor->wait();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
@@ -1325,6 +1336,11 @@ const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() cons
 ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
     std::lock_guard lock(shared->external_dictionaries_mutex);
+    return getExternalDictionariesLoaderUnlocked();
+}
+
+ExternalDictionariesLoader & Context::getExternalDictionariesLoaderUnlocked()
+{
     if (!shared->external_dictionaries_loader)
         shared->external_dictionaries_loader.emplace(getGlobalContext());
     return *shared->external_dictionaries_loader;
@@ -1338,6 +1354,11 @@ const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDef
 ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
 {
     std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    return getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+}
+
+ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoaderUnlocked()
+{
     if (!shared->external_user_defined_executable_functions_loader)
         shared->external_user_defined_executable_functions_loader.emplace(getGlobalContext());
     return *shared->external_user_defined_executable_functions_loader;
@@ -1361,19 +1382,28 @@ ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
     return *shared->external_models_loader;
 }
 
-void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name)
+void Context::loadOrReloadModels(const Poco::Util::AbstractConfiguration & config)
 {
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "models_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
     std::lock_guard lock(shared->external_models_mutex);
 
-    if (shared->external_models_config && isSameConfigurationWithMultipleKeys(*config, *shared->external_models_config, "", config_name))
+    auto & external_models_loader = getExternalModelsLoaderUnlocked();
+
+    if (shared->external_models_config_repository)
+    {
+        shared->external_models_config_repository->updatePatterns(patterns);
+        external_models_loader.reloadConfig(shared->external_models_config_repository->getName());
         return;
+    }
 
-    shared->external_models_config = config;
-    shared->models_repository_guard .reset();
-    shared->models_repository_guard = getExternalModelsLoaderUnlocked().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(*config, config_name));
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->external_models_config_repository = repository.get();
+    shared->models_repository_guard = external_models_loader.addConfigRepository(std::move(repository));
 }
-
 
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
@@ -1393,27 +1423,58 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
-void Context::tryCreateEmbeddedDictionaries() const
-{
-    static_cast<void>(getEmbeddedDictionariesImpl(true));
-}
-
-void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
+void Context::tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const
 {
     if (!config.getBool("dictionaries_lazy_load", true))
-    {
-        tryCreateEmbeddedDictionaries();
-        getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-    }
-    shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+        static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
-void Context::loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
-    getExternalUserDefinedExecutableFunctionsLoader().enableAlwaysLoadEverything(true);
-    shared->user_defined_executable_functions_xmls = getExternalUserDefinedExecutableFunctionsLoader().addConfigRepository(
-        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "user_defined_executable_functions_config"));
+    bool dictionaries_lazy_load = config.getBool("dictionaries_lazy_load", true);
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderUnlocked();
+    external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
+
+    if (shared->external_dictionaries_config_repository)
+    {
+        shared->external_dictionaries_config_repository->updatePatterns(patterns);
+        external_dictionaries_loader.reloadConfig(shared->external_dictionaries_config_repository->getName());
+        return;
+    }
+
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->external_dictionaries_config_repository = repository.get();
+    shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
+}
+
+void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
+{
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+
+    auto & external_user_defined_executable_functions_loader = getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+
+    if (shared->user_defined_executable_functions_config_repository)
+    {
+        shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
+        external_user_defined_executable_functions_loader.reloadConfig(shared->user_defined_executable_functions_config_repository->getName());
+        return;
+    }
+
+    auto app_path = getPath();
+    auto config_path = getConfigRef().getString("config-file", "config.xml");
+    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+    shared->user_defined_executable_functions_config_repository = repository.get();
+    shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
 }
 
 #if USE_NLP
@@ -1513,6 +1574,56 @@ void Context::dropMarkCache() const
 }
 
 
+void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->index_uncompressed_cache)
+        throw Exception("Index uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+}
+
+
+UncompressedCachePtr Context::getIndexUncompressedCache() const
+{
+    auto lock = getLock();
+    return shared->index_uncompressed_cache;
+}
+
+
+void Context::dropIndexUncompressedCache() const
+{
+    auto lock = getLock();
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->reset();
+}
+
+
+void Context::setIndexMarkCache(size_t cache_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->index_mark_cache)
+        throw Exception("Index mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+}
+
+MarkCachePtr Context::getIndexMarkCache() const
+{
+    auto lock = getLock();
+    return shared->index_mark_cache;
+}
+
+void Context::dropIndexMarkCache() const
+{
+    auto lock = getLock();
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->reset();
+}
+
+
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
 {
     auto lock = getLock();
@@ -1546,6 +1657,12 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->reset();
+
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->reset();
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
@@ -1793,7 +1910,7 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
-            zk->finalize();
+            zk->finalize("Config changed");
 
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
     }
@@ -2368,20 +2485,14 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return std::make_shared<InputStreamFromInputFormat>(
-        FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size));
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
-BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, shared_from_this());
-}
-
-BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputStream(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
@@ -2785,48 +2896,73 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
 void Context::initializeBackgroundExecutors()
 {
-    // Initialize background executors with callbacks to be able to change pool size and tasks count at runtime.
+    const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
-    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
+    /// With this executor we can execute more tasks than threads we have
+    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        getSettingsRef().background_pool_size,
-        getSettingsRef().background_pool_size,
-        CurrentMetrics::BackgroundPoolTask
+        "MergeMutate",
+        /*max_threads_count*/getSettingsRef().background_pool_size,
+        /*max_tasks_count*/max_merges_and_mutations,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
-    shared->moves_executor = MergeTreeBackgroundExecutor::create
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_pool_size, max_merges_and_mutations);
+
+    shared->moves_executor = OrdinaryBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::MOVE,
+        "Move",
         getSettingsRef().background_move_pool_size,
         getSettingsRef().background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask
     );
 
+    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_move_pool_size, getSettingsRef().background_move_pool_size);
 
-    shared->fetch_executor = MergeTreeBackgroundExecutor::create
+    shared->fetch_executor = OrdinaryBackgroundExecutor::create
     (
-        MergeTreeBackgroundExecutor::Type::FETCH,
+        "Fetch",
         getSettingsRef().background_fetches_pool_size,
         getSettingsRef().background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask
     );
+
+    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
+        getSettingsRef().background_fetches_pool_size, getSettingsRef().background_fetches_pool_size);
+
+    shared->common_executor = OrdinaryBackgroundExecutor::create
+    (
+        "Common",
+        getSettingsRef().background_common_pool_size,
+        getSettingsRef().background_common_pool_size,
+        CurrentMetrics::BackgroundCommonPoolTask
+    );
+
+    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
+        getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
 }
 
 
-MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
     return shared->merge_mutate_executor;
 }
 
-MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
+OrdinaryBackgroundExecutorPtr Context::getMovesExecutor() const
 {
     return shared->moves_executor;
 }
 
-MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
+OrdinaryBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
     return shared->fetch_executor;
+}
+
+OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
+{
+    return shared->common_executor;
 }
 
 

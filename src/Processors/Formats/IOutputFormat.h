@@ -67,9 +67,6 @@ public:
     /// Passed value are delta, that must be summarized.
     virtual void onProgress(const Progress & /*progress*/) {}
 
-    /// Set callback, which will be called before call to finalize().
-    void setBeforeFinalizeCallback(std::function<void()> callback) { before_finalize_callback = callback; }
-
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
@@ -96,7 +93,5 @@ private:
     size_t result_bytes = 0;
 
     bool prefix_written = false;
-
-    std::function<void()> before_finalize_callback;
 };
 }

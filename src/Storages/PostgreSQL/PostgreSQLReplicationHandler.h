@@ -39,7 +39,7 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    NameSet fetchRequiredTables();
+    std::set<String> fetchRequiredTables();
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
@@ -61,7 +61,7 @@ private:
 
     void createPublicationIfNeeded(pqxx::nontransaction & tx);
 
-    NameSet fetchTablesFromPublication(pqxx::work & tx);
+    std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
     void dropPublication(pqxx::nontransaction & ntx);
 
@@ -94,9 +94,6 @@ private:
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
-
-    /// If new publication is created at start up - always drop replication slot if it exists.
-    bool new_publication = false;
 
     const String remote_database_name, current_database_name;
 

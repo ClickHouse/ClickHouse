@@ -187,12 +187,12 @@ function(protobuf_generate_grpc)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND protobuf::protoc
+      COMMAND $<TARGET_FILE:protoc>
       ARGS --${protobuf_generate_grpc_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --plugin=protoc-gen-grpc=$<TARGET_FILE:${protobuf_generate_grpc_PLUGIN}>
            ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} protobuf::protoc ${protobuf_generate_grpc_PLUGIN}
+      DEPENDS ${_abs_file} protoc ${protobuf_generate_grpc_PLUGIN}
       COMMENT "Running ${protobuf_generate_grpc_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()

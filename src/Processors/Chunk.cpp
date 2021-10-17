@@ -104,7 +104,9 @@ Columns Chunk::detachColumns()
 
 void Chunk::addColumn(ColumnPtr column)
 {
-    if (column->size() != num_rows)
+    if (empty())
+        num_rows = column->size();
+    else if (column->size() != num_rows)
         throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
                         toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
 

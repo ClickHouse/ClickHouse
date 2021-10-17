@@ -1,9 +1,9 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>

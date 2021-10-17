@@ -36,7 +36,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     UserDefinedSQLFunctionFactory::instance().registerFunction(function_name, query_ptr);
 
-    if (!is_internal)
+    if (!persist_function)
     {
         try
         {
