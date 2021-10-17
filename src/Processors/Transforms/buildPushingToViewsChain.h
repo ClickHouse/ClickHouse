@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chain.h>

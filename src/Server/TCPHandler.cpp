@@ -843,7 +843,7 @@ namespace
     struct ProfileEventsSnapshot
     {
         UInt64 thread_id;
-        ProfileEvents::Counters counters;
+        ProfileEvents::Counters::Snapshot counters;
         Int64 memory_usage;
         time_t current_time;
     };
@@ -861,7 +861,7 @@ namespace
         auto & value_column = columns[VALUE_COLUMN_INDEX];
         for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
         {
-            UInt64 value = snapshot.counters[event].load(std::memory_order_relaxed);
+            UInt64 value = snapshot.counters[event];
 
             if (value == 0)
                 continue;

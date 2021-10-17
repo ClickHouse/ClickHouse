@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int SYSTEM_ERROR;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -396,7 +397,8 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
         case Protocol::Server::ProfileEvents:
             /// Pass profile events from remote server to client
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                profile_queue->emplace(std::move(packet.block));
+                if (!profile_queue->emplace(std::move(packet.block)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
             break;
 
         default:

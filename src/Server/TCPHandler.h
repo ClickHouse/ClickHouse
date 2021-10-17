@@ -13,7 +13,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
 #include <DataStreams/NativeReader.h>
-#include <DataStreams/IBlockStream_fwd.h>
 
 #include "IServer.h"
 

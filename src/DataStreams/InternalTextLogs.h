@@ -1,6 +1,6 @@
 #pragma once
-#include <DataStreams/IBlockOutputStream.h>
 #include <IO/WriteBuffer.h>
+#include <Core/Block.h>
 
 
 namespace DB
