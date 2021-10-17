@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/FileLog/Buffer_fwd.h>
-#include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -11,6 +10,7 @@
 #include <base/shared_ptr_helper.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -22,6 +22,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class FileLogDirectoryWatcher;
 
 class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
 {
@@ -75,8 +77,8 @@ public:
     struct FileMeta
     {
         String file_name;
-        UInt64 last_writen_position{};
-        UInt64 last_open_end{};
+        UInt64 last_writen_position = 0;
+        UInt64 last_open_end = 0;
     };
 
     using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
@@ -124,6 +126,12 @@ public:
     void increaseStreams();
     void reduceStreams();
 
+    auto & getConditionVariable() { return cv; }
+    auto & getMutex() { return mutex; }
+    void setNewEvents() { has_new_events = true; }
+
+    const auto & getFileLogSettings() const { return filelog_settings; }
+
 protected:
     StorageFileLog(
         const StorageID & table_id_,
@@ -155,8 +163,6 @@ private:
     const String format_name;
     Poco::Logger * log;
 
-    std::mutex status_mutex;
-
     std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
 
     uint64_t milliseconds_to_wait;
@@ -176,6 +182,12 @@ private:
     /// variable to records current unfinishing streams, then if have unfinishing streams,
     /// later select should forbid to execute.
     std::atomic<int> running_streams = 0;
+
+    std::atomic<bool> has_dependent_mv = false;
+
+    std::mutex mutex;
+    bool has_new_events = false;
+    std::condition_variable cv;
 
     void loadFiles();
 

@@ -71,6 +71,7 @@ private:
     {
         RecordData data;
         std::string file_name;
+        /// Offset is the start of a row, which is needed for virtual columns.
         UInt64 offset;
     };
     using Records = std::vector<Record>;
@@ -78,7 +79,7 @@ private:
     Records records;
     Records::const_iterator current;
 
-    String current_file = {};
+    String current_file;
     UInt64 current_offset = 0;
 
     using TaskThread = BackgroundSchedulePool::TaskHolder;

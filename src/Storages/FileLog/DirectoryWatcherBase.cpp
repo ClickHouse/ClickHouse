@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int BAD_FILE_TYPE;
     extern const int IO_SETUP_ERROR;
 }
 
@@ -20,19 +20,19 @@ static constexpr int buffer_size = 4096;
 
 DirectoryWatcherBase::DirectoryWatcherBase(
     FileLogDirectoryWatcher & owner_, const std::string & path_, ContextPtr context_, int event_mask_)
-    : WithContext(context_->getGlobalContext()), owner(owner_), path(path_), event_mask(event_mask_)
+    : WithContext(context_), owner(owner_), path(path_), event_mask(event_mask_)
 {
     if (!std::filesystem::exists(path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The path {} does not exist", path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path {} does not exist", path);
 
     if (!std::filesystem::is_directory(path))
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "The path {} does not a directory", path);
+        throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path {} is not a directory", path);
 
     fd = inotify_init();
     if (fd == -1)
         throw Exception("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
 
-    watch_task = getContext()->getMessageBrokerSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
+    watch_task = getContext()->getSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
 }
 
@@ -63,6 +63,7 @@ void DirectoryWatcherBase::watchFunc()
     pfd.events = POLLIN;
     while (!stopped)
     {
+        const auto & settings = owner.storage.getFileLogSettings();
         if (poll(&pfd, 1, 500) > 0 && pfd.revents & POLLIN)
         {
             int n = read(fd, buffer.data(), buffer.size());
@@ -106,8 +107,25 @@ void DirectoryWatcherBase::watchFunc()
                     n -= sizeof(inotify_event) + p_event->len;
                 }
             }
+
+            /// Wake up reader thread
+            auto & mutex = owner.storage.getMutex();
+            auto & cv = owner.storage.getConditionVariable();
+            std::unique_lock<std::mutex> lock(mutex);
+            owner.storage.setNewEvents();
+            lock.unlock();
+            cv.notify_one();
+        }
+        else
+        {
+            if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
+            break;
         }
     }
+
+    if (!stopped)
+        watch_task->scheduleAfter(milliseconds_to_wait);
 }
 
 
@@ -115,6 +133,9 @@ DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
     close(fd);
+
+    if (watch_task)
+        watch_task->deactivate();
 }
 
 void DirectoryWatcherBase::start()
@@ -122,7 +143,6 @@ void DirectoryWatcherBase::start()
     if (watch_task)
         watch_task->activateAndSchedule();
 }
-
 
 void DirectoryWatcherBase::stop()
 {

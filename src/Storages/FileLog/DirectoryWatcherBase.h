@@ -12,8 +12,10 @@ class FileLogDirectoryWatcher;
 
 class DirectoryWatcherBase : WithContext
 {
+    /// Most of code in this class is copy from the Poco project:
+    /// https://github.com/ClickHouse-Extras/poco/blob/clickhouse/Foundation/src/DirectoryWatcher.cpp
     /// This class is used to get notifications about changes
-    /// to the filesystem, more specifically, to a specific
+    /// to the filesystem, more precisely, to a specific
     /// directory. Changes to a directory are reported via
     /// events.
     ///
@@ -94,6 +96,8 @@ private:
     TaskThread watch_task;
 
     std::atomic<bool> stopped{false};
+
+    uint64_t milliseconds_to_wait;
 
     const std::string path;
     int event_mask;

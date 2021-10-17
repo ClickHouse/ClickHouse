@@ -44,7 +44,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     auto dictionaries_lib_path = context->getDictionariesLibPath();
     bool path_checked = false;
     if (fs::is_symlink(path))
-        path_checked = symlinkStartsWith(path, dictionaries_lib_path);
+        path_checked = isPathOrSymlinkStartsWith(path, dictionaries_lib_path);
     else
         path_checked = pathStartsWith(path, dictionaries_lib_path);
 
