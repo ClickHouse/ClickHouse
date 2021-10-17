@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/FileLog/DirectoryWatcherBase.h>
+#include <Storages/FileLog/StorageFileLog.h>
 
 #include <base/logger_useful.h>
 
@@ -19,7 +20,13 @@ public:
         std::string callback;
     };
 
-    using Events = std::unordered_map<std::string, std::vector<EventInfo>>;
+    struct FileEvents
+    {
+        bool received_modification_event = false;
+        std::vector<EventInfo> file_events;
+    };
+
+    using Events = std::unordered_map<std::string, FileEvents>;
 
     struct Error
     {
@@ -27,7 +34,7 @@ public:
         std::string error_msg = {};
     };
 
-    explicit FileLogDirectoryWatcher(const std::string & path_, ContextPtr context_);
+    FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_);
     ~FileLogDirectoryWatcher() = default;
 
     Events getEventsAndReset();
@@ -36,6 +43,8 @@ public:
 
     const std::string & getPath() const;
 
+private:
+    friend class DirectoryWatcherBase;
     /// Here must pass by value, otherwise will lead to stack-use-of-scope
     void onItemAdded(DirectoryWatcherBase::DirectoryEvent ev);
     void onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev);
@@ -44,8 +53,9 @@ public:
     void onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev);
     void onError(Exception);
 
-private:
     const std::string path;
+
+    StorageFileLog & storage;
 
     /// Note, in order to avoid data race found by fuzzer, put events before dw,
     /// such that when this class destruction, dw will be destructed before events.

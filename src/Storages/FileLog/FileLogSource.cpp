@@ -47,16 +47,19 @@ FileLogSource::FileLogSource(
 void FileLogSource::onFinish()
 {
     storage.closeFilesAndStoreMeta(start, end);
+    finished = true;
 }
 
 Chunk FileLogSource::generate()
 {
+    /// Store metas of last written chunk into disk
+    storage.storeMetas(start, end);
+
     if (!buffer || buffer->noRecords())
     {
         /// There is no onFinish for ISource, we call it
         /// when no records return to close files
         onFinish();
-        finished = true;
         return {};
     }
 
@@ -104,7 +107,6 @@ Chunk FileLogSource::generate()
     if (total_rows == 0)
     {
         onFinish();
-        finished = true;
         return {};
     }
 
@@ -121,9 +123,6 @@ Chunk FileLogSource::generate()
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);
-
-    /// After generate each block, store metas into disk
-    storage.storeMetas(start, end);
 
     return Chunk(result_block.getColumns(), result_block.rows());
 }

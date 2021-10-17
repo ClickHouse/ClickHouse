@@ -37,11 +37,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
-    extern const int NOT_REGULAR_FILE;
+    extern const int BAD_FILE_TYPE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int CANNOT_SELECT;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 namespace
@@ -80,44 +81,31 @@ StorageFileLog::StorageFileLog(
         loadMetaFiles(attach);
         loadFiles();
 
-#ifndef NDEBUG
         assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
         assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-#endif
 
         if (path_is_directory)
-            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, context_);
+            directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
     {
+        if (!attach)
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
 void StorageFileLog::loadMetaFiles(bool attach)
 {
-    /// We just use default storage policy
-    auto storage_policy = getContext()->getStoragePolicy("default");
-    auto data_volume = storage_policy->getVolume(0);
-    root_meta_path = std::filesystem::path(data_volume->getDisk()->getPath()) / getStorageID().getTableName();
+    const auto & storage_id = getStorageID();
+    root_meta_path = std::filesystem::path(getContext()->getPath()) / "metadata" / "filelog_storage_metadata" / storage_id.getDatabaseName()
+        / storage_id.getTableName();
 
-    /// Create table, just create meta data directory
-    if (!attach)
-    {
-        if (std::filesystem::exists(root_meta_path))
-        {
-            throw Exception(
-                ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
-                "Metadata files already exist by path: {}, remove them manually if it is intended",
-                root_meta_path);
-        }
-        std::filesystem::create_directories(root_meta_path);
-    }
     /// Attach table
-    else
+    if (attach)
     {
         /// Meta file may lost, log and create directory
         if (!std::filesystem::exists(root_meta_path))
@@ -128,14 +116,26 @@ void StorageFileLog::loadMetaFiles(bool attach)
         /// Load all meta info to file_infos;
         deserialize();
     }
+    /// Create table, just create meta data directory
+    else
+    {
+        if (std::filesystem::exists(root_meta_path))
+        {
+            throw Exception(
+                ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
+                "Metadata files already exist by path: {}, remove them manually if it is intended",
+                root_meta_path);
+        }
+        std::filesystem::create_directories(root_meta_path);
+    }
 }
 
 void StorageFileLog::loadFiles()
 {
-    if (!symlinkStartsWith(path, getContext()->getUserFilesPath()))
+    if (!isPathOrSymlinkStartsWith(path, getContext()->getUserFilesPath()))
     {
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should start with user_files_path {}", getContext()->getUserFilesPath());
+            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
     }
 
     auto absolute_path = std::filesystem::absolute(path);
@@ -181,10 +181,7 @@ void StorageFileLog::loadFiles()
             if (it->second.file_name != file)
             {
                 it->second.file_name = file;
-                if (std::filesystem::exists(getFullMetaPath(it->second.file_name)))
-                {
-                    std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
-                }
+                std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
             }
         }
         /// New file
@@ -264,12 +261,14 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
+    /// In case of single file (not a watched directory),
+    /// iterated directoy always has one file inside.
     for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
     {
         if (!dir_entry.is_regular_file())
         {
             throw Exception(
-                ErrorCodes::NOT_REGULAR_FILE,
+                ErrorCodes::BAD_FILE_TYPE,
                 "The file {} under {} is not a regular file when deserializing meta files",
                 dir_entry.path().c_str(),
                 root_meta_path);
@@ -315,15 +314,14 @@ Pipe StorageFileLog::read(
     size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
-    auto table_id = getStorageID();
-    size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
     /// If there are MVs depended on this table, we just forbid reading
-    if (dependencies_count)
+    if (has_dependent_mv)
     {
         throw Exception(
-            ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Can not read from table {}, because it has been depended by other tables",
-            table_id.getTableName());
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Can not make `SELECT` query from table {}, because it has attached dependencies. Remove dependant materialized views if "
+            "needed",
+            getStorageID().getTableName());
     }
 
     if (running_streams.load(std::memory_order_relaxed))
@@ -331,16 +329,12 @@ Pipe StorageFileLog::read(
         throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
     }
 
-    /// We need this lock, in case read and streamToViews execute at the same time.
-    /// In case of MV attached during reading
-    std::lock_guard<std::mutex> lock(status_mutex);
-
     updateFileInfos();
 
     /// No files to parse
     if (file_infos.file_names.empty())
     {
-        LOG_INFO(log, "There is a idle table named {}, no files need to parse.", getName());
+        LOG_WARNING(log, "There is a idle table named {}, no files need to parse.", getName());
         return Pipe{};
     }
 
@@ -371,12 +365,12 @@ Pipe StorageFileLog::read(
 
 void StorageFileLog::increaseStreams()
 {
-    running_streams.fetch_add(1, std::memory_order_relaxed);
+    running_streams += 1;
 }
 
 void StorageFileLog::reduceStreams()
 {
-    running_streams.fetch_sub(1, std::memory_order_relaxed);
+    running_streams -= 1;
 }
 
 void StorageFileLog::drop()
@@ -457,9 +451,14 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "File {} has been broken", file);
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Last saved offsset for File {} is bigger than file size ({} > {})",
+                    file,
+                    meta.last_writen_position,
+                    file_end);
             }
-            /// update file end at the monment, used in ReadBuffer and serialize
+            /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
 
             reader.seekg(meta.last_writen_position);
@@ -471,11 +470,9 @@ void StorageFileLog::openFilesAndSetPos()
 
 void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
-#ifndef NDEBUG
     assert(start >= 0);
     assert(start < end);
     assert(end <= file_infos.file_names.size());
-#endif
 
     for (size_t i = start; i < end; ++i)
     {
@@ -494,11 +491,9 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
 void StorageFileLog::storeMetas(size_t start, size_t end)
 {
-#ifndef NDEBUG
     assert(start >= 0);
     assert(start < end);
     assert(end <= file_infos.file_names.size());
-#endif
 
     for (size_t i = start; i < end; ++i)
     {
@@ -577,9 +572,11 @@ void StorageFileLog::threadFunc()
 {
     try
     {
+        updateFileInfos();
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+
         if (dependencies_count)
         {
             auto start_time = std::chrono::steady_clock::now();
@@ -595,13 +592,15 @@ void StorageFileLog::threadFunc()
                 if (streamToViews())
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
-                    if (milliseconds_to_wait < BACKOFF_TRESHOLD)
-                        milliseconds_to_wait *= 2;
+                    if (!path_is_directory
+                        && milliseconds_to_wait
+                            < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                        milliseconds_to_wait *= filelog_settings->poll_directory_watch_events_backoff_factor.value;
                     break;
                 }
                 else
                 {
-                    milliseconds_to_wait = RESCHEDULE_MS;
+                    milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
                 }
 
                 auto ts = std::chrono::steady_clock::now();
@@ -611,7 +610,6 @@ void StorageFileLog::threadFunc()
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
-                updateFileInfos();
             }
         }
     }
@@ -622,12 +620,27 @@ void StorageFileLog::threadFunc()
 
     // Wait for attached views
     if (!task->stream_cancelled)
-        task->holder->scheduleAfter(milliseconds_to_wait);
+    {
+        if (path_is_directory)
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            /// Waiting for watch directory thread to wake up
+            cv.wait(lock, [this] { return has_new_events; });
+            has_new_events = false;
+            task->holder->schedule();
+        }
+        else
+            task->holder->scheduleAfter(milliseconds_to_wait);
+    }
 }
 
 bool StorageFileLog::streamToViews()
 {
-    std::lock_guard<std::mutex> lock(status_mutex);
+    if (running_streams.load(std::memory_order_relaxed))
+    {
+        throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
+    }
+    has_dependent_mv = true;
     Stopwatch watch;
 
     auto table_id = getStorageID();
@@ -726,6 +739,19 @@ void registerStorageFileLog(StorageFactory & factory)
             throw Exception("filelog_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
+        size_t init_sleep_time = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
+        size_t max_sleep_time = filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds();
+        if (init_sleep_time > max_sleep_time)
+        {
+            throw Exception(
+                "poll_directory_watch_events_backoff_init can not be greater than poll_directory_watch_events_backoff_max",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (filelog_settings->poll_directory_watch_events_backoff_factor.changed
+            && !filelog_settings->poll_directory_watch_events_backoff_factor.value)
+            throw Exception("poll_directory_watch_events_backoff_factor can not be 0", ErrorCodes::BAD_ARGUMENTS);
+
         if (args_count != 2)
             throw Exception(
                 "Arguments size of StorageFileLog should be 2, path and format name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -763,11 +789,9 @@ bool StorageFileLog::updateFileInfos()
         /// For table just watch one file, we can not use directory monitor to watch it
         if (!path_is_directory)
         {
-#ifndef NDEBUG
             assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
             assert(file_infos.file_names.size() == file_infos.context_by_name.size());
             assert(file_infos.file_names.size() == 1);
-#endif
 
             if (auto it = file_infos.context_by_name.find(file_infos.file_names[0]); it != file_infos.context_by_name.end())
             {
@@ -783,18 +807,16 @@ bool StorageFileLog::updateFileInfos()
     if (error.has_error)
         LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
-/// These file infos should always have same size(one for one) before update and after update
-#ifndef NDEBUG
+    /// These file infos should always have same size(one for one) before update and after update
     assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-#endif
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & [file_name, event_infos] : events)
+    for (const auto & [file_name, event_info] : events)
     {
         String file_path = getFullDataPath(file_name);
-        for (const auto & event_info : event_infos)
+        for(const auto & event_info : event_info.file_events)
         {
             switch (event_info.type)
             {
@@ -903,22 +925,20 @@ bool StorageFileLog::updateFileInfos()
     }
     file_infos.file_names.swap(valid_files);
 
-/// These file infos should always have same size(one for one)
-#ifndef NDEBUG
+    /// These file infos should always have same size(one for one)
     assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-#endif
 
     return events.empty() || file_infos.file_names.empty();
 }
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    return NamesAndTypesList{{"_file_name", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
+    return NamesAndTypesList{{"_filename", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
 }
 
 Names StorageFileLog::getVirtualColumnNames()
 {
-    return {"_file_name", "_offset"};
+    return {"_filename", "_offset"};
 }
 }

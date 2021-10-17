@@ -140,7 +140,7 @@ bool pathStartsWith(const String & path, const String & prefix_path)
     return pathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
-bool symlinkStartsWith(const String & path, const String & prefix_path)
+bool isPathOrSymlinkStartsWith(const String & path, const String & prefix_path)
 {
     auto filesystem_path = std::filesystem::path(path);
     auto filesystem_prefix_path = std::filesystem::path(prefix_path);
