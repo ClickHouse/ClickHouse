@@ -16,7 +16,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
@@ -34,7 +33,8 @@
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -390,8 +390,8 @@ public:
                     return metadata_snapshot->getSampleBlock();
                 };
 
-                auto format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                auto format = context->getInputFormat(
+                    storage->format_name, *read_buf, get_block_for_format(), max_block_size, storage->format_settings);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -478,8 +478,6 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    BlockInputStreams blocks_input;
-
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
@@ -574,7 +572,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
@@ -584,7 +582,7 @@ public:
     void onStart() override
     {
         if (!prefix_written)
-            writer->writePrefix();
+            writer->doWritePrefix();
         prefix_written = true;
     }
 
@@ -595,7 +593,7 @@ public:
 
     void onFinish() override
     {
-        writer->writeSuffix();
+        writer->doWriteSuffix();
     }
 
     // void flush() override
@@ -608,7 +606,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_timed_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
     bool prefix_written{false};
 };
 

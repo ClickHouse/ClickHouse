@@ -105,7 +105,7 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0);
+    clearOldTemporaryDirectories(merger_mutator, 0);
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
@@ -1063,7 +1063,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
-                clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+                clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
                 return true;
             }, common_assignee_trigger, getStorageID()));
         scheduled = true;
@@ -1447,6 +1447,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context)
 {
+    /// MOVE PARTITION cannot be run in parallel with merges/mutations,
+    /// since otherwise there can be some merge/mutation in progress,
+    /// that will be created in the source table after MOVE PARTITION.
+    std::unique_lock background_lock(currently_processing_in_background_mutex);
+
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
@@ -1509,7 +1514,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             transaction.commit(&lock);
         }
 
-        clearOldMutations(true);
         clearOldPartsFromFilesystem();
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());

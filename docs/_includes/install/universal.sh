@@ -24,10 +24,10 @@ then
         DIR="freebsd"
     elif [ "${ARCH}" = "aarch64" ]
     then
-        #DIR="freebsd-aarch64"
+        DIR="freebsd-aarch64"
     elif [ "${ARCH}" = "powerpc64le" ]
     then
-        #DIR="freebsd-powerpc64le"
+        DIR="freebsd-powerpc64le"
     fi
 elif [ "${OS}" = "Darwin" ]
 then
@@ -47,13 +47,17 @@ then
 fi
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
+echo
 echo "Will download ${URL}"
+echo
 curl -O "${URL}" && chmod a+x clickhouse &&
+echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./clickhouse"
 
 if [ "${OS}" = "Linux" ]
 then
+    echo
     echo "You can also install it:
     sudo ./clickhouse install"
 fi

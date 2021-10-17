@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Common/Stopwatch.h>
 
 #include <vector>
@@ -16,9 +15,6 @@ class WriteBuffer;
 /// Information for profiling. See IBlockInputStream.h
 struct BlockStreamProfileInfo
 {
-    /// Info about stream object this profile info refers to.
-    IBlockInputStream * parent = nullptr;
-
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time
 
@@ -27,9 +23,6 @@ struct BlockStreamProfileInfo
     size_t bytes = 0;
 
     using BlockStreamProfileInfos = std::vector<const BlockStreamProfileInfo *>;
-
-    /// Collect BlockStreamProfileInfo for the nearest sources in the tree named `name`. Example; collect all info for PartialSorting streams.
-    void collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const;
 
     /** Get the number of rows if there were no LIMIT.
       * If there is no LIMIT, 0 is returned.
@@ -59,8 +52,6 @@ struct BlockStreamProfileInfo
     }
 
 private:
-    void calculateRowsBeforeLimit() const;
-
     /// For these fields we make accessors, because they must be calculated beforehand.
     mutable bool applied_limit = false;                    /// Whether LIMIT was applied
     mutable size_t rows_before_limit = 0;
