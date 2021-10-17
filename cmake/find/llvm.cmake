@@ -12,7 +12,7 @@ if (NOT ENABLE_EMBEDDED_COMPILER)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
-    message (${RECONFIGURE_MESSAGE_LEVEL} "submodule /contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "submodule /contrib/llvm is missing. to fix try run: \n git submodule update --init")
 endif ()
 
 set (USE_EMBEDDED_COMPILER 1)
