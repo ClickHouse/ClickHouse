@@ -281,7 +281,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             {
                 /// 123+ or +123+, just stop after 123 or +123.
                 if (has_number)
-                    return ReturnType(true);
+                    goto end;
 
                 /// No digits read yet, but we already read sign, like ++, -+.
                 if (has_sign)
@@ -300,7 +300,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '-':
             {
                 if (has_number)
-                    return ReturnType(true);
+                    goto end;
 
                 if (has_sign)
                 {
