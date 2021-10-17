@@ -98,7 +98,7 @@ struct ReplaceRegexpImpl
         size_t start_pos = 0;
         bool is_first_match = true;
         bool is_start_pos_added_one = false;
-        
+
         while (start_pos < static_cast<size_t>(input.length()))
         {
             /// If no more replacements possible for current string
@@ -117,7 +117,7 @@ struct ReplaceRegexpImpl
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
                 res_offset += bytes_to_copy;
                 start_pos += bytes_to_copy + match.length();
-                
+
                 /// To avoid infinite loop.
                 if (is_first_match && match.length() == 0 && !replace_one && input.length() > 1)
                 {
