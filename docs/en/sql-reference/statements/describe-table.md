@@ -18,3 +18,7 @@ Returns the following `String` type columns:
 -   `comment_expression` — Comment text.
 
 Nested data structures are output in “expanded” format. Each column is shown separately, with the name after a dot.
+
+**See Also**
+
+-   [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting.

@@ -3814,3 +3814,41 @@ Default value: `0`.
 **See Also**
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. Subcolumns appear if [Tuple](../../sql-reference/data-types/tuple.md) or [Map](../../sql-reference/data-types/map.md) data types are used.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+**EXAMPLE**
+
+Query:
+
+``` sql
+CREATE TABLE describe_example (
+    id UInt64, user Tuple (name String, age UInt8), dict Map(String, UInt32)
+) ENGINE = MergeTree() ORDER BY id;
+
+DESCRIBE TABLE describe_example SETTINGS describe_include_subcolumns=1;
+```
+
+Result:
+
+``` text
+┌─name────────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┬─is_subcolumn─┐
+│ id          │ UInt64                        │              │                    │         │                  │                │            0 │
+│ user        │ Tuple(name String, age UInt8) │              │                    │         │                  │                │            0 │
+│ dict        │ Map(String, UInt32)           │              │                    │         │                  │                │            0 │
+│ user.name   │ String                        │              │                    │         │                  │                │            1 │
+│ user.age    │ UInt8                         │              │                    │         │                  │                │            1 │
+│ dict.size0  │ UInt64                        │              │                    │         │                  │                │            1 │
+│ dict.keys   │ Array(String)                 │              │                    │         │                  │                │            1 │
+│ dict.values │ Array(UInt32)                 │              │                    │         │                  │                │            1 │
+└─────────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┴──────────────┘
+```
