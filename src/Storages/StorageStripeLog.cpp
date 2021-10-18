@@ -14,9 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -32,7 +31,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <cassert>
 
