@@ -1,18 +1,21 @@
-#include <DataTypes/Serializations/SerializationTupleElement.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 
 namespace DB
 {
 
-void SerializationTupleElement::enumerateStreams(
+void SerializationNamed::enumerateStreams(
+    SubstreamPath & path,
     const StreamCallback & callback,
-    SubstreamPath & path) const
+    DataTypePtr type,
+    ColumnPtr column) const
 {
     addToPath(path);
-    nested_serialization->enumerateStreams(callback, path);
+    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(name, escape_delimiter)};
+    nested_serialization->enumerateStreams(path, callback, type, column);
     path.pop_back();
 }
 
-void SerializationTupleElement::serializeBinaryBulkStatePrefix(
+void SerializationNamed::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -21,7 +24,7 @@ void SerializationTupleElement::serializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 }
 
-void SerializationTupleElement::serializeBinaryBulkStateSuffix(
+void SerializationNamed::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -30,7 +33,7 @@ void SerializationTupleElement::serializeBinaryBulkStateSuffix(
     settings.path.pop_back();
 }
 
-void SerializationTupleElement::deserializeBinaryBulkStatePrefix(
+void SerializationNamed::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -39,7 +42,7 @@ void SerializationTupleElement::deserializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 }
 
-void SerializationTupleElement::serializeBinaryBulkWithMultipleStreams(
+void SerializationNamed::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -51,7 +54,7 @@ void SerializationTupleElement::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationTupleElement::deserializeBinaryBulkWithMultipleStreams(
+void SerializationNamed::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -63,7 +66,7 @@ void SerializationTupleElement::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationTupleElement::addToPath(SubstreamPath & path) const
+void SerializationNamed::addToPath(SubstreamPath & path) const
 {
     path.push_back(Substream::TupleElement);
     path.back().tuple_element_name = name;
