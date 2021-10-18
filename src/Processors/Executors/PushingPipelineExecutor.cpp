@@ -1,7 +1,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <iostream>
 
 

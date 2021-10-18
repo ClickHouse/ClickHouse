@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/FilterDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>

@@ -18,7 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Databases/MySQL/DatabaseMaterializedMySQL.h>

@@ -8,8 +8,7 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
