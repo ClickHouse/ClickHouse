@@ -118,10 +118,10 @@ void DirectoryWatcherBase::watchFunc()
             /// Wake up reader thread
             owner.storage.wakeUp();
         }
-		else
-		{
-			if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
-				milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
+        else
+        {
+            if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
         }
     }
 }
