@@ -569,14 +569,22 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
     return true;
 }
 
+size_t StorageFileLog::getTableDependentCount() const
+{
+    auto table_id = getStorageID();
+    // Check if at least one direct dependency is attached
+    return DatabaseCatalog::instance().getDependencies(table_id).size();
+}
+
 void StorageFileLog::threadFunc()
 {
     try
     {
         updateFileInfos();
+
         auto table_id = getStorageID();
-        // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+
+        auto dependencies_count = getTableDependentCount();
 
         if (dependencies_count)
         {
@@ -593,9 +601,8 @@ void StorageFileLog::threadFunc()
                 if (streamToViews())
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
-                    if (!path_is_directory
-                        && milliseconds_to_wait
-                            < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                    if (milliseconds_to_wait
+                        < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
                         milliseconds_to_wait *= filelog_settings->poll_directory_watch_events_backoff_factor.value;
                     break;
                 }
@@ -624,7 +631,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (milliseconds_to_wait < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+            if (!getTableDependentCount())
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
