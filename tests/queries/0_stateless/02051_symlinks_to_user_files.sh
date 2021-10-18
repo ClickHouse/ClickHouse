@@ -8,17 +8,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # See 01658_read_file_to_string_column.sh
 user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
-mkdir -p "${user_files_path}/"
-chmod 777 "${user_files_path}"
+FILE_PATH="${user_files_path}/file/"
+mkdir -p ${FILE_PATH}
+chmod 777 ${FILE_PATH}
 
-export FILE="test_symlink_${CLICKHOUSE_DATABASE}"
+FILE="test_symlink_${CLICKHOUSE_DATABASE}"
 
-symlink_path=${user_files_path}/${FILE}
+symlink_path=${FILE_PATH}/${FILE}
 file_path=$CUR_DIR/${FILE}
 
 touch ${file_path}
-chmod +w ${file_path}
 ln -s ${file_path} ${symlink_path}
+chmod +w ${symlink_path}
 
 function cleanup()
 {
