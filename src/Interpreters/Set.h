@@ -2,7 +2,7 @@
 
 #include <shared_mutex>
 #include <Core/Block.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>

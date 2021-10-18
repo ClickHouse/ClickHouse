@@ -13,7 +13,7 @@ option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boringssl/README.md")
     if(USE_INTERNAL_SSL_LIBRARY)
-        message(WARNING "submodule contrib/boringssl is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/boringssl is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal ssl library")
     endif()
     set(USE_INTERNAL_SSL_LIBRARY 0)
