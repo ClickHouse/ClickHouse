@@ -199,6 +199,8 @@ private:
 
     bool updateFileInfos();
 
+    size_t getTableDependentCount() const;
+
     /// Used in shutdown()
     void serialize() const;
     /// Used in FileSource closeFileAndStoreMeta(file_name);
