@@ -997,9 +997,19 @@ if (ThreadFuzzer::instance().isEffective())
     if (config().has("keeper_server"))
     {
 #if USE_NURAFT
-        bool has_connection = has_zookeeper && global_context->tryCheckZooKeeperConnection();
+        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
+        //// of clickhouse-keeper, so start synchronously.
+        bool can_initialize_keeper_async = false;
+
+        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
+        {
+            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
+            /// synchronously.
+            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
+        }
         /// Initialize keeper RAFT.
-        global_context->initializeKeeperDispatcher(has_connection);
+        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
