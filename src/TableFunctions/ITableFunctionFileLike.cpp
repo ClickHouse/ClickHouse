@@ -16,9 +16,6 @@
 
 #include <Processors/ISource.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
-
 namespace DB
 {
 
