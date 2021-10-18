@@ -117,7 +117,7 @@ void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_
         {
             /// Need to get offset before reading record from stream
             auto offset = reader.tellg();
-            if (static_cast<UInt64>(offset) < file_meta.last_open_end)
+            if (static_cast<UInt64>(offset) >= file_meta.last_open_end)
                 break;
             record.offset = offset;
             StorageFileLog::assertStreamGood(reader);

@@ -78,9 +78,9 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
 
     auto event_path = ev.path;
     EventInfo info{ev.event, "onItemModified"};
-    /// Already have MODIFY event for this file
     if (auto it = events.find(event_path); it != events.end())
     {
+        /// Already have MODIFY event for this file
         if (it->second.received_modification_event)
             return;
         else
