@@ -39,17 +39,15 @@ public:
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
         SortDescription description_,
-        size_t max_block_size_,
-        size_t merge_threads_);
+        size_t max_block_size_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
 private:
-    void aggregate();
+    Chunk prepareToMerge();
     void addToAggregation();
-    Chunk popResult();
 
     struct State
     {
@@ -72,17 +70,14 @@ private:
     AggregatingTransformParamsPtr params;
     SortDescription description;
     size_t max_block_size;
-    ThreadPool pool;
-
-    std::mutex results_mutex;
-    std::vector<Chunk> results;
 
     Inputs current_inputs;
+
     std::vector<State> states;
     std::vector<size_t> inputs_to_update;
-    BlocksList blocks;
+
+    std::vector<Chunk> chunks;
     size_t accumulated_rows = 0;
-    bool finished = false;
 };
 
 }

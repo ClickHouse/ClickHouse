@@ -133,7 +133,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
                 variants.without_key = nullptr;
 
-                /// Arenas cannot be destroyed here, since later, in FinalizingSimpleTransform
+                /// Arenas cannot be destroyed here, since later, in FinalizeAggregatedTransform
                 /// there will be finalizeChunk(), but even after
                 /// finalizeChunk() we cannot destroy arena, since some memory
                 /// from Arena still in use, so we attach it to the Chunk to
