@@ -1806,12 +1806,60 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+namespace
+{
 
-bool Context::tryCheckZooKeeperConnection() const
+bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_name, keys);
+
+    for (const auto & key : keys)
+    {
+        if (startsWith(key, "node"))
+        {
+            String host = config.getString(config_name + "." + key + ".host");
+            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
+                return true;
+        }
+    }
+    return false;
+}
+
+}
+
+
+bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 {
     try
     {
-        getZooKeeper();
+        /// If our server is part of main Keeper cluster
+        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper"))
+        {
+            LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
+            getZooKeeper();
+            /// Connected, return true
+            return true;
+        }
+        else
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            getConfigRef().keys("auxiliary_zookeepers", keys);
+
+            /// If our server is part of some auxiliary_zookeeper
+            for (const auto & aux_zk_name : keys)
+            {
+                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
+                {
+                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                    getAuxiliaryZooKeeper(aux_zk_name);
+                    /// Connected, return true
+                    return true;
+                }
+            }
+        }
+
+        /// Our server doesn't depend on our Keeper cluster
         return true;
     }
     catch (...)
@@ -1860,8 +1908,17 @@ void Context::initializeKeeperDispatcher(bool start_async) const
     if (config.has("keeper_server"))
     {
         bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
-        if (start_async && !is_standalone_app)
-            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start, will wait for Keeper asynchronously");
+        if (start_async)
+        {
+            assert(!is_standalone_app);
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster"
+                     ", will wait for Keeper asynchronously");
+        }
+        else
+        {
+            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start,"
+                     "will wait for Keeper synchronously");
+        }
 
         shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
         shared->keeper_storage_dispatcher->initialize(config, is_standalone_app, start_async);
