@@ -24,11 +24,11 @@ done
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/logs/', 'CSV');"
 
-${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
 
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/b.txt
 
-${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
 
 for i in {100..120}
 do
@@ -44,13 +44,13 @@ cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/e.txt
 
 rm ${user_files_path}/logs/d.txt
 
-${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
 
 ${CLICKHOUSE_CLIENT} --query "detach table file_log;"
 ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 
 # should no records return
-${CLICKHOUSE_CLIENT} --query "select *, _file_name, _offset from file_log order by  _file_name, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
 
 truncate ${user_files_path}/logs/a.txt --size 0
 
