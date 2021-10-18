@@ -15,16 +15,16 @@ user_files_path=$(clickhouse-client --query "select _path,_file from file('nonex
 mkdir -p ${user_files_path}/logs/
 rm -rf ${user_files_path}/logs/*
 
+for i in {1..20}
+do
+	echo $i, $i >> ${user_files_path}/logs/a.txt
+done
+
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/logs/', 'CSV');"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order by k as select * from file_log;"
-
-for i in {1..20}
-do
-	echo $i, $i >> ${user_files_path}/logs/a.txt
-done
 
 for i in {1..200}
 do
