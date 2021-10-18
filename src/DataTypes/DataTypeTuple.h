@@ -52,16 +52,11 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-
     SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
-
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
+    const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
@@ -69,11 +64,6 @@ public:
 
     bool haveExplicitNames() const { return have_explicit_names; }
     bool serializeNames() const { return serialize_names; }
-
-private:
-    template <typename OnSuccess, typename OnContinue>
-    auto getSubcolumnEntity(const String & subcolumn_name,
-        const OnSuccess & on_success, const OnContinue & on_continue) const;
 };
 
 }
