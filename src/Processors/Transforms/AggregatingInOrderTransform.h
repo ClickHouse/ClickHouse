@@ -64,10 +64,10 @@ private:
 };
 
 
-class FinalizingSimpleTransform : public ISimpleTransform
+class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
-    FinalizingSimpleTransform(Block header, AggregatingTransformParamsPtr params_)
+    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
         : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
         , params(params_) {}
 
@@ -82,7 +82,7 @@ public:
         }
     }
 
-    String getName() const override { return "FinalizingSimpleTransform"; }
+    String getName() const override { return "FinalizeAggregatedTransform"; }
 
 private:
     AggregatingTransformParamsPtr params;

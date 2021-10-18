@@ -12,13 +12,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct ChunksToMerge : public ChunkInfo
-{
-    std::unique_ptr<Chunks> chunks;
-    Int32 bucket_num = -1;
-    bool is_overflows = false;
-};
-
 GroupingAggregatedTransform::GroupingAggregatedTransform(
     const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
     : IProcessor(InputPorts(num_inputs_, header_), { Block() })

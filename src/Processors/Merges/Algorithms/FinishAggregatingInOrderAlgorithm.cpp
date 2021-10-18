@@ -1,4 +1,5 @@
 #include <Processors/Merges/Algorithms/FinishAggregatingInOrderAlgorithm.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Core/SortCursor.h>
 
@@ -25,14 +26,12 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     SortDescription description_,
-    size_t max_block_size_,
-    size_t merge_threads_)
+    size_t max_block_size_)
     : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
     , description(std::move(description_))
     , max_block_size(max_block_size_)
-    , pool(merge_threads_)
 {
     /// Replace column names in description to positions.
     for (auto & column_description : description)
@@ -60,12 +59,6 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
-    if (finished)
-    {
-        auto res = popResult();
-        return Status(std::move(res), results.empty());
-    }
-
     if (!inputs_to_update.empty())
     {
         Status status(inputs_to_update.back());
@@ -89,13 +82,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     }
 
     if (!best_input)
-    {
-        aggregate();
-        pool.wait();
-        finished = true;
-        auto res = popResult();
-        return Status(std::move(res), results.empty());
-    }
+        return Status(prepareToMerge(), true);
 
     /// Chunk at best_input will be aggregated entirely.
     auto & best_state = states[*best_input];
@@ -126,34 +113,20 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
     /// Do not merge blocks, if there are too few rows.
     if (accumulated_rows >= max_block_size)
-        aggregate();
+        status.chunk = prepareToMerge();
 
-    status.chunk = popResult();
     return status;
 }
 
-Chunk FinishAggregatingInOrderAlgorithm::popResult()
-{
-    std::lock_guard lock(results_mutex);
-
-    if (results.empty())
-        return {};
-
-    auto res = std::move(results.back());
-    results.pop_back();
-    return res;
-}
-
-void FinishAggregatingInOrderAlgorithm::aggregate()
+Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 {
     accumulated_rows = 0;
-    pool.scheduleOrThrowOnError([this, blocks_list = std::move(blocks)]() mutable
-    {
-        auto aggregated = params->aggregator.mergeBlocks(blocks_list, false);
+    auto info = std::make_shared<ChunksToMerge>();
+    info->chunks = std::make_unique<Chunks>(std::move(chunks));
 
-        std::lock_guard lock(results_mutex);
-        results.emplace_back(aggregated.getColumns(), aggregated.rows());
-    });
+    Chunk chunk;
+    chunk.setChunkInfo(std::move(info));
+    return chunk;
 }
 
 void FinishAggregatingInOrderAlgorithm::addToAggregation()
@@ -164,22 +137,25 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         if (!state.isValid() || state.current_row == state.to_row)
             continue;
 
-        if (state.to_row - state.current_row == state.num_rows)
+        size_t current_rows = state.to_row - state.current_row;
+        if (current_rows == state.num_rows)
         {
-            blocks.emplace_back(header.cloneWithColumns(state.all_columns));
+            chunks.emplace_back(state.all_columns, current_rows);
         }
         else
         {
             Columns new_columns;
             new_columns.reserve(state.all_columns.size());
             for (const auto & column : state.all_columns)
-                new_columns.emplace_back(column->cut(state.current_row, state.to_row - state.current_row));
+                new_columns.emplace_back(column->cut(state.current_row, current_rows));
 
-            blocks.emplace_back(header.cloneWithColumns(new_columns));
+            chunks.emplace_back(std::move(new_columns), current_rows);
         }
 
+        chunks.back().setChunkInfo(std::make_shared<AggregatedChunkInfo>());
+
         states[i].current_row = states[i].to_row;
-        accumulated_rows += blocks.back().rows();
+        accumulated_rows += current_rows;
 
         if (!states[i].isValid())
             inputs_to_update.push_back(i);
