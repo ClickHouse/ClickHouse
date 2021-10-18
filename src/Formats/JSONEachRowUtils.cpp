@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 

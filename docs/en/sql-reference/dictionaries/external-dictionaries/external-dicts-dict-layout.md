@@ -155,6 +155,60 @@ Configuration example:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
+### complex_key_sparse_hashed {#complex-key-sparse-hashed}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `sparse_hashed`.
+
+Configuration example:
+
+``` xml
+<layout>
+  <complex_key_sparse_hashed />
+</layout>
+```
+
+``` sql
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
+```
+
+### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
+
+The dictionary is completely stored in memory. Each attribute is stored in array. Key attribute is stored in the form of hashed table where value is index in attributes array. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+
+Configuration example:
+
+``` xml
+<layout>
+  <hashed_array>
+  </hashed_array>
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(HASHED_ARRAY())
+```
+
+### complex_key_hashed_array {#complex-key-hashed-array}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed_array`.
+
+Configuration example:
+
+``` xml
+<layout>
+  <complex_key_hashed_array />
+</layout>
+```
+
+``` sql
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+```
+
+
 ### range_hashed {#range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
@@ -368,7 +422,7 @@ Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionar
         <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
-        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <path>/var/lib/clickhouse/user_files/test_dict</path>
     </ssd_cache>
 </layout>
 ```
@@ -377,7 +431,7 @@ or
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH ./user_files/test_dict))
+    PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}

@@ -5,7 +5,7 @@
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/printPipeline.h>
+#include <QueryPipeline/printPipeline.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
