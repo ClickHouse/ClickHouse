@@ -47,8 +47,6 @@ namespace ErrorCodes
 
 namespace
 {
-    const auto RESCHEDULE_MS = 500;
-    const auto BACKOFF_TRESHOLD = 32000;
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 }
 
@@ -57,7 +55,6 @@ StorageFileLog::StorageFileLog(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     const String & path_,
-    const String & relative_data_path_,
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
@@ -66,10 +63,9 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
     , path(path_)
-    , relative_data_path(relative_data_path_)
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
-    , milliseconds_to_wait(RESCHEDULE_MS)
+    , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -100,9 +96,9 @@ StorageFileLog::StorageFileLog(
 
 void StorageFileLog::loadMetaFiles(bool attach)
 {
-    const auto & storage_id = getStorageID();
-    root_meta_path = std::filesystem::path(getContext()->getPath()) / "metadata" / "filelog_storage_metadata" / storage_id.getDatabaseName()
-        / storage_id.getTableName();
+    const auto & storage = getStorageID();
+    root_meta_path
+        = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
 
     /// Attach table
     if (attach)
@@ -110,8 +106,8 @@ void StorageFileLog::loadMetaFiles(bool attach)
         /// Meta file may lost, log and create directory
         if (!std::filesystem::exists(root_meta_path))
         {
+            /// Create root_meta_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
-            std::filesystem::create_directories(root_meta_path);
         }
         /// Load all meta info to file_infos;
         deserialize();
@@ -180,8 +176,8 @@ void StorageFileLog::loadFiles()
             /// data file have been renamed, need update meta file's name
             if (it->second.file_name != file)
             {
-                it->second.file_name = file;
                 std::filesystem::rename(getFullMetaPath(it->second.file_name), getFullMetaPath(file));
+                it->second.file_name = file;
             }
         }
         /// New file
@@ -261,6 +257,8 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
+    if (!std::filesystem::exists(root_meta_path))
+        return;
     /// In case of single file (not a watched directory),
     /// iterated directoy always has one file inside.
     for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
@@ -324,7 +322,7 @@ Pipe StorageFileLog::read(
             getStorageID().getTableName());
     }
 
-    if (running_streams.load(std::memory_order_relaxed))
+    if (running_streams)
     {
         throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
     }
@@ -408,6 +406,9 @@ void StorageFileLog::shutdown()
         if (task)
         {
             task->stream_cancelled = true;
+
+            /// Reader thread may wait for wake up
+            wakeUp();
 
             LOG_TRACE(log, "Waiting for cleanup");
             task->holder->deactivate();
@@ -623,10 +624,13 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            std::unique_lock<std::mutex> lock(mutex);
-            /// Waiting for watch directory thread to wake up
+			std::unique_lock<std::mutex> lock(mutex);
+			/// Waiting for watch directory thread to wake up
             cv.wait(lock, [this] { return has_new_events; });
             has_new_events = false;
+
+            if (task->stream_cancelled)
+                return;
             task->holder->schedule();
         }
         else
@@ -636,7 +640,7 @@ void StorageFileLog::threadFunc()
 
 bool StorageFileLog::streamToViews()
 {
-    if (running_streams.load(std::memory_order_relaxed))
+    if (running_streams)
     {
         throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
     }
@@ -700,6 +704,14 @@ bool StorageFileLog::streamToViews()
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows, table_id.getNameForLogs(), milliseconds);
 
     return updateFileInfos();
+}
+
+void StorageFileLog::wakeUp()
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    has_new_events = true;
+    lock.unlock();
+	cv.notify_one();
 }
 
 void registerStorageFileLog(StorageFactory & factory)
@@ -767,7 +779,6 @@ void registerStorageFileLog(StorageFactory & factory)
             args.getContext(),
             args.columns,
             path,
-            args.relative_data_path,
             format,
             std::move(filelog_settings),
             args.comment,
@@ -813,10 +824,10 @@ bool StorageFileLog::updateFileInfos()
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & [file_name, event_info] : events)
+    for (const auto & [file_name, event_infos] : events)
     {
         String file_path = getFullDataPath(file_name);
-        for(const auto & event_info : event_info.file_events)
+        for (const auto & event_info : event_infos.file_events)
         {
             switch (event_info.type)
             {
@@ -836,7 +847,7 @@ bool StorageFileLog::updateFileInfos()
                             file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
 
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.inode = inode};
+                            it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
                         else
                             file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
                     }

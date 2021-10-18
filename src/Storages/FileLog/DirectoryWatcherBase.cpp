@@ -1,6 +1,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Storages/FileLog/StorageFileLog.h>
+#include <base/sleep.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -20,7 +22,11 @@ static constexpr int buffer_size = 4096;
 
 DirectoryWatcherBase::DirectoryWatcherBase(
     FileLogDirectoryWatcher & owner_, const std::string & path_, ContextPtr context_, int event_mask_)
-    : WithContext(context_), owner(owner_), path(path_), event_mask(event_mask_)
+    : WithContext(context_)
+    , owner(owner_)
+    , path(path_)
+    , event_mask(event_mask_)
+    , milliseconds_to_wait(owner.storage.getFileLogSettings()->poll_directory_watch_events_backoff_init.totalMilliseconds())
 {
     if (!std::filesystem::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path {} does not exist", path);
@@ -64,8 +70,9 @@ void DirectoryWatcherBase::watchFunc()
     while (!stopped)
     {
         const auto & settings = owner.storage.getFileLogSettings();
-        if (poll(&pfd, 1, 500) > 0 && pfd.revents & POLLIN)
+        if (poll(&pfd, 1, milliseconds_to_wait) > 0 && pfd.revents & POLLIN)
         {
+            milliseconds_to_wait = settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
             int n = read(fd, buffer.data(), buffer.size());
             int i = 0;
             if (n > 0)
@@ -109,33 +116,20 @@ void DirectoryWatcherBase::watchFunc()
             }
 
             /// Wake up reader thread
-            auto & mutex = owner.storage.getMutex();
-            auto & cv = owner.storage.getConditionVariable();
-            std::unique_lock<std::mutex> lock(mutex);
-            owner.storage.setNewEvents();
-            lock.unlock();
-            cv.notify_one();
+            owner.storage.wakeUp();
         }
-        else
-        {
-            if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
-                milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
-            break;
+		else
+		{
+			if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+				milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
         }
     }
-
-    if (!stopped)
-        watch_task->scheduleAfter(milliseconds_to_wait);
 }
-
 
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
     close(fd);
-
-    if (watch_task)
-        watch_task->deactivate();
 }
 
 void DirectoryWatcherBase::start()

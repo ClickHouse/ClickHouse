@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/FileLog/DirectoryWatcherBase.h>
-#include <Storages/FileLog/StorageFileLog.h>
 
 #include <base/logger_useful.h>
 
@@ -10,6 +9,7 @@
 
 namespace DB
 {
+class StorageFileLog;
 
 class FileLogDirectoryWatcher
 {
