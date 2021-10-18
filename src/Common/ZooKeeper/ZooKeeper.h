@@ -13,7 +13,10 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/randomSeed.h>
+#include <Core/SettingsEnums.h>
 #include <unistd.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -37,6 +40,29 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
+struct ShuffleHost
+{
+    String host;
+    /// Priority from the GetPriorityFunc.
+    Int64 priority = 0;
+    UInt32 random = 0;
+
+    void randomize()
+    {
+        random = rng();
+    }
+
+    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
+    {
+        return std::forward_as_tuple(lhs.priority, lhs.random)
+               < std::forward_as_tuple(rhs.priority, rhs.random);
+    }
+
+private:
+    std::minstd_rand rng = std::minstd_rand(randomSeed());
+};
+
+using ZooKeeperLoadBalancing = DB::ZooKeeperLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -58,14 +84,16 @@ public:
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              ZooKeeperLoadBalancing zookeeper_load_balancing_ = ZooKeeperLoadBalancing::RANDOM);
 
     ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              ZooKeeperLoadBalancing zookeeper_load_balancing_ = ZooKeeperLoadBalancing::RANDOM);
 
     /** Config of the form:
         <zookeeper>
@@ -90,6 +118,8 @@ public:
         </zookeeper>
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -284,7 +314,7 @@ private:
     friend class EphemeralNodeHolder;
 
     void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, ZooKeeperLoadBalancing zookeeper_load_balancing_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -310,6 +340,7 @@ private:
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
+    ZooKeeperLoadBalancing zookeeper_load_balancing;
 
     AtomicStopwatch session_uptime;
 };

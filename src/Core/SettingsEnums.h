@@ -168,4 +168,23 @@ enum class ShortCircuitFunctionEvaluation
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
+enum class ZooKeeperLoadBalancing
+{
+    /// among replicas with a minimum number of errors selected randomly
+    RANDOM = 0,
+    /// a replica is selected among the replicas with the minimum number of errors
+    /// with the minimum number of distinguished characters in the replica name and local hostname
+    NEAREST_HOSTNAME,
+    // replicas with the same number of errors are accessed in the same order
+    // as they are specified in the configuration.
+    IN_ORDER,
+    /// if first replica one has higher number of errors,
+    ///   pick a random one from replicas with minimum number of errors
+    FIRST_OR_RANDOM,
+    // round robin across replicas with the same number of errors.
+    ROUND_ROBIN,
+};
+
+DECLARE_SETTING_ENUM(ZooKeeperLoadBalancing)
+
 }
