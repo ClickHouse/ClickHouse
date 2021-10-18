@@ -1816,6 +1816,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
             formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
+                MutationType::Ordinary, //FIXME Lightweight mutations are not supported in ReplicatedMergeTree*
                 entry.znode_name,
                 buf.str(),
                 entry.create_time,

@@ -9,7 +9,7 @@ namespace DB
 // TODO Current implementation is naive, may research other compression formats
 struct MergeTreeDataPartDeletedMask
 {
-    static constexpr auto FILE_NAME = "deleted_mask.bin";
+    static constexpr std::string_view name = "deleted_mask_{}.bin"; // {} substituted by block number
     static constexpr std::hash<size_t> hasher;
 
     std::vector<size_t> deleted_rows;

@@ -615,12 +615,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
+                entry.type,
                 entry.file_name,
                 buf.str(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
-                /* is_done = */parts_to_do_names.empty(),
+                .is_done = parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
@@ -677,6 +678,10 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
+    /// Here we load both ordinary mutations (that exist only as a .txt file with commands that need to be evaluated)
+    /// and lightweight mutations (that also have parts' masks on disks). Such masks are loaded separately while
+    /// evaluating a lightweight mutations (so pre-calculated masks on disks won't be recalculated).
+
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
@@ -685,7 +690,10 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
+
+                LOG_DEBUG(log, "Loading {} mutation: {} entry, commands size: {}",
+                    entry.type, it->name(), entry.commands.size());
+
                 auto [mutations_it, emplaced] = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, mutations_it->second);
             }

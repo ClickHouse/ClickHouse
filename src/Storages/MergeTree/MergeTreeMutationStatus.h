@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Names.h>
+#include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <optional>
 #include <map>
 #include <ctime>
@@ -13,6 +14,7 @@ namespace DB
 
 struct MergeTreeMutationStatus
 {
+    MutationType type;
     String id;
     String command;
     time_t create_time = 0;
