@@ -624,14 +624,19 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-			std::unique_lock<std::mutex> lock(mutex);
-			/// Waiting for watch directory thread to wake up
-            cv.wait(lock, [this] { return has_new_events; });
-            has_new_events = false;
+            if (milliseconds_to_wait < static_cast<uint64_t>(filelog_settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
+                task->holder->scheduleAfter(milliseconds_to_wait);
+            else
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                /// Waiting for watch directory thread to wake up
+                cv.wait(lock, [this] { return has_new_events; });
+                has_new_events = false;
 
-            if (task->stream_cancelled)
-                return;
-            task->holder->schedule();
+                if (task->stream_cancelled)
+                    return;
+                task->holder->schedule();
+            }
         }
         else
             task->holder->scheduleAfter(milliseconds_to_wait);
@@ -711,7 +716,7 @@ void StorageFileLog::wakeUp()
     std::unique_lock<std::mutex> lock(mutex);
     has_new_events = true;
     lock.unlock();
-	cv.notify_one();
+    cv.notify_one();
 }
 
 void registerStorageFileLog(StorageFactory & factory)
