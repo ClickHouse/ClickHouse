@@ -13,19 +13,19 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <base/logger_useful.h>
 
 #include <sys/stat.h>
 

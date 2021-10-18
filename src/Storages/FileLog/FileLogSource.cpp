@@ -1,7 +1,6 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Common/Stopwatch.h>
