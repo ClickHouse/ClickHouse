@@ -40,8 +40,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
-#include <DataStreams/NullBlockOutputStream.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>

@@ -2,7 +2,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>

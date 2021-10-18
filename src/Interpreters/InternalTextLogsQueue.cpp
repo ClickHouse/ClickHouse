@@ -41,7 +41,7 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
     static Block sample_block = getSampleBlock();
 
     if (blocksHaveEqualStructure(sample_block, log_block))
-        emplace(log_block.mutateColumns());
+        (void)(emplace(log_block.mutateColumns()));
     else
         LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
