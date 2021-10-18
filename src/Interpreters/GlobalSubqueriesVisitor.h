@@ -158,6 +158,7 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
+                io.pipeline.dropTotalsAndExtremes();
                 io.pipeline.resize(1);
                 io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr
                 {
