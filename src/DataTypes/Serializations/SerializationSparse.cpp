@@ -137,12 +137,36 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
-    path.push_back(Substream::SparseOffsets);
+    return std::make_shared<SerializationSparse>(prev);
+}
+
+ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
+{
+    return ColumnSparse::create(prev, offsets, size);
+}
+
+void SerializationSparse::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    DataTypePtr type,
+    ColumnPtr column) const
+{
+    const auto * column_sparse = column ? &assert_cast<const ColumnSparse &>(*column) : nullptr;
+
+    SubstreamData data;
+    data.type = type ? std::make_shared<DataTypeUInt64>() : nullptr;
+    data.serialization = std::make_shared<SerializationNumber<UInt64>>();
+    data.column = column_sparse ? column_sparse->getOffsetsPtr() : nullptr;
+
     callback(path);
+
     path.back() = Substream::SparseElements;
-    nested->enumerateStreams(callback, path);
+    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(data.column, column->size())};
+
+    auto next_column = column_sparse ? column_sparse->getValuesPtr() : nullptr;
+    nested->enumerateStreams(path, callback, type, next_column);
     path.pop_back();
 }
 

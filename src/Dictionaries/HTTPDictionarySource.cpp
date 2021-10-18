@@ -1,6 +1,5 @@
 #include "HTTPDictionarySource.h"
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

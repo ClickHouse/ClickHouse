@@ -5,8 +5,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 
-#include <DataStreams/materializeBlock.h>
-
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

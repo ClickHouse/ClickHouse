@@ -46,12 +46,12 @@ void SerializationInfoBuilder::add(const Block & block)
         info->columns[elem.name].num_defaults += static_cast<size_t>(
             num_rows * elem.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
 
-        elem.type->forEachSubcolumn([&](const auto & subcolumn_name, const auto & subcolumn_type, const auto &)
+        elem.type->forEachSubcolumn([&](const auto &, const auto & name, const auto & data)
         {
-            if (!subcolumn_type->supportsSparseSerialization())
+            if (!data.type->supportsSparseSerialization())
                 return;
 
-            auto parent_subcolumn_name = Nested::splitName(subcolumn_name, /*reverse=*/ true).first;
+            auto parent_subcolumn_name = Nested::splitName(name, /*reverse=*/ true).first;
             if (!parent_subcolumn_name.empty())
             {
                 auto parent_subcolumn_type = elem.type->tryGetSubcolumnType(parent_subcolumn_name);
@@ -59,12 +59,10 @@ void SerializationInfoBuilder::add(const Block & block)
                     return;
             }
 
-            auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
-            auto full_name = Nested::concatenateName(elem.name, subcolumn_name);
-
+            auto full_name = Nested::concatenateName(elem.name, name);
             info->columns[full_name].num_defaults += static_cast<size_t>(
-                num_rows * subcolumn->getRatioOfDefaultRows(default_rows_search_sample_ratio));
-        });
+                num_rows * data.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
+        }, elem.type->getDefaultSerialization(), elem.type, elem.column);
     }
 }
 

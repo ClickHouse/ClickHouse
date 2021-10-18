@@ -29,7 +29,6 @@ class WeakHash32;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 
-
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.

@@ -6,7 +6,7 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeCustom.h>
-
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -70,19 +70,31 @@ public:
           return doGetName();
     }
 
+    DataTypePtr getPtr() const { return shared_from_this(); }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
-    static constexpr auto MAIN_SUBCOLUMN_NAME = "__main";
-    virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
-    virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
 
-    using SubcolumnCallback = std::function<void(const String &, const DataTypePtr &, const ISerialization::SubstreamPath &)>;
-    void forEachSubcolumn(const SubcolumnCallback & callback) const;
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+
+    using SubcolumnCallback = std::function<void(
+        const ISerialization::SubstreamPath &,
+        const String &,
+        const ISerialization::SubstreamData &)>;
+
+    static void forEachSubcolumn(
+        const SubcolumnCallback & callback,
+        const SerializationPtr & serialization,
+        const DataTypePtr & type,
+        const ColumnPtr & column);
+
     Names getSubcolumnNames() const;
 
     /// TODO: support more types.
@@ -90,12 +102,6 @@ public:
 
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
-
-    using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
-
-    /// Returns serialization wrapper for reading one particular subcolumn of data type.
-    virtual SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
     /// Chooses serialziation according to serialization kind.
     SerializationPtr getSerialization(ISerialization::Kind kind) const;
@@ -117,17 +123,9 @@ public:
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
-    using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
-
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const;
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback) const { enumerateStreams(serialization, callback, {}); }
-
 protected:
     virtual String doGetName() const { return getFamilyName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
-
-    DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
 public:
     /** Create empty column for corresponding type and default serialization.
