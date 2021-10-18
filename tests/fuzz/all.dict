@@ -650,6 +650,7 @@
 "JSONExtractInt"
 "JSONExtractKeysAndValues"
 "JSONExtractKeysAndValuesRaw"
+"JSONExtractKeys"
 "JSONExtractRaw"
 "JSONExtractString"
 "JSONExtractUInt"
