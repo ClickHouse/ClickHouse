@@ -1,7 +1,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -9,7 +9,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
