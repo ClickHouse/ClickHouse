@@ -121,6 +121,22 @@ void KeeperServer::startup()
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
+    auto latest_snapshot_config = state_machine->getClusterConfig();
+    auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
+
+    if (latest_snapshot_config && latest_log_store_config)
+    {
+        if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
+            state_manager->setClusterConfig(latest_snapshot_config);
+        else
+            state_manager->setClusterConfig(latest_log_store_config);
+    }
+    else if (latest_snapshot_config)
+        state_manager->setClusterConfig(latest_snapshot_config);
+    else if (latest_log_store_config)
+        state_manager->setClusterConfig(latest_log_store_config);
+/// else use parsed config in state_manager constructor (first start)
+
     bool single_server = state_manager->getTotalServers() == 1;
 
     nuraft::raft_params params;
@@ -361,6 +377,41 @@ void KeeperServer::waitInit()
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
+}
+
+void KeeperServer::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto diff = state_manager->getConfigurationDiff(config);
+    if (diff.empty())
+    {
+        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+        return;
+    }
+    else if (diff.size() > 1)
+    {
+        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
+    }
+
+    for (auto & task : diff)
+    {
+        if (task.action_type == ConfigUpdateActionType::AddServer)
+        {
+            auto result = raft_instance->add_srv(*task.server);
+            if (!result->get_accepted())
+                throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to add server (id {}) was not accepted by RAFT", task.server->get_id());
+        }
+        else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+        {
+            auto result = raft_instance->remove_srv(task.server->get_id());
+            if (!result->get_accepted())
+                throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to remove server (id {}) was not accepted by RAFT", task.server->get_id());
+        }
+        else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
+            raft_instance->set_priority(task.server->get_id(), task.server->get_priority());
+        else
+            LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+    }
+
 }
 
 }

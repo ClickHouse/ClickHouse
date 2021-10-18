@@ -83,6 +83,8 @@ public:
     void shutdown();
 
     int getServerID() const { return server_id; }
+
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 };
 
 }
