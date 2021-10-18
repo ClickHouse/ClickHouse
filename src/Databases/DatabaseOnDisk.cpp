@@ -53,6 +53,15 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
 
+    auto global_context = context->getGlobalContext();
+    if (global_context
+        && global_context->getApplicationType() == Context::ApplicationType::LOCAL
+        && !global_context->isBackgroundExecutorsInitialized()
+        && ast_create_query.storage && endsWith(ast_create_query.storage->engine->name, "MergeTree"))
+    {
+        global_context->initializeBackgroundExecutors();
+    }
+
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
