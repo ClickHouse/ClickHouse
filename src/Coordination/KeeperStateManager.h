@@ -6,16 +6,42 @@
 #include <Coordination/CoordinationSettings.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {
+
+using KeeperServerConfigPtr = nuraft::ptr<nuraft::srv_config>;
+
+struct KeeperServersConfiguration
+{
+    int port;
+    KeeperServerConfigPtr config;
+    std::unordered_set<int> servers_start_as_followers;
+    ClusterConfigPtr cluster_config;
+};
+
+enum class ConfigUpdateActionType
+{
+    RemoveServer,
+    AddServer,
+    UpdatePriority,
+};
+
+struct ConfigUpdateAction
+{
+    ConfigUpdateActionType action_type;
+    KeeperServerConfigPtr server;
+};
+
+using ConfigUpdateActions = std::vector<ConfigUpdateAction>;
 
 class KeeperStateManager : public nuraft::state_mgr
 {
 public:
     KeeperStateManager(
         int server_id_,
-        const std::string & config_prefix,
+        const std::string & config_prefix_,
         const Poco::Util::AbstractConfiguration & config,
         const CoordinationSettingsPtr & coordination_settings,
         bool standalone_keeper);
@@ -30,7 +56,7 @@ public:
 
     void flushLogStore();
 
-    nuraft::ptr<nuraft::cluster_config> load_config() override { return cluster_config; }
+    nuraft::ptr<nuraft::cluster_config> load_config() override { return servers_configuration.cluster_config; }
 
     void save_config(const nuraft::cluster_config & config) override;
 
@@ -40,17 +66,17 @@ public:
 
     nuraft::ptr<nuraft::log_store> load_log_store() override { return log_store; }
 
-    Int32 server_id() override { return my_server_id; }
+    int32_t server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return my_server_config; }
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return servers_configuration.config; }
 
     void system_exit(const int /* exit_code */) override {}
 
-    int getPort() const { return my_port; }
+    int getPort() const { return servers_configuration.port; }
 
     bool shouldStartAsFollower() const
     {
-        return start_as_follower_servers.count(my_server_id);
+        return servers_configuration.servers_start_as_followers.count(my_server_id);
     }
 
     bool isSecure() const
@@ -60,18 +86,25 @@ public:
 
     nuraft::ptr<KeeperLogStore> getLogStore() const { return log_store; }
 
-    uint64_t getTotalServers() const { return total_servers; }
+    uint64_t getTotalServers() const { return servers_configuration.cluster_config->get_servers().size(); }
+
+    ClusterConfigPtr getLatestConfigFromLogStore() const;
+
+    void setClusterConfig(const ClusterConfigPtr & cluster_config);
+
+    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
 
 private:
     int my_server_id;
-    int my_port;
     bool secure;
-    uint64_t total_servers{0};
-    std::unordered_set<int> start_as_follower_servers;
+    std::string config_prefix;
+    KeeperServersConfiguration servers_configuration;
     nuraft::ptr<KeeperLogStore> log_store;
-    nuraft::ptr<nuraft::srv_config> my_server_config;
-    nuraft::ptr<nuraft::cluster_config> cluster_config;
     nuraft::ptr<nuraft::srv_state> server_state;
+
+    Poco::Logger * log;
+
+    KeeperServersConfiguration parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 };
 
 }

@@ -62,7 +62,6 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
-
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
@@ -101,6 +100,8 @@ public:
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper);
+
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();

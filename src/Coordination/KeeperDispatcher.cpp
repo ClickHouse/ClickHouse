@@ -273,6 +273,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
         server->waitInit();
         LOG_DEBUG(log, "Quorum initialized");
+
+        updateConfiguration(config);
     }
     catch (...)
     {
@@ -495,6 +497,19 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Forcefully wait for request execution because we cannot process any other
     /// requests for this client until it get new session id.
     return future.get();
+}
+
+void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    if (isLeader())
+    {
+        server->updateConfiguration(config);
+    }
+    else
+    {
+        LOG_INFO(log, "Configuration changed, but we are not leader, so we will wait update from leader");
+    }
+
 }
 
 }
