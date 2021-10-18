@@ -4,7 +4,6 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -35,7 +34,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
@@ -56,6 +54,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <boost/range/adaptor/filtered.hpp>
@@ -1344,7 +1343,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1360,35 +1359,44 @@ void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifet
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it->name(), "tmp_"))
+            const std::string & basename = it->name();
+            if (!startsWith(basename, "tmp_"))
             {
-                try
+                continue;
+            }
+            const std::string & full_path = fullPath(disk, it->path());
+            if (merger_mutator.hasTemporaryPart(basename))
+            {
+                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                continue;
+            }
+
+            try
+            {
+                if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
-                    {
-                        LOG_WARNING(log, "Removing temporary directory {}", fullPath(disk, it->path()));
-                        disk->removeRecursive(it->path());
-                    }
+                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
+                    disk->removeRecursive(it->path());
                 }
-                /// see getModificationTime()
-                catch (const ErrnoException & e)
+            }
+            /// see getModificationTime()
+            catch (const ErrnoException & e)
+            {
+                if (e.getErrno() == ENOENT)
                 {
-                    if (e.getErrno() == ENOENT)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
-                catch (const fs::filesystem_error & e)
+                else
+                    throw;
+            }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
                 {
-                    if (e.code() == std::errc::no_such_file_or_directory)
-                    {
-                        /// If the file is already deleted, do nothing.
-                    }
-                    else
-                        throw;
+                    /// If the file is already deleted, do nothing.
                 }
+                else
+                    throw;
             }
         }
     }
@@ -3664,9 +3672,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             buf,
             metadata_snapshot->getPartitionKey().sample_block,
             local_context->getSettingsRef().max_block_size);
-        auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
+        QueryPipeline pipeline(std::move(input_format));
+        PullingPipelineExecutor executor(pipeline);
 
-        auto block = input_stream->read();
+        Block block;
+        executor.pull(block);
+
         if (!block || !block.rows())
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str + "`",
@@ -4396,6 +4407,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
     const SelectQueryInfo & query_info,
+    const DataPartsVector & parts,
+    DataPartsVector & normal_parts,
     ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
@@ -4403,9 +4416,16 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug",
             ErrorCodes::LOGICAL_ERROR);
 
-    auto block = metadata_snapshot->minmax_count_projection->sample_block;
-    auto minmax_count_columns = block.mutateColumns();
+    auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
+    bool need_primary_key_max_column = false;
+    const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
+    if (!primary_key_max_column_name.empty())
+    {
+        need_primary_key_max_column = std::any_of(
+            required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
+    }
 
+    auto minmax_count_columns = block.mutateColumns();
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
         auto func = column.getAggregateFunction();
@@ -4420,7 +4440,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    auto parts = getDataPartsVector();
     ASTPtr expression_ast;
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
     if (virtual_columns_block.rows() == 0)
@@ -4444,21 +4463,28 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
-        if (2 * minmax_idx_size + 1 != minmax_count_columns.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "minmax_count projection should have twice plus one the number of ranges in minmax_idx. 2 * minmax_idx_size + 1 = {}, "
-                "minmax_count_columns.size() = {}. It's a bug",
-                2 * minmax_idx_size + 1,
-                minmax_count_columns.size());
+        if (need_primary_key_max_column && !part->index_granularity.hasFinalMark())
+        {
+            normal_parts.push_back(part);
+            continue;
+        }
 
+        size_t pos = 0;
+        if (!primary_key_max_column_name.empty())
+        {
+            const auto & primary_key_column = *part->index[0];
+            auto primary_key_column_size = primary_key_column.size();
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            insert(min_column, primary_key_column[0]);
+            insert(max_column, primary_key_column[primary_key_column_size - 1]);
+        }
+
+        size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
-            size_t min_pos = i * 2;
-            size_t max_pos = i * 2 + 1;
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[min_pos]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[max_pos]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
@@ -4720,33 +4746,74 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
     if (metadata_snapshot->minmax_count_projection)
         add_projection_candidate(*metadata_snapshot->minmax_count_projection);
+    std::optional<ProjectionCandidate> minmax_conut_projection_candidate;
+    if (!candidates.empty())
+    {
+        minmax_conut_projection_candidate.emplace(std::move(candidates.front()));
+        candidates.clear();
+    }
+    MergeTreeDataSelectExecutor reader(*this);
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
+    if (settings.select_sequential_consistency)
+    {
+        if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
+            max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+    }
+    auto parts = getDataPartsVector();
 
-    // Only add more projection candidates if minmax_count_projection cannot match.
-    if (candidates.empty())
+    // If minmax_count_projection is a valid candidate, check its completeness.
+    if (minmax_conut_projection_candidate)
+    {
+        DataPartsVector normal_parts;
+        query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
+            metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
+
+        if (normal_parts.empty())
+        {
+            selected_candidate = &*minmax_conut_projection_candidate;
+            selected_candidate->complete = true;
+            min_sum_marks = query_info.minmax_count_projection_block.rows();
+        }
+        else
+        {
+            if (normal_parts.size() == parts.size())
+            {
+                // minmax_count_projection is useless.
+            }
+            else
+            {
+                auto normal_result_ptr = reader.estimateNumMarksToRead(
+                    normal_parts,
+                    analysis_result.required_columns,
+                    metadata_snapshot,
+                    metadata_snapshot,
+                    query_info,
+                    query_context,
+                    settings.max_threads,
+                    max_added_blocks);
+
+                if (!normal_result_ptr->error())
+                {
+                    selected_candidate = &*minmax_conut_projection_candidate;
+                    selected_candidate->merge_tree_normal_select_result_ptr = normal_result_ptr;
+                    min_sum_marks = query_info.minmax_count_projection_block.rows() + normal_result_ptr->marks();
+                }
+            }
+
+            // We cannot find a complete match of minmax_count_projection, add more projections to check.
+            for (const auto & projection : metadata_snapshot->projections)
+                add_projection_candidate(projection);
+        }
+    }
+    else
     {
         for (const auto & projection : metadata_snapshot->projections)
             add_projection_candidate(projection);
     }
-    else
-    {
-        selected_candidate = &candidates.front();
-        query_info.minmax_count_projection_block
-            = getMinMaxCountProjectionBlock(metadata_snapshot, selected_candidate->required_columns, query_info, query_context);
-        min_sum_marks = query_info.minmax_count_projection_block.rows();
-    }
 
     // Let's select the best projection to execute the query.
-    if (!candidates.empty() && !selected_candidate)
+    if (!candidates.empty())
     {
-        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
-        if (settings.select_sequential_consistency)
-        {
-            if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
-                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
-        }
-
-        auto parts = getDataPartsVector();
-        MergeTreeDataSelectExecutor reader(*this);
         query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
             parts,
             analysis_result.required_columns,
@@ -4761,7 +4828,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         {
             // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
             // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+            auto sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+            if (sum_marks < min_sum_marks)
+            {
+                selected_candidate = nullptr;
+                min_sum_marks = sum_marks;
+            }
         }
 
         /// Favor aggregate projections

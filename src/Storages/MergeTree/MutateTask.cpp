@@ -2,11 +2,11 @@
 
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Common/SquashingTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
