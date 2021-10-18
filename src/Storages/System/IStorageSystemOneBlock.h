@@ -6,7 +6,7 @@
 #include <Storages/IStorage.h>
 #include <base/shared_ptr_helper.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

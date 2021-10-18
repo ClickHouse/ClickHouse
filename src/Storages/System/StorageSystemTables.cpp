@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
