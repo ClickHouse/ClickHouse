@@ -7,15 +7,13 @@ import statistics
 
 
 cluster = ClickHouseCluster(__file__)
-
-node = cluster.add_instance("node",
-                            main_configs=["configs/storage.xml"],
-                            tmpfs=["/disk:size=3G"])
+node = cluster.add_instance("node", main_configs=["configs/storage.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
+        cluster.exec_in_container(node.docker_id, ["mkdir", "-p", "/var/lib/clickhouse/encdsk/"])
         yield
     finally:
         cluster.shutdown()
@@ -120,11 +118,11 @@ def test_performance(capsys):
 
 # count = 10000000
 # num_repeats = 200
-# INSERT: median=0.17236435413360596 seconds, min=0.16443753242492676 seconds
-# SELECT: median=0.06171703338623047 seconds, min=0.05977463722229004 seconds
-# INSERT (AES_128_CTR): median=0.1868298053741455 seconds, min=0.1780850887298584, diff=+0.01446545124053955 seconds (+8.392368197734694%)
-# SELECT (AES_128_CTR): median=0.06535756587982178 seconds, min=0.06269025802612305, diff=+0.0036405324935913086 seconds (+5.898748358185892%)
-# INSERT (AES_192_CTR): median=0.18871784210205078 seconds, min=0.18044328689575195, diff=+0.016353487968444824 seconds (+9.48774359446074%)
-# SELECT (AES_192_CTR): median=0.0659334659576416 seconds, min=0.06291937828063965, diff=+0.004216432571411133 seconds (+6.831878235339565%)
-# INSERT (AES_256_CTR): median=0.19133424758911133 seconds, min=0.18201780319213867, diff=+0.01896989345550537 seconds (+11.005694043213312%)
-# SELECT (AES_256_CTR): median=0.06623411178588867 seconds, min=0.06383156776428223, diff=+0.004517078399658203 seconds (+7.319014138916789%)
+# INSERT: median=0.19331371784210205 seconds, min=0.18053174018859863 seconds
+# SELECT: median=0.06115412712097168 seconds, min=0.059880733489990234 seconds
+# INSERT (AES_128_CTR): median=0.20322048664093018 seconds, min=0.19486641883850098, diff=+0.009906768798828125 seconds (+5.1247107082798635%)
+# SELECT (AES_128_CTR): median=0.06926953792572021 seconds, min=0.06745171546936035, diff=+0.008115410804748535 seconds (+13.2704221069088%)
+# INSERT (AES_192_CTR): median=0.20535707473754883 seconds, min=0.19739723205566406, diff=+0.012043356895446777 seconds (+6.229954619818417%)
+# SELECT (AES_192_CTR): median=0.06943714618682861 seconds, min=0.0680079460144043, diff=+0.008283019065856934 seconds (+13.544497249501946%)
+# INSERT (AES_256_CTR): median=0.20740187168121338 seconds, min=0.1996595859527588, diff=+0.014088153839111328 seconds (+7.2877155311960236%)
+# SELECT (AES_256_CTR): median=0.06984663009643555 seconds, min=0.06796693801879883, diff=+0.008692502975463867 seconds (+14.214090503276816%)

@@ -3,7 +3,7 @@
         <disks>
             <disk_local>
                 <type>local</type>
-                <path>/disk/</path>
+                <path>/var/lib/clickhouse/encdsk/</path>
             </disk_local>
             <disk_aes_128_ctr>
                 <type>encrypted</type>

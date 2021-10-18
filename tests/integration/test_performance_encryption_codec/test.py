@@ -8,9 +8,7 @@ import statistics
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node",
-                            main_configs=["configs/encryption_codec.xml", "configs/storage.xml"],
-                            tmpfs=["/disk:size=3G"])
+node = cluster.add_instance("node", main_configs=["configs/encryption_codec.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -27,14 +25,12 @@ def get_table_name(enctype):
 def create_table(enctype):
     table_name = get_table_name(enctype)
     codec_clause = (" Codec(LZ4, " + enctype + ")") if enctype else ""
-    policy_name = "local_policy"
     node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
     node.query(
         """
         CREATE TABLE {} (x Int32{})
         ENGINE=MergeTree() ORDER BY x
-        SETTINGS storage_policy='{}'
-        """.format(table_name, codec_clause, policy_name))
+        """.format(table_name, codec_clause))
 
 def insert_data(enctype, count):
     table_name = get_table_name(enctype)
@@ -114,9 +110,9 @@ def test_performance(capsys):
 
 # count = 10000000
 # num_repeats = 200
-# INSERT: median=0.17302656173706055 seconds, min=0.1651153564453125 seconds
-# SELECT: median=0.06173574924468994 seconds, min=0.06009984016418457 seconds
-# INSERT (AES_128_GCM_SIV): median=0.20429766178131104 seconds, min=0.1951892375946045, diff=+0.03127110004425049 seconds (+18.073005514477916%)
-# SELECT (AES_128_GCM_SIV): median=0.06699442863464355 seconds, min=0.06418538093566895, diff=+0.005258679389953613 seconds (+8.518045790795883%)
-# INSERT (AES_256_GCM_SIV): median=0.20875346660614014 seconds, min=0.2007150650024414, diff=+0.03572690486907959 seconds (+20.648219851569323%)
-# SELECT (AES_256_GCM_SIV): median=0.06749582290649414 seconds, min=0.06517839431762695, diff=+0.005760073661804199 seconds (+9.330207752033784%)
+# INSERT: median=0.1912320852279663 seconds, min=0.1806344985961914 seconds
+# SELECT: median=0.06103801727294922 seconds, min=0.059705495834350586 seconds
+# INSERT (AES_128_GCM_SIV): median=0.22002243995666504 seconds, min=0.21146249771118164, diff=+0.02879035472869873 seconds (+15.055190500264622%)
+# SELECT (AES_128_GCM_SIV): median=0.06571781635284424 seconds, min=0.06384015083312988, diff=+0.0046797990798950195 seconds (+7.667023420777151%)
+# INSERT (AES_256_GCM_SIV): median=0.22456145286560059 seconds, min=0.21617341041564941, diff=+0.03332936763763428 seconds (+17.428752919732375%)
+# SELECT (AES_256_GCM_SIV): median=0.06642782688140869 seconds, min=0.06438946723937988, diff=+0.005389809608459473 seconds (+8.830250144524475%)
