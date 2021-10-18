@@ -202,6 +202,8 @@ public:
       */
     virtual void prefetch() {}
 
+    virtual void setReadUntilPosition(size_t /* position */) {}
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),

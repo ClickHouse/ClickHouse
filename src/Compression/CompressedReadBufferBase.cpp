@@ -14,6 +14,7 @@
 #include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Disks/DiskRestartProxy.h>
 
 
 namespace ProfileEvents
@@ -105,13 +106,6 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     }
 
     throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
-}
-
-
-void CompressedReadBufferBase::setRightOffset(size_t offset)
-{
-    if (auto * async_in = dynamic_cast<AsynchronousReadIndirectBufferFromRemoteFS *>(compressed_in))
-        async_in->setRightOffset(offset);
 }
 
 

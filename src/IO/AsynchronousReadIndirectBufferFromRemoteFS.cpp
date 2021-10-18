@@ -78,8 +78,10 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     if (absolute_position > last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                        absolute_position, last_offset);
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}) {}",
+                        absolute_position, last_offset, buffer_events);
+    }
 
     /// Prefetch even in case hasPendingData() == true.
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
@@ -90,12 +92,12 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 }
 
 
-void AsynchronousReadIndirectBufferFromRemoteFS::setRightOffset(size_t offset)
+void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t offset)
 {
     buffer_events += "-- Set last offset " + toString(offset) + "--";
     if (prefetch_future.valid())
     {
-        std::cerr << buffer_events << std::endl;
+        LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
         /// TODO: Planning to put logical error here after more testing,
         // because seems like future is never supposed to be valid at this point.
         std::terminate();
@@ -107,7 +109,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setRightOffset(size_t offset)
     }
 
     last_offset = offset;
-    impl->setRightOffset(offset);
+    impl->setReadUntilPosition(offset);
 }
 
 
@@ -250,7 +252,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::finalize()
         prefetch_future.wait();
         prefetch_future = {};
     }
-    std::cerr << "Buffer events: " << buffer_events << std::endl;
+    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
 }
 
 

@@ -187,9 +187,9 @@ void MergeTreeReaderStream::adjustForRange(size_t left_mark, size_t right_mark)
     {
         last_right_offset = right_offset;
         if (cached_buffer)
-            cached_buffer->setRightOffset(last_right_offset);
+            cached_buffer->setReadUntilPosition(last_right_offset);
         if (non_cached_buffer)
-            non_cached_buffer->setRightOffset(last_right_offset);
+            non_cached_buffer->setReadUntilPosition(last_right_offset);
     }
 }
 

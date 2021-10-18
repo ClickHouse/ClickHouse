@@ -58,6 +58,8 @@ public:
         profile_callback = profile_callback_;
         clock_type = clock_type_;
     }
+
+    void setReadUntilPosition(size_t position) override { file_in->setReadUntilPosition(position); }
 };
 
 }
