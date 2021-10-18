@@ -279,24 +279,26 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrDefault {#todate32-or-null}
+## toDate32OrDefault {#todate32-or-default}
 
-The same as [toDate32](#todate32) but returns default value if invalid argument is received.
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the lower border value supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if invalid argument is received.
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT toDate32OrDefault('1955-01-01'), toDate32OrDefault('');
+SELECT
+    toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
+    toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
 ```
 
 Result:
 
 ``` text
-┌─toDate32OrDefault('1955-01-01')─┬─toDate32OrDefault('')─┐
-│                      1955-01-01 │            1970-01-01 │
-└─────────────────────────────────┴───────────────────────┘
+┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
+│                                              1930-01-01 │                                                2020-01-01 │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
@@ -362,7 +364,7 @@ Result:
 ```
 
 
-## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ornull}
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
 
 Converts an input string to a [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
 
@@ -855,25 +857,25 @@ Result:
 ```
 
 
-## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_null}
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
 
 Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
 
 **Syntax**
 
 ```sql
-accurateCastOrNull(x, T)
+accurateCastOrDefault(x, T)
 ```
 
 **Parameters**
 
 -   `x` — Input value.
 -   `T` — The name of the returned data type.
--   `default_value` - Default value of returned data type.
+-   `default_value` — Default value of returned data type.
 
 **Returned value**
 
--   The value, converted to the specified data type `T`.
+-   The value converted to the specified data type `T`.
 
 **Example**
 

@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
@@ -383,11 +384,11 @@ void TabSeparatedRowInputFormat::resetParser()
     columns_to_fill_with_default_values.clear();
 }
 
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
+void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (const auto * name : {"TabSeparated", "TSV"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -399,7 +400,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -411,7 +412,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -423,7 +424,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
