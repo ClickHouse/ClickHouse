@@ -10,8 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSparse.h>
-#include <DataStreams/NativeWriter.h>
-#include <DataStreams/materializeBlock.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>

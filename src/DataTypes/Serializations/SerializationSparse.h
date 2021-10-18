@@ -27,7 +27,11 @@ public:
 
     Kind getKind() const override { return Kind::SPARSE; }
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    virtual void enumerateStreams(
+        SubstreamPath & path,
+        const StreamCallback & callback,
+        DataTypePtr type,
+        ColumnPtr column) const override;
 
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,
@@ -81,6 +85,19 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr offsets;
+        const size_t size;
+
+        SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
+            : offsets(offsets_), size(size_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
+
     SerializationPtr nested;
 };
 

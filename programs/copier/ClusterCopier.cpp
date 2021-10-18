@@ -9,8 +9,8 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
-#include <Processors/Chain.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
