@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {

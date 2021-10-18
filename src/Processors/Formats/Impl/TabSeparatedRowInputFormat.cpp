@@ -1,5 +1,4 @@
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>

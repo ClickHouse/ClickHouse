@@ -23,8 +23,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -787,7 +787,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
-void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
+void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
@@ -843,7 +843,7 @@ namespace
     struct ProfileEventsSnapshot
     {
         UInt64 thread_id;
-        ProfileEvents::Counters counters;
+        ProfileEvents::Counters::Snapshot counters;
         Int64 memory_usage;
         time_t current_time;
     };
@@ -861,7 +861,7 @@ namespace
         auto & value_column = columns[VALUE_COLUMN_INDEX];
         for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
         {
-            UInt64 value = snapshot.counters[event].load(std::memory_order_relaxed);
+            UInt64 value = snapshot.counters[event];
 
             if (value == 0)
                 continue;
