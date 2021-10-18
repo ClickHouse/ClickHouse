@@ -821,6 +821,16 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     const auto & rows_per_granule = result.rowsPerGranule();
     const auto & started_ranges = result.startedRanges();
 
+    auto current_task_last_mark_range = std::max_element(started_ranges.begin(), started_ranges.end(),
+        [&](const ReadResult::RangeInfo & lhs, const ReadResult::RangeInfo & rhs)
+    {
+        return lhs.range.end < rhs.range.end;
+    });
+
+    size_t current_task_last_mark = 0;
+    if (current_task_last_mark_range != started_ranges.end())
+        current_task_last_mark = current_task_last_mark_range->range.end;
+
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
@@ -832,7 +842,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             num_rows += stream.finalize(columns);
             const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
-            stream = Stream(range.begin, range.end, 0, merge_tree_reader);
+            stream = Stream(range.begin, range.end, current_task_last_mark, merge_tree_reader);
         }
 
         bool last = i + 1 == size;
