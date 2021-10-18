@@ -56,6 +56,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
+    using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+
     using Type = MergeTreeDataPartType;
 
 
@@ -102,8 +104,15 @@ public:
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
+    /// NOTE: Returns zeros if secondary indexes are not found in checksums.
+    /// Otherwise return information about secondary index size on disk.
+    IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
+
+    /// Return information about secondary indexes size on disk for all indexes in part
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -176,6 +185,7 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -337,7 +347,9 @@ public:
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
-    void calculateColumnsSizesOnDisk();
+
+    /// Calculate column and secondary indices sizes on disk.
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix) const;
 
@@ -397,6 +409,10 @@ protected:
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
 
+    ColumnSize total_secondary_indices_size;
+
+    IndexSizeByName secondary_index_sizes;
+
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
@@ -450,6 +466,10 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    void calculateColumnsSizesOnDisk();
+
+    void calculateSecondaryIndicesSizesOnDisk();
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

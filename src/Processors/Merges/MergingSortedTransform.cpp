@@ -1,5 +1,5 @@
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
 
 #include <base/logger_useful.h>

@@ -2073,11 +2073,11 @@ class ClickHouseInstance:
     def contains_in_log(self, substring, from_host=False):
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         return len(result) > 0
 
@@ -2085,18 +2085,18 @@ class ClickHouseInstance:
         logging.debug(f"grep in log called %s", substring)
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
+            ["bash", "-c", 'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
         return result
 
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):

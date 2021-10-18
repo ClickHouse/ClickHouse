@@ -1,4 +1,11 @@
+#include <algorithm>
 #include <iomanip>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <vector>
+#include <string.h>
+#include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -16,8 +23,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -30,6 +37,7 @@
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
 #include <base/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -237,6 +245,11 @@ void TCPHandler::runImpl()
                     std::lock_guard lock(fatal_error_mutex);
                     sendLogs();
                 });
+            }
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+            {
+                state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+                CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
             }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -665,6 +678,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
+                sendProfileEvents();
             }
 
             sendLogs();
@@ -690,6 +704,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
+            sendProfileEvents();
         }
 
         if (state.is_connection_closed)
@@ -772,7 +787,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
-void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
+void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
@@ -807,6 +822,173 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
+        out->next();
+    }
+}
+
+
+namespace
+{
+    using namespace ProfileEvents;
+
+    enum ProfileEventTypes : int8_t
+    {
+        INCREMENT = 1,
+        GAUGE     = 2,
+    };
+
+    constexpr size_t NAME_COLUMN_INDEX  = 4;
+    constexpr size_t VALUE_COLUMN_INDEX = 5;
+
+    struct ProfileEventsSnapshot
+    {
+        UInt64 thread_id;
+        ProfileEvents::Counters::Snapshot counters;
+        Int64 memory_usage;
+        time_t current_time;
+    };
+
+    /*
+     * Add records about provided non-zero ProfileEvents::Counters.
+     */
+    void dumpProfileEvents(
+        ProfileEventsSnapshot const & snapshot,
+        MutableColumns & columns,
+        String const & host_name)
+    {
+        size_t rows = 0;
+        auto & name_column = columns[NAME_COLUMN_INDEX];
+        auto & value_column = columns[VALUE_COLUMN_INDEX];
+        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
+        {
+            UInt64 value = snapshot.counters[event];
+
+            if (value == 0)
+                continue;
+
+            const char * desc = ProfileEvents::getName(event);
+            name_column->insertData(desc, strlen(desc));
+            value_column->insert(value);
+            rows++;
+        }
+
+        // Fill the rest of the columns with data
+        for (size_t row = 0; row < rows; ++row)
+        {
+            size_t i = 0;
+            columns[i++]->insertData(host_name.data(), host_name.size());
+            columns[i++]->insert(UInt64(snapshot.current_time));
+            columns[i++]->insert(UInt64{snapshot.thread_id});
+            columns[i++]->insert(ProfileEventTypes::INCREMENT);
+        }
+    }
+
+    void dumpMemoryTracker(
+        ProfileEventsSnapshot const & snapshot,
+        MutableColumns & columns,
+        String const & host_name)
+    {
+        {
+            size_t i = 0;
+            columns[i++]->insertData(host_name.data(), host_name.size());
+            columns[i++]->insert(UInt64(snapshot.current_time));
+            columns[i++]->insert(UInt64{snapshot.thread_id});
+            columns[i++]->insert(ProfileEventTypes::GAUGE);
+
+            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
+            columns[i++]->insert(snapshot.memory_usage);
+        }
+    }
+}
+
+
+void TCPHandler::sendProfileEvents()
+{
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+        return;
+
+    auto profile_event_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            { "increment", static_cast<Int8>(INCREMENT)},
+            { "gauge",     static_cast<Int8>(GAUGE)},
+        });
+
+    NamesAndTypesList column_names_and_types = {
+        { "host_name",    std::make_shared<DataTypeString>()   },
+        { "current_time", std::make_shared<DataTypeDateTime>() },
+        { "thread_id",    std::make_shared<DataTypeUInt64>()   },
+        { "type",         profile_event_type                   },
+        { "name",         std::make_shared<DataTypeString>()   },
+        { "value",        std::make_shared<DataTypeUInt64>()   },
+    };
+
+    ColumnsWithTypeAndName temp_columns;
+    for (auto const & name_and_type : column_names_and_types)
+        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
+
+    Block block(std::move(temp_columns));
+
+    MutableColumns columns = block.mutateColumns();
+    auto thread_group = CurrentThread::getGroup();
+    auto const current_thread_id = CurrentThread::get().thread_id;
+    std::vector<ProfileEventsSnapshot> snapshots;
+    ProfileEventsSnapshot group_snapshot;
+    {
+        std::lock_guard guard(thread_group->mutex);
+        snapshots.reserve(thread_group->threads.size());
+        for (auto * thread : thread_group->threads)
+        {
+            auto const thread_id = thread->thread_id;
+            if (thread_id == current_thread_id)
+                continue;
+            auto current_time = time(nullptr);
+            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
+            auto memory_usage = thread->memory_tracker.get();
+            snapshots.push_back(ProfileEventsSnapshot{
+                thread_id,
+                std::move(counters),
+                memory_usage,
+                current_time
+            });
+        }
+
+        group_snapshot.thread_id    = 0;
+        group_snapshot.current_time = time(nullptr);
+        group_snapshot.memory_usage = thread_group->memory_tracker.get();
+        group_snapshot.counters     = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+    }
+
+    for (auto & snapshot : snapshots)
+    {
+        dumpProfileEvents(snapshot, columns, server_display_name);
+        dumpMemoryTracker(snapshot, columns, server_display_name);
+    }
+    dumpProfileEvents(group_snapshot, columns, server_display_name);
+    dumpMemoryTracker(group_snapshot, columns, server_display_name);
+
+    MutableColumns logs_columns;
+    Block curr_block;
+    size_t rows = 0;
+
+    for (; state.profile_queue->tryPop(curr_block); ++rows)
+    {
+        auto curr_columns = curr_block.getColumns();
+        for (size_t j = 0; j < curr_columns.size(); ++j)
+            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
+    }
+
+    bool empty = columns[0]->empty();
+    if (!empty)
+    {
+        block.setColumns(std::move(columns));
+
+        initProfileEventsBlockOutput(block);
+
+        writeVarUInt(Protocol::Server::ProfileEvents, *out);
+        writeStringBinary("", *out);
+
+        state.profile_events_block_out->write(block);
         out->next();
     }
 }
@@ -1369,7 +1551,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
     bool read_ok = skip_block_in->read();
 
     if (!read_ok)
@@ -1399,7 +1581,7 @@ void TCPHandler::initBlockInput()
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
-        state.block_in = std::make_shared<NativeBlockInputStream>(
+        state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version);
@@ -1430,7 +1612,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                 state.maybe_compressed_out = out;
         }
 
-        state.block_out = std::make_shared<NativeBlockOutputStream>(
+        state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1444,7 +1626,21 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     {
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
-        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+        state.logs_block_out = std::make_unique<NativeWriter>(
+            *out,
+            client_tcp_protocol_version,
+            block.cloneEmpty(),
+            !query_settings.low_cardinality_allow_in_native_format);
+    }
+}
+
+
+void TCPHandler::initProfileEventsBlockOutput(const Block & block)
+{
+    if (!state.profile_events_block_out)
+    {
+        const Settings & query_settings = query_context->getSettingsRef();
+        state.profile_events_block_out = std::make_unique<NativeWriter>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),

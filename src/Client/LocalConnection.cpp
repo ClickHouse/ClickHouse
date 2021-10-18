@@ -5,6 +5,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include "Core/Protocol.h"
 
 
 namespace DB
@@ -59,15 +60,15 @@ void LocalConnection::updateProgress(const Progress & value)
 
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
-    const String & query_,
-    const String & query_id_,
-    UInt64,
+    const String & query,
+    const String & query_id,
+    UInt64 stage,
     const Settings *,
     const ClientInfo *,
     bool)
 {
     query_context = session.makeQueryContext();
-    query_context->setCurrentQueryId(query_id_);
+    query_context->setCurrentQueryId(query_id);
     if (send_progress)
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
@@ -76,8 +77,9 @@ void LocalConnection::sendQuery(
     state.reset();
     state.emplace();
 
-    state->query_id = query_id_;
-    state->query = query_;
+    state->query_id = query_id;
+    state->query = query;
+    state->stage = QueryProcessingStage::Enum(stage);
 
     if (send_progress)
         state->after_send_progress.restart();
@@ -328,6 +330,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Extremes: [[fallthrough]];
         case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
+        case Protocol::Server::ProfileEvents:
         {
             if (state->block && state->block.value())
             {

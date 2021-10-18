@@ -7,6 +7,6 @@ namespace ProfileEvents
 {
 
 /// Dumps profile events to columns Map(String, UInt64)
-void dumpToMapColumn(const Counters & counters, DB::IColumn * column, bool nonzero_only = true);
+void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 
 }

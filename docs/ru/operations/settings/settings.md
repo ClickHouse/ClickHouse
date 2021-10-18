@@ -1707,7 +1707,7 @@ ClickHouse генерирует исключение
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
+Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае запрос выдаст неверный результат.
 
 Возможные значения:
 
@@ -2684,6 +2684,43 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
+
+Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+\N
+\N
+```
+
+Запрос:
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
@@ -3573,3 +3610,33 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` включена.
+
+Значение по умолчанию: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md) с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)

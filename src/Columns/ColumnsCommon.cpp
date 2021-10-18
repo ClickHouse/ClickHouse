@@ -241,11 +241,7 @@ namespace
                 zero_vec));
             mask = ~mask;
 
-            if (mask == 0)
-            {
-                /// SIMD_BYTES consecutive rows do not pass the filter
-            }
-            else if (mask == 0xffff)
+            if (mask == 0xffff)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -262,9 +258,12 @@ namespace
             }
             else
             {
-                for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
-                        copy_array(offsets_pos + i);
+                while (mask)
+                {
+                    size_t index = __builtin_ctz(mask);
+                    copy_array(offsets_pos + index);
+                    mask = mask & (mask - 1);
+                }
             }
 
             filt_pos += SIMD_BYTES;

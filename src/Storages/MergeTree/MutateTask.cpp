@@ -2,13 +2,11 @@
 
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Common/SquashingTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -339,15 +337,14 @@ static NameToNameVector collectFilesForRenames(
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : source_part->getColumns())
+    for (const auto & column : source_part->getColumns())
     {
         auto serialization = source_part->getSerializationForColumn(column);
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+            });
     }
 
     NameToNameVector rename_vector;
@@ -477,7 +474,7 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->default_codec = codec;
-    new_data_part->calculateColumnsSizesOnDisk();
+    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
     new_data_part->storage.lockSharedData(*new_data_part);
 }
 
@@ -656,7 +653,7 @@ public:
                 {},
                 projection_merging_params,
                 ctx->new_data_part.get(),
-                "tmp_merge_");
+                ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
@@ -768,7 +765,6 @@ private:
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
 
-    Block block;
     size_t block_num = 0;
 
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
@@ -834,8 +830,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
     }
 
@@ -988,6 +984,7 @@ private:
         ctx->mutating_pipeline.reset();
 
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        ctx->out.reset();
     }
 
     enum class State
@@ -1084,7 +1081,7 @@ private:
 
             if (!ctx->disk->isDirectory(it->path()))
                 ctx->disk->createHardLink(it->path(), destination);
-            else if (!startsWith("tmp_", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->disk->createDirectories(destination);
