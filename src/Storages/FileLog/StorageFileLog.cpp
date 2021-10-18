@@ -327,6 +327,7 @@ Pipe StorageFileLog::read(
         throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
     }
 
+    std::lock_guard<std::mutex> lock(file_infos_mutex);
     updateFileInfos();
 
     /// No files to parse
@@ -578,16 +579,17 @@ size_t StorageFileLog::getTableDependentCount() const
 
 void StorageFileLog::threadFunc()
 {
+    bool reschedule = false;
     try
     {
-        updateFileInfos();
-
+        std::lock_guard<std::mutex> lock(file_infos_mutex);
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
 
         if (dependencies_count)
         {
+            has_dependent_mv = true;
             auto start_time = std::chrono::steady_clock::now();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
@@ -616,6 +618,7 @@ void StorageFileLog::threadFunc()
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    reschedule = true;
                     break;
                 }
             }
@@ -631,7 +634,7 @@ void StorageFileLog::threadFunc()
     {
         if (path_is_directory)
         {
-            if (!getTableDependentCount())
+            if (!getTableDependentCount() || reschedule)
                 task->holder->scheduleAfter(milliseconds_to_wait);
             else
             {
@@ -654,9 +657,9 @@ bool StorageFileLog::streamToViews()
 {
     if (running_streams)
     {
-        throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
+        LOG_INFO(log, "Another select query is running on this table, need to wait it finish.");
+        return true;
     }
-    has_dependent_mv = true;
     Stopwatch watch;
 
     auto table_id = getStorageID();
@@ -670,7 +673,7 @@ bool StorageFileLog::streamToViews()
     if (max_streams_number == 0)
     {
         LOG_INFO(log, "There is a idle table named {}, no files need to parse.", getName());
-        return false;
+        return updateFileInfos();
     }
 
     // Create an INSERT query for streaming data
