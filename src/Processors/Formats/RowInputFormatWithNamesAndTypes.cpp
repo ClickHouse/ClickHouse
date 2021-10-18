@@ -189,6 +189,7 @@ void RowInputFormatWithNamesAndTypes::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     column_mapping->column_indexes_for_input_fields.clear();
     column_mapping->not_presented_columns.clear();
+    column_mapping->names_of_columns.clear();
 }
 
 void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
