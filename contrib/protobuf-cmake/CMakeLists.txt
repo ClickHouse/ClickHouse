@@ -15,6 +15,8 @@ if (CMAKE_CROSSCOMPILING)
     set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE INTERNAL "" FORCE)
 endif ()
 
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize-recover=all")
+
 add_subdirectory("${protobuf_SOURCE_DIR}/cmake" "${protobuf_BINARY_DIR}")
 
 # We don't want to stop compilation on warnings in protobuf's headers.
