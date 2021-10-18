@@ -196,4 +196,8 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 /// Properly handles cases, when column is a subcolumn and when it is compressed.
 ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
 
+/// Converts columns-constants to full columns ("materializes" them).
+Block materializeBlock(const Block & block);
+void materializeBlockInplace(Block & block);
+
 }

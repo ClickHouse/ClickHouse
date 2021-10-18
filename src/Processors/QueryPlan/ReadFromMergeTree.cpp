@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>

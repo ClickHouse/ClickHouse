@@ -35,7 +35,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <DataStreams/copyData.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 

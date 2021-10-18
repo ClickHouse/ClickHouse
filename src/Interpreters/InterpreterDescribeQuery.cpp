@@ -1,6 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>

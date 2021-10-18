@@ -11,9 +11,9 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -198,7 +198,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }

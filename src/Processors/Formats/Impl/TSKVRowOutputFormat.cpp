@@ -39,9 +39,9 @@ void TSKVRowOutputFormat::writeRowEndDelimiter()
 }
 
 
-void registerOutputFormatProcessorTSKV(FormatFactory & factory)
+void registerOutputFormatTSKV(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("TSKV", [](
+    factory.registerOutputFormat("TSKV", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

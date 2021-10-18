@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <base/logger_useful.h>
 #include <chrono>
 
@@ -408,7 +407,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
 
         if (get_profile_events)
-            res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
     if (get_settings && getContext())
@@ -446,7 +445,7 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
     res.peak_memory_usage = user_memory_tracker.getPeak();
 
     if (get_profile_events)
-        res.profile_counters = std::make_shared<ProfileEvents::Counters>(user_performance_counters.getPartiallyAtomicSnapshot());
+        res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(user_performance_counters.getPartiallyAtomicSnapshot());
 
     return res;
 }

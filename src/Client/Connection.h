@@ -60,6 +60,8 @@ public:
 
     ~Connection() override;
 
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
+
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
@@ -255,7 +257,7 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();
