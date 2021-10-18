@@ -177,7 +177,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, ReadSettings(), 0);
+            auto src_buffer = cache_disk->readFile(path, ReadSettings());
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();
