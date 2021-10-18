@@ -63,6 +63,7 @@ public:
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
 
+    void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 };
 
 }

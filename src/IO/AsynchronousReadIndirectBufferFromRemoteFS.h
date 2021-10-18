@@ -47,7 +47,7 @@ public:
 
     void prefetch() override;
 
-    void setRightOffset(size_t offset);
+    void setReadUntilPosition(size_t position) override;
 
 private:
     bool nextImpl() override;
