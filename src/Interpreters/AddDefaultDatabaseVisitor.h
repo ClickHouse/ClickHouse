@@ -120,7 +120,12 @@ private:
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
-            ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        {
+            auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+            if (!identifier.alias.empty())
+                qualified_identifier->setAlias(identifier.alias);
+            ast = qualified_identifier;
+        }
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const

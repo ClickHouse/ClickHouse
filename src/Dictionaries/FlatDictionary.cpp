@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries//DictionarySource.h>
@@ -403,6 +403,11 @@ void FlatDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(attribute.is_nullable_set);
+
+        if (attribute.is_nullable_set.has_value())
+            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)

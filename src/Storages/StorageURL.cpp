@@ -13,14 +13,13 @@
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <base/logger_useful.h>
 #include <algorithm>

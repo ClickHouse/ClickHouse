@@ -2,9 +2,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/Block.h>
 #include <IO/Operators.h>
 
 
