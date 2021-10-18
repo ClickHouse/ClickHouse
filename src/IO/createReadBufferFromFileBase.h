@@ -16,7 +16,7 @@ namespace DB
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
-    std::optional<size_t> size,
+    std::optional<size_t> size = {},
     int flags_ = -1,
     char * existing_memory = nullptr,
     size_t alignment = 0);
