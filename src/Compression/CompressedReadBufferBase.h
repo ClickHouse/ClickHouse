@@ -60,12 +60,6 @@ public:
         disable_checksum = true;
     }
 
-    /**
-     * For asynchronous range reading from remote fs need to update last offset for current task,
-     * when newer tasks read behind previous task last mark.
-     */
-    void setRightOffset(size_t offset);
-
 public:
     CompressionCodecPtr codec;
 };

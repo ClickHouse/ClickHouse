@@ -166,7 +166,7 @@ void ReadBufferFromRemoteFSGather::seek(off_t offset)
 }
 
 
-void ReadBufferFromRemoteFSGather::setRightOffset(size_t offset)
+void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t offset)
 {
     assert(last_offset < offset);
     current_buf.reset();

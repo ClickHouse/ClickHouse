@@ -32,7 +32,7 @@ public:
 
     void seek(off_t offset); /// SEEK_SET only.
 
-    void setRightOffset(size_t offset);
+    void setReadUntilPosition(size_t position) override;
 
     size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
