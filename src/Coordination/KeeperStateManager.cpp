@@ -31,42 +31,22 @@ namespace
 
 }
 
-KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
-    : my_server_id(server_id_)
-    , my_port(port)
-    , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
-    , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
-{
-    auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
-    cluster_config->get_servers().push_back(peer_config);
-}
 
-KeeperStateManager::KeeperStateManager(
-    int my_server_id_,
-    const std::string & config_prefix,
-    const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
-    bool standalone_keeper)
-    : my_server_id(my_server_id_)
-    , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
-    , log_store(nuraft::cs_new<KeeperLogStore>(
-                    getLogsPathFromConfig(config_prefix, config, standalone_keeper),
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
-    , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
+KeeperServersConfiguration KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const
 {
-
+    KeeperServersConfiguration result;
+    result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
-    total_servers = keys.size();
 
+    size_t total_servers = 0;
     for (const auto & server_key : keys)
     {
         if (!startsWith(server_key, "server"))
             continue;
 
         std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
-        int server_id = config.getInt(full_prefix + ".id");
+        int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
@@ -74,29 +54,75 @@ KeeperStateManager::KeeperStateManager(
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
         if (start_as_follower)
-            start_as_follower_servers.insert(server_id);
+            result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
-        auto peer_config = nuraft::cs_new<nuraft::srv_config>(server_id, 0, endpoint, "", !can_become_leader, priority);
-        if (server_id == my_server_id)
+        auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
+        if (my_server_id == new_server_id)
         {
-            my_server_config = peer_config;
-            my_port = port;
+            result.config = peer_config;
+            result.port = port;
         }
 
-        cluster_config->get_servers().push_back(peer_config);
+        result.cluster_config->get_servers().push_back(peer_config);
+        total_servers++;
     }
 
-    if (!my_server_config)
+    if (!result.config)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
-    if (start_as_follower_servers.size() == cluster_config->get_servers().size())
+    if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
+
+    return result;
+}
+
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
+    : my_server_id(server_id_)
+    , secure(false)
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+    , log(&Poco::Logger::get("KeeperStateManager"))
+{
+    auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
+    servers_configuration.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
+    servers_configuration.port = port;
+    servers_configuration.config = peer_config;
+    servers_configuration.cluster_config->get_servers().push_back(peer_config);
+}
+
+KeeperStateManager::KeeperStateManager(
+    int server_id_,
+    const std::string & config_prefix_,
+    const Poco::Util::AbstractConfiguration & config,
+    const CoordinationSettingsPtr & coordination_settings,
+    bool standalone_keeper)
+    : my_server_id(server_id_)
+    , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
+    , config_prefix(config_prefix_)
+    , servers_configuration(parseServersConfiguration(config))
+    , log_store(nuraft::cs_new<KeeperLogStore>(
+                    getLogsPathFromConfig(config_prefix_, config, standalone_keeper),
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
+    , log(&Poco::Logger::get("KeeperStateManager"))
+{
 }
 
 void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
+}
+
+ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
+{
+    auto entry_with_change = log_store->getLatestConfigChange();
+    if (entry_with_change)
+        return ClusterConfig::deserialize(entry_with_change->get_buf());
+    return nullptr;
+}
+
+void KeeperStateManager::setClusterConfig(const ClusterConfigPtr & cluster_config)
+{
+    servers_configuration.cluster_config = cluster_config;
 }
 
 void KeeperStateManager::flushLogStore()
@@ -106,18 +132,57 @@ void KeeperStateManager::flushLogStore()
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
-    // Just keep in memory in this example.
-    // Need to write to disk here, if want to make it durable.
     nuraft::ptr<nuraft::buffer> buf = config.serialize();
-    cluster_config = nuraft::cluster_config::deserialize(*buf);
+    servers_configuration.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
-     // Just keep in memory in this example.
-     // Need to write to disk here, if want to make it durable.
      nuraft::ptr<nuraft::buffer> buf = state.serialize();
      server_state = nuraft::srv_state::deserialize(*buf);
- }
+}
+
+ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
+{
+    auto new_servers_configuration = parseServersConfiguration(config);
+    if (new_servers_configuration.port != servers_configuration.port)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot change port of already running RAFT server");
+
+    std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
+    for (auto new_server : new_servers_configuration.cluster_config->get_servers())
+        new_ids[new_server->get_id()] = new_server;
+
+    for (auto old_server : servers_configuration.cluster_config->get_servers())
+        old_ids[old_server->get_id()] = old_server;
+
+    std::unordered_map<int, KeeperServerConfigPtr> servers_to_remove, servers_to_add;
+
+    auto comp = [] (auto & a, auto & b) { return a.first < b.first; };
+    std::set_difference(old_ids.begin(), old_ids.end(), new_ids.begin(), new_ids.end(), std::inserter(servers_to_remove, servers_to_remove.begin()), comp);
+    std::set_difference(new_ids.begin(), new_ids.end(), old_ids.begin(), old_ids.end(), std::inserter(servers_to_add, servers_to_add.begin()), comp);
+
+    ConfigUpdateActions result;
+
+    for (auto & [_, server_config] : servers_to_remove)
+        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
+
+    for (auto & [_, server_config] : servers_to_add)
+        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+
+    for (const auto & old_server : servers_configuration.cluster_config->get_servers())
+    {
+        for (const auto & new_server : new_servers_configuration.cluster_config->get_servers())
+        {
+            if (old_server->get_id() == new_server->get_id())
+            {
+                if (old_server->get_priority() != new_server->get_priority())
+                    result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                break;
+            }
+        }
+    }
+
+    return result;
+}
 
 }
