@@ -97,10 +97,11 @@ private:
 
     std::atomic<bool> stopped{false};
 
-    uint64_t milliseconds_to_wait;
 
     const std::string path;
     int event_mask;
+    uint64_t milliseconds_to_wait;
+
     int fd;
 };
 

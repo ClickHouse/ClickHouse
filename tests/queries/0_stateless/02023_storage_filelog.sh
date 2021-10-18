@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Data preparation.
 # Now we can get the user_files_path by use the table file function for trick. also we can get it by query as:
 #  "insert into function file('exist.txt', 'CSV', 'val1 char') values ('aaaa'); select _path from file('exist.txt', 'CSV', 'val1 char')"
-user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+user_files_path=$(${CLICKHOUSE_CLIENT} --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p ${user_files_path}/logs/
 
@@ -41,8 +41,25 @@ touch ${user_files_path}/logs/a.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/c.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
 cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/e.txt
+mv ${user_files_path}/logs/b.txt ${user_files_path}/logs/j.txt
 
 rm ${user_files_path}/logs/d.txt
+
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
+
+${CLICKHOUSE_CLIENT} --query "detach table file_log;"
+cp ${user_files_path}/logs/e.txt ${user_files_path}/logs/f.txt
+mv ${user_files_path}/logs/e.txt ${user_files_path}/logs/g.txt
+mv ${user_files_path}/logs/c.txt ${user_files_path}/logs/h.txt
+for i in {150..200}
+do
+	echo $i, $i >> ${user_files_path}/logs/h.txt
+done
+for i in {200..250}
+do
+	echo $i, $i >> ${user_files_path}/logs/i.txt
+done
+${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 

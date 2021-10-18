@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/FileLog/Buffer_fwd.h>
+#include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -126,9 +127,7 @@ public:
     void increaseStreams();
     void reduceStreams();
 
-    auto & getConditionVariable() { return cv; }
-    auto & getMutex() { return mutex; }
-    void setNewEvents() { has_new_events = true; }
+    void wakeUp();
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
@@ -138,7 +137,6 @@ protected:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         const String & path_,
-        const String & relative_data_path_,
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
@@ -148,14 +146,11 @@ private:
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
-    /// For meta file
-    const String relative_data_path;
     bool path_is_directory = true;
 
     /// If path argument of the table is a regular file, it equals to user_files_path
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
-    /// relative_data_path/ + table_name/
     String root_meta_path;
 
     FileInfos file_infos;
@@ -163,19 +158,7 @@ private:
     const String format_name;
     Poco::Logger * log;
 
-    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
-
     uint64_t milliseconds_to_wait;
-
-    struct TaskContext
-    {
-        BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
-    };
-    std::shared_ptr<TaskContext> task;
 
     /// In order to avoid data race, using a naive trick to forbid execute two select
     /// simultaneously, although read is not useful in this engine. Using an atomic
@@ -188,6 +171,18 @@ private:
     std::mutex mutex;
     bool has_new_events = false;
     std::condition_variable cv;
+
+    struct TaskContext
+    {
+        BackgroundSchedulePool::TaskHolder holder;
+        std::atomic<bool> stream_cancelled {false};
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        {
+        }
+    };
+    std::shared_ptr<TaskContext> task;
+
+    std::unique_ptr<FileLogDirectoryWatcher> directory_watch = nullptr;
 
     void loadFiles();
 
