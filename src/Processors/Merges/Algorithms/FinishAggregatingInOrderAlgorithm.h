@@ -40,7 +40,7 @@ public:
         AggregatingTransformParamsPtr params_,
         SortDescription description_,
         size_t max_block_size_,
-        size_t max_threads_);
+        size_t merge_threads_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
