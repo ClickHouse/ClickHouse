@@ -3,6 +3,8 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
+#include <Common/filesystemHelpers.h>
+
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>
@@ -86,9 +88,16 @@ Pipe StorageExecutable::read(
 {
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
-    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+
+    if (!pathStartsWith(script_path, user_scripts_path))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Executable file {} does not exists inside {}",
+            "Executable file {} must be inside user scripts folder {}",
+            script_name,
+            user_scripts_path);
+
+    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable file {} does not exists inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
@@ -115,7 +124,7 @@ Pipe StorageExecutable::read(
         bool result = process_pool->tryBorrowObject(process, [&config, this]()
         {
             config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, pool_settings.command_termination_timeout };
-            auto shell_command = ShellCommand::execute(config);
+            auto shell_command = ShellCommand::executeDirect(config);
             return shell_command;
         }, pool_settings.max_command_execution_time * 10000);
 
