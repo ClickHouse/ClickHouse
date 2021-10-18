@@ -2329,6 +2329,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         settings.min_free_disk_space_for_temporary_data);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
+    query_plan.addStep(std::move(sorting_step));
 }
 
 
