@@ -316,17 +316,26 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Доступные индексы {#available-types-of-indices}
 
--   `minmax` — Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
+-   `minmax` — хранит минимум и максимум выражения (если выражение - [Tuple](../../../sql-reference/data-types/tuple.md), то для каждого элемента `Tuple`), используя их для пропуска блоков аналогично первичному ключу.
 
--   `set(max_rows)` — Хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+-   `set(max_rows)` — хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+
+-   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — хранит [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter), содержащий все N-граммы блока данных. Работает только с данными форматов [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) и [Map](../../../sql-reference/data-types/map.md) с ключами типа `String` или `fixedString`. Может быть использован для оптимизации выражений `EQUALS`, `LIKE` и `IN`.
+
+    -   `n` — размер N-граммы,
+    -   `size_of_bloom_filter_in_bytes` — размер в байтах фильтра Блума (можно использовать большие значения, например, 256 или 512, поскольку сжатие компенсирует возможные издержки).
+    -   `number_of_hash_functions` — количество хеш-функций, использующихся в фильтре Блума.
+    -   `random_seed` — состояние генератора случайных чисел для хеш-функций фильтра Блума.
+
+-   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — то же, что и`ngrambf_v1`, но хранит токены вместо N-грамм. Токены — это последовательности символов, разделенные не буквенно-цифровыми символами.
 
 -   `bloom_filter([false_positive])` — [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter) для указанных стоблцов.
 
     Необязательный параметр `false_positive` — это вероятность получения ложноположительного срабатывания. Возможные значения: (0, 1). Значение по умолчанию: 0.025.
 
-    Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+    Поддерживаемые типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Фильтром могут пользоваться функции: [equals](../../../engines/table-engines/mergetree-family/mergetree.md), [notEquals](../../../engines/table-engines/mergetree-family/mergetree.md), [in](../../../engines/table-engines/mergetree-family/mergetree.md), [notIn](../../../engines/table-engines/mergetree-family/mergetree.md).
+    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem).
 
 **Примеры**
 
