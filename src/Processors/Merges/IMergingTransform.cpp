@@ -15,7 +15,7 @@ IMergingTransformBase::IMergingTransformBase(
     const Block & input_header,
     const Block & output_header,
     bool have_all_inputs_,
-    size_t limit_hint_)
+    UInt64 limit_hint_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
     , have_all_inputs(have_all_inputs_)
     , limit_hint(limit_hint_)
