@@ -1222,8 +1222,8 @@ public:
         }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // Comparing Date and DateTime64 requires implicit conversion,
-            if (date_and_datetime && (isDate(left_type) || isDate(right_type)))
+            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
+            if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
             {
                 DataTypePtr common_type = getLeastSupertype({left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1247,9 +1247,10 @@ public:
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
             ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
             if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
-                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))))
-                throw Exception("Date related common types can only be UInt32 or UInt64", ErrorCodes::LOGICAL_ERROR);
+                  || (res = executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}))))
+                throw Exception("Date related common types can only be UInt32/UInt64/Int32/Decimal", ErrorCodes::LOGICAL_ERROR);
             return res;
         }
         else if (left_type->equals(*right_type))
