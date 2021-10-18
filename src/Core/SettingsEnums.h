@@ -170,18 +170,17 @@ DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
 enum class ZooKeeperLoadBalancing
 {
-    /// among replicas with a minimum number of errors selected randomly
+    /// Randomly select one from the zookeeper nodes.
     RANDOM = 0,
-    /// a replica is selected among the replicas with the minimum number of errors
-    /// with the minimum number of distinguished characters in the replica name and local hostname
+    /// Choose one from the zookeeper node that has the least
+    /// number of characters different from the hostname of the local host
     NEAREST_HOSTNAME,
-    // replicas with the same number of errors are accessed in the same order
-    // as they are specified in the configuration.
+    /// Select one from the zookeeper node configuration in order.
     IN_ORDER,
-    /// if first replica one has higher number of errors,
-    ///   pick a random one from replicas with minimum number of errors
+    /// If the first node cannot be connected,
+    /// one will be randomly selected from other nodes.
     FIRST_OR_RANDOM,
-    // round robin across replicas with the same number of errors.
+    /// Round robin from the node configured by zookeeper.
     ROUND_ROBIN,
 };
 
