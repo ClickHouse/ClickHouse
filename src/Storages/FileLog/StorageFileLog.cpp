@@ -260,7 +260,7 @@ void StorageFileLog::deserialize()
     if (!std::filesystem::exists(root_meta_path))
         return;
     /// In case of single file (not a watched directory),
-    /// iterated directoy always has one file inside.
+    /// iterated directory always has one file inside.
     for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
     {
         if (!dir_entry.is_regular_file())
@@ -317,7 +317,7 @@ Pipe StorageFileLog::read(
     {
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED,
-            "Can not make `SELECT` query from table {}, because it has attached dependencies. Remove dependant materialized views if "
+            "Can not make `SELECT` query from table {}, because it has attached dependencies. Remove dependent materialized views if "
             "needed",
             getStorageID().getTableName());
     }
