@@ -16,20 +16,23 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
  * The second step of aggregation in order of sorting key.
  * The transform receives k inputs with partially aggregated data,
  * sorted by group by key (prefix of sorting key).
+ *
  * Then it merges aggregated data from inputs by the following algorithm:
  *  - At each step find the smallest value X of the sorting key among last rows of current blocks of inputs.
  *    Since the data is sorted in order of sorting key and has no duplicates in single input stream (because of aggregation),
  *    X will never appear later in any of input streams.
- *  - Aggregate all rows in current blocks of inputs up to the upper_bound of X using
- *    regular hash table algorithm (Aggregator::mergeBlock).
+ *  - Add to current group all rows from current blocks of inputs up to the upper_bound of X.
+ *  - Pass current group to the next step (MergingAggregatedBucketTransform), which do actual
+ *    merge of aggregated data in parallel by regular hash table algorithm (Aggregator::mergeBlock).
+ *
  * The hash table at one step will contain all keys <= X from all blocks.
  * There is another, simpler algorithm (AggregatingSortedAlgorithm), that merges
  * and aggregates sorted data for one key at a time, using one aggregation state.
- * It is a simple k-way merge algorithm and it makes O(n*log(k)) comparisons,
- * where * n -- number of rows, k -- number of parts. In comparison, this algorithm
- * makes about * O(n + k * log(n)) operations, n -- for hash table, k * log(n)
- * -- for finding positions in blocks. It is better than O(n*log(k)), when k is not
- * too big and not too small (about 100-1000).
+ * It is a simple k-way merge algorithm and it makes O(n * log(k)) comparisons,
+ * where n -- number of rows, k -- number of parts. In comparison, this algorithm
+ * makes about * O(n + k * log(n)) operations, n -- for hash table,
+ * k * log(n) -- for finding positions in blocks. It is better than O(n*log(k)),
+ * when k is not too big and not too small (about 100-1000).
  */
 class FinishAggregatingInOrderAlgorithm final : public IMergingAlgorithm
 {

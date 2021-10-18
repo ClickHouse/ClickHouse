@@ -79,6 +79,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             if (pipeline.getNumStreams() > 1)
             {
+                /** The pipeline is the following:
+                 *
+                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+                 * --> AggregatingInOrder --> FinishAggregatingInOrder --> ResizeProcessor --> MergingAggregatedBucket
+                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+                 */
+
                 auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
                 size_t counter = 0;
                 pipeline.addSimpleTransform([&](const Block & header)
@@ -96,6 +103,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     max_block_size);
 
                 pipeline.addTransform(std::move(transform));
+
+                /// Do merge of aggregated data in parallel.
                 pipeline.resize(merge_threads);
 
                 pipeline.addSimpleTransform([&](const Block &)
