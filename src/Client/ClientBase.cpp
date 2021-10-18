@@ -45,14 +45,13 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-#include <DataStreams/InternalTextLogs.h>
-#include <DataStreams/materializeBlock.h>
+#include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -294,7 +293,7 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 }
 
 
-void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
+void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
         output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
@@ -517,6 +516,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
+    bool break_on_timeout = connection->getConnectionType() != IServerConnection::Type::LOCAL;
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -547,7 +547,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 else
                 {
                     double elapsed = receive_watch.elapsedSeconds();
-                    if (elapsed > receive_timeout.totalSeconds())
+                    if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
                         std::cout << "Timeout exceeded while receiving data from server."
                                     << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
