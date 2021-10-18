@@ -1,6 +1,5 @@
 #include <memory>
 #include <Columns/ColumnString.h>
-#include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>

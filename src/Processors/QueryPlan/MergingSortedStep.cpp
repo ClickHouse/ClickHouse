@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>

@@ -4,7 +4,7 @@
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 
 namespace DB
