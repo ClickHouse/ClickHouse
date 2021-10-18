@@ -166,11 +166,13 @@ private:
     /// later select should forbid to execute.
     std::atomic<int> running_streams = 0;
 
-    std::atomic<bool> has_dependent_mv = false;
-
     std::mutex mutex;
     bool has_new_events = false;
     std::condition_variable cv;
+
+    bool has_dependent_mv = false;
+
+    std::mutex file_infos_mutex;
 
     struct TaskContext
     {
