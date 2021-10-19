@@ -25,13 +25,13 @@ toc_priority: 105
 查询:
 
 ``` sql
-SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
+SELECT argMin(user, salary), argMin(tuple(user, salary), salary) FROM salary;
 ```
 
 结果:
 
 ``` text
-┌─argMin(user, salary)─┬─argMin(tuple(user, salary))─┐
-│ worker               │ ('worker',1000)             │
-└──────────────────────┴─────────────────────────────┘
+┌─argMin(user, salary)─┬─argMin(tuple(user, salary), salary)─┐
+│ worker               │ ('worker',1000)                     │
+└──────────────────────┴─────────────────────────────────────┘
 ```
