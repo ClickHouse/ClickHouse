@@ -14,12 +14,6 @@ toc_priority: 105
 argMin(arg, val)
 ```
 
-или
-
-``` sql
-argMin(tuple(arg, val))
-```
-
 **Аргументы**
 
 -   `arg` — аргумент.
