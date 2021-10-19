@@ -42,7 +42,8 @@ public:
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
         SortDescription description_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_block_bytes_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -54,9 +55,10 @@ private:
 
     struct State
     {
-        size_t num_rows;
         Columns all_columns;
         ColumnRawPtrs sorting_columns;
+
+        size_t num_rows = 0;
 
         /// Number of row starting from which need to aggregate.
         size_t current_row = 0;
@@ -64,7 +66,12 @@ private:
         /// Number of row up to which need to aggregate (not included).
         size_t to_row = 0;
 
-        State(const Chunk & chunk, const SortDescription & description);
+        /// Number of bytes in all columns + number of bytes in arena, related to current chunk.
+        size_t total_bytes = 0;
+
+        State(const Chunk & chunk, const SortDescription & description, Int64 total_bytes_);
+        State() = default;
+
         bool isValid() const { return current_row < num_rows; }
     };
 
@@ -73,6 +80,7 @@ private:
     AggregatingTransformParamsPtr params;
     SortDescription description;
     size_t max_block_size;
+    size_t max_block_bytes;
 
     Inputs current_inputs;
 
@@ -81,6 +89,7 @@ private:
 
     std::vector<Chunk> chunks;
     size_t accumulated_rows = 0;
+    size_t accumulated_bytes = 0;
 };
 
 }
