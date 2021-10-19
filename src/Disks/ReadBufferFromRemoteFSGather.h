@@ -37,7 +37,7 @@ public:
     size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const = 0;
+    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t offset) const = 0;
 
     RemoteMetadata metadata;
 
@@ -60,7 +60,7 @@ private:
 
     size_t last_offset = 0;
 
-    String path;
+    String canonical_path;
 };
 
 
