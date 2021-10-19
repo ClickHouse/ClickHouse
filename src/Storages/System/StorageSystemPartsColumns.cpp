@@ -222,43 +222,27 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
+            auto serialization = part->getSerializationForColumn(column);
             if (columns_mask[src_index++])
-            {
-                auto kind = part->getSerializationForColumn(column)->getKind();
-                columns[res_index++]->insert(ISerialization::kindToString(kind));
-            }
+                columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 
-            auto subcolumns = column.type->getSubcolumnNames();
-            if (columns_mask[src_index++])
-            {
-                Array array(subcolumns.begin(), subcolumns.end());
-                columns[res_index++]->insert(array);
-            }
+            Array subcolumn_names;
+            Array subcolumn_types;
+            Array subcolumn_sers;
 
-            if (columns_mask[src_index++])
+            IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto & data)
             {
-                Array array;
-                array.reserve(subcolumns.size());
-                for (const auto & name : subcolumns)
-                    array.push_back(column.type->getSubcolumnType(name)->getName());
-
-                columns[res_index++]->insert(array);
-            }
+                subcolumn_names.push_back(name);
+                subcolumn_types.push_back(data.type->getName());
+                subcolumn_sers.push_back(ISerialization::kindToString(data.serialization->getKind()));
+            }, serialization, column.type, nullptr);
 
             if (columns_mask[src_index++])
-            {
-                Array array;
-                array.reserve(subcolumns.size());
-                for (const auto & name : subcolumns)
-                {
-                    auto subtype = column.type->getSubcolumnType(name);
-                    auto subcolumn = NameAndTypePair(column.name, name, column.type, subtype);
-                    auto kind = part->getSerializationForColumn(subcolumn)->getKind();
-                    array.push_back(ISerialization::kindToString(kind));
-                }
-
-                columns[res_index++]->insert(array);
-            }
+                columns[res_index++]->insert(subcolumn_names);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(subcolumn_types);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(subcolumn_sers);
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
