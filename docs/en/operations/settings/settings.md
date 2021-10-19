@@ -3821,8 +3821,8 @@ Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/de
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+-   0 — Subcolumns are not included in DESCRIBE queries.
+-   1 — Subcolumns are included in DESCRIBE queries.
 
 Default value: `0`.
 
