@@ -43,8 +43,6 @@
 
 #include <re2/re2.h>
 
-#include <base/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -95,7 +93,7 @@ public:
     virtual void backup(size_t len) override { out.position() -= len; }
 
     virtual uint64_t byteCount() const override { return out.count(); }
-    virtual void flush() override { /* out.next(); */}
+    virtual void flush() override { }
 
 private:
     WriteBuffer & out;
@@ -396,6 +394,7 @@ AvroRowOutputFormat::~AvroRowOutputFormat() = default;
 
 void AvroRowOutputFormat::writePrefix()
 {
+    // we have to recreate avro::DataFileWriterBase object due to its interface limitations
     file_writer_ptr = std::make_unique<avro::DataFileWriterBase>(
         std::make_unique<OutputStreamWriteBufferAdapter>(out),
         serializer.getSchema(),
@@ -419,10 +418,8 @@ void AvroRowOutputFormat::writeSuffix()
 
 void AvroRowOutputFormat::consume(DB::Chunk chunk)
 {
-    LOG_TRACE(&Poco::Logger::get("AvroBlockOutputFormat"), "top of consume");
-
     if (params.callback)
-        consumeImplCallback(std::move(chunk));
+        consumeImplWithCallback(std::move(chunk));
     else
         consumeImpl(std::move(chunk));
 }
@@ -432,14 +429,16 @@ void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
-    writePrefix();
+    writePrefixIfNot();
     for (size_t row = 0; row < num_rows; ++row)
+    {
         write(columns, row);
+        first_row = false;
+    }
 
-    first_row = false;
 }
 
-void AvroRowOutputFormat::consumeImplCallback(DB::Chunk chunk)
+void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
 {
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
