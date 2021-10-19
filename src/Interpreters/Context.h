@@ -294,7 +294,7 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
     /// Has background executors for MergeTree tables been initialized?
-    std::atomic<bool> is_background_executors_initialized = false;
+    bool is_background_executors_initialized = false;
 
 
 public:
