@@ -18,7 +18,6 @@ BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Param
 {
 }
 
-
 std::vector<String> BinaryRowInputFormat::readHeaderRow()
 {
     std::vector<String> fields;

@@ -38,7 +38,7 @@ private:
     std::vector<String> readHeaderRow();
 
     DataTypes read_data_types;
-    UInt64 read_columns;
+    UInt64 read_columns = 0;
 };
 
 }
