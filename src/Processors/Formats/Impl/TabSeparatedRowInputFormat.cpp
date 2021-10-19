@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>

@@ -1,8 +1,8 @@
 #include "LibraryBridgeHelper.h"
 
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
