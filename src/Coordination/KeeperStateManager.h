@@ -13,14 +13,22 @@ namespace DB
 
 using KeeperServerConfigPtr = nuraft::ptr<nuraft::srv_config>;
 
+/// Wrapper struct for Keeper cluster config. We parse this
+/// info from XML files.
 struct KeeperConfigurationWrapper
 {
+    /// Our port
     int port;
+    /// Our config
     KeeperServerConfigPtr config;
+    /// Servers id's to start as followers
     std::unordered_set<int> servers_start_as_followers;
+    /// Cluster config
     ClusterConfigPtr cluster_config;
 };
 
+/// When our configuration changes the following action types
+/// can happen
 enum class ConfigUpdateActionType
 {
     RemoveServer,
@@ -28,6 +36,7 @@ enum class ConfigUpdateActionType
     UpdatePriority,
 };
 
+/// Action to update configuration
 struct ConfigUpdateAction
 {
     ConfigUpdateActionType action_type;
@@ -36,6 +45,7 @@ struct ConfigUpdateAction
 
 using ConfigUpdateActions = std::vector<ConfigUpdateAction>;
 
+/// Responsible for managing our and cluster configuration
 class KeeperStateManager : public nuraft::state_mgr
 {
 public:
@@ -46,6 +56,7 @@ public:
         const CoordinationSettingsPtr & coordination_settings,
         bool standalone_keeper);
 
+    /// Constructor for tests
     KeeperStateManager(
         int server_id_,
         const std::string & host,
@@ -56,8 +67,14 @@ public:
 
     void flushLogStore();
 
-    nuraft::ptr<nuraft::cluster_config> load_config() override { return configuration_wrapper.cluster_config; }
+    /// Called on server start, in our case we don't use any separate logic for load
+    nuraft::ptr<nuraft::cluster_config> load_config() override
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        return configuration_wrapper.cluster_config;
+    }
 
+    /// Save cluster config (i.e. nodes, their priorities and so on)
     void save_config(const nuraft::cluster_config & config) override;
 
     void save_state(const nuraft::srv_state & state) override;
@@ -72,10 +89,15 @@ public:
 
     void system_exit(const int /* exit_code */) override {}
 
-    int getPort() const { return configuration_wrapper.port; }
+    int getPort() const
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        return configuration_wrapper.port;
+    }
 
     bool shouldStartAsFollower() const
     {
+        std::lock_guard lock(configuration_wrapper_mutex);
         return configuration_wrapper.servers_start_as_followers.count(my_server_id);
     }
 
@@ -86,12 +108,16 @@ public:
 
     nuraft::ptr<KeeperLogStore> getLogStore() const { return log_store; }
 
-    uint64_t getTotalServers() const { return configuration_wrapper.cluster_config->get_servers().size(); }
+    uint64_t getTotalServers() const
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        return configuration_wrapper.cluster_config->get_servers().size();
+    }
 
+    /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
-    void setClusterConfig(const ClusterConfigPtr & cluster_config);
-
+    /// Get configuration diff between proposed XML and current state in RAFT
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
 
 private:
@@ -99,10 +125,13 @@ private:
     bool secure;
     std::string config_prefix;
 
+    mutable std::mutex configuration_wrapper_mutex;
     KeeperConfigurationWrapper configuration_wrapper;
+
     nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_state> server_state;
 
+    /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 };
 

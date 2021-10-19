@@ -90,9 +90,15 @@ public:
 
     int getServerID() const { return server_id; }
 
+    /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
+    /// Apply action fo configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
+    /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & action);
+
+
+    bool waitConfigurationUpdate(const ConfigUpdateAction & action);
 };
 
 }

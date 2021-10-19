@@ -32,9 +32,9 @@ namespace
 }
 
 
-KeeperServersConfiguration KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const
+KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const
 {
-    KeeperServersConfiguration result;
+    KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
@@ -118,11 +118,6 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     return nullptr;
 }
 
-void KeeperStateManager::setClusterConfig(const ClusterConfigPtr & cluster_config)
-{
-    configuration_wrapper.cluster_config = cluster_config;
-}
-
 void KeeperStateManager::flushLogStore()
 {
     log_store->flush();
@@ -130,14 +125,15 @@ void KeeperStateManager::flushLogStore()
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
+    std::lock_guard lock(configuration_wrapper_mutex);
     nuraft::ptr<nuraft::buffer> buf = config.serialize();
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
-     nuraft::ptr<nuraft::buffer> buf = state.serialize();
-     server_state = nuraft::srv_state::deserialize(*buf);
+    nuraft::ptr<nuraft::buffer> buf = state.serialize();
+    server_state = nuraft::srv_state::deserialize(*buf);
 }
 
 ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
@@ -150,35 +146,43 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     for (auto new_server : new_configuration_wrapper.cluster_config->get_servers())
         new_ids[new_server->get_id()] = new_server;
 
-    for (auto old_server : configuration_wrapper.cluster_config->get_servers())
-        old_ids[old_server->get_id()] = old_server;
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        for (auto old_server : configuration_wrapper.cluster_config->get_servers())
+            old_ids[old_server->get_id()] = old_server;
+    }
 
     ConfigUpdateActions result;
 
+    /// First of all add new servers
     for (auto [new_id, server_config] : new_ids)
     {
         if (!old_ids.count(new_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
     }
 
+    /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
     {
         if (!new_ids.count(old_id))
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
     }
 
-    /// And update priority if required
-    for (const auto & old_server : configuration_wrapper.cluster_config->get_servers())
     {
-        for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
+        std::lock_guard lock(configuration_wrapper_mutex);
+        /// And update priority if required
+        for (const auto & old_server : configuration_wrapper.cluster_config->get_servers())
         {
-            if (old_server->get_id() == new_server->get_id())
+            for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
             {
-                if (old_server->get_priority() != new_server->get_priority())
+                if (old_server->get_id() == new_server->get_id())
                 {
-                    result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                    if (old_server->get_priority() != new_server->get_priority())
+                    {
+                        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
