@@ -62,7 +62,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <DataStreams/ConnectionCollector.h>
+#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
@@ -844,7 +844,7 @@ if (ThreadFuzzer::instance().isEffective())
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            //buildLoggers(*config, logger());
+            updateLevels(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -940,6 +940,17 @@ if (ThreadFuzzer::instance().isEffective())
     }
     global_context->setMarkCache(mark_cache_size);
 
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
+
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
@@ -986,8 +997,19 @@ if (ThreadFuzzer::instance().isEffective())
     if (config().has("keeper_server"))
     {
 #if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperDispatcher();
+        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
+        //// of clickhouse-keeper, so start synchronously.
+        bool can_initialize_keeper_async = false;
+
+        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
+        {
+            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
+            /// synchronously.
+            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
+        }
+        /// Initialize keeper RAFT.
+        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1539,7 +1561,8 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            global_context->getProcessList().killAllQueries();
+            if (!config().getBool("shutdown_wait_unfinished_queries", false))
+                global_context->getProcessList().killAllQueries();
 
             if (current_connections)
                 current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
