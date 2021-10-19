@@ -275,7 +275,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             server->waitInit();
             LOG_DEBUG(log, "Quorum initialized");
-            updateConfiguration(config);
         }
         else
         {
@@ -290,6 +289,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
+    update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
+    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -325,6 +326,10 @@ void KeeperDispatcher::shutdown()
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
+
+            update_configuration_queue.finish();
+            if (update_configuration_thread.joinable())
+                update_configuration_thread.join();
         }
 
         if (server)
@@ -505,17 +510,69 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     return future.get();
 }
 
+
+void KeeperDispatcher::updateConfigurationThread()
+{
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (!server->checkInit())
+            {
+                LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                continue;
+            }
+
+            ConfigUpdateAction action;
+            if (!update_configuration_queue.pop(action))
+                break;
+            /// Only leader node must check dead sessions
+            if (isLeader())
+            {
+                server->applyConfigurationUpdate(action);
+            }
+            else
+            {
+                String message;
+                if (action.type == ConfigUpdateActionType::RemoveServer)
+                    message += "remove";
+                else if (action.type == ConfigUpdateActionType::AddServer)
+                    message += "add";
+                else if (action.type == ConfigUpdateActionType::UpdatePriority)
+                    message += "update priority for";
+                else
+                    message += "unknown action for";
+
+                LOG_INFO(log, "Configuration changed ({} server {}), but we are not leader, so we will wait update from leader", message, task.server->get_id());
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    if (isLeader())
-    {
-        server->updateConfiguration(config);
-    }
+    auto diff = server->getConfigurationDiff(config);
+    if (diff.empty())
+        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+    else if (diff.size() > 1)
+        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
     else
-    {
-        LOG_INFO(log, "Configuration changed, but we are not leader, so we will wait update from leader");
-    }
+        LOG_DEBUG(log, "Configuration change size ({})", diff.size());
 
+    for (auto & change : diff)
+    {
+        bool push_result = update_configuration_queue.push(change);
+        if (!push_result)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+    }
 }
 
 }
