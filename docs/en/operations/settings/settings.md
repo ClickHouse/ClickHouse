@@ -1792,7 +1792,7 @@ Enables or disables [LIMIT](#limit) applying on each shard separatelly. Usually 
 
 Possible values:
 
--  0 - Disabled.
+-  0 — Disabled.
 -  1 - Enabled.
 
 Default value: `1`.
