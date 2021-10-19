@@ -128,13 +128,13 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Аргументы**
 
-Аргументами являются [maps](../../sql-reference/data-types/map.md) или [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
+Аргументами являются контейнеры [Map](../../sql-reference/data-types/map.md) или [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
 Все массивы ключей должны иметь один и тот же тип, а все массивы значений должны содержать элементы, которые можно приводить к одному типу ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) или [Float64](../../sql-reference/data-types/float.md#float32-float64)).
 Общий приведенный тип используется в качестве типа для результирующего массива.
 
 **Возвращаемое значение**
 
--   В зависимости от аргумента возвращает [map] или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй - значения.
+-   В зависимости от аргумента возвращает один [Map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй - значения.
 
 **Пример**
 
@@ -152,7 +152,7 @@ SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt3
 └────────────────┴───────────────────────────────────┘
 ```
 
-Запрос с типом `Map`:
+Запрос с контейнером `Map`:
 
 ```sql
 SELECT mapSubtract(map(1,1), map(1,1));
@@ -170,7 +170,7 @@ SELECT mapSubtract(map(1,1), map(1,1));
 
 Заполняет недостающие ключи в контейнере map (пара массивов ключей и значений), где ключи являются целыми числами. Кроме того, он поддерживает указание максимального ключа, который используется для расширения массива ключей.
 
-Аргументами являются [map](../../sql-reference/data-types/map.md) или два [массива](../../sql-reference/data-types/array.md#data-type-array), где первый массив представляет ключи, а второй массив содержит значения для каждого ключа.
+Аргументами являются контейнер [Map](../../sql-reference/data-types/map.md) или два [массива](../../sql-reference/data-types/array.md#data-type-array), где первый массив представляет ключи, а второй массив содержит значения для каждого ключа.
 
 **Синтаксис**
 
@@ -187,16 +187,16 @@ mapPopulateSeries(map[, max])
 
 Сопоставленные массивы:
 
--   `keys` — массив ключей [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
+-   `keys` — массив ключей. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
 -   `values` — массив значений. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
 
 или
 
--   `map` — карта с целочисленными ключами. [Map](../../sql-reference/data-types/map.md).
+-   `map` — контейнер Map с целочисленными ключами. [Map](../../sql-reference/data-types/map.md).
 
 **Возвращаемое значение**
 
--   В зависимости от аргумента возвращает [map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array): ключи отсортированные по порядку и значения соответствующих ключей.
+-   В зависимости от аргумента возвращает контейнер [Map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array): ключи отсортированные по порядку и значения соответствующих ключей.
 
 **Пример**
 
@@ -214,7 +214,7 @@ SELECT mapPopulateSeries([1,2,4], [11,22,44], 5) AS res, toTypeName(res) AS type
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-Запрос с типом `Map`:
+Запрос с контейнером `Map`:
 
 ```sql
 SELECT mapPopulateSeries(map(1, 10, 5, 20), 6);
