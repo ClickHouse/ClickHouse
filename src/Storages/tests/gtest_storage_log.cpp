@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
@@ -17,9 +16,10 @@
 #include <memory>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Chain.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -125,7 +125,6 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
         context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
     QueryPipeline pipeline(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
-    PullingPipelineExecutor executor(pipeline);
 
     Block sample;
     {
@@ -138,16 +137,16 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     tryRegisterFormats();
 
     WriteBufferFromOwnString out_buf;
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
+    auto output = FormatFactory::instance().getOutputFormat("Values", out_buf, sample, context);
+    pipeline.complete(output);
 
     Block data;
-    output->writePrefix();
-    while (executor.pull(data))
-        output->write(data);
 
-    output->writeSuffix();
-    output->flush();
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    // output->flush();
 
+    out_buf.finalize();
     return out_buf.str();
 }
 

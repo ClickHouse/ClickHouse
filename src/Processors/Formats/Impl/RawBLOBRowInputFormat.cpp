@@ -39,9 +39,9 @@ bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return false;
 }
 
-void registerInputFormatProcessorRawBLOB(FormatFactory & factory)
+void registerInputFormatRawBLOB(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("RawBLOB", [](
+    factory.registerInputFormat("RawBLOB", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
