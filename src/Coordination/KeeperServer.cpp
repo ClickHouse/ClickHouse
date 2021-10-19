@@ -129,23 +129,23 @@ void KeeperServer::startup()
         if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
         {
             LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-            state_manager->setClusterConfig(latest_snapshot_config);
+            state_manager->save_config(*latest_snapshot_config);
         }
         else
         {
             LOG_INFO(log, "Will use config from log store with log index {}", latest_snapshot_config->get_log_idx());
-            state_manager->setClusterConfig(latest_log_store_config);
+            state_manager->save_config(*latest_log_store_config);
         }
     }
     else if (latest_snapshot_config)
     {
         LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-        state_manager->setClusterConfig(latest_snapshot_config);
+        state_manager->save_config(*latest_snapshot_config);
     }
     else if (latest_log_store_config)
     {
         LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
-        state_manager->setClusterConfig(latest_log_store_config);
+        state_manager->save_config(*latest_log_store_config);
     }
     else
     {
@@ -424,7 +424,7 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
         LOG_INFO(log, "Will try to remove server with id {}", task.server->get_id());
 
         bool removed = false;
-        if (task.server->get_id() == stage_manager->server_id())
+        if (task.server->get_id() == state_manager->server_id())
         {
             LOG_INFO(log, "Trying to remove leader node (ourself), so will yield leadership and some other node (new leader) will try remove us. "
                         "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
@@ -461,6 +461,61 @@ void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
         raft_instance->set_priority(task.server->get_id(), task.server->get_priority());
     else
         LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+}
+
+
+bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
+{
+
+    size_t sleep_ms = 500;
+    if (task.action_type == ConfigUpdateActionType::AddServer)
+    {
+        LOG_INFO(log, "Will try to wait server with id {} to be added", task.server->get_id());
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully added", task.server->get_id());
+                return true;
+            }
+
+            if (isLeader())
+            {
+                LOG_INFO(log, "We are leader now, probably we will have to add server {}", task.server->get_id());
+                return false;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        return false;
+    }
+    else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+    {
+        LOG_INFO(log, "Will try to remove server with id {}", task.server->get_id());
+
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully removed", task.server->get_id());
+                return true;
+            }
+
+            if (isLeader())
+            {
+                LOG_INFO(log, "We are leader now, probably we will have to remove server {}", task.server->get_id());
+                return false;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        return false;
+    }
+    else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
+        return true;
+    else
+        LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+    return true;
 }
 
 }

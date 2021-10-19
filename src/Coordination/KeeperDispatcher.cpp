@@ -530,24 +530,26 @@ void KeeperDispatcher::updateConfigurationThread()
             ConfigUpdateAction action;
             if (!update_configuration_queue.pop(action))
                 break;
-            /// Only leader node must check dead sessions
-            if (isLeader())
-            {
-                server->applyConfigurationUpdate(action);
-            }
-            else
-            {
-                String message;
-                if (action.type == ConfigUpdateActionType::RemoveServer)
-                    message += "remove";
-                else if (action.type == ConfigUpdateActionType::AddServer)
-                    message += "add";
-                else if (action.type == ConfigUpdateActionType::UpdatePriority)
-                    message += "update priority for";
-                else
-                    message += "unknown action for";
 
-                LOG_INFO(log, "Configuration changed ({} server {}), but we are not leader, so we will wait update from leader", message, task.server->get_id());
+
+            /// We must wait this update from leader or apply it ourself (if we are leader)
+            bool done = false;
+            while (!done)
+            {
+                if (shutdown_called)
+                    return;
+
+                if (isLeader())
+                {
+                    server->applyConfigurationUpdate(action);
+                    done = true;
+                }
+                else
+                {
+                    done = server->waitConfigurationUpdate(action);
+                    if (!done)
+                        LOG_INFO(log, "Cannot wait for configuration update, maybe we become leader, or maybe update is invalid, will try to wait one more time");
+                }
             }
         }
         catch (...)
