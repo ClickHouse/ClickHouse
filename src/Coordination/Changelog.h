@@ -102,6 +102,7 @@ public:
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
 
+    /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
     /// Return log entries between [start, end)
