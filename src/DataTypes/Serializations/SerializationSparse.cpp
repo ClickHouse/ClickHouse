@@ -159,11 +159,15 @@ void SerializationSparse::enumerateStreams(
     data.type = type ? std::make_shared<DataTypeUInt64>() : nullptr;
     data.serialization = std::make_shared<SerializationNumber<UInt64>>();
     data.column = column_sparse ? column_sparse->getOffsetsPtr() : nullptr;
+    size_t column_size = column_sparse ? column_sparse->size() : 0;
+
+    path.push_back(Substream::SparseOffsets);
+    path.back().data = data;
 
     callback(path);
 
     path.back() = Substream::SparseElements;
-    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(data.column, column->size())};
+    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(data.column, column_size)};
 
     auto next_column = column_sparse ? column_sparse->getValuesPtr() : nullptr;
     nested->enumerateStreams(path, callback, type, next_column);

@@ -46,7 +46,7 @@ void SerializationInfoBuilder::add(const Block & block)
         info->columns[elem.name].num_defaults += static_cast<size_t>(
             num_rows * elem.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
 
-        elem.type->forEachSubcolumn([&](const auto &, const auto & name, const auto & data)
+        IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto & data)
         {
             if (!data.type->supportsSparseSerialization())
                 return;
@@ -62,6 +62,7 @@ void SerializationInfoBuilder::add(const Block & block)
             auto full_name = Nested::concatenateName(elem.name, name);
             info->columns[full_name].num_defaults += static_cast<size_t>(
                 num_rows * data.column->getRatioOfDefaultRows(default_rows_search_sample_ratio));
+
         }, elem.type->getDefaultSerialization(), elem.type, elem.column);
     }
 }
