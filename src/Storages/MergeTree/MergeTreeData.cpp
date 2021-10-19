@@ -4531,7 +4531,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return false;
 
-    const auto & query_ptr = query_info.query;
+    const auto & query_ptr = query_info.original_query;
 
     if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
     {
