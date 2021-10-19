@@ -247,12 +247,3 @@
 [submodule "contrib/bzip2"]
 	path = contrib/bzip2
 	url = https://github.com/ClickHouse-Extras/bzip2.git
-[submodule "contrib/magic_enum"]
-	path = contrib/magic_enum
-	url = https://github.com/Neargye/magic_enum
-[submodule "contrib/libprotobuf-mutator"]
-	path = contrib/libprotobuf-mutator
-	url = https://github.com/google/libprotobuf-mutator
-[submodule "contrib/sysroot"]
-	path = contrib/sysroot
-	url = https://github.com/ClickHouse-Extras/sysroot.git

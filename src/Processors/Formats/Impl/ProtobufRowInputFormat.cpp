@@ -8,7 +8,7 @@
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Interpreters/Context.h>
-#   include <base/range.h>
+#   include <common/range.h>
 
 
 namespace DB
@@ -56,11 +56,11 @@ void ProtobufRowInputFormat::syncAfterError()
     reader->endMessage(true);
 }
 
-void registerInputFormatProtobuf(FormatFactory & factory)
+void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
     {
-        factory.registerInputFormat(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
+        factory.registerInputFormatProcessor(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -81,7 +81,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProtobuf(FormatFactory &) {}
+void registerInputFormatProcessorProtobuf(FormatFactory &) {}
 }
 
 #endif

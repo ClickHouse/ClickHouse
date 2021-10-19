@@ -11,12 +11,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int SYSTEM_ERROR;
 }
 
 KeeperDispatcher::KeeperDispatcher()
     : coordination_settings(std::make_shared<CoordinationSettings>())
-    , responses_queue(std::numeric_limits<size_t>::max())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -166,8 +164,7 @@ void KeeperDispatcher::snapshotThread()
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
-        if (!snapshots_queue.pop(task))
-            break;
+        snapshots_queue.pop(task);
 
         if (shutdown_called)
             break;
@@ -238,15 +235,9 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
-    {
-        if (!requests_queue->push(std::move(request_info)))
-            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
-    }
+        requests_queue->push(std::move(request_info));
     else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
-    {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-    }
-
     return true;
 }
 
@@ -304,17 +295,16 @@ void KeeperDispatcher::shutdown()
 
             if (requests_queue)
             {
-                requests_queue->finish();
-
+                requests_queue->push({});
                 if (request_thread.joinable())
                     request_thread.join();
             }
 
-            responses_queue.finish();
+            responses_queue.push({});
             if (responses_thread.joinable())
                 responses_thread.join();
 
-            snapshots_queue.finish();
+            snapshots_queue.push({});
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
         }
@@ -327,9 +317,16 @@ void KeeperDispatcher::shutdown()
         /// Set session expired for all pending requests
         while (requests_queue && requests_queue->tryPop(request_for_session))
         {
-            auto response = request_for_session.request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            setResponse(request_for_session.session_id, response);
+            if (request_for_session.request)
+            {
+                auto response = request_for_session.request->makeResponse();
+                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                setResponse(request_for_session.session_id, response);
+            }
+            else
+            {
+                break;
+            }
         }
 
         /// Clear all registered sessions
@@ -382,8 +379,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        if (!requests_queue->push(std::move(request_info)))
-                            LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
+                        requests_queue->push(std::move(request_info));
                     }
 
                     /// Remove session from registered sessions
@@ -418,12 +414,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
         response->xid = request->xid;
         response->zxid = 0;
         response->error = error;
-        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
-            throw Exception(ErrorCodes::SYSTEM_ERROR,
-                "Could not push error response xid {} zxid {} error message {} to responses queue",
-                response->xid,
-                response->zxid,
-                errorMessage(error));
+        responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
     }
 }
 

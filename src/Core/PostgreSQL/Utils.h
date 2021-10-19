@@ -19,13 +19,7 @@ namespace pqxx
 
 namespace postgres
 {
-
 ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password);
-
-String getConnectionForLog(const String & host, UInt16 port);
-
-String formatNameForLogs(const String & postgres_database_name, const String & postgres_table_name);
-
 }
 
 #endif

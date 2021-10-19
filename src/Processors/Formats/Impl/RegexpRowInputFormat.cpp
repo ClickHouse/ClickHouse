@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <IO/ReadHelpers.h>
@@ -163,9 +163,9 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     return true;
 }
 
-void registerInputFormatRegexp(FormatFactory & factory)
+void registerInputFormatProcessorRegexp(FormatFactory & factory)
 {
-    factory.registerInputFormat("Regexp", [](
+    factory.registerInputFormatProcessor("Regexp", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

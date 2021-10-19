@@ -33,7 +33,6 @@ endif()
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
 add_subdirectory (abseil-cpp-cmake)
-add_subdirectory (magic-enum-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
@@ -48,10 +47,6 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
-
-if (ENABLE_FUZZING)
-    add_subdirectory (libprotobuf-mutator-cmake)
-endif()
 
 if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
@@ -167,7 +162,7 @@ endif ()
 if(USE_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
 
-    add_subdirectory(snappy-cmake)
+    add_subdirectory(snappy)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
 endif()
@@ -211,15 +206,12 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-function(add_llvm)
+if (USE_EMBEDDED_COMPILER)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
 
-    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
-    set (CMAKE_INSTALL_RPATH "ON")
-    set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -227,12 +219,13 @@ function(add_llvm)
 
     # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
     # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
     set (CMAKE_CXX_STANDARD 17)
 
     add_subdirectory (llvm/llvm)
-endfunction()
-if (USE_EMBEDDED_COMPILER)
-    add_llvm()
+
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -282,7 +275,7 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_AMQPCPP OR USE_CASSANDRA)
-    add_subdirectory (libuv-cmake)
+    add_subdirectory (libuv)
 endif()
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)

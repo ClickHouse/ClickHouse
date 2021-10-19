@@ -14,8 +14,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -31,7 +32,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 #include <cassert>
 
@@ -132,7 +133,7 @@ private:
       */
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
-    std::optional<NativeReader> block_in;
+    std::optional<NativeBlockInputStream> block_in;
 
     void start()
     {
@@ -202,7 +203,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        block_out.write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out.write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
@@ -210,6 +211,7 @@ public:
         if (done)
             return;
 
+        block_out.writeSuffix();
         data_out->next();
         data_out_compressed->next();
         data_out_compressed->finalize();
@@ -240,7 +242,7 @@ private:
     String index_out_file;
     std::unique_ptr<WriteBuffer> index_out_compressed;
     std::unique_ptr<CompressedWriteBuffer> index_out;
-    NativeWriter block_out;
+    NativeBlockOutputStream block_out;
 
     bool done = false;
 };

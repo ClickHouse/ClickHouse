@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SELECT 'simple partition key:';
 DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)

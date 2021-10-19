@@ -1,14 +1,14 @@
 #include "ODBCBlockOutputStream.h"
 
 #include <Common/hex.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Core/Field.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include "getIdentifierQuote.h"
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/getInsertQuery.h>
 
 
@@ -16,15 +16,13 @@ namespace DB
 {
 
 
-ODBCSink::ODBCSink(
-    nanodbc::ConnectionHolderPtr connection_holder_,
-    const std::string & remote_database_name_,
-    const std::string & remote_table_name_,
-    const Block & sample_block_,
-    ContextPtr local_context_,
-    IdentifierQuotingStyle quoting_)
-    : ISink(sample_block_)
-    , log(&Poco::Logger::get("ODBCSink"))
+ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_holder_,
+                                             const std::string & remote_database_name_,
+                                             const std::string & remote_table_name_,
+                                             const Block & sample_block_,
+                                             ContextPtr local_context_,
+                                             IdentifierQuotingStyle quoting_)
+    : log(&Poco::Logger::get("ODBCBlockOutputStream"))
     , connection_holder(std::move(connection_holder_))
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
@@ -35,12 +33,15 @@ ODBCSink::ODBCSink(
     description.init(sample_block);
 }
 
-
-void ODBCSink::consume(Chunk chunk)
+Block ODBCBlockOutputStream::getHeader() const
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    return sample_block;
+}
+
+void ODBCBlockOutputStream::write(const Block & block)
+{
     WriteBufferFromOwnString values_buf;
-    auto writer = local_context->getOutputFormat("Values", values_buf, sample_block);
+    auto writer = FormatFactory::instance().getOutputStream("Values", values_buf, sample_block, local_context);
     writer->write(block);
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();

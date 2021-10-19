@@ -1,24 +1,25 @@
 #include "Keeper.h"
 
+#include <sys/stat.h>
+#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/getMultipleKeysFromConfig.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Coordination/Defines.h>
-#include <filesystem>
-#include <IO/UseSSL.h>
-#include <Core/ServerUUID.h>
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
+#include <common/defines.h>
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
-#include <sys/stat.h>
-#include <pwd.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Core/ServerUUID.h>
+#include <filesystem>
+#include <IO/UseSSL.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -30,7 +31,6 @@
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
-#include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
 #if defined(OS_LINUX)

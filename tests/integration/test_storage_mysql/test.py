@@ -10,7 +10,7 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/named_collections.xml'], with_mysql=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_mysql_cluster=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.xml'], with_mysql=True)
 
@@ -246,7 +246,7 @@ def test_mysql_distributed(started_cluster):
     node2.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL('mysql{2|3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Fill remote tables with different data to be able to check
     nodes = [node1, node2, node2, node2]
@@ -255,13 +255,13 @@ def test_mysql_distributed(started_cluster):
         nodes[i-1].query('''
             CREATE TABLE test_replica{}
             (id UInt32, name String, age UInt32, money UInt32)
-            ENGINE = MySQL('mysql{}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, 57 if i==1 else i))
+            ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, 57 if i==1 else i))
         nodes[i-1].query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
     # test multiple ports parsing
-    result = node2.query('''SELECT DISTINCT(name) FROM mysql('mysql{57|2|3}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql{57|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
     assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
-    result = node2.query('''SELECT DISTINCT(name) FROM mysql('mysql57:3306|mysql2:3306|mysql3:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql57:3306|mysql2:3306|mysql3:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
     assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
 
     # check all replicas are traversed
@@ -279,7 +279,7 @@ def test_mysql_distributed(started_cluster):
     node2.query('''
         CREATE TABLE test_shards
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('MySQL', 'mysql{57|2}:3306,mysql{3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = ExternalDistributed('MySQL', `mysql{57|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Check only one replica in each shard is used
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
@@ -322,6 +322,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     conn.close()
 
 
+# Check that limited connection_wait_timeout (via connection_pool_size=1) will throw.
 def test_settings_connection_wait_timeout(started_cluster):
     table_name = 'test_settings_connection_wait_timeout'
     node1.query(f'DROP TABLE IF EXISTS {table_name}')
@@ -366,59 +367,6 @@ def test_settings_connection_wait_timeout(started_cluster):
     drop_mysql_table(conn, table_name)
     conn.close()
 
-
-def test_predefined_connection_configuration(started_cluster):
-    conn = get_mysql_conn(started_cluster, started_cluster.mysql_ip)
-    table_name = 'test_table'
-    drop_mysql_table(conn, table_name)
-    create_mysql_table(conn, table_name)
-
-    node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql1);
-    ''')
-    node1.query("INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)")
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
-
-    node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql1, replace_query=1);
-    ''')
-    node1.query("INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)")
-    node1.query("INSERT INTO test_table (id, name, money) select number, toString(number), number from numbers(100)")
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
-
-    node1.query_and_get_error('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql1, query=1);
-    ''')
-    node1.query_and_get_error('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql1, replace_query=1, on_duplicate_clause='kek');
-    ''')
-    node1.query_and_get_error('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(fff);
-    ''')
-    node1.query_and_get_error('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql2);
-    ''')
-
-    node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE MySQL(mysql3, port=3306);
-    ''')
-    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
-
-
 # Regression for (k, v) IN ((k, v))
 def test_mysql_in(started_cluster):
     table_name = 'test_mysql_in'
@@ -448,39 +396,6 @@ def test_mysql_in(started_cluster):
 
     drop_mysql_table(conn, table_name)
     conn.close()
-
-def test_mysql_null(started_cluster):
-    table_name = 'test_mysql_in'
-    node1.query(f'DROP TABLE IF EXISTS {table_name}')
-
-    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
-    drop_mysql_table(conn, table_name)
-    with conn.cursor() as cursor:
-        cursor.execute("""
-            CREATE TABLE `clickhouse`.`{}` (
-            `id` int(11) NOT NULL,
-            `money` int NULL default NULL,
-            PRIMARY KEY (`id`)) ENGINE=InnoDB;
-        """.format(table_name))
-
-    node1.query('''
-        CREATE TABLE {}
-        (
-            id UInt32,
-            money Nullable(UInt32)
-        )
-        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')
-        '''.format(table_name, table_name)
-    )
-
-    node1.query("INSERT INTO {} (id, money) SELECT number, if(number%2, NULL, 1) from numbers(10) ".format(table_name))
-
-    assert int(node1.query("SELECT count() FROM {} WHERE money IS NULL SETTINGS external_table_strict_query=1".format(table_name))) == 5
-    assert int(node1.query("SELECT count() FROM {} WHERE money IS NOT NULL SETTINGS external_table_strict_query=1".format(table_name))) == 5
-
-    drop_mysql_table(conn, table_name)
-    conn.close()
-
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

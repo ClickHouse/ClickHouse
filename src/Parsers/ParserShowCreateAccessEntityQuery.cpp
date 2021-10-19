@@ -6,7 +6,7 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/parseUserName.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <assert.h>
 
 

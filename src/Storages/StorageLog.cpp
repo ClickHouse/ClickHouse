@@ -16,6 +16,8 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockOutputStream.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -23,7 +25,7 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <cassert>
@@ -305,7 +307,7 @@ private:
 
 void LogSink::consume(Chunk chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
@@ -331,7 +333,7 @@ void LogSink::onFinish()
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getHeader())
+    for (const auto & column : getPort().getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -406,7 +408,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
             storage.files[stream_name].data_file_path,
             columns.getCodecOrDefault(name_and_type.name),
             storage.max_compress_block_size);
-    });
+    }, settings.path);
 
     settings.getter = createStreamGetter(name_and_type, written_streams);
 
@@ -427,7 +429,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         mark.offset = stream_it->second.plain_offset + stream_it->second.plain->count();
 
         out_marks.emplace_back(file.column_index, mark);
-    });
+    }, settings.path);
 
     serialization->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
@@ -441,7 +443,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         if (streams.end() == it)
             throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream", ErrorCodes::LOGICAL_ERROR);
         it->second.compressed.next();
-    });
+    }, settings.path);
 }
 
 
@@ -464,8 +466,6 @@ void LogSink::writeMarks(MarksForColumns && marks)
         file.marks.push_back(mark.second);
     }
 }
-
-StorageLog::~StorageLog() = default;
 
 StorageLog::StorageLog(
     DiskPtr disk_,
@@ -627,12 +627,13 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
       * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
+    ISerialization::SubstreamPath substream_root_path;
     auto serialization = column.type->getDefaultSerialization();
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = ISerialization::getFileNameForStream(column, substream_path);
-    });
+    }, substream_root_path);
 
     Files::const_iterator it = files.find(filename);
     if (files.end() == it)
@@ -749,8 +750,9 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
                 size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
         };
 
+        ISerialization::SubstreamPath substream_path;
         auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback);
+        serialization->enumerateStreams(stream_callback, substream_path);
     }
 
     return column_sizes;

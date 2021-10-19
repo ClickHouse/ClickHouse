@@ -3,7 +3,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Storages/StorageDictionary.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -126,8 +126,6 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     {
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
-        if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-            buffer << " COMMENT " << backQuote(comment_value);
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;

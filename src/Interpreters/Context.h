@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -13,7 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -23,7 +24,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <exception>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -47,7 +47,6 @@ class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
-class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -75,7 +74,6 @@ class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
-class SessionLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -102,22 +100,12 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-template <class Queue>
-class MergeTreeBackgroundExecutor;
-class MergeMutateRuntimeQueue;
-class OrdinaryRuntimeQueue;
-using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
-using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
-using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
 
-class IInputFormat;
 class IOutputFormat;
-using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -134,8 +122,6 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
-
-class AsynchronousInsertQueue;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
@@ -290,9 +276,8 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
     bool is_internal_query = false;
-
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -331,6 +316,8 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
+
+    void copyFrom(const ContextPtr & other);
 
     ~Context();
 
@@ -483,7 +470,6 @@ public:
         const String & projection_name = {},
         const String & view_name = {});
 
-
     /// Supported factories for records in query_log
     enum class QueryLogFactories
     {
@@ -553,28 +539,27 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     const ExternalModelsLoader & getExternalModelsLoader() const;
-    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
-    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
-    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
-    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries() const;
+    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
 
-    /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+    /// I/O formats.
+    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
+
+    /// Don't use streams. Better look at getOutputFormat...
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
+
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
@@ -615,7 +600,6 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
-
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -664,8 +648,6 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
-    UInt32 getZooKeeperSessionUptime() const;
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
@@ -694,16 +676,6 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
-
-    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
-    void setIndexUncompressedCache(size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
-    void dropIndexUncompressedCache() const;
-
-    /// Create a cache of index marks of specified size. This can be done only once.
-    void setIndexMarkCache(size_t cache_size_in_bytes);
-    std::shared_ptr<MarkCache> getIndexMarkCache() const;
-    void dropIndexMarkCache() const;
 
     /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);
@@ -763,7 +735,6 @@ public:
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
-    std::shared_ptr<SessionLog> getSessionLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -853,19 +824,8 @@ public:
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
-    AsynchronousInsertQueue * getAsynchronousInsertQueue() const;
-    void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
-
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
-
-    /// Background executors related methods
-    void initializeBackgroundExecutors();
-
-    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
-    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
-    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
-    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

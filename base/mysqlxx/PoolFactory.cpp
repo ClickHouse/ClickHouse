@@ -79,7 +79,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
     std::lock_guard<std::mutex> lock(impl->mutex);
     if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
     {
-        return *(entry->second);
+        return *(entry->second.get());
     }
     else
     {
@@ -100,7 +100,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
             impl->pools.insert_or_assign(config_name, pool);
             impl->pools_by_ids.insert_or_assign(entry_name, config_name);
         }
-        return *pool;
+        return *(pool.get());
     }
 }
 

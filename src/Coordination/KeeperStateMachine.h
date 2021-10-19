@@ -1,17 +1,16 @@
 #pragma once
 
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperStorage.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
+#include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
-
 
 namespace DB
 {
 
-using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
+using ResponsesQueue = ThreadSafeQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.

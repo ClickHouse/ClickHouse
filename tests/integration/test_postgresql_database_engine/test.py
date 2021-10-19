@@ -7,7 +7,7 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=["configs/named_collections.xml"], with_postgres=True)
+node1 = cluster.add_instance('node1', main_configs=[], with_postgres=True)
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -206,36 +206,6 @@ def test_postgresql_database_with_schema(started_cluster):
     node1.query("ATTACH TABLE test_database.table1")
     assert node1.query("SELECT count() FROM test_database.table1").rstrip() == '10000'
     node1.query("DROP DATABASE test_database")
-
-
-def test_predefined_connection_configuration(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f'DROP TABLE IF EXISTS test_table')
-    cursor.execute(f'CREATE TABLE test_table (a integer PRIMARY KEY, b integer)')
-
-    node1.query("DROP DATABASE IF EXISTS postgres_database")
-    node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
-    node1.query("INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)")
-    assert (node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip() == '100')
-
-    cursor.execute('DROP SCHEMA IF EXISTS test_schema')
-    cursor.execute('CREATE SCHEMA test_schema')
-    cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
-
-    node1.query("DROP DATABASE IF EXISTS postgres_database")
-    node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, schema='test_schema')")
-    node1.query("INSERT INTO postgres_database.test_table SELECT number from numbers(200)")
-    assert (node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip() == '200')
-
-    node1.query("DROP DATABASE IF EXISTS postgres_database")
-    node1.query_and_get_error("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, 'test_schema')")
-    node1.query_and_get_error("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres2)")
-    node1.query_and_get_error("CREATE DATABASE postgres_database ENGINE = PostgreSQL(unknown_collection)")
-    node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres3, port=5432)")
-    assert (node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip() == '100')
-
-    node1.query("DROP DATABASE postgres_database")
-    cursor.execute(f'DROP TABLE test_table ')
 
 
 if __name__ == '__main__':

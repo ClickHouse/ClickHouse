@@ -9,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 

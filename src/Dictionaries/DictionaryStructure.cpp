@@ -19,37 +19,84 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
-DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & default_type)
-{
-    const auto name = config.getString(config_prefix + ".name", "");
-    const auto expression = config.getString(config_prefix + ".expression", "");
+    DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & default_type)
+    {
+        const auto name = config.getString(config_prefix + ".name", "");
+        const auto expression = config.getString(config_prefix + ".expression", "");
 
-    if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
+        if (name.empty() && !expression.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
 
-    const auto type_name = config.getString(config_prefix + ".type", default_type);
-    return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
+        const auto type_name = config.getString(config_prefix + ".type", default_type);
+        return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
+    }
+
 }
 
-std::optional<AttributeUnderlyingType> maybeGetAttributeUnderlyingType(TypeIndex index)
+
+AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 {
-    switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
+    auto type_index = type->getTypeId();
+
+    switch (type_index)
     {
-        case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
-        case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
-        case TypeIndex::DateTime64: return AttributeUnderlyingType::UInt64;
+        case TypeIndex::UInt8:          return AttributeUnderlyingType::UInt8;
+        case TypeIndex::UInt16:         return AttributeUnderlyingType::UInt16;
+        case TypeIndex::UInt32:         return AttributeUnderlyingType::UInt32;
+        case TypeIndex::UInt64:         return AttributeUnderlyingType::UInt64;
+        case TypeIndex::UInt128:        return AttributeUnderlyingType::UInt128;
+        case TypeIndex::UInt256:        return AttributeUnderlyingType::UInt256;
+
+        case TypeIndex::Int8:           return AttributeUnderlyingType::Int8;
+        case TypeIndex::Int16:          return AttributeUnderlyingType::Int16;
+        case TypeIndex::Int32:          return AttributeUnderlyingType::Int32;
+        case TypeIndex::Int64:          return AttributeUnderlyingType::Int64;
+        case TypeIndex::Int128:         return AttributeUnderlyingType::Int128;
+        case TypeIndex::Int256:         return AttributeUnderlyingType::Int256;
+
+        case TypeIndex::Float32:        return AttributeUnderlyingType::Float32;
+        case TypeIndex::Float64:        return AttributeUnderlyingType::Float64;
+
+        case TypeIndex::Decimal32:      return AttributeUnderlyingType::Decimal32;
+        case TypeIndex::Decimal64:      return AttributeUnderlyingType::Decimal64;
+        case TypeIndex::Decimal128:     return AttributeUnderlyingType::Decimal128;
+        case TypeIndex::Decimal256:     return AttributeUnderlyingType::Decimal256;
+
+        case TypeIndex::Date:           return AttributeUnderlyingType::UInt16;
+        case TypeIndex::DateTime:       return AttributeUnderlyingType::UInt32;
+        case TypeIndex::DateTime64:     return AttributeUnderlyingType::UInt64;
+
+        case TypeIndex::UUID:           return AttributeUnderlyingType::UUID;
+
+        case TypeIndex::String:         return AttributeUnderlyingType::String;
+
+        case TypeIndex::Array:          return AttributeUnderlyingType::Array;
+
         default: break;
     }
 
-    return magic_enum::enum_cast<AttributeUnderlyingType>(static_cast<TypeIndexUnderlying>(index));
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {} for dictionary attribute", type->getName());
 }
+
+
+std::string toString(AttributeUnderlyingType type)
+{
+    switch (type)
+    {
+#define M(TYPE) case AttributeUnderlyingType::TYPE: return #TYPE;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Unknown dictionary attribute type {}", toString(static_cast<int>(type)));
 }
 
 
@@ -105,7 +152,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             if (id && attribute.underlying_type != AttributeUnderlyingType::UInt64)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual {}",
-                    attribute.underlying_type);
+                    toString(attribute.underlying_type));
 
             else if (key)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary with complex key does not support hierarchy");
@@ -286,7 +333,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         if (!inserted)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary attributes names must be unique. Attribute name {} is not unique",
+                "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
                 name);
 
         const auto type_string = config.getString(prefix + "type");
@@ -295,12 +342,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         bool is_nullable = initial_type->isNullable();
 
         auto non_nullable_type = removeNullable(initial_type);
-
-        const auto underlying_type_opt = maybeGetAttributeUnderlyingType(non_nullable_type->getTypeId());
-
-        if (!underlying_type_opt)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE,
-                "Unknown type {} for dictionary attribute", non_nullable_type->getName());
+        const auto underlying_type = getAttributeUnderlyingType(non_nullable_type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -349,7 +391,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         res_attributes.emplace_back(DictionaryAttribute{
             name,
-            *underlying_type_opt,
+            underlying_type,
             initial_type,
             initial_type_serialization,
             expression,

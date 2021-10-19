@@ -6,7 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
-#include <base/errnoToString.h>
+#include <common/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
 #include <unistd.h>

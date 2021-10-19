@@ -3,7 +3,7 @@ option(ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
 
 if (ENABLE_S2_GEOMETRY)
     if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/s2geometry")
-        message (WARNING "submodule contrib/s2geometry is missing. to fix try run: \n git submodule update --init")
+        message (WARNING "submodule contrib/s2geometry is missing. to fix try run: \n git submodule update --init --recursive")
         set (ENABLE_S2_GEOMETRY 0)
         set (USE_S2_GEOMETRY 0)
     else()

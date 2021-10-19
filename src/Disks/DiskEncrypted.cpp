@@ -76,17 +76,6 @@ namespace
             if (res->keys.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
 
-            if (!config.has(config_prefix + ".current_key_id"))
-            {
-                /// In case of multiple keys, current_key_id is mandatory
-                if (res->keys.size() > 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are multiple keys in config. current_key_id is required");
-
-                /// If there is only one key with non zero ID, curren_key_id should be defined.
-                if (res->keys.size() == 1 && !res->keys.contains(0))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
-            }
-
             res->current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
             if (!res->keys.contains(res->current_key_id))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", res->current_key_id);

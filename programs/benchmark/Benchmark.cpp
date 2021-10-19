@@ -28,7 +28,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
@@ -424,19 +424,20 @@ private:
         if (reconnect)
             connection.disconnect();
 
-        RemoteQueryExecutor executor(
+        RemoteBlockInputStream stream(
             connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
-            executor.setQueryId(query_id);
+            stream.setQueryId(query_id);
 
         Progress progress;
-        executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
+        stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        ProfileInfo info;
-        while (Block block = executor.read())
-            info.update(block);
+        stream.readPrefix();
+        while (Block block = stream.read());
 
-        executor.finish();
+        stream.readSuffix();
+
+        const BlockStreamProfileInfo & info = stream.getProfileInfo();
 
         double seconds = watch.elapsedSeconds();
 

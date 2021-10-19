@@ -503,11 +503,11 @@ void TemplateRowInputFormat::resetParser()
     buf.reset();
 }
 
-void registerInputFormatTemplate(FormatFactory & factory)
+void registerInputFormatProcessorTemplate(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
     {
-        factory.registerInputFormat(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
+        factory.registerInputFormatProcessor(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,
@@ -551,7 +551,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
 
     for (bool ignore_spaces : {false, true})
     {
-        factory.registerInputFormat(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", [=](
+        factory.registerInputFormatProcessor(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", [=](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,

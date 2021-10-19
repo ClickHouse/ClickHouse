@@ -56,10 +56,6 @@ if (USE_UNWIND)
     target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 endif ()
 
-if (USE_MUSL)
-    target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
-endif ()
-
 # Override the deduced attribute support that causes error.
 if (OS_DARWIN AND COMPILER_GCC)
     add_compile_definitions(_LIBCPP_INIT_PRIORITY_MAX)

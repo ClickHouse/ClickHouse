@@ -413,9 +413,9 @@ void AvroRowOutputFormat::writeSuffix()
     file_writer.close();
 }
 
-void registerOutputFormatAvro(FormatFactory & factory)
+void registerOutputFormatProcessorAvro(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Avro", [](
+    factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -432,7 +432,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatAvro(FormatFactory &)
+void registerOutputFormatProcessorAvro(FormatFactory &)
 {
 }
 }

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <optimize_on_insert>0</optimize_on_insert>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

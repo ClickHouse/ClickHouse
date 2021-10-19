@@ -23,6 +23,7 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * comment = nullptr;
     ASTSetQuery * settings = nullptr;
 
 
@@ -74,7 +75,6 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
-    IAST * comment = nullptr;
 
     bool is_dictionary{false}; /// CREATE DICTIONARY
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of

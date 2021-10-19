@@ -5,15 +5,11 @@
 #endif
 
 #if USE_SQLITE
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 #include <sqlite3.h> // Y_IGNORE
 
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -52,7 +48,6 @@ private:
     String database_path;
     ContextPtr global_context;
     SQLitePtr sqlite_db;
-    Poco::Logger * log;
 };
 
 }

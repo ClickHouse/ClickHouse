@@ -8,7 +8,8 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -192,6 +193,10 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
+    if (remove_repository_callback_executed)
+        return;
+
+    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 

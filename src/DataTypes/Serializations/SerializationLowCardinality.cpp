@@ -40,27 +40,11 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
-void SerializationLowCardinality::enumerateStreams(
-    SubstreamPath & path,
-    const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
+void SerializationLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    const auto * column_lc = column ? &getColumnLowCardinality(*column) : nullptr;
-
-    SubstreamData data;
-    data.type = type ? dictionary_type : nullptr;
-    data.column = column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr;
-    data.serialization = dict_inner_serialization;
-
     path.push_back(Substream::DictionaryKeys);
-    path.back().data = data;
-
-    dict_inner_serialization->enumerateStreams(path, callback, data.type, data.column);
-
+    dict_inner_serialization->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
-    path.back().data = {type, column, getPtr(), nullptr};
-
     callback(path);
     path.pop_back();
 }

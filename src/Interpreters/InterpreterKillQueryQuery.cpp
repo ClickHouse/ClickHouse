@@ -16,9 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <thread>
@@ -123,16 +121,15 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public SourceWithProgress
+class SyncKillQueryInputStream : public IBlockInputStream
 {
 public:
-    SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
+    SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
-        : SourceWithProgress(res_sample_block_)
-        , process_list(process_list_)
-        , processes_to_stop(std::move(processes_to_stop_))
-        , processes_block(std::move(processes_block_))
-        , res_sample_block(std::move(res_sample_block_))
+        : process_list(process_list_),
+        processes_to_stop(std::move(processes_to_stop_)),
+        processes_block(std::move(processes_block_)),
+        res_sample_block(res_sample_block_)
     {
         addTotalRowsApprox(processes_to_stop.size());
     }
@@ -142,12 +139,14 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Chunk generate() override
+    Block getHeader() const override { return res_sample_block; }
+
+    Block readImpl() override
     {
         size_t num_result_queries = processes_to_stop.size();
 
         if (num_processed_queries >= num_result_queries)
-            return {};
+            return Block();
 
         MutableColumns columns = res_sample_block.cloneEmptyColumns();
 
@@ -180,8 +179,7 @@ public:
         /// Don't produce empty block
         } while (columns.empty() || columns[0]->empty());
 
-        size_t num_rows = columns.empty() ? 0 : columns.front()->size();
-        return Chunk(std::move(columns), num_rows);
+        return res_sample_block.cloneWithColumns(std::move(columns));
     }
 
     ProcessList & process_list;
@@ -223,12 +221,12 @@ BlockIO InterpreterKillQueryQuery::execute()
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
-            res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns))));
+            res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
         }
         else
         {
-            res_io.pipeline = QueryPipeline(std::make_shared<SyncKillQuerySource>(
-                process_list, std::move(queries_to_stop), std::move(processes_block), header));
+            res_io.in = std::make_shared<SyncKillQueryInputStream>(
+                process_list, std::move(queries_to_stop), std::move(processes_block), header);
         }
 
         break;
@@ -288,7 +286,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                 "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
                 ErrorCodes::ACCESS_DENIED);
 
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+        res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
 
         break;
     }
@@ -304,15 +302,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto io = executeQuery(select_query, getContext(), true);
-    PullingPipelineExecutor executor(io.pipeline);
-    Block res;
-    while (!res && executor.pull(res));
+    auto stream = executeQuery(select_query, getContext(), true).getInputStream();
+    Block res = stream->read();
 
-    Block tmp_block;
-    while (executor.pull(tmp_block));
-
-    if (tmp_block)
+    if (res && stream->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;

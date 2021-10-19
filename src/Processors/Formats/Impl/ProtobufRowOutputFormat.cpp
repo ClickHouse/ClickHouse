@@ -51,11 +51,11 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 }
 
 
-void registerOutputFormatProtobuf(FormatFactory & factory)
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
     {
-        factory.registerOutputFormat(
+        factory.registerOutputFormatProcessor(
             with_length_delimiter ? "Protobuf" : "ProtobufSingle",
             [with_length_delimiter](WriteBuffer & buf,
                const Block & header,
@@ -80,7 +80,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProtobuf(FormatFactory &) {}
+    void registerOutputFormatProcessorProtobuf(FormatFactory &) {}
 }
 
 #endif

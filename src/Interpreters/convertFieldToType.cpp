@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -75,8 +75,8 @@ static Field convertNumericType(const Field & from, const IDataType & type)
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), from.getType());
+    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
 }
 
 
@@ -134,8 +134,8 @@ static Field convertDecimalType(const Field & from, const To & type)
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), from.getType());
+    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
 }
 
 
@@ -346,9 +346,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert {} to {}",
-                src.getTypeName(), agg_func_type->getName());
+            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
+                    ErrorCodes::TYPE_MISMATCH);
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
@@ -388,8 +387,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return convertFieldToType(parsed, type, from_type_hint);
     }
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), src.getType());
+    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+        + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }
 
 }

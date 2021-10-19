@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 # Test fix for issue #5066
 
