@@ -32,7 +32,7 @@ namespace
 }
 
 
-KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const
+KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
@@ -68,7 +68,7 @@ KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const P
         total_servers++;
     }
 
-    if (!result.config)
+    if (!result.config && !allow_without_us)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
     if (result.servers_start_as_followers.size() == total_servers)
@@ -98,7 +98,7 @@ KeeperStateManager::KeeperStateManager(
     : my_server_id(server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config))
+    , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     getLogsPathFromConfig(config_prefix_, config, standalone_keeper),
                     coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
@@ -138,9 +138,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
 ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
 {
-    auto new_configuration_wrapper = parseServersConfiguration(config);
-    if (new_configuration_wrapper.port != configuration_wrapper.port)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot change port of already running RAFT server");
+    auto new_configuration_wrapper = parseServersConfiguration(config, true);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (auto new_server : new_configuration_wrapper.cluster_config->get_servers())
