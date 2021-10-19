@@ -122,7 +122,7 @@ Pipe StorageExecutable::read(
 
     if (!std::filesystem::exists(std::filesystem::path(script_path)))
          throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Executable file {} does not exists inside user scripts folder {}",
+            "Executable file {} does not exist inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
