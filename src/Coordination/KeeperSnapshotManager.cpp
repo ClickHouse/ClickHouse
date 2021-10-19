@@ -206,6 +206,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         }
     }
 
+    /// Serialize cluster config
     if (snapshot.cluster_config)
     {
         auto buffer = snapshot.cluster_config->serialize();
