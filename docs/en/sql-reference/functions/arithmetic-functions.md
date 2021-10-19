@@ -99,7 +99,7 @@ max2(value1, value2)
 
 **Returned value**
 
--   The maximum of 2 values.
+-   The maximum of two values.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -136,7 +136,7 @@ max2(value1, value2)
 
 **Returned value**
 
--   The minimum of 2 values.
+-   The minimum of two values.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
