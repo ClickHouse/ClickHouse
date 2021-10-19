@@ -28,7 +28,6 @@ set_property(TARGET libprotobuf PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "$
 # it this case we will face with linker errors, because libcxx still will be built with sanitizer
 # So, we can simply suppress all of these failures with a combination this flag and an environment variable
 # export MSAN_OPTIONS=exit_code=0
-target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
 target_compile_options(protoc PRIVATE "-fsanitize-recover=all")
 
 if (CMAKE_CROSSCOMPILING)
