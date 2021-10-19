@@ -4470,16 +4470,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
-        if (!primary_key_max_column_name.empty())
-        {
-            const auto & primary_key_column = *part->index[0];
-            auto primary_key_column_size = primary_key_column.size();
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            insert(min_column, primary_key_column[0]);
-            insert(max_column, primary_key_column[primary_key_column_size - 1]);
-        }
-
         size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
@@ -4488,6 +4478,16 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
+        }
+
+        if (!primary_key_max_column_name.empty())
+        {
+            const auto & primary_key_column = *part->index[0];
+            auto primary_key_column_size = primary_key_column.size();
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            insert(min_column, primary_key_column[0]);
+            insert(max_column, primary_key_column[primary_key_column_size - 1]);
         }
 
         {
