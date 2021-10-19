@@ -391,6 +391,10 @@ void KeeperServer::updateConfiguration(const Poco::Util::AbstractConfiguration &
     {
         LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
     }
+    else
+    {
+        LOG_WARNING(log, "Configuration change size ({})", diff.size());
+    }
 
     for (auto & task : diff)
     {
