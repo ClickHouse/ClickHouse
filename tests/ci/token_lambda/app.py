@@ -39,7 +39,7 @@ def get_runner_registration_token(access_token):
 
 def get_key_and_app_from_aws():
     import boto3
-    secret_name = "clickhouse_github_secret_key_1"
+    secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
         service_name='secretsmanager',
