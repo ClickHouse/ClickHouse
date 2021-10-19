@@ -2308,10 +2308,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     struct QueueEntryInfo
     {
-        String data;
-        Coordination::Stat stat;
-        LogEntryPtr parsed_entry;
-        bool need_copy = true;
+        String data = {};
+        Coordination::Stat stat = {};
+        LogEntryPtr parsed_entry = {};
     };
 
     std::vector<QueueEntryInfo> source_queue;
@@ -2320,11 +2319,12 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     {
         std::vector<zkutil::ZooKeeper::FutureGet> queue_get_futures;
-        source_queue.resize(source_queue_names.size());
         queue_get_futures.reserve(source_queue_names.size());
 
         for (const String & entry_name : source_queue_names)
             queue_get_futures.push_back(zookeeper->asyncTryGet(fs::path(source_path) / "queue" / entry_name));
+
+        source_queue.reserve(source_queue_names.size());
         for (size_t i = 0; i < source_queue_names.size(); ++i)
         {
             auto res = queue_get_futures[i].get();
@@ -2333,7 +2333,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
                 continue;
 
             assert(res.error == Coordination::Error::ZOK);
-            auto & info = source_queue[i];
+            source_queue.emplace_back();
+            auto & info = source_queue.back();
             info.data = std::move(res.data);
             info.stat = std::move(res.stat);
             try
@@ -2448,6 +2449,11 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             return true;
         }
 
+        /// NOTE: It does not completely avoids duplication of GET_PART entries,
+        /// because it's possible that source replica has executed some GET_PART after we copied it's queue,
+        /// but before we copied its active parts set. In this case we will GET_PART entry in our queue
+        /// and later will pull the original GET_PART from replication log.
+        /// It should not cause any issues, but it does not allow to get rid of duplicated entries and add an assertion.
         if (created_get_parts.count(part_name))
         {
             /// NOTE It would be better to copy log entry instead of creating GET_PART
@@ -2513,6 +2519,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     size_t total_entries_to_copy = 0;
     for (const auto & entry_info : source_queue)
     {
+        assert(!entry_info.data.empty());
         if (entry_info.parsed_entry && !entry_info.parsed_entry->new_part_name.empty())
         {
             const String & part_name = entry_info.parsed_entry->new_part_name;
