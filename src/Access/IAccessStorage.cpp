@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -96,7 +97,7 @@ namespace
 
         bool errors() const { return exception.has_value(); }
 
-        void showErrors(const char * format, const std::function<String(size_t)> & get_name_function)
+        void showErrors(const char * format, Fn<String(size_t)> auto && get_name_function)
         {
             if (!exception)
                 return;

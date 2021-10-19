@@ -1,8 +1,8 @@
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -13,13 +13,12 @@ MergingSortedTransform::MergingSortedTransform(
     SortDescription  description_,
     size_t max_block_size,
     UInt64 limit_,
-    bool has_limit_below_one_block_,
     WriteBuffer * out_row_sources_buf_,
     bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform(
-        num_inputs, header, header, have_all_inputs_, has_limit_below_one_block_,
+        num_inputs, header, header, have_all_inputs_, limit_,
         header,
         num_inputs,
         std::move(description_),

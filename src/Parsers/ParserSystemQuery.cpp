@@ -7,7 +7,7 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 
 #include <magic_enum.hpp>
-#include <common/EnumReflection.h>
+#include <base/EnumReflection.h>
 
 namespace ErrorCodes
 {

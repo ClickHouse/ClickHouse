@@ -13,11 +13,12 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -362,7 +363,7 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
+                                                     Fn<void(std::string_view)> auto && check_setting_name_function)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -399,7 +400,7 @@ namespace
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
         const String & profile_name,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        Fn<void(std::string_view)> auto && check_setting_name_function)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -441,7 +442,7 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        Fn<void(std::string_view)> auto && check_setting_name_function)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;

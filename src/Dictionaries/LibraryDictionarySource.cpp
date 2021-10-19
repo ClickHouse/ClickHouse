@@ -1,8 +1,7 @@
 #include "LibraryDictionarySource.h"
 
-#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

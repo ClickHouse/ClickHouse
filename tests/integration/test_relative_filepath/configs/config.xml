@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <user_files_path>user_files</user_files_path>
-</yandex>
+</clickhouse>

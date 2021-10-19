@@ -1,4 +1,5 @@
 #include "OwnSplitChannel.h"
+#include "OwnFormattingChannel.h"
 
 #include <iostream>
 #include <Core/Block.h>
@@ -9,7 +10,7 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
 
@@ -75,7 +76,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
     ExtendedLogMessage msg_ext = ExtendedLogMessage::getFrom(msg);
 
     /// Log data to child channels
-    for (auto & channel : channels)
+    for (auto & [name, channel] : channels)
     {
         if (channel.second)
             channel.second->logExtended(msg_ext); // extended child
@@ -100,7 +101,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
-        logs_queue->emplace(std::move(columns));
+        [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
     }
 
     /// Also log to system.text_log table, if message is not too noisy
@@ -137,9 +138,9 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 }
 
 
-void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
+void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
 {
-    channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
+    channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
 }
 
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
@@ -147,6 +148,16 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_prior
     std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+
+void OwnSplitChannel::setLevel(const std::string & name, int level)
+{
+     auto it = channels.find(name);
+     if (it != channels.end())
+     {
+         if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(it->second.first.get()))
+            channel->setLevel(level);
+     }
 }
 
 }

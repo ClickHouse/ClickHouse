@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
 
-#include <common/types.h>
+#include <base/types.h>
 #include <optional>
 #include <mutex>
 #include <city.h>

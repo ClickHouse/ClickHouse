@@ -14,7 +14,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
-#include <common/insertAtEnd.h>
+#include <base/insertAtEnd.h>
 #include <boost/range/adaptor/reversed.hpp>
 #include <filesystem>
 

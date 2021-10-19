@@ -12,9 +12,9 @@
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
-#include <common/DayNum.h>
-#include <common/strong_typedef.h>
-#include <common/EnumReflection.h>
+#include <base/DayNum.h>
+#include <base/strong_typedef.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {

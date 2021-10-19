@@ -11,8 +11,8 @@
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 
@@ -95,8 +95,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <DataTypes/DataTypeString.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
-#    include <common/LocalDateTime.h>
-#    include <common/logger_useful.h>
+#    include <base/LocalDateTime.h>
+#    include <base/logger_useful.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
 #    include <Core/Settings.h>

@@ -1,4 +1,4 @@
-#include <common/JSON.h>
+#include <base/JSON.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>

@@ -3,7 +3,7 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
