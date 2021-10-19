@@ -134,7 +134,7 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Возвращаемое значение**
 
--   В зависимости от аргумента возвращает один [Map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй - значения.
+-   В зависимости от аргумента возвращает один [Map](../../sql-reference/data-types/map.md) или [кортеж](../../sql-reference/data-types/tuple.md#tuplet1-t2), в котором первый массив содержит отсортированные ключи, а второй — значения.
 
 **Пример**
 
