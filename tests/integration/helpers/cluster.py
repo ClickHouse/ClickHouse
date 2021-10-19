@@ -31,7 +31,7 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
 from helpers.client import QueryRuntimeException
 
@@ -226,6 +226,7 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
+        self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
@@ -1672,7 +1673,7 @@ class ClickHouseCluster:
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
                 if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
-                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True)
+                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True, filename='stderr.log')
                     logging.error("Sanitizer in instance %s log %s", name, sanitizer_assert_instance)
 
                 if not ignore_fatal and instance.contains_in_log("Fatal", from_host=True):
@@ -2050,8 +2051,9 @@ class ClickHouseInstance:
 
             if not stopped:
                 logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
-                self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
-
+                pid = self.get_process_pid("clickhouse")
+                if pid is not None:
+                    self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"], user='root')
                 self.stop_clickhouse(kill=True)
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
@@ -2064,9 +2066,16 @@ class ClickHouseInstance:
         # wait start
         from helpers.test_tools import assert_eq_with_retry
         try:
-            assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                raise Exception("ClickHouse server is not running. Check logs.")
+            exec_query_with_retry(self, "select 1", retry_count = int(start_wait_sec / 0.5))
         except QueryRuntimeException as err:
-            self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
+            else:
+                raise Exception("ClickHouse server is not running. Check logs.")
             raise err
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
@@ -2079,26 +2088,28 @@ class ClickHouseInstance:
     def rotate_logs(self):
         self.exec_in_container(["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"], user='root')
 
-    def contains_in_log(self, substring, from_host=False):
+    def contains_in_log(self, substring, from_host=False, filename='clickhouse-server.log'):
         if from_host:
+            # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true'
             ])
         return len(result) > 0
 
-    def grep_in_log(self, substring, from_host=False):
+    def grep_in_log(self, substring, from_host=False, filename='clickhouse-server.log'):
         logging.debug(f"grep in log called %s", substring)
         if from_host:
+            # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(["bash", "-c",
-                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true'
             ])
         logging.debug("grep result %s", result)
         return result
