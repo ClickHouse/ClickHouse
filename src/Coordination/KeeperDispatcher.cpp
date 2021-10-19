@@ -250,7 +250,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     return true;
 }
 
-void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("keeper_server.server_id");
@@ -271,8 +271,16 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         server->startup();
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
-        server->waitInit();
-        LOG_DEBUG(log, "Quorum initialized");
+        if (!start_async)
+        {
+            server->waitInit();
+            LOG_DEBUG(log, "Quorum initialized");
+        }
+        else
+        {
+            LOG_INFO(log, "Starting Keeper asynchronously, server will accept connections to Keeper when it will be ready");
+        }
+
     }
     catch (...)
     {
@@ -366,7 +374,7 @@ void KeeperDispatcher::sessionCleanerTask()
         try
         {
             /// Only leader node must check dead sessions
-            if (isLeader())
+            if (server->checkInit() && isLeader())
             {
                 auto dead_sessions = server->getDeadSessions();
 
