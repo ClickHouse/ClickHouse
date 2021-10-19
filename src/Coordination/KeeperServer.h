@@ -90,7 +90,9 @@ public:
 
     int getServerID() const { return server_id; }
 
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
+
+    void applyConfigurationUpdate(const ConfigUpdateAction & action);
 };
 
 }

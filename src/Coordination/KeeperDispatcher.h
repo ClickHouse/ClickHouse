@@ -33,11 +33,13 @@ private:
     CoordinationSettingsPtr coordination_settings;
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
+    using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
+    UpdateConfigurationQueue update_configuration_queue{1000};
 
     std::atomic<bool> shutdown_called{false};
 
@@ -62,6 +64,9 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
+
+    ThreadFromGlobalPool update_configuration_thread;
+
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
@@ -79,6 +84,8 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
+
+    void updateConfigurationThread();
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
