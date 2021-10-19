@@ -5,7 +5,6 @@
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
@@ -29,7 +28,6 @@ static void checkForCarriageReturn(ReadBuffer & in)
             "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
             ErrorCodes::INCORRECT_DATA);
 }
-
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     const Block & header_,
@@ -96,7 +94,6 @@ std::vector<String> TabSeparatedRowInputFormat::readHeaderRow()
     return fields;
 }
 
-
 bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
@@ -119,8 +116,6 @@ bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr &
         serialization->deserializeTextRaw(column, *in, format_settings);
         return true;
     }
-
-
 
     if (as_nullable)
         return SerializationNullable::deserializeTextEscapedImpl(column, *in, format_settings, serialization);

@@ -8,7 +8,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 
-
 namespace DB
 {
 
@@ -18,7 +17,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
-
 
 CSVRowInputFormat::CSVRowInputFormat(
     const Block & header_,
@@ -36,7 +34,6 @@ CSVRowInputFormat::CSVRowInputFormat(
                 + "'. Try use CustomSeparated format instead.",
             ErrorCodes::BAD_ARGUMENTS);
 }
-
 
 static void skipEndOfLine(ReadBuffer & in)
 {
@@ -232,8 +229,6 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, co
         return true;
     }
 }
-
-
 
 void registerInputFormatCSV(FormatFactory & factory)
 {

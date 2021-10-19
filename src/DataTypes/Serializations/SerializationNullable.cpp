@@ -12,8 +12,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -275,7 +273,7 @@ void SerializationNullable::serializeTextRaw(const IColumn & column, size_t row_
 template<typename ReturnType>
 ReturnType SerializationNullable::deserializeTextRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested)
 {
-   return deserializeTextEscapedAndRawImpl<ReturnType, false>(column, istr, settings, nested);
+    return deserializeTextEscapedAndRawImpl<ReturnType, false>(column, istr, settings, nested);
 }
 
 template<typename ReturnType>
