@@ -11,6 +11,11 @@
 namespace ProfileEvents
 {
 
+std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8>(DB::DataTypeEnum8::Values{
+    { "increment", static_cast<Int8>(INCREMENT)},
+    { "gauge",     static_cast<Int8>(GAUGE)},
+});
+
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {
