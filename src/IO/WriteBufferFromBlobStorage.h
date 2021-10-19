@@ -22,7 +22,7 @@ class WriteBufferFromBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 public:
 
     explicit WriteBufferFromBlobStorage(
-        Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & blob_path_,
         UInt64 min_upload_part_size_,
         UInt64 max_single_part_upload_size_,
@@ -33,7 +33,7 @@ public:
 private:
 
     std::vector<std::string> block_ids;
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     // UInt64 min_upload_part_size; // TODO: currently not used
     UInt64 max_single_part_upload_size;
     const String blob_path;

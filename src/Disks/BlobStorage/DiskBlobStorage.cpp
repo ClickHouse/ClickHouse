@@ -51,7 +51,7 @@ class ReadIndirectBufferFromBlobStorage final : public ReadIndirectBufferFromRem
 {
 public:
     ReadIndirectBufferFromBlobStorage(
-        Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         IDiskRemote::Metadata metadata_,
         UInt64 max_single_read_retries_,
         size_t buf_size_) :
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     UInt64 max_single_read_retries;
     size_t buf_size;
 };
@@ -76,7 +76,7 @@ private:
 DiskBlobStorage::DiskBlobStorage(
     const String & name_,
     const String & metadata_path_,
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
     IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_path_, "DiskBlobStorage", settings_->thread_pool_size),
@@ -140,7 +140,7 @@ bool DiskBlobStorage::supportZeroCopyReplication() const
 
 bool DiskBlobStorage::checkUniqueId(const String & id) const
 {
-    auto blobs_list_response = blob_container_client.ListBlobs();
+    auto blobs_list_response = blob_container_client->ListBlobs();
     auto blobs_list = blobs_list_response.Blobs;
 
     for (auto blob : blobs_list)
@@ -161,7 +161,7 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     {
         for (auto path : paths_keeper->paths)
         {
-            if (!blob_container_client.DeleteBlob(path).Value.Deleted)
+            if (!blob_container_client->DeleteBlob(path).Value.Deleted)
                 throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
         }
     }

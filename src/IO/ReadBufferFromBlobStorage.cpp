@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
     UInt64 max_single_read_retries_,
     size_t buf_size_) :
@@ -88,10 +88,8 @@ void ReadBufferFromBlobStorage::initialize()
     if (initialized)
         return;
 
-    auto blob_client = blob_container_client.GetBlobClient(path);
-
+    auto blob_client = blob_container_client->GetBlobClient(path);
     auto download_response = blob_client.Download();
-
     data_stream = std::move(download_response.Value.BodyStream);
 
     if (data_stream == nullptr)

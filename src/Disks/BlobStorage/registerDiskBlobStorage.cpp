@@ -79,8 +79,8 @@ std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractC
 {
     return std::make_unique<DiskBlobStorageSettings>(
         config.getUInt64(config_prefix + ".max_single_read_retries", 3),
-        config.getUInt64(config_prefix + ".min_upload_part_size", 32),
-        config.getUInt64(config_prefix + ".max_single_part_upload_size", 32),
+        config.getUInt64(config_prefix + ".min_upload_part_size", 1024),
+        config.getUInt64(config_prefix + ".max_single_part_upload_size", 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000)
@@ -102,7 +102,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         validate_endpoint_url(endpoint_url);
 
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-        auto blob_container_client = Azure::Storage::Blobs::BlobContainerClient(endpoint_url, managed_identity_credential);
+        auto blob_container_client = std::make_shared<Azure::Storage::Blobs::BlobContainerClient>(endpoint_url, managed_identity_credential);
 
         /// where the metadata files are stored locally
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
