@@ -2,7 +2,7 @@
 
 #include <Disks/IDiskRemote.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromWebServer.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 
 #if USE_AWS_S3
 #include <IO/ReadBufferFromS3.h>
@@ -20,12 +20,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-}
-
 
 #if USE_AWS_S3
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t offset) const

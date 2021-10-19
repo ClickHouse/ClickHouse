@@ -1,6 +1,6 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
 
-#include <Disks/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 
 namespace ProfileEvents

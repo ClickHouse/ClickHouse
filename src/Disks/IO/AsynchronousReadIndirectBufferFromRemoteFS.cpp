@@ -1,7 +1,8 @@
 #include "AsynchronousReadIndirectBufferFromRemoteFS.h"
 
 #include <Common/Stopwatch.h>
-#include <IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <base/logger_useful.h>
 
 
@@ -46,7 +47,13 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBuffers);
-    buffer_events += impl->getFileName() + " : ";
+    buffer_events += "Events for buffer: " + impl->getFileName() + " : ";
+}
+
+
+String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
+{
+    return impl->getFileName();
 }
 
 
@@ -92,9 +99,9 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 }
 
 
-void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t offset)
+void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
-    buffer_events += "-- Set last offset " + toString(offset) + "--";
+    buffer_events += "-- Set last offset " + toString(position) + "--";
     if (prefetch_future.valid())
     {
         LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
@@ -108,13 +115,14 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t off
         // prefetch_future = {};
     }
 
-    last_offset = offset;
-    impl->setReadUntilPosition(offset);
+    last_offset = position;
+    impl->setReadUntilPosition(position);
 }
 
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
+    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
     /// Everything is already read.
     if (absolute_position == last_offset)
         return false;
@@ -163,12 +171,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     prefetch_future = {};
 
-    /// TODO: it does not really seem to improve anything to call prefetch() here,
-    /// but it does not make any worse at the same time.
-    /// Need to test, it might be useful because in fact sometimes (minority of cases though)
-    /// we can read without prefetching several times in a row.
-    prefetch();
-
+    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
     return size;
 }
 

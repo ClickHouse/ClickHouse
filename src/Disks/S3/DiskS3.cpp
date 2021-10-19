@@ -17,17 +17,19 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
-#include <Disks/ReadBufferFromRemoteFSGather.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
-#include <IO/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadIndirectBufferFromRemoteFS.h>
-#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
 #include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE

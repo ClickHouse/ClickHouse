@@ -3,17 +3,17 @@
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
-#include <Disks/IDiskRemote.h>
-#include <IO/ReadBufferFromWebServer.h>
-
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ReadIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ThreadPoolRemoteFSReader.h>
-#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadBufferFromRemoteFSGather.h>
+
+#include <Disks/IDiskRemote.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
