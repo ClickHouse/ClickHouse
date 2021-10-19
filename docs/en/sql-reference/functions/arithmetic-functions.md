@@ -82,7 +82,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
-# max2 {#max2}
+## max2 {#max2}
 
 Compares two values and returns the maximum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
 
@@ -119,7 +119,7 @@ Result:
 └─────────────┘
 ```
 
-# min2 {#min2}
+## min2 {#min2}
 
 Compares two values and returns the minimum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
 
