@@ -833,15 +833,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database.empty() ? current_database : create.database;
 
-    auto global_context = getContext()->getGlobalContext();
-    if (global_context
-        && global_context->getApplicationType() == Context::ApplicationType::LOCAL
-        && !global_context->isBackgroundExecutorsInitialized()
-        && create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-    {
-        global_context->initializeBackgroundExecutors();
-    }
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
