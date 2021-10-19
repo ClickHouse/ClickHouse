@@ -33,6 +33,25 @@ protected:
     void consumeExtremes(Chunk chunk) override;
     void finalize() override;
 
+    bool prefix_written = false;
+    bool suffix_written = false;
+
+    void writePrefixIfNot()
+    {
+        if (!prefix_written)
+            writePrefix();
+
+        prefix_written = true;
+    }
+
+    void writeSuffixIfNot()
+    {
+        if (!suffix_written)
+            writeSuffix();
+
+        suffix_written = true;
+    }
+
 public:
     using Params = RowOutputFormatParams;
 
@@ -64,26 +83,7 @@ public:
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
 
 private:
-    bool prefix_written = false;
-    bool suffix_written = false;
-
     Params params;
-
-    void writePrefixIfNot()
-    {
-        if (!prefix_written)
-            writePrefix();
-
-        prefix_written = true;
-    }
-
-    void writeSuffixIfNot()
-    {
-        if (!suffix_written)
-            writeSuffix();
-
-        suffix_written = true;
-    }
 
 };
 
