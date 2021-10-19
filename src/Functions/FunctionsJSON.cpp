@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
@@ -38,7 +39,6 @@
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsJSON.h>
 
 #include <Interpreters/Context.h>
 
@@ -58,6 +58,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename T>
+concept HasIndexOperator = requires (T t)
+{
+    t[0];
+};
 
 /// Functions to parse JSONs and extract values from it.
 /// The first argument of all these functions gets a JSON,
@@ -279,7 +284,7 @@ private:
             return true;
         }
 
-        if constexpr (FunctionJSONHelpersDetails::has_index_operator<typename JSONParser::Object>::value)
+        if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
             if (element.isObject())
             {

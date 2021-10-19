@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
 
