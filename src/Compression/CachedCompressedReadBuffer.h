@@ -59,7 +59,11 @@ public:
         clock_type = clock_type_;
     }
 
-    void setReadUntilPosition(size_t position) override { file_in->setReadUntilPosition(position); }
+    void setReadUntilPosition(size_t position) override
+    {
+        if (file_in)
+            file_in->setReadUntilPosition(position);
+    }
 };
 
 }
