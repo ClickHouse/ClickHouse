@@ -170,8 +170,6 @@ SELECT mapSubtract(map(1,1), map(1,1));
 
 Заполняет недостающие ключи в контейнере map (пара массивов ключей и значений), где ключи являются целыми числами. Кроме того, он поддерживает указание максимального ключа, который используется для расширения массива ключей.
 
-Аргументами являются контейнер [Map](../../sql-reference/data-types/map.md) или два [массива](../../sql-reference/data-types/array.md#data-type-array), где первый массив представляет ключи, а второй массив содержит значения для каждого ключа.
-
 **Синтаксис**
 
 ``` sql
@@ -185,10 +183,13 @@ mapPopulateSeries(map[, max])
 
 **Аргументы**
 
+Аргументами являются контейнер [Map](../../sql-reference/data-types/map.md) или два [массива](../../sql-reference/data-types/array.md#data-type-array), где первый массив представляет ключи, а второй массив содержит значения для каждого ключа.
+
 Сопоставленные массивы:
 
 -   `keys` — массив ключей. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
 -   `values` — массив значений. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
+-   `max` — максимальное значение ключа. Необязательный параметр. [Int8, Int16, Int32, Int64, Int128, Int256](../../sql-reference/data-types/int-uint.md#int-ranges).
 
 или
 
@@ -356,5 +357,3 @@ SELECT mapValues(a) FROM test;
 │ ['twelve','6.0'] │
 └──────────────────┘
 ```
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/functions/tuple-map-functions/) <!--hide-->
