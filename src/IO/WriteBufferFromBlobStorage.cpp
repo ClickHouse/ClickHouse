@@ -22,7 +22,7 @@ String getRandomName(char first = 'a', char last = 'z', size_t len = 64)
 
 
 WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     UInt64 /* min_upload_part_size_ */,
     UInt64 max_single_part_upload_size_,
@@ -42,13 +42,13 @@ void WriteBufferFromBlobStorage::nextImpl() {
     auto pos = working_buffer.begin();
     auto len = offset();
 
-    auto block_blob_client = blob_container_client.GetBlockBlobClient(blob_path);
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     if (len <= max_single_part_upload_size)
     {
         Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos), len);
 
-        blob_container_client.UploadBlob(blob_path, tmp_buffer);
+        blob_container_client->UploadBlob(blob_path, tmp_buffer);
     }
     else
     {

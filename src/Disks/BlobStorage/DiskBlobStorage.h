@@ -53,7 +53,7 @@ public:
     DiskBlobStorage(
         const String & name_,
         const String & metadata_path_,
-        Azure::Storage::Blobs::BlobContainerClient blob_container_client_,
+        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
@@ -85,7 +85,7 @@ public:
 private:
 
     /// client used to access the files in the Blob Storage cloud
-    Azure::Storage::Blobs::BlobContainerClient blob_container_client;
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
 
     MultiVersion<DiskBlobStorageSettings> current_settings;
     /// Gets disk settings from context.
