@@ -962,7 +962,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [restored_storage, snapshot_meta,  _] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
     EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
