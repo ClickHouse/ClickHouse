@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -485,8 +485,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size,
-                        0, true);
+                        max_block_size);
 
                 pipe.addTransform(std::move(transform));
             }

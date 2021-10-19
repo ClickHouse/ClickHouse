@@ -47,13 +47,17 @@ then
 fi
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
+echo
 echo "Will download ${URL}"
+echo
 curl -O "${URL}" && chmod a+x clickhouse &&
+echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./clickhouse"
 
 if [ "${OS}" = "Linux" ]
 then
+    echo
     echo "You can also install it:
     sudo ./clickhouse install"
 fi

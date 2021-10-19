@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <base/find_symbols.h>
 
 namespace DB

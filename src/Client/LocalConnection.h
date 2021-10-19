@@ -2,7 +2,7 @@
 
 #include "Connection.h"
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 
@@ -78,7 +78,7 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id_/* = "" */,
+        const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,

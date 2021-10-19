@@ -220,7 +220,7 @@ void MergeTreeReaderCompact::readData(
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
-        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
         /// TODO: Avoid extra copying.
         if (column->empty())

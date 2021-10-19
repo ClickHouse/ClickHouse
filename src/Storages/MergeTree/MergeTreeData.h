@@ -39,6 +39,7 @@ namespace DB
 
 class AlterCommands;
 class MergeTreePartsMover;
+class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
 struct JobAndPool;
@@ -364,10 +365,22 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    /// Build a block of minmax and count values of a MergeTree table. These values are extracted
+    /// from minmax_indices, the first expression of primary key, and part rows.
+    ///
+    /// query_info - used to filter unneeded parts
+    ///
+    /// parts - part set to filter
+    ///
+    /// normal_parts - collects parts that don't have all the needed values to form the block.
+    /// Specifically, this is when a part doesn't contain a final mark and the related max value is
+    /// required.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
+        const DataPartsVector & parts,
+        DataPartsVector & normal_parts,
         ContextPtr query_context) const;
 
     bool getQueryProcessingStageWithAggregateProjection(
@@ -536,7 +549,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 
