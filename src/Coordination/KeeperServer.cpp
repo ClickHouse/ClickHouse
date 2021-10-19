@@ -475,7 +475,7 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
         {
             if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
             {
-                LOG_INFO(log, "Server with id {} was successfully added", task.server->get_id());
+                LOG_INFO(log, "Server with id {} was successfully added by leader", task.server->get_id());
                 return true;
             }
 
@@ -491,13 +491,13 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
     }
     else if (task.action_type == ConfigUpdateActionType::RemoveServer)
     {
-        LOG_INFO(log, "Will try to remove server with id {}", task.server->get_id());
+        LOG_INFO(log, "Will try to wait remove of server with id {}", task.server->get_id());
 
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
         {
             if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
             {
-                LOG_INFO(log, "Server with id {} was successfully removed", task.server->get_id());
+                LOG_INFO(log, "Server with id {} was successfully removed by leader", task.server->get_id());
                 return true;
             }
 
