@@ -19,7 +19,7 @@ file_path=$CUR_DIR/${FILE}
 
 touch ${file_path}
 ln -s ${file_path} ${symlink_path}
-chmod +w ${symlink_path}
+chmod ugo+w ${symlink_path}
 
 function cleanup()
 {
