@@ -82,7 +82,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
-#if USE_UNWIND
+#if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+#elif !USE_UNWIND
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+#else
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
@@ -110,11 +124,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(OS_FREEBSD)
+#if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
-#   else
+#elif defined(USE_MUSL)
+        sev.sigev_notify_thread_id = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
-#   endif
+#endif
         if (timer_create(clock_type, &sev, &timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -144,13 +160,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         tryCleanup();
         throw;
     }
-#else
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 

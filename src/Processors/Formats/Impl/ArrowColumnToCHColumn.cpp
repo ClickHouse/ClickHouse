@@ -26,6 +26,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Common/quoteString.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
@@ -568,7 +569,17 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         else
             column = readColumnFromArrowColumn(arrow_column, header_column.name, format_name, false, dictionary_values);
 
-        column.column = castColumn(column, header_column.type);
+        try
+        {
+            column.column = castColumn(column, header_column.type);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while converting column {} from type {} to type {}",
+                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
+            throw;
+        }
+
         column.type = header_column.type;
         num_rows = column.column->size();
         columns_list.push_back(std::move(column.column));

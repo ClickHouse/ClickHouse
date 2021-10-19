@@ -60,8 +60,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
 
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/copyData.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -480,7 +478,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
         /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0);
+        clearOldTemporaryDirectories(merger_mutator, 0);
         clearOldWriteAheadLogs();
     }
 
@@ -4203,135 +4201,115 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception("OPTIMIZE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    constexpr size_t max_retries = 10;
-
-    std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
+    auto handle_noop = [&] (const String & message)
     {
-        auto zookeeper = getZooKeeper();
+        if (query_context->getSettingsRef().optimize_throw_if_noop)
+            throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+        return false;
+    };
 
-        auto handle_noop = [&] (const String & message)
+    auto zookeeper = getZooKeeper();
+    UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
+    const auto storage_settings_ptr = getSettings();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
+
+    auto try_assign_merge = [&](const String & partition_id) -> bool
+    {
+        constexpr size_t max_retries = 10;
+        size_t try_no = 0;
+        for (; try_no < max_retries; ++try_no)
         {
-            if (query_context->getSettingsRef().optimize_throw_if_noop)
-                throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
-            return false;
-        };
+            /// We must select parts for merge under merge_selecting_mutex because other threads
+            /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
+            std::lock_guard merge_selecting_lock(merge_selecting_mutex);
+            ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
-        const auto storage_settings_ptr = getSettings();
-        auto metadata_snapshot = getInMemoryMetadataPtr();
+            auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
+            if (storage_settings.get()->assign_part_uuids)
+                future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        if (!partition && final)
-        {
-            DataPartsVector data_parts = getDataPartsVector();
-            std::unordered_set<String> partition_ids;
+            constexpr const char * unknown_disable_reason = "unknown reason";
+            String disable_reason = unknown_disable_reason;
+            SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
-            for (const DataPartPtr & part : data_parts)
-                partition_ids.emplace(part->info.partition_id);
-
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-
-            for (const String & partition_id : partition_ids)
+            if (partition_id.empty())
             {
-                size_t try_no = 0;
-                for (; try_no < max_retries; ++try_no)
-                {
-                    /// We must select parts for merge under merge_selecting_mutex because other threads
-                    /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
-                    std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-                    ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
-
-                    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
-
-                    if (storage_settings.get()->assign_part_uuids)
-                        future_merged_part->uuid = UUIDHelpers::generateV4();
-
-                    SelectPartsDecision select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr, query_context->getSettingsRef().optimize_skip_merged_partitions);
-
-                    if (select_decision != SelectPartsDecision::SELECTED)
-                        break;
-
-                    ReplicatedMergeTreeLogEntryData merge_entry;
-                    CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                        zookeeper, future_merged_part->parts,
-                        future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
-                        deduplicate, deduplicate_by_columns,
-                        &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
-
-                    if (create_result == CreateMergeEntryResult::MissingPart)
-                        return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");
-
-                    if (create_result == CreateMergeEntryResult::LogUpdated)
-                        continue;
-
-                    merge_entries.push_back(std::move(merge_entry));
-                    break;
-                }
-                if (try_no == max_retries)
-                    return handle_noop("Can't create merge queue node in ZooKeeper, because log was updated in every of "
-                        + toString(max_retries) + " tries");
+                select_decision = merger_mutator.selectPartsToMerge(
+                    future_merged_part, /* aggressive */ true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool,
+                    can_merge, /* merge_with_ttl_allowed */ false, &disable_reason);
             }
-        }
-        else
-        {
-            size_t try_no = 0;
-            for (; try_no < max_retries; ++try_no)
+            else
             {
-                std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-                ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
+                select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot,
+                    &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
+            }
 
-                auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
-                if (storage_settings.get()->assign_part_uuids)
-                    future_merged_part->uuid = UUIDHelpers::generateV4();
+            /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+            if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+                return false;
 
-                String disable_reason;
-                SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
+            if (select_decision != SelectPartsDecision::SELECTED)
+            {
+                constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
+                assert(disable_reason != unknown_disable_reason);
+                if (!partition_id.empty())
+                    disable_reason += fmt::format(" (in partition {})", partition_id);
+                String message = fmt::format(message_fmt, disable_reason);
+                LOG_INFO(log, message);
+                return handle_noop(message);
+            }
 
-                if (!partition)
-                {
-                    select_decision = merger_mutator.selectPartsToMerge(
-                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, false, &disable_reason);
-                }
-                else
-                {
-                    UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-                    String partition_id = getPartitionIDFromQuery(partition, query_context);
-                    select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason, query_context->getSettingsRef().optimize_skip_merged_partitions);
-                }
+            ReplicatedMergeTreeLogEntryData merge_entry;
+            CreateMergeEntryResult create_result = createLogEntryToMergeParts(
+                zookeeper, future_merged_part->parts,
+                future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
+                deduplicate, deduplicate_by_columns,
+                &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
 
-                /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
-                if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
-                    break;
+            if (create_result == CreateMergeEntryResult::MissingPart)
+            {
+                String message = "Can't create merge queue node in ZooKeeper, because some parts are missing";
+                LOG_TRACE(log, message);
+                return handle_noop(message);
+            }
 
-                if (select_decision != SelectPartsDecision::SELECTED)
-                {
-                    constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
-                    if (disable_reason.empty())
-                        disable_reason = "unknown reason";
-                    LOG_INFO(log, message_fmt, disable_reason);
-                    return handle_noop(fmt::format(message_fmt, disable_reason));
-                }
+            if (create_result == CreateMergeEntryResult::LogUpdated)
+                continue;
 
-                ReplicatedMergeTreeLogEntryData merge_entry;
-                CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                    zookeeper, future_merged_part->parts,
-                    future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
-                    deduplicate, deduplicate_by_columns,
-                    &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
+            merge_entries.push_back(std::move(merge_entry));
+            return true;
+        }
 
-                if (create_result == CreateMergeEntryResult::MissingPart)
-                    return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");
+        assert(try_no == max_retries);
+        String message = fmt::format("Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries", try_no);
+        LOG_TRACE(log, message);
+        return handle_noop(message);
+    };
 
-                if (create_result == CreateMergeEntryResult::LogUpdated)
-                    continue;
+    bool assigned = false;
+    if (!partition && final)
+    {
+        DataPartsVector data_parts = getDataPartsVector();
+        std::unordered_set<String> partition_ids;
 
-                merge_entries.push_back(std::move(merge_entry));
+        for (const DataPartPtr & part : data_parts)
+            partition_ids.emplace(part->info.partition_id);
+
+        for (const String & partition_id : partition_ids)
+        {
+            assigned = try_assign_merge(partition_id);
+            if (!assigned)
                 break;
-            }
-            if (try_no == max_retries)
-                return handle_noop("Can't create merge queue node in ZooKeeper, because log was updated in every of "
-                    + toString(max_retries) + " tries");
         }
+    }
+    else
+    {
+        String partition_id;
+        if (partition)
+            partition_id = getPartitionIDFromQuery(partition, query_context);
+        assigned = try_assign_merge(partition_id);
     }
 
     table_lock.reset();
@@ -4339,7 +4317,7 @@ bool StorageReplicatedMergeTree::optimize(
     for (auto & merge_entry : merge_entries)
         waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context);
 
-    return true;
+    return assigned;
 }
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
@@ -7159,7 +7137,6 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
     bool sync_on_insert = settings->fsync_after_insert;
 
-    out.writePrefix();
     out.write(block);
     /// TODO(ab): What projections should we add to the empty part? How can we make sure that it
     /// won't block future merges? Perhaps we should also check part emptiness when selecting parts

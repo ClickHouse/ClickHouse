@@ -1747,8 +1747,8 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     members = describe_consumer_group(kafka_cluster, 'virt2')
     # pprint.pprint(members)
-    members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
-    members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
+    # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
+    # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
