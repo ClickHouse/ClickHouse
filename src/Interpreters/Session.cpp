@@ -4,6 +4,7 @@
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
+#include <common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -240,10 +241,34 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
+namespace
+{
+String getSessionPrefix(ClientInfo::Interface interface)
+{
+    switch (interface)
+    {
+        case ClientInfo::Interface::TCP:
+            return "TCP";
+        case ClientInfo::Interface::HTTP:
+            return "HTTP";
+        case ClientInfo::Interface::GRPC:
+            return "GRPC";
+        case ClientInfo::Interface::MYSQL:
+            return "MySQL";
+        case ClientInfo::Interface::POSTGRESQL:
+            return "PostgreSQL";
+        case ClientInfo::Interface::LOCAL:
+            return "Local";
+        case ClientInfo::Interface::TCP_INTERSERVER:
+            return "Interserver";
+    }
+}
+}
 
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
     : session_id(UUIDHelpers::generateV4()),
-      global_context(global_context_)
+      global_context(global_context_),
+      log(&Poco::Logger::get(getSessionPrefix(interface_) + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -253,6 +278,12 @@ Session::Session(Session &&) = default;
 
 Session::~Session()
 {
+    LOG_DEBUG(log, "{} Destroying {} of user {}",
+        toString(session_id),
+        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session"),
+        (user_id ? toString(*user_id) : "<EMPTY>")
+    );
+
     /// Early release a NamedSessionData.
     if (named_session)
         named_session->release();
@@ -298,12 +329,18 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
 
+    LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
+            toString(session_id), credentials_.getUserName(), address.toString());
+
     try
     {
         user_id = global_context->getAccessControlManager().login(credentials_, address.host());
+        LOG_DEBUG(log, "{} Authenticated with global context as user {}",
+                toString(session_id), user_id ? toString(*user_id) : "<EMPTY>");
     }
     catch (const Exception & e)
     {
+        LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(session_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(session_id, *prepared_client_info, credentials_.getUserName(), e);
         throw;
@@ -336,6 +373,8 @@ ContextMutablePtr Session::makeSessionContext()
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
 
+    LOG_DEBUG(log, "{} Creating session context with user_id: {}",
+            toString(session_id), user_id ? toString(*user_id) : "<EMPTY>");
     /// Make a new session context.
     ContextMutablePtr new_session_context;
     new_session_context = Context::createCopy(global_context);
@@ -363,6 +402,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+
+    LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
+              toString(session_id), session_name_, user_id ? toString(*user_id) : "<EMPTY>");
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
@@ -420,6 +462,12 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
+    LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+              toString(session_id),
+              from_session_context ? "session" : "global",
+              user_id ? toString(*user_id) : "<EMPTY>",
+              query_context->getUser() ? query_context->getUser()->getName() : "<NOT SET>");
+
     /// Copy the specified client info to the new query context.
     auto & res_client_info = query_context->getClientInfo();
     if (client_info_to_move)
@@ -460,7 +508,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (!notified_session_log_about_login)
     {
-        if (auto session_log = getSessionLog(); session_log && user)
+        if (auto session_log = getSessionLog(); user && user_id && session_log)
         {
             session_log->addLoginSuccess(
                     session_id,

@@ -90,6 +90,8 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    Poco::Logger * log = nullptr;
 };
 
 }
