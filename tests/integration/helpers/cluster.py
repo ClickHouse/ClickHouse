@@ -2340,6 +2340,9 @@ class ClickHouseInstance:
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
 
+    def replace_in_config(self, path_to_config, replace, replacement):
+        self.exec_in_container(["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"])
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 

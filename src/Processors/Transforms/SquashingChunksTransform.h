@@ -1,6 +1,7 @@
 #pragma once
+
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Common/SquashingTransform.h>
+#include <Interpreters/SquashingTransform.h>
 
 namespace DB
 {
