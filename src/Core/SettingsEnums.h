@@ -168,22 +168,4 @@ enum class ShortCircuitFunctionEvaluation
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
-enum class ZooKeeperLoadBalancing
-{
-    /// Randomly select one from the zookeeper nodes.
-    RANDOM = 0,
-    /// Choose one from the zookeeper node that has the least
-    /// number of characters different from the hostname of the local host
-    NEAREST_HOSTNAME,
-    /// Select one from the zookeeper node configuration in order.
-    IN_ORDER,
-    /// If the first node cannot be connected,
-    /// one will be randomly selected from other nodes.
-    FIRST_OR_RANDOM,
-    /// Round robin from the node configured by zookeeper.
-    ROUND_ROBIN,
-};
-
-DECLARE_SETTING_ENUM(ZooKeeperLoadBalancing)
-
 }

@@ -6,7 +6,6 @@
 #include <functional>
 #include <filesystem>
 
-#include <base/logger_useful.h>
 #include <base/find_symbols.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -27,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_LOAD_BALANCING;
 }
 }
 
@@ -44,6 +44,35 @@ static void check(Coordination::Error code, const std::string & path)
 {
     if (code != Coordination::Error::ZOK)
         throw KeeperException(code, path);
+}
+
+static ZooKeeperLoadBalancing fromString(const std::string_view & str)
+{
+    static const std::unordered_map<std::string_view, ZooKeeperLoadBalancing> map = [] {
+        std::unordered_map<std::string_view, ZooKeeperLoadBalancing> res;
+        constexpr std::pair<const char *, ZooKeeperLoadBalancing> pairs[]
+            = {{"random", ZooKeeperLoadBalancing::RANDOM},
+               {"nearest_hostname", ZooKeeperLoadBalancing::NEAREST_HOSTNAME},
+               {"in_order", ZooKeeperLoadBalancing::IN_ORDER},
+               {"first_or_random", ZooKeeperLoadBalancing::FIRST_OR_RANDOM},
+               {"round_robin", ZooKeeperLoadBalancing::ROUND_ROBIN}};
+        for (const auto & [name, val] : pairs)
+            res.emplace(name, val);
+        return res;
+    }();
+    auto it = map.find(str);
+    if (it != map.end())
+        return it->second;
+    String msg = "Unexpected value of ZooKeeperLoadBalancing: '" + String{str} + "'. Must be one of [";
+    bool need_comma = false;
+    for (auto & name : map | boost::adaptors::map_keys)
+    {
+        if (std::exchange(need_comma, true))
+            msg += ", ";
+        msg += "'" + String{name} + "'";
+    }
+    msg += "]";
+    throw DB::Exception(msg, DB::ErrorCodes::UNKNOWN_LOAD_BALANCING);
 }
 
 
@@ -165,7 +194,6 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
         hostname_differences[i] = DB::getHostNameDifference(local_hostname, Poco::Net::DNS::resolve(ip_or_hostname).name());
     }
 
-    size_t offset = 0;
     std::function<size_t(size_t index)> get_priority;
     switch (ZooKeeperLoadBalancing(zookeeper_load_balancing))
     {
@@ -178,7 +206,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
         case ZooKeeperLoadBalancing::RANDOM:
             break;
         case ZooKeeperLoadBalancing::FIRST_OR_RANDOM:
-            get_priority = [offset](size_t i) -> size_t { return i != offset; };
+            get_priority = [](size_t i) -> size_t { return i != 0; };
             break;
         case ZooKeeperLoadBalancing::ROUND_ROBIN:
             static size_t last_used = 0;
@@ -191,7 +219,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
              * last_used = 3 -> get_priority: 4 3 0 1 2
              * ...
              * */
-            get_priority = [&](size_t i) { ++i; return i < last_used ? hosts.size() - i : i - last_used; };
+            get_priority = [this, last_used_value = last_used](size_t i) { ++i; return i < last_used_value ? hosts.size() - i : i - last_used_value; };
             break;
     }
 
@@ -278,9 +306,7 @@ struct ZooKeeperArgs
             }
             else if (key == "zookeeper_load_balancing")
             {
-                DB::SettingFieldZooKeeperLoadBalancing setting_field;
-                setting_field.parseFromString(config.getString(config_name + "." + key));
-                zookeeper_load_balancing = setting_field.value;
+                zookeeper_load_balancing = fromString(config.getString(config_name + "." + key));
             }
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);

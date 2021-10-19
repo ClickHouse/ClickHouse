@@ -14,7 +14,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/randomSeed.h>
-#include <Core/SettingsEnums.h>
 #include <unistd.h>
 #include <random>
 
@@ -62,7 +61,22 @@ private:
     std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
-using ZooKeeperLoadBalancing = DB::ZooKeeperLoadBalancing;
+enum class ZooKeeperLoadBalancing
+{
+    /// Randomly select one from the zookeeper nodes.
+    RANDOM = 0,
+    /// Choose one from the zookeeper node that has the least
+    /// number of characters different from the hostname of the local host
+    NEAREST_HOSTNAME,
+    /// Select one from the zookeeper node configuration in order.
+    IN_ORDER,
+    /// If the first node cannot be connected,
+    /// one will be randomly selected from other nodes.
+    FIRST_OR_RANDOM,
+    /// Round robin from the node configured by zookeeper.
+    ROUND_ROBIN,
+};
+
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
