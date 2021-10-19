@@ -150,24 +150,35 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (auto new_server : new_servers_configuration.cluster_config->get_servers())
+    {
+        LOG_INFO(log, "NEW SERVER {}", new_server->get_id());
         new_ids[new_server->get_id()] = new_server;
+    }
 
     for (auto old_server : servers_configuration.cluster_config->get_servers())
+    {
+        LOG_INFO(log, "OLD SERVER {}", old_server->get_id());
         old_ids[old_server->get_id()] = old_server;
-
-    std::unordered_map<int, KeeperServerConfigPtr> servers_to_remove, servers_to_add;
-
-    auto comp = [] (auto & a, auto & b) { return a.first < b.first; };
-    std::set_difference(old_ids.begin(), old_ids.end(), new_ids.begin(), new_ids.end(), std::inserter(servers_to_remove, servers_to_remove.begin()), comp);
-    std::set_difference(new_ids.begin(), new_ids.end(), old_ids.begin(), old_ids.end(), std::inserter(servers_to_add, servers_to_add.begin()), comp);
+    }
 
     ConfigUpdateActions result;
+    for (auto [old_id, server_config] : old_ids)
+    {
+        if (!new_ids.count(old_id))
+        {
+            LOG_INFO(log, "REMOVING SERVER {}", old_id);
+            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
+        }
+    }
 
-    for (auto & [_, server_config] : servers_to_remove)
-        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
-
-    for (auto & [_, server_config] : servers_to_add)
-        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+    for (auto [new_id, server_config] : new_ids)
+    {
+        if (!old_ids.count(new_id))
+        {
+            LOG_INFO(log, "ADDING SERVER {}", new_id);
+            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+        }
+    }
 
     for (const auto & old_server : servers_configuration.cluster_config->get_servers())
     {
@@ -175,6 +186,7 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
         {
             if (old_server->get_id() == new_server->get_id())
             {
+                LOG_INFO(log, "UPDATE PRIORITY {}", new_server->get_id());
                 if (old_server->get_priority() != new_server->get_priority())
                     result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
                 break;
