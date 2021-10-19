@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Access/AccessRightsElement.h>
 #include <memory>
 #include <vector>

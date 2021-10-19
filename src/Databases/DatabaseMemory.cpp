@@ -1,4 +1,5 @@
-#include <common/logger_useful.h>
+#include <base/scope_guard.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -41,7 +42,14 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
+        /// Remove table w/o lock since:
+        /// - it does not require it
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
+        SCOPE_EXIT(lock.lock());
+        lock.unlock();
         table->drop();
+
         if (table->storesDataOnDisk())
         {
             assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
@@ -69,6 +77,10 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
+
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+
     return create_query;
 }
 

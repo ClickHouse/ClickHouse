@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-#include <common/chrono_io.h>
+#include <base/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
 {

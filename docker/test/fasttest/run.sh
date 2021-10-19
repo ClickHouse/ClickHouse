@@ -189,7 +189,7 @@ function clone_submodules
         )
 
         git submodule sync
-        git submodule update --depth 1 --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -262,11 +262,13 @@ function run_tests
 
     start_server
 
+    set +e
     time clickhouse-test --hung-check -j 8 --order=random \
             --fast-tests-only --no-long --testname --shard --zookeeper \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_log.txt"
+        | tee "$FASTTEST_OUTPUT/test_result.txt"
+    set -e
 }
 
 case "$stage" in
@@ -315,6 +317,9 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests
+    /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+        --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
+        --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;
 *)
     echo "Unknown test stage '$stage'"

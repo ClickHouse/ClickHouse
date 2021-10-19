@@ -52,7 +52,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 }
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
@@ -67,7 +67,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <DataStreams/MongoDBSource.h>
+#include <Processors/Transforms/MongoDBSource.h>
 
 
 namespace DB

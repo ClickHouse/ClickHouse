@@ -41,7 +41,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
 
 コマンドラインターミナルで実行:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 注:、代理して下さい *your_github_username* 適切なもので！
@@ -83,7 +83,7 @@ ClickHouseリポジトリは以下を使用します `submodules`. That is what 
 
 Gitでサブモジュールを操作するのは苦痛です。 次のコマンドは管理に役立ちます:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -96,16 +96,16 @@ Gitでサブモジュールを操作するのは苦痛です。 次のコマン�
 次のコマンドは、すべてのサブモジュールを初期状態にリセットするのに役立ちます（！ﾂづﾂつｷﾂ。 -内部の変更は削除されます):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -250,8 +250,8 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

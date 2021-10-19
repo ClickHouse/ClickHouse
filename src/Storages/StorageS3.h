@@ -13,8 +13,8 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
-#include <common/logger_useful.h>
-#include <common/shared_ptr_helper.h>
+#include <base/logger_useful.h>
+#include <base/shared_ptr_helper.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>

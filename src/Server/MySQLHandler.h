@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>

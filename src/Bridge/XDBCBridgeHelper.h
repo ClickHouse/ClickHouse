@@ -11,8 +11,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
 #include <Bridge/IBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)
