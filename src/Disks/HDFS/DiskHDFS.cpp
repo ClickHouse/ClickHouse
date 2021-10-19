@@ -1,11 +1,13 @@
 #include <Disks/HDFS/DiskHDFS.h>
 
 #include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <IO/ReadIndirectBufferFromRemoteFS.h>
-#include <IO/WriteIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadBufferFromRemoteFSGather.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
+
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <base/logger_useful.h>
 #include <base/FnTraits.h>

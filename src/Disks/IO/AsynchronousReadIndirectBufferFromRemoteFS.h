@@ -6,13 +6,13 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
-#include <Disks/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IDiskRemote.h>
 #include <utility>
 
 
 namespace DB
 {
+
+class ReadBufferFromRemoteFSGather;
 
 /**
 * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -43,7 +43,7 @@ public:
 
     off_t getPosition() override { return absolute_position - available(); }
 
-    String getFileName() const override { return impl->getFileName(); }
+    String getFileName() const override;
 
     void prefetch() override;
 
