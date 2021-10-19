@@ -478,7 +478,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         if (query_context_ptr->getSettingsRef().log_profile_events != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
-            elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+            elem.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
         }
     }
 
@@ -519,7 +519,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
         element.view_query = getCleanQueryAst(vinfo.query, query_context_ptr);
     element.view_target = vinfo.runtime_stats->target_name;
 
-    auto events = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+    auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
     element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
     element.written_rows = (*events)[ProfileEvents::InsertedRows];
