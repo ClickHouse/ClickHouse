@@ -25,12 +25,6 @@ argMin(arg, val)
 
 Тип: соответствует типу `arg`.
 
-Если передан кортеж:
-
--   Кортеж `(arg, val)` c минимальным значением `val` и соответствующим ему `arg`.
-
-Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
-
 **Пример**
 
 Исходная таблица:
@@ -46,14 +40,14 @@ argMin(arg, val)
 Запрос:
 
 ``` sql
-SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
+SELECT argMin(user, salary) FROM salary;
 ```
 
 Результат:
 
 ``` text
-┌─argMin(user, salary)─┬─argMin(tuple(user, salary))─┐
-│ worker               │ ('worker',1000)             │
-└──────────────────────┴─────────────────────────────┘
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
 ```
 
