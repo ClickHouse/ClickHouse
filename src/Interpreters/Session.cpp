@@ -4,12 +4,14 @@
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
+
+#include <magic_enum.hpp>
 
 #include <atomic>
 #include <condition_variable>
@@ -241,34 +243,10 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
-namespace
-{
-String getSessionPrefix(ClientInfo::Interface interface)
-{
-    switch (interface)
-    {
-        case ClientInfo::Interface::TCP:
-            return "TCP";
-        case ClientInfo::Interface::HTTP:
-            return "HTTP";
-        case ClientInfo::Interface::GRPC:
-            return "GRPC";
-        case ClientInfo::Interface::MYSQL:
-            return "MySQL";
-        case ClientInfo::Interface::POSTGRESQL:
-            return "PostgreSQL";
-        case ClientInfo::Interface::LOCAL:
-            return "Local";
-        case ClientInfo::Interface::TCP_INTERSERVER:
-            return "Interserver";
-    }
-}
-}
-
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
     : session_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(&Poco::Logger::get(getSessionPrefix(interface_) + "-Session"))
+      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
