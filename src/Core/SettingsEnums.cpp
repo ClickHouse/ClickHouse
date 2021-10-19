@@ -117,11 +117,4 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
-IMPLEMENT_SETTING_ENUM(ZooKeeperLoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
-    {{"random",           ZooKeeperLoadBalancing::RANDOM},
-     {"nearest_hostname", ZooKeeperLoadBalancing::NEAREST_HOSTNAME},
-     {"in_order",         ZooKeeperLoadBalancing::IN_ORDER},
-     {"first_or_random",  ZooKeeperLoadBalancing::FIRST_OR_RANDOM},
-     {"round_robin",      ZooKeeperLoadBalancing::ROUND_ROBIN}})
-
 }
