@@ -1,5 +1,4 @@
 add_executable(execute_query_fuzzer execute_query_fuzzer.cpp)
-target_compile_options(execute_query_fuzzer PRIVATE -fPIC)
 target_link_libraries(execute_query_fuzzer PRIVATE
     dbms
     clickhouse_functions

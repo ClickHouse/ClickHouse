@@ -15,19 +15,21 @@ if (CMAKE_CROSSCOMPILING)
     set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE INTERNAL "" FORCE)
 endif ()
 
-# `protoc` will be built with sanitizer and it could fail during ClickHouse build
-# It easily reproduces in oss-fuzz building pipeline
-# To avoid this we can try to build `protoc` without any sanitizer with option `-fno-sanitize=all`, but
-# it this case we will face with linker errors, because libcxx still will be built with sanitizer
-# So, we can simply suppress all of these failures with a combination this flag and an environment variable
-# export MSAN_OPTIONS=exit_code=0
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize-recover=all")
 
 add_subdirectory("${protobuf_SOURCE_DIR}/cmake" "${protobuf_BINARY_DIR}")
 
 # We don't want to stop compilation on warnings in protobuf's headers.
 # The following line overrides the value assigned by the command target_include_directories() in libprotobuf.cmake
 set_property(TARGET libprotobuf PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${protobuf_SOURCE_DIR}/src")
+
+# `protoc` will be built with sanitizer and it could fail during ClickHouse build
+# It easily reproduces in oss-fuzz building pipeline
+# To avoid this we can try to build `protoc` without any sanitizer with option `-fno-sanitize=all`, but
+# it this case we will face with linker errors, because libcxx still will be built with sanitizer
+# So, we can simply suppress all of these failures with a combination this flag and an environment variable
+# export MSAN_OPTIONS=exit_code=0
+target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
+target_compile_options(protoc PRIVATE "-fsanitize-recover=all")
 
 if (CMAKE_CROSSCOMPILING)
     # Build 'protoc' for host arch
