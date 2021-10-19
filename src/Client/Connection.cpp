@@ -30,7 +30,7 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
