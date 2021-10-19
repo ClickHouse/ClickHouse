@@ -63,7 +63,7 @@ private:
     std::unique_ptr<avro::DataFileWriterBase> file_writer_ptr;
 
     void consumeImpl(Chunk);
-    void consumeImplCallback(Chunk);
+    void consumeImplWithCallback(Chunk);
 
 };
 
