@@ -66,11 +66,11 @@ private:
     UInt64 limit;
     SizeLimits size_limits;
 
-    size_t max_bytes_before_remerge;
-    double remerge_lowered_memory_bytes_ratio;
-    size_t max_bytes_before_external_sort;
+    size_t max_bytes_before_remerge = 0;
+    double remerge_lowered_memory_bytes_ratio = 0;
+    size_t max_bytes_before_external_sort = 0;
     VolumePtr tmp_volume;
-    size_t min_free_disk_space;
+    size_t min_free_disk_space = 0;
 };
 
 }
