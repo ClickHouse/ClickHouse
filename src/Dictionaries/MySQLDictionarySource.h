@@ -12,7 +12,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
 {

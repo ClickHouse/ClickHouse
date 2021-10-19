@@ -6,8 +6,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Disks/IVolume.h>
 
 
@@ -197,7 +197,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                     description,
                     max_merged_block_size,
                     limit,
-                    false,
                     nullptr,
                     quiet,
                     use_average_block_sizes,

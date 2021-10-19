@@ -23,7 +23,6 @@
 
 #include <Storages/StorageDictionary.h>
 
-#include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
