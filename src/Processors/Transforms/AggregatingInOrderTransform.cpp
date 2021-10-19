@@ -259,7 +259,6 @@ void AggregatingInOrderTransform::generate()
         res.getByPosition(i + res_key_columns.size()).column = std::move(res_aggregate_columns[i]);
 
     to_push_chunk = convertToChunk(res);
-    to_push_chunk.setChunkInfo(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
 
     /// Clear arenas to allow to free them, when chunk will reach the end of pipeline.
     /// It's safe clear them here, because columns with aggregate functions already holds them.
