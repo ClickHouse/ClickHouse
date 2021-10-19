@@ -6,10 +6,9 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 
@@ -33,7 +32,7 @@ struct Packet
     std::unique_ptr<Exception> exception;
     std::vector<String> multistring_message;
     Progress progress;
-    BlockStreamProfileInfo profile_info;
+    ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
     PartitionReadRequest request;
     PartitionReadResponce response;
@@ -61,6 +60,14 @@ class IServerConnection : boost::noncopyable
 {
 public:
     virtual ~IServerConnection() = default;
+
+    enum class Type
+    {
+        SERVER,
+        LOCAL
+    };
+
+    virtual Type getConnectionType() const = 0;
 
     virtual void setDefaultDatabase(const String & database) = 0;
 

@@ -9,11 +9,10 @@
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <Formats/NativeReader.h>
 
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
@@ -33,7 +32,7 @@ namespace DB
 class Session;
 struct Settings;
 class ColumnsDescription;
-struct BlockStreamProfileInfo;
+struct ProfileInfo;
 
 /// State of query processing.
 struct QueryState
@@ -232,7 +231,7 @@ private:
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
     void sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request);
-    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
     void sendProfileEvents();

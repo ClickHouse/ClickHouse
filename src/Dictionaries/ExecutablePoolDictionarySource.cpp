@@ -4,7 +4,7 @@
 #include <base/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>

@@ -164,7 +164,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     LOG_DEBUG(
         log,
-        "Choose {} projection {}",
+        "Choose {} {} projection {}",
+        query_info.projection->complete ? "complete" : "incomplete",
         query_info.projection->desc->type,
         query_info.projection->desc->name);
 

@@ -3,8 +3,6 @@
 #include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
-#include <DataStreams/copyData.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>

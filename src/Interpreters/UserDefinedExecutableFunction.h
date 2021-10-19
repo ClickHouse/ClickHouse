@@ -3,7 +3,7 @@
 #include <string>
 
 #include <DataTypes/IDataType.h>
-#include <DataStreams/ShellCommandSource.h>
+#include <Processors/Sources/ShellCommandSource.h>
 #include <Interpreters/IExternalLoadable.h>
 
 
