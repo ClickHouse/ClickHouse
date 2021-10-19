@@ -115,7 +115,7 @@ public:
         return server && server->checkInit();
     }
 
-    /// Registered in ConfigReloader callback. Add new confugration changes to
+    /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
