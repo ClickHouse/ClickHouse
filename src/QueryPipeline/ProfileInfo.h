@@ -12,7 +12,7 @@ class Block;
 class ReadBuffer;
 class WriteBuffer;
 
-/// Information for profiling. See IBlockInputStream.h
+/// Information for profiling. See SourceWithProgress.h
 struct ProfileInfo
 {
     bool started = false;
