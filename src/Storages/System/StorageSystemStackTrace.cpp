@@ -6,7 +6,7 @@
 #include <mutex>
 #include <filesystem>
 
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,8 +16,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
-#include <common/getThreadId.h>
-#include <common/logger_useful.h>
+#include <base/getThreadId.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -223,7 +223,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, ContextPtr,
         {
             constexpr size_t comm_buf_size = 32; /// More than enough for thread name
             ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
-            readStringUntilEOF(thread_name, comm);
+            readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
 

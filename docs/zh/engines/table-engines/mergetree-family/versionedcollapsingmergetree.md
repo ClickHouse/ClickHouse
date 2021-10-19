@@ -3,7 +3,7 @@ toc_priority: 37
 toc_title: "版本折叠MergeTree"
 ---
 
-# 版本折叠MergeTree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 这个引擎:
 
@@ -47,7 +47,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 **查询 Clauses**
 
-当创建一个 `VersionedCollapsingMergeTree` 表时，跟创建一个 `MergeTree`表的时候需要相同 [Clause](mergetree.md) 
+当创建一个 `VersionedCollapsingMergeTree` 表时，跟创建一个 `MergeTree`表的时候需要相同 [Clause](mergetree.md)
 
 <details markdown="1">
 
@@ -233,4 +233,4 @@ SELECT * FROM UAct FINAL
 
 这是一个非常低效的方式来选择数据。 不要把它用于数据量大的表。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

@@ -22,6 +22,7 @@ struct User : public IAccessEntity
     RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};
     SettingsProfileElements settings;
     RolesOrUsersSet grantees = RolesOrUsersSet::AllTag{};
+    String default_database;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }

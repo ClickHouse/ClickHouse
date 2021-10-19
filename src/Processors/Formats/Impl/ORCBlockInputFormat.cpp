@@ -9,6 +9,7 @@
 #include <arrow/io/memory.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -26,7 +27,8 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
+ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
 {
 }
 
@@ -91,14 +93,18 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ORCBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
     stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), schema, "ORC");
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
+
+    std::unordered_set<String> nested_table_names;
+    if (format_settings.orc.import_nested)
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
 
     /// In ReadStripe column indices should be started from 1,
     /// because 0 indicates to select all columns.
@@ -108,7 +114,8 @@ void ORCBlockInputFormat::prepareReader()
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        if (getPort().getHeader().has(schema->field(i)->name()))
+        const auto & name = schema->field(i)->name();
+        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
                 include_indices.push_back(index + j);
@@ -117,16 +124,16 @@ void ORCBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorORC(FormatFactory &factory)
+void registerInputFormatORC(FormatFactory &factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
             "ORC",
             [](ReadBuffer &buf,
                 const Block &sample,
                 const RowInputFormatParams &,
-                const FormatSettings & /* settings */)
+                const FormatSettings & settings)
             {
-                return std::make_shared<ORCBlockInputFormat>(buf, sample);
+                return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
     factory.markFormatAsColumnOriented("ORC");
 }
@@ -137,7 +144,7 @@ void registerInputFormatProcessorORC(FormatFactory &factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatProcessorORC(FormatFactory &)
+    void registerInputFormatORC(FormatFactory &)
     {
     }
 }

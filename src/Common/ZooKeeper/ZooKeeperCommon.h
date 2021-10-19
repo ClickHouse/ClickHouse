@@ -2,6 +2,7 @@
 
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Interpreters/ZooKeeperLog.h>
 
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
@@ -22,16 +23,22 @@
 namespace Coordination
 {
 
+using LogElements = std::vector<ZooKeeperLogElement>;
+
 struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
     int64_t zxid = 0;
 
+    ZooKeeperResponse() = default;
+    ZooKeeperResponse(const ZooKeeperResponse &) = default;
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual void write(WriteBuffer & out) const;
     virtual OpNum getOpNum() const = 0;
+    virtual void fillLogElements(LogElements & elems, size_t idx) const;
+    virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
 };
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
@@ -44,6 +51,8 @@ struct ZooKeeperRequest : virtual Request
     /// If the request was not send and the error happens, we definitely sure, that it has not been processed by the server.
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
+
+    bool restored_from_zookeeper_log = false;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
@@ -61,6 +70,8 @@ struct ZooKeeperRequest : virtual Request
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
     virtual bool isReadRequest() const = 0;
+
+    virtual void createLogElements(LogElements & elems) const;
 };
 
 using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
@@ -117,6 +128,9 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     {
         throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
     }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
+    int32_t tryGetOpNum() const override { return 0; }
 };
 
 struct ZooKeeperAuthRequest final : ZooKeeperRequest
@@ -172,6 +186,9 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 
 struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 {
+    /// used only during restore from zookeeper log
+    int32_t parent_cversion = -1;
+
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
@@ -184,8 +201,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 
-    /// During recovery from log we don't rehash ACLs
-    bool need_to_hash_acls = true;
+    void createLogElements(LogElements & elems) const override;
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
@@ -197,6 +213,8 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Create; }
 
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
@@ -212,6 +230,8 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return RemoveRequest::bytesSize() + sizeof(xid); }
+
+    void createLogElements(LogElements & elems) const override;
 };
 
 struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
@@ -242,6 +262,8 @@ struct ZooKeeperExistsResponse final : ExistsResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Exists; }
 
     size_t bytesSize() const override { return ExistsResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
@@ -263,6 +285,8 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Get; }
 
     size_t bytesSize() const override { return GetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
@@ -277,6 +301,8 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return SetRequest::bytesSize() + sizeof(xid); }
+
+    void createLogElements(LogElements & elems) const override;
 };
 
 struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
@@ -286,6 +312,8 @@ struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Set; }
 
     size_t bytesSize() const override { return SetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
@@ -311,6 +339,8 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::List; }
 
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
@@ -331,6 +361,8 @@ struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
     bool isReadRequest() const override { return true; }
 
     size_t bytesSize() const override { return CheckRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+
+    void createLogElements(LogElements & elems) const override;
 };
 
 struct ZooKeeperCheckResponse final : CheckResponse, ZooKeeperResponse
@@ -362,8 +394,6 @@ struct ZooKeeperSetACLRequest final : SetACLRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return SetACLRequest::bytesSize() + sizeof(xid); }
-
-    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperSetACLResponse final : SetACLResponse, ZooKeeperResponse
@@ -409,6 +439,8 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     bool isReadRequest() const override;
 
     size_t bytesSize() const override { return MultiRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
+
+    void createLogElements(LogElements & elems) const override;
 };
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
@@ -433,6 +465,8 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
     void writeImpl(WriteBuffer & out) const override;
 
     size_t bytesSize() const override { return MultiResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+
+    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 /// Fake internal coordination (keeper) response. Never received from client

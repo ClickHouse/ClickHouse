@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/** Reads all data into queue.
+  * After all data has been read - output it in the same order.
+  */
 class QueueBuffer : public IAccumulatingTransform
 {
 private:

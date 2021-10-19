@@ -54,7 +54,7 @@ target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
 set(ORC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++")
 set(ORC_INCLUDE_DIR "${ORC_SOURCE_DIR}/include")
 set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
-set(ORC_SOURCE_WRAP_DIR "${ORC_SOURCE_DIR}/wrap")
+# set(ORC_SOURCE_WRAP_DIR "${ORC_SOURCE_DIR}/wrap")
 
 set(ORC_BUILD_SRC_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src")
 set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
@@ -101,7 +101,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     set(CXX11_FLAGS "-std=c++0x")
 endif ()
 
-include("${ClickHouse_SOURCE_DIR}/contrib/orc/cmake_modules/CheckSourceCompiles.cmake")
+set (ORC_CXX_HAS_INITIALIZER_LIST 1)
+set (ORC_CXX_HAS_NOEXCEPT 1)
+set (ORC_CXX_HAS_NULLPTR 1)
+set (ORC_CXX_HAS_OVERRIDE 1)
+set (ORC_CXX_HAS_UNIQUE_PTR 1)
+set (ORC_CXX_HAS_CSTDINT 1)
+set (ORC_CXX_HAS_THREAD_LOCAL 1)
+
 include(orc_check.cmake)
 configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
@@ -119,12 +126,9 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
         "${ORC_SOURCE_SRC_DIR}/Common.cc"
         "${ORC_SOURCE_SRC_DIR}/Compression.cc"
-        "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/Int128.cc"
         "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
         "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
-        "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
-        "${ORC_SOURCE_SRC_DIR}/Reader.cc"
         "${ORC_SOURCE_SRC_DIR}/RLE.cc"
         "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
         "${ORC_SOURCE_SRC_DIR}/RLEv2.cc"
@@ -194,8 +198,17 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/cast.cc"
         "${LIBRARY_DIR}/compute/exec.cc"
         "${LIBRARY_DIR}/compute/function.cc"
+        "${LIBRARY_DIR}/compute/function_internal.cc"
         "${LIBRARY_DIR}/compute/kernel.cc"
         "${LIBRARY_DIR}/compute/registry.cc"
+
+        "${LIBRARY_DIR}/compute/exec/exec_plan.cc"
+        "${LIBRARY_DIR}/compute/exec/expression.cc"
+        "${LIBRARY_DIR}/compute/exec/key_compare.cc"
+        "${LIBRARY_DIR}/compute/exec/key_encode.cc"
+        "${LIBRARY_DIR}/compute/exec/key_hash.cc"
+        "${LIBRARY_DIR}/compute/exec/key_map.cc"
+        "${LIBRARY_DIR}/compute/exec/util.cc"
 
         "${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc"
@@ -207,6 +220,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_cast_dictionary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_numeric.cc"
@@ -214,15 +228,18 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_compare.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_fill_null.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_string.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_temporal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
+        "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_hash.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_nested.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_replace.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_sort.cc"
-        "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
 
         "${LIBRARY_DIR}/csv/chunker.cc"
         "${LIBRARY_DIR}/csv/column_builder.cc"
@@ -231,6 +248,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/csv/options.cc"
         "${LIBRARY_DIR}/csv/parser.cc"
         "${LIBRARY_DIR}/csv/reader.cc"
+        "${LIBRARY_DIR}/csv/writer.cc"
 
         "${LIBRARY_DIR}/ipc/dictionary.cc"
         "${LIBRARY_DIR}/ipc/feather.cc"
@@ -247,6 +265,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/io/interfaces.cc"
         "${LIBRARY_DIR}/io/memory.cc"
         "${LIBRARY_DIR}/io/slow.cc"
+        "${LIBRARY_DIR}/io/stdio.cc"
         "${LIBRARY_DIR}/io/transform.cc"
 
         "${LIBRARY_DIR}/tensor/coo_converter.cc"
@@ -257,9 +276,9 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/bit_block_counter.cc"
         "${LIBRARY_DIR}/util/bit_run_reader.cc"
         "${LIBRARY_DIR}/util/bit_util.cc"
-        "${LIBRARY_DIR}/util/bitmap.cc"
         "${LIBRARY_DIR}/util/bitmap_builders.cc"
         "${LIBRARY_DIR}/util/bitmap_ops.cc"
+        "${LIBRARY_DIR}/util/bitmap.cc"
         "${LIBRARY_DIR}/util/bpacking.cc"
         "${LIBRARY_DIR}/util/cancel.cc"
         "${LIBRARY_DIR}/util/compression.cc"

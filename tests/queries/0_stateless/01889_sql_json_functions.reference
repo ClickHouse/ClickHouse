@@ -1,0 +1,43 @@
+--JSON_VALUE--
+
+1
+1.2
+true
+"world"
+null
+
+
+
+
+--JSON_QUERY--
+[{"hello":1}]
+[1]
+[1.2]
+[true]
+["world"]
+[null]
+[["world","world2"]]
+[{"world":"!"}]
+
+
+[0, 1, 4, 0, -1, -4]
+--JSON_EXISTS--
+1
+0
+1
+1
+1
+0
+1
+0
+0
+1
+1
+0
+1
+0
+1
+--MANY ROWS--
+0	["Vasily", "Kostya"]
+1	["Tihon", "Ernest"]
+2	["Katya", "Anatoliy"]

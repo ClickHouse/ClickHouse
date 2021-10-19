@@ -38,7 +38,7 @@ Arguments:
 -   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
 -   `-d`, `--database` — default database, `_local` by default.
 -   `--stacktrace` — whether to dump debug output in case of exception.
--   `--echo` — print query before execution. 
+-   `--echo` — print query before execution.
 -   `--verbose` — more details on query execution.
 -   `--logger.console` — Log to console.
 -   `--logger.log` — Log file name.
@@ -114,4 +114,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-local/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-local/) <!--hide-->

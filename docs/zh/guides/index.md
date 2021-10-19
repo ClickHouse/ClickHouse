@@ -8,9 +8,9 @@ toc_title: "\u6982\u8FF0"
 
 # ClickHouse指南 {#clickhouse-guides}
 
-详细的一步一步的说明，帮助解决使用ClickHouse的各种任务列表:
+列出了如何使用 Clickhouse 解决各种任务的详细说明：
 
--   [简单集群设置教程](../getting-started/tutorial.md)
+-   [关于简单集群设置的教程](../getting-started/tutorial.md)
 -   [在ClickHouse中应用CatBoost模型](apply-catboost-model.md)
 
-[原始文章](https://clickhouse.tech/docs/en/guides/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/guides/) <!--hide-->

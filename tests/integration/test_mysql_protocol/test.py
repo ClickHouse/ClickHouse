@@ -95,8 +95,11 @@ def test_mysql_client(started_cluster):
     '''.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
 
     assert stdout.decode() == 'count()\n1\n'
-    assert stderr[0:182].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                            "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
+    expected_msg = '\n'.join([
+        "mysql: [Warning] Using a password on the command line interface can be insecure.",
+        "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 doesn't exist",
+    ])
+    assert stderr[:len(expected_msg)].decode() == expected_msg
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -122,8 +125,11 @@ def test_mysql_client_exception(started_cluster):
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
 
-    assert stderr[0:258].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Exception: Connections to all replicas failed: default@127.0.0.1:10086 as user default"
+    expected_msg = '\n'.join([
+        "mysql: [Warning] Using a password on the command line interface can be insecure.",
+        "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, Exception: Connections to all replicas failed: default@127.0.0.1:10086 as user default",
+    ])
+    assert stderr[:len(expected_msg)].decode() == expected_msg
 
 
 def test_mysql_affected_rows(started_cluster):
@@ -328,8 +334,7 @@ def test_python_client(started_cluster):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args[1][
-           0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
+    assert exc_info.value.args[1].startswith("Code: 60. DB::Exception: Table default.tables doesn't exist"), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -348,8 +353,7 @@ def test_python_client(started_cluster):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args[1][
-           0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
+    assert exc_info.value.args[1].startswith("Code: 60. DB::Exception: Table default.tables doesn't exist"), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -360,7 +364,7 @@ def test_python_client(started_cluster):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.select_db('system2')
 
-    assert exc_info.value.args[1][0:73] == "Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
+    assert exc_info.value.args[1].startswith("Code: 81. DB::Exception: Database system2 doesn't exist"), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute('CREATE DATABASE x')
@@ -403,24 +407,24 @@ def test_php_client(started_cluster, php_container):
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} default 123'.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\n'
+    assert stdout.decode() == 'tables\ntables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} default 123'.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\n'
+    assert stdout.decode() == 'tables\ntables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} user_with_double_sha1 abacaba'.format(host=started_cluster.get_instance_ip('node'), port=server_port),
         demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\n'
+    assert stdout.decode() == 'tables\ntables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba'.format(host=started_cluster.get_instance_ip('node'), port=server_port),
         demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\n'
+    assert stdout.decode() == 'tables\ntables\n'
 
 
 def test_mysqljs_client(started_cluster, nodejs_container):

@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Common/formatReadable.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace ProfileEvents
@@ -142,30 +142,6 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
-MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const
-{
-    MarkRanges all_part_ranges;
-
-    /// Inefficient in presence of large number of data parts.
-    for (const auto & part_ranges : parts_ranges)
-    {
-        if (part_ranges.data_part.get() == &part)
-        {
-            all_part_ranges = part_ranges.ranges;
-            break;
-        }
-    }
-    if (all_part_ranges.empty())
-        throw Exception("Trying to read marks range [" + std::to_string(from.begin) + ", " + std::to_string(from.end) + "] from part '"
-            + part.getFullPath() + "' which has no ranges in this query", ErrorCodes::LOGICAL_ERROR);
-
-    auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
-    if (begin == all_part_ranges.end())
-        begin = std::prev(all_part_ranges.end());
-    begin->begin = from.begin;
-    return MarkRanges(begin, all_part_ranges.end());
-}
-
 Block MergeTreeReadPool::getHeader() const
 {
     return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
@@ -228,26 +204,22 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
-        auto [required_columns, required_pre_columns, should_reorder] =
-            getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
+        auto task_columns = getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
+
+        auto size_predictor = !predict_block_size_bytes ? nullptr
+            : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);
+
+        per_part_size_predictor.emplace_back(std::move(size_predictor));
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-        const auto & required_column_names = required_columns.getNames();
+        const auto & required_column_names = task_columns.columns.getNames();
         per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
 
-        per_part_pre_columns.push_back(std::move(required_pre_columns));
-        per_part_columns.push_back(std::move(required_columns));
-        per_part_should_reorder.push_back(should_reorder);
+        per_part_pre_columns.push_back(std::move(task_columns.pre_columns));
+        per_part_columns.push_back(std::move(task_columns.columns));
+        per_part_should_reorder.push_back(task_columns.should_reorder);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
-
-        if (predict_block_size_bytes)
-        {
-            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
-                part.data_part, column_names, sample_block));
-        }
-        else
-            per_part_size_predictor.emplace_back(nullptr);
     }
 
     return per_part_sum_marks;

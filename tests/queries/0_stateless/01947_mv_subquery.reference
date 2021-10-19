@@ -1,0 +1,6 @@
+{"test":"1947 #1 CHECK - TRUE","sleep_calls":"0","sleep_microseconds":"0"}
+{"test":"1947 #2 CHECK - TRUE","sleep_calls":"2","sleep_microseconds":"2000"}
+{"test":"1947 #3 CHECK - TRUE","sleep_calls":"0","sleep_microseconds":"0"}
+{"test":"1947 #1 CHECK - FALSE","sleep_calls":"0","sleep_microseconds":"0"}
+{"test":"1947 #2 CHECK - FALSE","sleep_calls":"2","sleep_microseconds":"2000"}
+{"test":"1947 #3 CHECK - FALSE","sleep_calls":"0","sleep_microseconds":"0"}

@@ -4,8 +4,6 @@
 #include <Common/config.h>
 #endif
 
-#if USE_AWS_S3 || USE_HDFS
-
 #include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
@@ -38,5 +36,3 @@ private:
 };
 
 }
-
-#endif

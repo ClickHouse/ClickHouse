@@ -2,9 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -46,7 +45,7 @@ class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public ISto
 {
 friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
-friend class BufferBlockOutputStream;
+friend class BufferSink;
 
 public:
     struct Thresholds
@@ -84,7 +83,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.

@@ -8,6 +8,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -20,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, typename ResultType>
+template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
 class FunctionStringOrArrayToT : public IFunction
 {
 public:
@@ -40,10 +41,17 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return is_suitable_for_short_circuit_arguments_execution;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0]) && !isMap(arguments[0]))
+            && !isArray(arguments[0])
+            && !isMap(arguments[0])
+            && !isUUID(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -51,7 +59,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -102,6 +110,14 @@ public:
             const auto & col_nested = col_map->getNestedColumn();
 
             Impl::array(col_nested.getOffsets(), vec_res);
+            return col_res;
+        }
+        else if (const ColumnUUID * col_uuid = checkAndGetColumn<ColumnUUID>(column.get()))
+        {
+            auto col_res = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            vec_res.resize(col_uuid->size());
+            Impl::uuid(col_uuid->getData(), input_rows_count, vec_res);
             return col_res;
         }
         else

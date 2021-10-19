@@ -40,7 +40,7 @@ ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
         int err = ZSTD_freeCCtx(cctx);
         /// This is just in case, since it is impossible to get an error by using this wrapper.
         if (unlikely(err))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error code: {}; zstd version: {}", err, ZSTD_VERSION_STRING);
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
     }
     catch (...)
     {
@@ -73,9 +73,17 @@ void ZstdDeflatingWriteBuffer::nextImpl()
             output.pos = out->offset();
 
 
-            ZSTD_compressStream2(cctx, &output, &input, mode);
+            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, mode);
+            if (ZSTD_isError(compression_result))
+                throw Exception(
+                    ErrorCodes::ZSTD_ENCODER_FAILED, "Zstd stream encoding failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
+
             out->position() = out->buffer().begin() + output.pos;
-            ended = (input.pos == input.size);
+
+            bool everything_was_compressed = (input.pos == input.size);
+            bool everything_was_flushed = compression_result == 0;
+
+            ended = everything_was_compressed && everything_was_flushed;
         } while (!ended);
     }
     catch (...)

@@ -305,3 +305,12 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
+
+
+def test_server_uuid(started_cluster):
+    uuid1 = main_node.query("select serverUUID()")
+    uuid2 = dummy_node.query("select serverUUID()")
+    assert uuid1 != uuid2
+    main_node.restart_clickhouse()
+    uuid1_after_restart = main_node.query("select serverUUID()")
+    assert uuid1 == uuid1_after_restart

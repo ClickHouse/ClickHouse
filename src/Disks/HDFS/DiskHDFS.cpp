@@ -5,7 +5,8 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -36,7 +37,7 @@ public:
         chunks.back().push_back(path.data());
     }
 
-    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
+    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
     {
         for (auto & chunk : chunks)
             remove_chunk_func(std::move(chunk));
@@ -93,15 +94,15 @@ DiskHDFS::DiskHDFS(
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
+std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, size_t) const
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(log,
+    LOG_TRACE(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
@@ -114,8 +115,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto file_name = getRandomName();
     auto hdfs_path = remote_fs_root_path + file_name;
 
-    LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
-              backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
+    LOG_TRACE(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
+              backQuote(metadata_path + path), hdfs_path);
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
@@ -153,6 +154,14 @@ void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
         });
 }
 
+bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
+{
+    if (!boost::algorithm::starts_with(hdfs_uri, remote_fs_root_path))
+        return false;
+    const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+    const String remote_fs_object_path = hdfs_uri.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
+}
 
 namespace
 {
@@ -170,7 +179,8 @@ void registerDiskHDFS(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context_) -> DiskPtr
+                      ContextPtr context_,
+                      const DisksMap & /*map*/) -> DiskPtr
     {
         fs::path disk = fs::path(context_->getPath()) / "disks" / name;
         fs::create_directories(disk);

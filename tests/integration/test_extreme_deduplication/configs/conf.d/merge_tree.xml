@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <merge_tree>
         <replicated_deduplication_window>999999999</replicated_deduplication_window>
         <replicated_deduplication_window_seconds>1</replicated_deduplication_window_seconds>
@@ -6,4 +6,4 @@
         <cleanup_delay_period_random_add>0</cleanup_delay_period_random_add>
         <old_parts_lifetime>1</old_parts_lifetime>
     </merge_tree>
-</yandex>
+</clickhouse>

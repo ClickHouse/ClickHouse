@@ -69,4 +69,4 @@ FROM WatchLog
 
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/merge/) <!--hide-->

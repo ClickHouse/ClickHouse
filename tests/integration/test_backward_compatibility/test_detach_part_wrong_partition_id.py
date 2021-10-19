@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="detach")
 # Version 21.6.3.14 has incompatible partition id for tables with UUID in partition key.
 node_21_6 = cluster.add_instance('node_21_6', image='yandex/clickhouse-server', tag='21.6.3.14', stay_alive=True, with_installed_binary=True)
 
@@ -30,3 +30,7 @@ def test_detach_part_wrong_partition_id(start_cluster):
 
     num_detached = node_21_6.query("select count() from  system.detached_parts")
     assert num_detached == '1\n'
+
+    node_21_6.restart_with_original_version()
+
+    node_21_6.query("drop table tab SYNC")

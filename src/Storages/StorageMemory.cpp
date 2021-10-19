@@ -1,8 +1,6 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -10,7 +8,9 @@
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace DB
@@ -35,7 +35,7 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -62,19 +62,11 @@ protected:
 
         const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(columns.size());
+        columns.reserve(column_names_and_types.size());
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
-        {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            current_column = current_column->decompress();
-
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
+            columns.emplace_back(getColumnFromBlock(src, elem));
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -100,21 +92,23 @@ private:
 };
 
 
-class MemoryBlockOutputStream : public IBlockOutputStream
+class MemorySink : public SinkToStorage
 {
 public:
-    MemoryBlockOutputStream(
+    MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "MemorySink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
@@ -131,7 +125,7 @@ public:
         }
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
@@ -228,9 +222,9 @@ Pipe StorageMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot);
 }
 
 
@@ -270,11 +264,12 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto in = interpreter->execute();
+    auto pipeline = interpreter->execute();
+    PullingPipelineExecutor executor(pipeline);
 
-    in->readPrefix();
     Blocks out;
-    while (Block block = in->read())
+    Block block;
+    while (executor.pull(block))
     {
         if (compress)
             for (auto & elem : block)
@@ -282,7 +277,6 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 
         out.push_back(block);
     }
-    in->readSuffix();
 
     std::unique_ptr<Blocks> new_data;
 

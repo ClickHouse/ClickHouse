@@ -128,7 +128,7 @@ private:
             /// Table has an alias. We do not need to rewrite qualified names with table alias (match == ColumnMatch::TableName).
             auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
             if (match == IdentifierSemantic::ColumnMatch::AliasedTableName ||
-                match == IdentifierSemantic::ColumnMatch::DbAndTable)
+                match == IdentifierSemantic::ColumnMatch::DBAndTable)
             {
                 if (rewritten)
                     throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name() + "'",
@@ -161,9 +161,10 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query, bool include_all_columns_)
     : context(context_)
     , table_expressions(getTableExpressions(select_query))
+    , include_all_columns(include_all_columns_)
     , left_table_expression(extractTableExpression(select_query, 0))
     , left_db_and_table(getDatabaseAndTable(select_query, 0))
 {}
@@ -220,11 +221,13 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
 bool JoinedTables::resolveTables()
 {
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    const auto & settings = context->getSettingsRef();
+    bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
+    bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = context->getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (size_t i = 0; i < tables_with_columns.size(); ++i)
@@ -296,20 +299,28 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
-        if (table)
+        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+        if (storage)
         {
-            if (dynamic_cast<StorageJoin *>(table.get()) ||
-                dynamic_cast<StorageDictionary *>(table.get()))
-                table_join->joined_storage = table;
+            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+                table_join->setStorageJoin(storage_join);
+            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
+                table_join->setStorageJoin(storage_dict);
         }
     }
 
-    if (!table_join->joined_storage &&
+    if (!table_join->isSpecialStorage() &&
         settings.enable_optimize_predicate_expression)
         replaceJoinedTable(select_query);
 
     return table_join;
+}
+
+void JoinedTables::reset(const ASTSelectQuery & select_query)
+{
+    table_expressions = getTableExpressions(select_query);
+    left_table_expression = extractTableExpression(select_query, 0);
+    left_db_and_table = getDatabaseAndTable(select_query, 0);
 }
 
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: distributed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,14 +13,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # If concurrency is 10 (good), the query may take less than 10 second with non-zero probability
 #  and the following loops will finish with probability 1 assuming independent random variables.
 
-while true; do
+i=0 retries=30
+while [[ $i -lt $retries ]]; do
     timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
         SELECT sleep(1.5) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=0 && break
+    ((++i))
 done
 
-while true; do
+i=0 retries=30
+while [[ $i -lt $retries ]]; do
     timeout 10 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_distributed_connections 10 --query "
         SELECT sleep(1.5) FROM remote('127.{1..10}', system.one) FORMAT Null" --prefer_localhost_replica=1 && break
+    ((++i))
 done
 
 # If max_distributed_connections is low and async_socket_for_remote is disabled,

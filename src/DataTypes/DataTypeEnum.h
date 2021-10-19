@@ -27,6 +27,8 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
+
+    virtual bool contains(const IDataType & rhs) const = 0;
 };
 
 
@@ -76,7 +78,7 @@ public:
     /// Example:
     /// Enum('a' = 1, 'b' = 2) -> Enum('c' = 1, 'b' = 2, 'd' = 3) OK
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
-    bool contains(const IDataType & rhs) const;
+    bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

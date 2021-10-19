@@ -16,8 +16,6 @@ enum class VolumeType
     UNKNOWN
 };
 
-String volumeTypeToString(VolumeType t);
-
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 using Volumes = std::vector<VolumePtr>;

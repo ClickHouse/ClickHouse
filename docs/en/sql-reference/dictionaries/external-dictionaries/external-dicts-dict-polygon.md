@@ -1,6 +1,6 @@
 ---
 toc_priority: 46
-toc_title: Polygon Dictionaries With Grids 
+toc_title: Polygon Dictionaries With Grids
 ---
 
 

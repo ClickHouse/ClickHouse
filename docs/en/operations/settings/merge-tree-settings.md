@@ -181,6 +181,44 @@ Possible values:
 
 Default value: 0.
 
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to a particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](settings.md#max_replicated_fetches_network_bandwidth_for_server) setting, which is applied to the server.
+
+You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_fetches_network_bandwidth_for_server` setting.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating data to add or replace new nodes.
+
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to a particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](settings.md#max_replicated_sends_network_bandwidth_for_server) setting, which is applied to the server.
+
+You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_sends_network_bandwidth_for_server` setting.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating data to add or replace new nodes.
+
 ## old_parts_lifetime {#old-parts-lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.
@@ -278,4 +316,15 @@ Possible values:
 
 Default value: `0`.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->
+## check_sample_column_is_correct {#check_sample_column_is_correct}
+
+Enables the check at table creation, that the data type of a column for sampling or sampling expression is correct. The data type must be one of unsigned [integer types](../../sql-reference/data-types/int-uint.md): `UInt8`, `UInt16`, `UInt32`, `UInt64`.
+
+Possible values:
+
+-   true  — The check is enabled.
+-   false — The check is disabled at table creation.
+
+Default value: `true`.
+
+By default, the ClickHouse server checks at table creation the data type of a column for sampling or sampling expression. If you already have tables with incorrect sampling expression and do not want the server to raise an exception during startup, set `check_sample_column_is_correct` to `false`.

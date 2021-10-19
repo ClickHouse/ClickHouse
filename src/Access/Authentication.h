@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
@@ -86,17 +86,11 @@ public:
 
     /// Sets the password as a string of hexadecimal digits.
     void setPasswordHashHex(const String & hash);
-
     String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
     void setPasswordHashBinary(const Digest & hash);
-
     const Digest & getPasswordHashBinary() const { return password_hash; }
-
-    /// Returns SHA1(SHA1(password)) used by MySQL compatibility server for authentication.
-    /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
-    Digest getPasswordDoubleSHA1() const;
 
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const;
@@ -112,13 +106,17 @@ public:
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
 
-private:
-    static Digest encodePlainText(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
-    static Digest encodeSHA256(const std::string_view & text);
-    static Digest encodeSHA1(const std::string_view & text);
-    static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
-    static Digest encodeDoubleSHA1(const std::string_view & text) { return encodeSHA1(encodeSHA1(text)); }
+    struct Util
+    {
+        static Digest encodePlainText(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
+        static Digest encodeSHA256(const std::string_view & text);
+        static Digest encodeSHA1(const std::string_view & text);
+        static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
+        static Digest encodeDoubleSHA1(const std::string_view & text) { return encodeSHA1(encodeSHA1(text)); }
+        static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
+    };
 
+private:
     Type type = Type::NO_PASSWORD;
     Digest password_hash;
     String ldap_server_name;
@@ -192,7 +190,7 @@ inline String toString(Authentication::Type type_)
 }
 
 
-inline Authentication::Digest Authentication::encodeSHA256(const std::string_view & text [[maybe_unused]])
+inline Authentication::Digest Authentication::Util::encodeSHA256(const std::string_view & text [[maybe_unused]])
 {
 #if USE_SSL
     Digest hash;
@@ -206,7 +204,7 @@ inline Authentication::Digest Authentication::encodeSHA256(const std::string_vie
 #endif
 }
 
-inline Authentication::Digest Authentication::encodeSHA1(const std::string_view & text)
+inline Authentication::Digest Authentication::Util::encodeSHA1(const std::string_view & text)
 {
     Poco::SHA1Engine engine;
     engine.update(text.data(), text.size());
@@ -219,13 +217,13 @@ inline void Authentication::setPassword(const String & password_)
     switch (type)
     {
         case PLAINTEXT_PASSWORD:
-            return setPasswordHashBinary(encodePlainText(password_));
+            return setPasswordHashBinary(Util::encodePlainText(password_));
 
         case SHA256_PASSWORD:
-            return setPasswordHashBinary(encodeSHA256(password_));
+            return setPasswordHashBinary(Util::encodeSHA256(password_));
 
         case DOUBLE_SHA1_PASSWORD:
-            return setPasswordHashBinary(encodeDoubleSHA1(password_));
+            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
 
         case NO_PASSWORD:
         case LDAP:

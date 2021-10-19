@@ -15,7 +15,7 @@ toc_title: GRANT
 ## 権限構文の付与 {#grant-privigele-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `privilege` — Type of privilege.
@@ -23,17 +23,19 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 -   `user` — ClickHouse user account.
 
 この `WITH GRANT OPTION` 句の付与 `user` または `role` 実行する許可を得て `GRANT` クエリ。 ユーザーは、持っているスコープとそれ以下の権限を付与できます。
+この `WITH REPLACE OPTION` 句は `user`または` role`の新しい特権で古い特権を置き換えます, 指定しない場合は、古い特権を古いものに追加してください
 
 ## ロール構文の割り当て {#assign-role-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `role` — ClickHouse user role.
 -   `user` — ClickHouse user account.
 
 この `WITH ADMIN OPTION` 句の付与 [ADMIN OPTION](#admin-option-privilege) への特権 `user` または `role`.
+この `WITH REPLACE OPTION` 句は`user`または` role`の新しい役割によって古い役割を置き換えます, 指定しない場合は、古い特権を古いものに追加してください
 
 ## 使用法 {#grant-usage}
 
@@ -473,4 +475,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 この `ADMIN OPTION` 特典できるユーザー補助金の役割を他のユーザーです。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->

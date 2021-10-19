@@ -24,14 +24,14 @@ namespace ErrorCodes
 }
 
 MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_)
-    : host(host_), port(port_), user(user_), password(std::move(password_))
+    : host(host_), port(port_), user(user_), password(std::move(password_)),
+      client_capabilities(CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION)
 {
-    client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
 
 MySQLClient::MySQLClient(MySQLClient && other)
     : host(std::move(other.host)), port(other.port), user(std::move(other.user)), password(std::move(other.password))
-    , client_capability_flags(other.client_capability_flags)
+    , client_capabilities(other.client_capabilities)
 {
 }
 
@@ -56,7 +56,8 @@ void MySQLClient::connect()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, seq);
+    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+
     handshake();
 }
 
@@ -68,7 +69,7 @@ void MySQLClient::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
-    seq = 0;
+    sequence_id = 0;
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
@@ -87,10 +88,10 @@ void MySQLClient::handshake()
     String auth_plugin_data = native41.getAuthPluginData();
 
     HandshakeResponse handshake_response(
-        client_capability_flags, MAX_PACKET_LENGTH, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
+        client_capabilities, MAX_PACKET_LENGTH, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
     packet_endpoint->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    ResponsePacket packet_response(client_capability_flags, true);
+    ResponsePacket packet_response(client_capabilities, true);
     packet_endpoint->receivePacket(packet_response);
     packet_endpoint->resetSequenceId();
 
@@ -105,7 +106,7 @@ void MySQLClient::writeCommand(char command, String query)
     WriteCommand write_command(command, query);
     packet_endpoint->sendPacket<WriteCommand>(write_command, true);
 
-    ResponsePacket packet_response(client_capability_flags);
+    ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
     switch (packet_response.getType())
     {
@@ -124,7 +125,7 @@ void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
     RegisterSlave register_slave(slave_id);
     packet_endpoint->sendPacket<RegisterSlave>(register_slave, true);
 
-    ResponsePacket packet_response(client_capability_flags);
+    ResponsePacket packet_response(client_capabilities);
     packet_endpoint->receivePacket(packet_response);
     packet_endpoint->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)

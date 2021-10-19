@@ -14,6 +14,11 @@ struct MergeTreeDataPartTTLInfo
     time_t min = 0;
     time_t max = 0;
 
+    /// This TTL was computed on completely expired part. It doesn't make sense
+    /// to select such parts for TTL again. But make sense to recalcuate TTL
+    /// again for merge with multiple parts.
+    bool finished = false;
+
     void update(time_t time)
     {
         if (time && (!min || time < min))
@@ -28,6 +33,7 @@ struct MergeTreeDataPartTTLInfo
             min = other_info.min;
 
         max = std::max(other_info.max, max);
+        finished &= other_info.finished;
     }
 };
 
@@ -59,6 +65,9 @@ struct MergeTreeDataPartTTLInfos
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
+
+    /// Has any TTLs which are not calculated on completely expired parts.
+    bool hasAnyNonFinishedTTLs() const;
 
     void updatePartMinMaxTTL(time_t time_min, time_t time_max)
     {

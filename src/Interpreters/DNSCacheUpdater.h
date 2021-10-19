@@ -2,8 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Stopwatch.h>
-
 
 namespace DB
 {

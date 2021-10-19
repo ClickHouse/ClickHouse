@@ -27,6 +27,7 @@ void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
+void registerStorageExecutable(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -60,11 +61,17 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 
 #if USE_LIBPQXX
 void registerStoragePostgreSQL(StorageFactory & factory);
+void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
 #if USE_MYSQL || USE_LIBPQXX
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
+
+#if USE_SQLITE
+void registerStorageSQLite(StorageFactory & factory);
+#endif
+
 
 void registerStorages()
 {
@@ -88,6 +95,7 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
+    registerStorageExecutable(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
@@ -121,10 +129,15 @@ void registerStorages()
 
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
+    registerStorageMaterializedPostgreSQL(factory);
     #endif
 
     #if USE_MYSQL || USE_LIBPQXX
     registerStorageExternalDistributed(factory);
+    #endif
+
+    #if USE_SQLITE
+    registerStorageSQLite(factory);
     #endif
 }
 

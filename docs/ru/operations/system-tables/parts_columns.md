@@ -19,10 +19,10 @@
 
     Возможные значения:
 
-    -   `Wide` — каждая колонка хранится в отдельном файле. 
-    -   `Compact` — все колонки хранятся в одном файле. 
+    -   `Wide` — каждая колонка хранится в отдельном файле.
+    -   `Compact` — все колонки хранятся в одном файле.
 
-    Формат хранения данных определяется настройками `min_bytes_for_wide_part` и `min_rows_for_wide_part` таблицы [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). 
+    Формат хранения данных определяется настройками `min_bytes_for_wide_part` и `min_rows_for_wide_part` таблицы [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 -   `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — признак активности. Если кусок данных активен, то он используется таблицей, в противном случае он будет удален. Неактивные куски остаются после слияний.
 

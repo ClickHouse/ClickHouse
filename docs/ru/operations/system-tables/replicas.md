@@ -78,10 +78,11 @@ active_replicas:            2
 
 -   `log_max_index` (`UInt64`) - максимальный номер записи в общем логе действий.
 -   `log_pointer` (`UInt64`) - максимальный номер записи из общего лога действий, которую реплика скопировала в свою очередь для выполнения, плюс единица. Если log_pointer сильно меньше log_max_index, значит что-то не так.
--   `last_queue_update` (`DateTime`) - When the queue was updated last time.
--   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
+-   `last_queue_update` (`DateTime`) - время последнего обновления запроса.
+-   `absolute_delay` (`UInt64`) - задержка (в секундах) для текущей реплики.
 -   `total_replicas` (`UInt8`) - общее число известных реплик этой таблицы.
 -   `active_replicas` (`UInt8`) - число реплик этой таблицы, имеющих сессию в ZK; то есть, число работающих реплик.
+-   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — соответствие между именем реплики и признаком активности реплики.
 
 Если запрашивать все столбцы, то таблица может работать слегка медленно, так как на каждую строчку делается несколько чтений из ZK.
 Если не запрашивать последние 4 столбца (log_max_index, log_pointer, total_replicas, active_replicas), то таблица работает быстро.

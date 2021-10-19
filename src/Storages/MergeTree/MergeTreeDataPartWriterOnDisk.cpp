@@ -9,11 +9,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-    constexpr auto INDEX_FILE_EXTENSION = ".idx";
-}
-
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
@@ -165,7 +160,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         data_part->volume->getDisk(),
-                        part_path + stream_name, INDEX_FILE_EXTENSION,
+                        part_path + stream_name, index_helper->getSerializedFileExtension(),
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());

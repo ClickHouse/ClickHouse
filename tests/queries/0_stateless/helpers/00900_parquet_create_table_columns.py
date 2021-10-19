@@ -4,8 +4,8 @@ import json
 import sys
 
 TYPE_PARQUET_CONVERTED_TO_CLICKHOUSE = {
-    "TIMESTAMP_MICROS": "DateTime",
-    "TIMESTAMP_MILLIS": "DateTime",
+    "TIMESTAMP_MICROS": "DateTime('Europe/Moscow')",
+    "TIMESTAMP_MILLIS": "DateTime('Europe/Moscow')",
     "UTF8": "String",
 }
 

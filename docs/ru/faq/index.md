@@ -10,7 +10,7 @@ toc_priority: 76
 
 Категории:
 
--   **[Общие вопросы](general/index.md)** 
+-   **[Общие вопросы](general/index.md)**
     -   [Что такое ClickHouse?](../index.md#what-is-clickhouse)
     -   [Почему ClickHouse такой быстрый?](general/why-clickhouse-is-so-fast.md)
     -   [Кто пользуется ClickHouse?](general/who-is-using-clickhouse.md)
@@ -22,7 +22,7 @@ toc_priority: 76
 -   **[Применение](use-cases/index.md)**
     -   [Можно ли использовать ClickHouse как БД временных рядов?](use-cases/time-series.md)
     -   [Можно ли использовать ClickHouse для хранения данных вида "ключ-значение"?](use-cases/key-value.md)
--   **[Операции](operations/index.md)**  
+-   **[Операции](operations/index.md)**
     -   [Какую версию ClickHouse использовать?](operations/production.md)
     -   [Возможно ли удалить старые записи из таблицы ClickHouse?](operations/delete-old-data.md)
 -   **[Интеграция](integration/index.md)**

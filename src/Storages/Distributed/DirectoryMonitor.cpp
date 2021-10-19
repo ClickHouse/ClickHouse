@@ -1,7 +1,6 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/RemoteInserter.h>
+#include <Formats/NativeReader.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -11,10 +10,11 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -27,6 +27,7 @@
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
+#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -188,7 +189,7 @@ namespace
 
             if (header_buf.hasPendingData())
             {
-                NativeBlockInputStream header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                NativeReader header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
                 distributed_header.block_header = header_block_in.read();
                 if (!distributed_header.block_header)
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
@@ -264,28 +265,27 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteBlockOutputStream & remote, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        block_in.readPrefix();
+        NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
 
         while (Block block = block_in.read())
         {
-            ConvertingBlockInputStream convert(
-                std::make_shared<OneBlockInputStream>(block),
-                remote.getHeader(),
-                ConvertingBlockInputStream::MatchColumnsMode::Name);
-            auto adopted_block = convert.read();
-            remote.write(adopted_block);
-        }
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                block.cloneEmpty().getColumnsWithTypeAndName(),
+                remote.getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
 
-        block_in.readSuffix();
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            converting_actions->execute(block);
+            remote.write(block);
+        }
     }
 
     void writeRemoteConvert(
         const DistributedHeader & distributed_header,
-        RemoteBlockOutputStream & remote,
+        RemoteInserter & remote,
         bool compression_expected,
         ReadBufferFromFile & in,
         Poco::Logger * log)
@@ -330,6 +330,13 @@ namespace
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
+
+    uint64_t doubleToUInt64(double d)
+    {
+        if (d >= std::numeric_limits<uint64_t>::max())
+            return std::numeric_limits<uint64_t>::max();
+        return static_cast<uint64_t>(d);
+    }
 }
 
 
@@ -345,15 +352,15 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , disk(disk_)
     , relative_path(relative_path_)
     , path(fs::path(disk->getPath()) / relative_path / "")
-    , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , split_batch_on_failure(storage.getContext()->getSettingsRef().distributed_directory_monitor_split_batch_on_failure)
+    , should_batch_inserts(storage.getDistributedSettingsRef().monitor_batch_inserts)
+    , split_batch_on_failure(storage.getDistributedSettingsRef().monitor_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
-    , default_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef().monitor_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -431,9 +438,14 @@ void StorageDistributedDirectoryMonitor::run()
 
                 do_sleep = true;
                 ++status.error_count;
-                sleep_time = std::min(
-                    std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(status.error_count))},
-                    max_sleep_time);
+
+                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
+                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
+                if (new_sleep_time.count() < 0)
+                    sleep_time = max_sleep_time;
+                else
+                    sleep_time = std::min(new_sleep_time, max_sleep_time);
+
                 tryLogCurrentException(getLoggerName().data());
                 status.last_exception = std::current_exception();
             }
@@ -605,14 +617,13 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
-        RemoteBlockOutputStream remote{*connection, timeouts,
+        RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
             distributed_header.client_info};
-        remote.writePrefix();
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
-        remote.writeSuffix();
+        remote.onFinish();
     }
     catch (Exception & e)
     {
@@ -763,8 +774,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             else
             {
                 std::vector<std::string> files(file_index_to_path.size());
-                for (const auto & [index, name] : file_index_to_path)
-                    files.push_back(name);
+                for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
+                    files[file_info.index()] = file_info.value().second;
                 e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
@@ -819,7 +830,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 private:
     void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
     {
-        std::unique_ptr<RemoteBlockOutputStream> remote;
+        std::unique_ptr<RemoteInserter> remote;
 
         for (UInt64 file_idx : file_indices)
         {
@@ -833,18 +844,17 @@ private:
 
             if (!remote)
             {
-                remote = std::make_unique<RemoteBlockOutputStream>(connection, timeouts,
+                remote = std::make_unique<RemoteInserter>(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote->writePrefix();
             }
             bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
 
         if (remote)
-            remote->writeSuffix();
+            remote->onFinish();
     }
 
     void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
@@ -866,14 +876,13 @@ private:
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-                RemoteBlockOutputStream remote(connection, timeouts,
+                RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-                remote.writePrefix();
                 bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
-                remote.writeSuffix();
+                remote.onFinish();
             }
             catch (Exception & e)
             {
@@ -889,50 +898,74 @@ private:
     }
 };
 
-class DirectoryMonitorBlockInputStream : public IBlockInputStream
+class DirectoryMonitorSource : public SourceWithProgress
 {
 public:
-    explicit DirectoryMonitorBlockInputStream(const String & file_name)
-        : in(file_name)
-        , decompressing_in(in)
-        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
-        , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
-    {
-        readDistributedHeader(in, log);
 
-        block_in.readPrefix();
-        first_block = block_in.read();
-        header = first_block.cloneEmpty();
+    struct Data
+    {
+        std::unique_ptr<ReadBufferFromFile> in;
+        std::unique_ptr<CompressedReadBuffer> decompressing_in;
+        std::unique_ptr<NativeReader> block_in;
+
+        Poco::Logger * log = nullptr;
+
+        Block first_block;
+
+        explicit Data(const String & file_name)
+        {
+            in = std::make_unique<ReadBufferFromFile>(file_name);
+            decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
+            block_in = std::make_unique<NativeReader>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+            log = &Poco::Logger::get("DirectoryMonitorSource");
+
+            readDistributedHeader(*in, log);
+
+            first_block = block_in->read();
+        }
+
+        Data(Data &&) = default;
+    };
+
+    explicit DirectoryMonitorSource(const String & file_name)
+        : DirectoryMonitorSource(Data(file_name))
+    {
     }
 
-    String getName() const override { return "DirectoryMonitor"; }
+    explicit DirectoryMonitorSource(Data data_)
+        : SourceWithProgress(data_.first_block.cloneEmpty())
+        , data(std::move(data_))
+    {
+    }
+
+    String getName() const override { return "DirectoryMonitorSource"; }
 
 protected:
-    Block getHeader() const override { return header; }
-    Block readImpl() override
+    Chunk generate() override
     {
-        if (first_block)
-            return std::move(first_block);
+        if (data.first_block)
+        {
+            size_t num_rows = data.first_block.rows();
+            Chunk res(data.first_block.getColumns(), num_rows);
+            data.first_block.clear();
+            return res;
+        }
 
-        return block_in.read();
+        auto block = data.block_in->read();
+        if (!block)
+            return {};
+
+        size_t num_rows = block.rows();
+        return Chunk(block.getColumns(), num_rows);
     }
 
-    void readSuffix() override { block_in.readSuffix(); }
-
 private:
-    ReadBufferFromFile in;
-    CompressedReadBuffer decompressing_in;
-    NativeBlockInputStream block_in;
-
-    Block first_block;
-    Block header;
-
-    Poco::Logger * log;
+    Data data;
 };
 
-BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
+std::shared_ptr<ISource> StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
 {
-    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
+    return std::make_shared<DirectoryMonitorSource>(file_name);
 }
 
 bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t ms)
@@ -1008,8 +1041,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
-                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-                block_in.readPrefix();
+                NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
 
                 while (Block block = block_in.read())
                 {
@@ -1019,7 +1051,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     if (!header)
                         header = block.cloneEmpty();
                 }
-                block_in.readSuffix();
             }
         }
         catch (const Exception & e)

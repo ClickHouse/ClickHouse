@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 set send_logs_level = 'fatal';
 
 drop table if exists ttl;
