@@ -826,7 +826,7 @@ normalizeUTF8NFKD(words)
 
 **Returned value**
 
--   NFC normalized string.
+-   String transformed to normalization form C (NFC).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
