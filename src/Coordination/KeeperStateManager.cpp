@@ -141,12 +141,12 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     auto new_configuration_wrapper = parseServersConfiguration(config, true);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
-    for (auto new_server : new_configuration_wrapper.cluster_config->get_servers())
+    for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
         new_ids[new_server->get_id()] = new_server;
 
     {
         std::lock_guard lock(configuration_wrapper_mutex);
-        for (auto old_server : configuration_wrapper.cluster_config->get_servers())
+        for (const auto & old_server : configuration_wrapper.cluster_config->get_servers())
             old_ids[old_server->get_id()] = old_server;
     }
 
