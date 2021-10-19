@@ -810,6 +810,28 @@ Result:
 └─────┘
 ```
 
+## normalizeUTF8NFC {#normalizeutf8nfc}
+
+Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFKD(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   NFC normalized string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+
+
 ## encodeXMLComponent {#encode-xml-component}
 
 Escapes characters to place string into XML text node or attribute.
