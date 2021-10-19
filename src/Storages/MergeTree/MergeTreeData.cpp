@@ -205,6 +205,8 @@ MergeTreeData::MergeTreeData(
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
+    context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+
     const auto settings = getSettings();
     allow_nullable_key = attach || settings->allow_nullable_key;
 
