@@ -11,3 +11,6 @@ SELECT arrayStringConcat(arrayMap(x -> toString(x), range(number % 4))) FROM sys
 SELECT arrayStringConcat([Null, 'hello', Null, 'world', Null, 'xyz', 'def', Null], ';');
 SELECT arrayStringConcat([Null, Null], ';');
 SELECT arrayStringConcat([Null::Nullable(String), Null::Nullable(String)], ';');
+SELECT arrayStringConcat(materialize([Null, 'hello', Null, 'world', Null, 'xyz', 'def', Null]), ';');
+SELECT arrayStringConcat(materialize([Null, Null]), ';');
+SELECT arrayStringConcat(materialize([Null::Nullable(String), Null::Nullable(String)]), ';');
