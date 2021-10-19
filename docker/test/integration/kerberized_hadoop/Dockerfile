@@ -5,6 +5,10 @@ FROM sequenceiq/hadoop-docker:2.7.0
 RUN sed -i -e 's/^\#baseurl/baseurl/' /etc/yum.repos.d/CentOS-Base.repo
 RUN sed -i -e 's/^mirrorlist/#mirrorlist/' /etc/yum.repos.d/CentOS-Base.repo
 RUN sed -i -e 's#http://mirror.centos.org/#http://vault.centos.org/#' /etc/yum.repos.d/CentOS-Base.repo
+
+# https://community.letsencrypt.org/t/rhel-centos-6-openssl-client-compatibility-after-dst-root-ca-x3-expiration/161032/81
+RUN sed -i s/xMDkzMDE0MDExNVow/0MDkzMDE4MTQwM1ow/ /etc/pki/tls/certs/ca-bundle.crt
+
 RUN yum clean all && \
 	rpm --rebuilddb &&	\
 	yum -y update && \
