@@ -6,6 +6,7 @@ import threading
 import logging
 import time
 from random import randrange
+import math
 
 import pika
 import pytest
@@ -250,7 +251,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
     for i in range(50):
         message += json.dumps({'key': i, 'value': i}) + '\n'
     channel.basic_publish(exchange='macro', routing_key='', body=message)
-    
+
     connection.close()
     time.sleep(1)
 
@@ -2025,6 +2026,47 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
         thread.join()
 
     instance.query('DROP TABLE test.rabbitmq_queue')
+
+
+def test_rabbitmq_produce_consume_avro(rabbitmq_cluster):
+    num_rows = 75
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.rabbit;
+        DROP TABLE IF EXISTS test.rabbit_writer;
+
+        CREATE TABLE test.rabbit_writer (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_format = 'Avro',
+                     rabbitmq_exchange_name = 'avro',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'avro';
+
+        CREATE TABLE test.rabbit (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_format = 'Avro',
+                     rabbitmq_exchange_name = 'avro',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'avro';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.rabbit;
+    ''')
+
+    instance.query("INSERT INTO test.rabbit_writer select number*10 as key, number*100 as value from numbers({num_rows}) SETTINGS output_format_avro_rows_in_file = 7".format(num_rows=num_rows))
+
+
+    # Ideally we should wait for an event
+    time.sleep(3)
+
+    expected_num_rows = instance.query("SELECT COUNT(1) FROM test.view", ignore_error=True)
+    assert (int(expected_num_rows) == num_rows)
+
+    expected_max_key = instance.query("SELECT max(key) FROM test.view", ignore_error=True)
+    assert (int(expected_max_key) == (num_rows - 1) * 10)
 
 
 def test_rabbitmq_bad_args(rabbitmq_cluster):
