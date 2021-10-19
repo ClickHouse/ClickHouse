@@ -52,6 +52,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
+-   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [ssd_cache](#ssd-cache)
@@ -140,7 +141,7 @@ LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 
 ### complex_key_hashed {#complex-key-hashed}
 
-Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -154,6 +155,63 @@ LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 
 ``` sql
 LAYOUT(COMPLEX_KEY_HASHED())
+```
+
+### complex_key_sparse_hashed {#complex-key-sparse-hashed}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <complex_key_sparse_hashed />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
+```
+
+### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
+
+Словарь полностью хранится в оперативной памяти. Каждый атрибут хранится в массиве. Ключевой атрибут хранится в виде хэш-таблицы, где его значение является индексом в массиве атрибутов. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике количество ключей может достигать десятков миллионов элементов.
+
+Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) читаются целиком.
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <hashed_array>
+  </hashed_array>
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(HASHED_ARRAY())
+```
+
+### complex_key_hashed_array {#complex-key-hashed-array}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <complex_key_hashed_array />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
 ### range_hashed {#range-hashed}
