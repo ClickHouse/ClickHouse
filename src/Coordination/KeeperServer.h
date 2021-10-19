@@ -93,11 +93,13 @@ public:
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
-    /// Apply action fo configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
+    /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & action);
 
 
+    /// Wait configuration update for action. Used by followers.
+    /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & action);
 };
 
