@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -49,7 +50,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     if (last_offset)
     {
         if (last_offset < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
 
         headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-{}", offset, last_offset - 1)));
         LOG_DEBUG(log, "Reading with range: {}-{}", offset, last_offset);
@@ -133,7 +134,7 @@ bool ReadBufferFromWebServer::nextImpl()
             return false;
 
         if (last_offset < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyound right offset ({} > {})", offset, last_offset - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
     }
 
     if (impl)
@@ -155,7 +156,7 @@ bool ReadBufferFromWebServer::nextImpl()
         {
             /**
             * impl was initialized before, pass position() to it to make
-            * sure there is no pending data which was not read, becuase
+            * sure there is no pending data which was not read, because
             * this branch means we read sequentially.
             */
             impl->position() = position();

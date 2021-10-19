@@ -11,7 +11,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
-#include <IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Disks/DiskRestartProxy.h>

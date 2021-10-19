@@ -12,7 +12,7 @@
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
-#include <IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 
 namespace DB

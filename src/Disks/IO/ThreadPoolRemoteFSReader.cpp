@@ -1,4 +1,4 @@
-#include <IO/ThreadPoolRemoteFSReader.h>
+#include "ThreadPoolRemoteFSReader.h"
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -8,7 +8,7 @@
 #include <Common/setThreadName.h>
 
 #include <IO/SeekableReadBuffer.h>
-#include <Disks/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <future>
 #include <iostream>
