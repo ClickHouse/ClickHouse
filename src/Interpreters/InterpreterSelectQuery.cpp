@@ -2303,14 +2303,12 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 {
     const Settings & settings = context->getSettingsRef();
 
-    const auto & query = getSelectQuery();
     auto finish_sorting_step = std::make_unique<FinishSortingStep>(
         query_plan.getCurrentDataStream(),
         input_sorting_info->order_key_prefix_descr,
         output_order_descr,
         settings.max_block_size,
-        limit,
-        query.hasFiltration());
+        limit);
 
     query_plan.addStep(std::move(finish_sorting_step));
 }
