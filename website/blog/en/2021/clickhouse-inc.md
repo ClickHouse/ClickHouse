@@ -1,6 +1,6 @@
 ---
 title: 'Introducing ClickHouse, Inc.'
-image: 'https://blog-images.clickhouse.tech/en/2021/clickhouse-inc/home.png'
+image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-inc/home.png'
 date: '2021-09-20'
 author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['company', 'incorporation', 'yandex', 'community']

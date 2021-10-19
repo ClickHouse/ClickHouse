@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledRowPolicies.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <mutex>
 #include <map>
 #include <unordered_map>

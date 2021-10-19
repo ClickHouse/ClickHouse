@@ -1,13 +1,13 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <DataStreams/ShellCommandSource.h>
+#include <Processors/Sources/ShellCommandSource.h>
 
 
 namespace DB

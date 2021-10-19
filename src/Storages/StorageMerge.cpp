@@ -1,5 +1,5 @@
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -383,7 +383,7 @@ Pipe StorageMerge::createSources(
     {
         pipe = QueryPipelineBuilder::getPipe(InterpreterSelectQuery(
             modified_query_info.query, modified_context,
-            std::make_shared<OneBlockInputStream>(header),
+            Pipe(std::make_shared<SourceFromSingleChunk>(header)),
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
 
         pipe.addInterpreterContext(modified_context);

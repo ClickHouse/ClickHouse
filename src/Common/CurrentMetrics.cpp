@@ -9,8 +9,9 @@
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
-    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, or replication queue bookkeeping)") \
-    M(BackgroundFetchesPoolTask, "Number of active tasks in BackgroundFetchesPool") \
+    M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
+    M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
+    M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \

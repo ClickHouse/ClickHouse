@@ -1,11 +1,11 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <iostream>
 
 #include <Common/setThreadName.h>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 namespace DB
 {

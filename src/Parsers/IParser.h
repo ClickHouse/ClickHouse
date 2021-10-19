@@ -4,7 +4,7 @@
 #include <memory>
 
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/TokenIterator.h>

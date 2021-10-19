@@ -27,9 +27,10 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 {% include 'install/deb.sh' %}
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+You can replace `stable` with `lts` or `testing` to use different [“release trains”](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://repo.clickhouse.com/deb/stable/main/).
+
 
 #### Packages {#packages}
 
@@ -96,14 +97,14 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 ### From Docker Image {#from-docker-image}
 
-To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
 ### Single Binary {#from-single-binary}
 
-You can install ClickHouse on Linux using a single portable binary from the latest commit of the `master` branch: [https://builds.clickhouse.tech/master/amd64/clickhouse].
+You can install ClickHouse on Linux using a single portable binary from the latest commit of the `master` branch: [https://builds.clickhouse.com/master/amd64/clickhouse].
 
 ``` bash
-curl -O 'https://builds.clickhouse.tech/master/amd64/clickhouse' && chmod a+x clickhouse
+curl -O 'https://builds.clickhouse.com/master/amd64/clickhouse' && chmod a+x clickhouse
 sudo ./clickhouse install
 ```
 
@@ -111,10 +112,10 @@ sudo ./clickhouse install
 
 For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
--   [MacOS x86_64](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.tech/master/macos-aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD x86_64](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [Linux AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
 After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 

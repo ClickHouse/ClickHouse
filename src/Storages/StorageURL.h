@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -13,6 +13,9 @@
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 struct ConnectionTimeouts;
 
@@ -99,7 +102,7 @@ public:
 
 private:
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
 
     bool is_first_chunk = true;
 };

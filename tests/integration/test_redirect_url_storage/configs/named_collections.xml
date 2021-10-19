@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <url1>
             <headers>
@@ -13,4 +13,4 @@
             </headers>
         </url1>
     </named_collections>
-</yandex>
+</clickhouse>

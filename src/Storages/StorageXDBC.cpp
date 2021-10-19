@@ -1,6 +1,5 @@
 #include "StorageXDBC.h"
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -8,11 +7,11 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -46,8 +45,8 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
+    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
 {
-    log = &Poco::Logger::get("Storage" + bridge_helper->getName());
     uri = bridge_helper->getMainURI();
 }
 
@@ -81,6 +80,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         remote_database_name,
         remote_table_name,
         local_context);
+    LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;
     for (const String & name : column_names)

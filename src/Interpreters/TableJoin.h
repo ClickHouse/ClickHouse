@@ -7,8 +7,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/Exception.h>
@@ -19,8 +18,8 @@
 
 #include <utility>
 #include <memory>
-#include <common/types.h>
-#include <common/logger_useful.h>
+#include <base/types.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
