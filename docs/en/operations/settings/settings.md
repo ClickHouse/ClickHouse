@@ -3826,7 +3826,7 @@ Possible values:
 
 Default value: `0`.
 
-**EXAMPLE**
+**Example**
 
 Query:
 
