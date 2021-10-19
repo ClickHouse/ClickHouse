@@ -99,7 +99,12 @@ public:
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
-    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper);
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
+
+    bool checkInit() const
+    {
+        return server && server->checkInit();
+    }
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
