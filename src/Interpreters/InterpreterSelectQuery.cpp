@@ -2105,6 +2105,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         params,
         final,
         settings.max_block_size,
+        settings.aggregation_in_order_max_block_bytes,
         merge_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,

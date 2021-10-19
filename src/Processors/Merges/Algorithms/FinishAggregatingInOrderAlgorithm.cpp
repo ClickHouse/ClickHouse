@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/FinishAggregatingInOrderAlgorithm.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Core/SortCursor.h>
 
 #include <base/range.h>
@@ -9,9 +10,10 @@ namespace DB
 {
 
 FinishAggregatingInOrderAlgorithm::State::State(
-    const Chunk & chunk, const SortDescription & desc)
-    : num_rows(chunk.getNumRows())
-    , all_columns(chunk.getColumns())
+    const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
+    : all_columns(chunk.getColumns())
+    , num_rows(chunk.getNumRows())
+    , total_bytes(total_bytes_)
 {
     if (!chunk)
         return;
@@ -26,12 +28,14 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     SortDescription description_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t max_block_bytes_)
     : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
     , description(std::move(description_))
     , max_block_size(max_block_size_)
+    , max_block_bytes(max_block_bytes_)
 {
     /// Replace column names in description to positions.
     for (auto & column_description : description)
@@ -47,14 +51,22 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
     current_inputs = std::move(inputs);
-    states.reserve(num_inputs);
+    states.resize(num_inputs);
     for (size_t i = 0; i < num_inputs; ++i)
-        states.emplace_back(current_inputs[i].chunk, description);
+        consume(current_inputs[i], i);
 }
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
-    states[source_num] = State{input.chunk, description};
+    const auto & info = input.chunk.getChunkInfo();
+    if (!info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
+
+    const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get());
+    if (!arenas_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have ChunkInfoWithAllocatedBytes in FinishAggregatingInOrderAlgorithm");
+
+    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
@@ -111,8 +123,8 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     Status status(inputs_to_update.back());
     inputs_to_update.pop_back();
 
-    /// Do not merge blocks, if there are too few rows.
-    if (accumulated_rows >= max_block_size)
+    /// Do not merge blocks, if there are too few rows or bytes.
+    if (accumulated_rows >= max_block_size || accumulated_bytes >= max_block_bytes)
         status.chunk = prepareToMerge();
 
     return status;
@@ -121,6 +133,8 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 {
     accumulated_rows = 0;
+    accumulated_bytes = 0;
+
     auto info = std::make_shared<ChunksToMerge>();
     info->chunks = std::make_unique<Chunks>(std::move(chunks));
 
@@ -153,9 +167,12 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         }
 
         chunks.back().setChunkInfo(std::make_shared<AggregatedChunkInfo>());
-
         states[i].current_row = states[i].to_row;
+
+        /// We assume that sizes in bytes of rows are almost the same.
+        accumulated_bytes += states[i].total_bytes * (static_cast<double>(current_rows) / states[i].num_rows);
         accumulated_rows += current_rows;
+
 
         if (!states[i].isValid())
             inputs_to_update.push_back(i);

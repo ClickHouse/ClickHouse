@@ -9,16 +9,24 @@
 namespace DB
 {
 
+struct ChunkInfoWithAllocatedBytes : public ChunkInfo
+{
+    ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
+        : allocated_bytes(allocated_bytes_) {}
+    Int64 allocated_bytes;
+};
+
 class AggregatingInOrderTransform : public IProcessor
 {
-
 public:
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & group_by_description, size_t res_block_size,
+                                const SortDescription & group_by_description,
+                                size_t max_block_size_, size_t max_block_bytes_,
                                 ManyAggregatedDataPtr many_data, size_t current_variant);
 
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & group_by_description, size_t res_block_size);
+                                const SortDescription & group_by_description,
+                                size_t max_block_size_, size_t max_block_bytes_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -32,9 +40,12 @@ public:
 
 private:
     void generate();
+    void finalizeCurrentChunk(Chunk chunk, size_t key_end);
 
-    size_t res_block_size;
+    size_t max_block_size;
+    size_t max_block_bytes;
     size_t cur_block_size = 0;
+    size_t cur_block_bytes = 0;
 
     MutableColumns res_key_columns;
     MutableColumns res_aggregate_columns;
