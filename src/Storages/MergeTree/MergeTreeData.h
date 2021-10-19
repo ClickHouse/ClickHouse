@@ -402,7 +402,12 @@ public:
 
     bool supportsFinal() const override
     {
-        return merging_params.mode != MergingParams::Ordinary;
+        return merging_params.mode == MergingParams::Collapsing
+            || merging_params.mode == MergingParams::Summing
+            || merging_params.mode == MergingParams::Aggregating
+            || merging_params.mode == MergingParams::Replacing
+            || merging_params.mode == MergingParams::Graphite
+            || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
     bool supportsSubcolumns() const override { return true; }
