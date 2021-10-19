@@ -91,7 +91,7 @@ protected:
     };
 
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
-    virtual void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) = 0;
+    virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
@@ -132,6 +132,7 @@ private:
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
+    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.

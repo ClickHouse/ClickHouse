@@ -113,6 +113,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
+    format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
