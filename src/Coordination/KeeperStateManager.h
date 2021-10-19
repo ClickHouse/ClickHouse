@@ -13,7 +13,7 @@ namespace DB
 
 using KeeperServerConfigPtr = nuraft::ptr<nuraft::srv_config>;
 
-struct KeeperServersConfiguration
+struct KeeperConfigurationWrapper
 {
     int port;
     KeeperServerConfigPtr config;
@@ -56,7 +56,7 @@ public:
 
     void flushLogStore();
 
-    nuraft::ptr<nuraft::cluster_config> load_config() override { return servers_configuration.cluster_config; }
+    nuraft::ptr<nuraft::cluster_config> load_config() override { return configuration_wrapper.cluster_config; }
 
     void save_config(const nuraft::cluster_config & config) override;
 
@@ -68,15 +68,15 @@ public:
 
     int32_t server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return servers_configuration.config; }
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; }
 
     void system_exit(const int /* exit_code */) override {}
 
-    int getPort() const { return servers_configuration.port; }
+    int getPort() const { return configuration_wrapper.port; }
 
     bool shouldStartAsFollower() const
     {
-        return servers_configuration.servers_start_as_followers.count(my_server_id);
+        return configuration_wrapper.servers_start_as_followers.count(my_server_id);
     }
 
     bool isSecure() const
@@ -86,7 +86,7 @@ public:
 
     nuraft::ptr<KeeperLogStore> getLogStore() const { return log_store; }
 
-    uint64_t getTotalServers() const { return servers_configuration.cluster_config->get_servers().size(); }
+    uint64_t getTotalServers() const { return configuration_wrapper.cluster_config->get_servers().size(); }
 
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
@@ -98,13 +98,12 @@ private:
     int my_server_id;
     bool secure;
     std::string config_prefix;
-    KeeperServersConfiguration servers_configuration;
+
+    KeeperConfigurationWrapper configuration_wrapper;
     nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_state> server_state;
 
-    Poco::Logger * log;
-
-    KeeperServersConfiguration parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const;
+    KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 };
 
 }
