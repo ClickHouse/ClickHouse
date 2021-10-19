@@ -22,6 +22,85 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int AMBIGUOUS_COLUMN_NAME;
+}
+
+template <typename ReturnType>
+static ReturnType onError(const std::string & message [[maybe_unused]], int code [[maybe_unused]])
+{
+    if constexpr (std::is_same_v<ReturnType, void>)
+        throw Exception(message, code);
+    else
+        return false;
+};
+
+
+template <typename ReturnType>
+static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
+    const std::string & context_description, bool allow_remove_constants, int code)
+{
+    if (actual.name != expected.name)
+        return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
+
+    if (!actual.type->equals(*expected.type))
+        return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different types:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
+
+    if (!actual.column || !expected.column)
+        return ReturnType(true);
+
+    const IColumn * actual_column = actual.column.get();
+
+    /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
+    if (allow_remove_constants && !isColumnConst(*expected.column))
+    {
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+            actual_column = &column_const->getDataColumn();
+    }
+
+    if (actual_column->getName() != expected.column->getName())
+        return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different columns:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
+
+    if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
+    {
+        Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
+        Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
+
+        if (actual_value != expected_value)
+            return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
+                + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
+                code);
+    }
+
+    return ReturnType(true);
+}
+
+
+template <typename ReturnType>
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
+{
+    size_t columns = rhs.columns();
+    if (lhs.columns() != columns)
+        return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+
+    for (size_t i = 0; i < columns; ++i)
+    {
+        const auto & actual = lhs.getByPosition(i);
+        const auto & expected = rhs.getByPosition(i);
+
+        if constexpr (std::is_same_v<ReturnType, bool>)
+        {
+            if (!checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR))
+                return false;
+        }
+        else
+            checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR);
+    }
+
+    return ReturnType(true);
 }
 
 
@@ -44,56 +123,54 @@ void Block::initializeIndexByName()
 }
 
 
-void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
+void Block::reserve(size_t count)
 {
-    if (position > data.size())
-        throw Exception("Position out of bound in Block::insert(), max position = "
-            + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
-
-    for (auto & name_pos : index_by_name)
-        if (name_pos.second >= position)
-            ++name_pos.second;
-
-    index_by_name.emplace(elem.name, position);
-    data.emplace(data.begin() + position, elem);
+    index_by_name.reserve(count);
+    data.reserve(count);
 }
 
-void Block::insert(size_t position, ColumnWithTypeAndName && elem)
+
+void Block::insert(size_t position, ColumnWithTypeAndName elem)
 {
     if (position > data.size())
         throw Exception("Position out of bound in Block::insert(), max position = "
         + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     for (auto & name_pos : index_by_name)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name.emplace(elem.name, position);
+    auto [it, inserted] = index_by_name.emplace(elem.name, position);
+    if (!inserted)
+        checkColumnStructure<void>(data[it->second], elem,
+            "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
-void Block::insert(const ColumnWithTypeAndName & elem)
+void Block::insert(ColumnWithTypeAndName elem)
 {
-    index_by_name.emplace(elem.name, data.size());
-    data.emplace_back(elem);
-}
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-void Block::insert(ColumnWithTypeAndName && elem)
-{
-    index_by_name.emplace(elem.name, data.size());
+    auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
+    if (!inserted)
+        checkColumnStructure<void>(data[it->second], elem,
+            "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     data.emplace_back(std::move(elem));
 }
 
 
-void Block::insertUnique(const ColumnWithTypeAndName & elem)
+void Block::insertUnique(ColumnWithTypeAndName elem)
 {
-    if (index_by_name.end() == index_by_name.find(elem.name))
-        insert(elem);
-}
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-void Block::insertUnique(ColumnWithTypeAndName && elem)
-{
     if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
 }
@@ -313,6 +390,7 @@ std::string Block::dumpIndex() const
 Block Block::cloneEmpty() const
 {
     Block res;
+    res.reserve(data.size());
 
     for (const auto & elem : data)
         res.insert(elem.cloneEmpty());
@@ -369,15 +447,19 @@ void Block::setColumns(const Columns & columns)
 }
 
 
-void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
+void Block::setColumn(size_t position, ColumnWithTypeAndName column)
 {
     if (position >= data.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
                         position, toString(data.size()));
 
-    data[position].name = std::move(column.name);
-    data[position].type = std::move(column.type);
-    data[position].column = std::move(column.column);
+    if (data[position].name != column.name)
+    {
+        index_by_name.erase(data[position].name);
+        index_by_name.emplace(column.name, position);
+    }
+
+    data[position] = std::move(column);
 }
 
 
@@ -386,6 +468,8 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ std::move(columns[i]), data[i].type, data[i].name });
 
@@ -403,6 +487,8 @@ Block Block::cloneWithColumns(const Columns & columns) const
         throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
                         "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
 
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
 
@@ -415,6 +501,8 @@ Block Block::cloneWithoutColumns() const
     Block res;
 
     size_t num_columns = data.size();
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ nullptr, data[i].type, data[i].name });
 
@@ -436,7 +524,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
+    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -492,67 +580,6 @@ DataTypes Block::getDataTypes() const
         res.push_back(elem.type);
 
     return res;
-}
-
-
-template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
-{
-    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
-    {
-        if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception(message, code);
-        else
-            return false;
-    };
-
-    size_t columns = rhs.columns();
-    if (lhs.columns() != columns)
-        return on_error("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
-            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
-
-    for (size_t i = 0; i < columns; ++i)
-    {
-        const auto & expected = rhs.getByPosition(i);
-        const auto & actual = lhs.getByPosition(i);
-
-        if (actual.name != expected.name)
-            return on_error("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
-
-        if (!actual.type->equals(*expected.type))
-            return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
-
-        if (!actual.column || !expected.column)
-            continue;
-
-        const IColumn * actual_column = actual.column.get();
-
-        /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
-        if (allow_remove_constants && !isColumnConst(*expected.column))
-        {
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
-        }
-
-        if (actual_column->getName() != expected.column->getName())
-            return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
-
-        if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
-        {
-            Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
-            Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
-
-            if (actual_value != expected_value)
-                return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
-                    + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
-                    ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    return ReturnType(true);
 }
 
 
@@ -666,6 +693,41 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
         for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
+}
+
+
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
+{
+    auto current_column = block.getByName(column.getNameInStorage()).column;
+    current_column = current_column->decompress();
+
+    if (column.isSubcolumn())
+        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
+
+    return current_column;
+}
+
+
+Block materializeBlock(const Block & block)
+{
+    if (!block)
+        return block;
+
+    Block res = block;
+    size_t columns = res.columns();
+    for (size_t i = 0; i < columns; ++i)
+    {
+        auto & element = res.getByPosition(i);
+        element.column = element.column->convertToFullColumnIfConst();
+    }
+
+    return res;
+}
+
+void materializeBlockInplace(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
 }
 
 }

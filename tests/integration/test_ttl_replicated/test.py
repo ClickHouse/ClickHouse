@@ -351,6 +351,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_delete_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             '''.format(suff=num_run, replica=node.name))
 
         node.query(
@@ -359,6 +360,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_group_by_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             '''.format(suff=num_run, replica=node.name))
 
         node.query(
@@ -367,6 +369,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_where_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
+                SETTINGS max_number_of_merges_with_ttl_in_pool=100, max_replicated_merges_with_ttl_in_queue=100
             '''.format(suff=num_run, replica=node.name))
 
     node_left.query("INSERT INTO test_ttl_delete VALUES (now(), 1)")
@@ -397,9 +400,9 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
 
-    exec_query_with_retry(node_left, "SYSTEM SYNC REPLICA test_ttl_delete")
-    node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
-    node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
+    exec_query_with_retry(node_left, "OPTIMIZE TABLE test_ttl_delete FINAL")
+    node_left.query("OPTIMIZE TABLE test_ttl_group_by FINAL", timeout=20)
+    node_left.query("OPTIMIZE TABLE test_ttl_where FINAL", timeout=20)
 
     # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
     # Possible scenario (for test_ttl_group_by):
@@ -413,6 +416,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     exec_query_with_retry(node_right, "SYSTEM SYNC REPLICA test_ttl_delete")
     node_right.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
     node_right.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
+
+    exec_query_with_retry(node_left, "SYSTEM SYNC REPLICA test_ttl_delete")
+    node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
+    node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
 
     assert node_left.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
     assert node_right.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"

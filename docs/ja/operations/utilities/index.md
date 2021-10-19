@@ -12,4 +12,4 @@ toc_title: "\u6982\u8981"
 -   [クリックハウス-複写機](clickhouse-copier.md) — Copies (and reshards) data from one cluster to another cluster.
 -   [clickhouse-ベンチマーク](clickhouse-benchmark.md) — Loads server with the custom queries and settings.
 
-[元の記事](https://clickhouse.tech/docs/en/operations/utils/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/utils/) <!--hide-->

@@ -53,5 +53,6 @@ macro(clickhouse_embed_binaries)
         set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}" APPEND PROPERTY INCLUDE_DIRECTORIES "${EMBED_RESOURCE_DIR}")
 
         target_sources("${EMBED_TARGET}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/${ASSEMBLY_FILE_NAME}")
+        set_target_properties("${EMBED_TARGET}" PROPERTIES OBJECT_DEPENDS "${RESOURCE_FILE}")
     endforeach()
 endmacro()

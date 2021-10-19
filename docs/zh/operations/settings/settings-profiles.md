@@ -78,4 +78,4 @@ SET profile = 'web'
 
 该 `web` 配置文件是一个常规的配置文件，可以使用设置 `SET` 查询或在HTTP查询中使用URL参数。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->

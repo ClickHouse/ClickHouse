@@ -88,7 +88,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
 If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.

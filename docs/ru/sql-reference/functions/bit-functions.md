@@ -257,7 +257,7 @@ bitHammingDistance(int1, int2)
 
 **Возвращаемое значение**
 
--   Расстояние Хэмминга. 
+-   Расстояние Хэмминга.
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 

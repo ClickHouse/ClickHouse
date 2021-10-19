@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include "Regexps.h"
@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Type, bool FindAny, bool FindAnyIndex, bool MultiSearchDistance>
+template <typename Name, typename Type, bool FindAny, bool FindAnyIndex, bool MultiSearchDistance>
 struct MultiMatchAnyImpl
 {
     static_assert(static_cast<int>(FindAny) + static_cast<int>(FindAnyIndex) == 1);
@@ -38,6 +38,8 @@ struct MultiMatchAnyImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
+    static constexpr auto name = Name::name;
+
     static auto getReturnType()
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -120,7 +122,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), nullptr, accum);
+            MatchImpl<Name, false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), nullptr, accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)

@@ -20,14 +20,14 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 -   `name` (String) — 节点的名字。
 -   `path` (String) — 节点的路径。
--   `value` (String) — 节点的值。 
+-   `value` (String) — 节点的值。
 -   `dataLength` (Int32) — 节点的值长度。
 -   `numChildren` (Int32) — 子节点的个数。
 -   `czxid` (Int64) — 创建该节点的事务ID。
 -   `mzxid` (Int64) — 最后修改该节点的事务ID。
 -   `pzxid` (Int64) — 最后删除或者增加子节点的事务ID。
--   `ctime` (DateTime) — 节点的创建时间。 
--   `mtime` (DateTime) — 节点的最后修改时间。 
+-   `ctime` (DateTime) — 节点的创建时间。
+-   `mtime` (DateTime) — 节点的最后修改时间。
 -   `version` (Int32) — 节点版本：节点被修改的次数。
 -   `cversion` (Int32) — 增加或删除子节点的个数。
 -   `aversion` (Int32) — ACL的修改次数。
@@ -77,4 +77,4 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-[原文](https://clickhouse.tech/docs/zh/operations/system-tables/zookeeper) <!--hide-->
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/zookeeper) <!--hide-->

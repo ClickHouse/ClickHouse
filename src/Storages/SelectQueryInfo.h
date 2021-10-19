@@ -39,6 +39,9 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
@@ -83,9 +86,10 @@ struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
+    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
 
     bool operator ==(const InputOrderInfo & other) const
     {
@@ -99,12 +103,10 @@ class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
-struct MergeTreeDataSelectCache;
-
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc{};
+    ProjectionDescriptionRawPtr desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -119,8 +121,8 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
-    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 /** Query along with some additional data,
@@ -160,7 +162,10 @@ struct SelectQueryInfo
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_cache;
+    bool is_projection_query = false;
+    bool merge_tree_empty_result = false;
+    Block minmax_count_projection_block;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 
 }

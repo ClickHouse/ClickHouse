@@ -21,8 +21,9 @@ PoolWithFailover::PoolWithFailover(
         const unsigned max_connections_,
         const size_t max_tries_)
     : max_tries(max_tries_)
+    , shareable(config_.getBool(config_name_ + ".share_connection", false))
+    , wait_timeout(UINT64_MAX)
 {
-    shareable = config_.getBool(config_name_ + ".share_connection", false);
     if (config_.has(config_name_ + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -80,9 +81,11 @@ PoolWithFailover::PoolWithFailover(
         const std::string & password,
         unsigned default_connections_,
         unsigned max_connections_,
-        size_t max_tries_)
+        size_t max_tries_,
+        uint64_t wait_timeout_)
     : max_tries(max_tries_)
     , shareable(false)
+    , wait_timeout(wait_timeout_)
 {
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : addresses)
@@ -101,6 +104,7 @@ PoolWithFailover::PoolWithFailover(
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     : max_tries{other.max_tries}
     , shareable{other.shareable}
+    , wait_timeout(other.wait_timeout)
 {
     if (shareable)
     {
@@ -140,7 +144,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
                 try
                 {
-                    Entry entry = shareable ? pool->get() : pool->tryGet();
+                    Entry entry = shareable ? pool->get(wait_timeout) : pool->tryGet();
 
                     if (!entry.isNull())
                     {
@@ -172,7 +176,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
     if (full_pool)
     {
         app.logger().error("All connections failed, trying to wait on a full pool " + (*full_pool)->getDescription());
-        return (*full_pool)->get();
+        return (*full_pool)->get(wait_timeout);
     }
 
     std::stringstream message;

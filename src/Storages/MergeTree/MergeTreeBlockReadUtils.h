@@ -70,7 +70,7 @@ struct MergeTreeReadTaskColumns
     /// column names to read during PREWHERE
     NamesAndTypesList pre_columns;
     /// resulting block may require reordering in accordance with `ordered_names`
-    bool should_reorder;
+    bool should_reorder = false;
 };
 
 MergeTreeReadTaskColumns getReadTaskColumns(

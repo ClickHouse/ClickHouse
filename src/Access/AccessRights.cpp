@@ -1,5 +1,5 @@
 #include <Access/AccessRights.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/sort.hpp>
@@ -655,7 +655,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
+                    lhs_child.addGrantsRec(rhs.flags);
             }
         }
     }
@@ -673,7 +673,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags &= rhs.flags;
+                    lhs_child.removeGrantsRec(~rhs.flags);
             }
         }
     }
@@ -1041,17 +1041,15 @@ void AccessRights::makeIntersection(const AccessRights & other)
     auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
     {
         if (!root_node)
+            return;
+        if (!other_root_node)
         {
-            if (other_root_node)
-                root_node = std::make_unique<Node>(*other_root_node);
+            root_node = nullptr;
             return;
         }
-        if (other_root_node)
-        {
-            root_node->makeIntersection(*other_root_node);
-            if (!root_node->flags && !root_node->children)
-                root_node = nullptr;
-        }
+        root_node->makeIntersection(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);

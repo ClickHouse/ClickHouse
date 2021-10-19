@@ -14,10 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -32,7 +30,8 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <cassert>
 
@@ -78,7 +77,7 @@ public:
         StorageStripeLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const Names & column_names,
-        size_t max_read_buffer_size_,
+        ReadSettings read_settings_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
@@ -86,7 +85,7 @@ public:
             getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , max_read_buffer_size(max_read_buffer_size_)
+        , read_settings(std::move(read_settings_))
         , index(index_)
         , index_begin(index_begin_)
         , index_end(index_end_)
@@ -98,9 +97,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (storage.file_checker.empty())
-            return {};
-
         Block res;
         start();
 
@@ -123,7 +119,7 @@ protected:
 private:
     StorageStripeLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    size_t max_read_buffer_size;
+    ReadSettings read_settings;
 
     std::shared_ptr<const IndexForNativeFormat> index;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
@@ -136,7 +132,7 @@ private:
       */
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
-    std::optional<NativeBlockInputStream> block_in;
+    std::optional<NativeReader> block_in;
 
     void start()
     {
@@ -145,21 +141,20 @@ private:
             started = true;
 
             String data_file_path = storage.table_path + "data.bin";
-            size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file_path));
-
-            data_in.emplace(storage.disk->readFile(data_file_path, buffer_size));
+            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(storage.disk->getFileSize(data_file_path))));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
 };
 
 
-class StripeLogBlockOutputStream final : public IBlockOutputStream
+class StripeLogSink final : public SinkToStorage
 {
 public:
-    explicit StripeLogBlockOutputStream(
+    explicit StripeLogSink(
         StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
         , data_out_file(storage.table_path + "data.bin")
@@ -182,7 +177,9 @@ public:
         }
     }
 
-    ~StripeLogBlockOutputStream() override
+    String getName() const override { return "StripeLogSink"; }
+
+    ~StripeLogSink() override
     {
         try
         {
@@ -203,19 +200,16 @@ public:
         }
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
-        block_out.write(block);
+        block_out.write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         if (done)
             return;
 
-        block_out.writeSuffix();
         data_out->next();
         data_out_compressed->next();
         data_out_compressed->finalize();
@@ -246,7 +240,7 @@ private:
     String index_out_file;
     std::unique_ptr<WriteBuffer> index_out_compressed;
     std::unique_ptr<CompressedWriteBuffer> index_out;
-    NativeBlockOutputStream block_out;
+    NativeWriter block_out;
 
     bool done = false;
 };
@@ -339,12 +333,14 @@ Pipe StorageStripeLog::read(
     Pipes pipes;
 
     String index_file = table_path + "index.mrk";
-    if (!disk->exists(index_file))
+    if (file_checker.empty() || !disk->exists(index_file))
     {
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
-    CompressedReadBufferFromFile index_in(disk->readFile(index_file, 4096));
+    ReadSettings read_settings = context->getReadSettings();
+
+    CompressedReadBufferFromFile index_in(disk->readFile(index_file, read_settings.adjustBufferSize(4096)));
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     size_t size = index->blocks.size();
@@ -360,7 +356,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, context->getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, metadata_snapshot, column_names, read_settings, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -369,13 +365,13 @@ Pipe StorageStripeLog::read(
 }
 
 
-BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    return std::make_shared<StripeLogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
+    return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
 

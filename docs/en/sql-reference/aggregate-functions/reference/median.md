@@ -1,3 +1,7 @@
+---
+toc_priority: 212
+---
+
 # median {#median}
 
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
@@ -12,6 +16,7 @@ Functions:
 -   `medianTimingWeighted` — Alias for [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md#quantiletimingweighted).
 -   `medianTDigest` — Alias for [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md#quantiletdigest).
 -   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md#quantiletdigestweighted).
+-   `medianBFloat16` — Alias for [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16).
 
 **Example**
 
@@ -29,7 +34,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT medianDeterministic(val, 1) FROM t
+SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Result:

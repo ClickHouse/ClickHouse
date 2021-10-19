@@ -18,7 +18,7 @@ NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"value", std::make_shared<DataTypeFloat64>(),}
     };
 }

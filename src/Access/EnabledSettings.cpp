@@ -11,27 +11,16 @@ EnabledSettings::EnabledSettings(const Params & params_) : params(params_)
 
 EnabledSettings::~EnabledSettings() = default;
 
-
-std::shared_ptr<const Settings> EnabledSettings::getSettings() const
+std::shared_ptr<const SettingsProfilesInfo> EnabledSettings::getInfo() const
 {
     std::lock_guard lock{mutex};
-    return settings;
+    return info;
 }
 
-
-std::shared_ptr<const SettingsConstraints> EnabledSettings::getConstraints() const
+void EnabledSettings::setInfo(const std::shared_ptr<const SettingsProfilesInfo> & info_)
 {
     std::lock_guard lock{mutex};
-    return constraints;
-}
-
-
-void EnabledSettings::setSettingsAndConstraints(
-    const std::shared_ptr<const Settings> & settings_, const std::shared_ptr<const SettingsConstraints> & constraints_)
-{
-    std::lock_guard lock{mutex};
-    settings = settings_;
-    constraints = constraints_;
+    info = info_;
 }
 
 }

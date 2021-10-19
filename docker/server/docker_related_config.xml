@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
      <!-- Listen wildcard address to allow accepting connections from other containers and host network. -->
     <listen_host>::</listen_host>
     <listen_host>0.0.0.0</listen_host>
@@ -9,4 +9,4 @@
         <console>1</console>
     </logger>
     -->
-</yandex>
+</clickhouse>

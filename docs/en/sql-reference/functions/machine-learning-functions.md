@@ -21,13 +21,13 @@ The [stochasticLogisticRegression](../../sql-reference/aggregate-functions/refer
 
 Compares test groups (variants) and calculates for each group the probability to be the best one. The first group is used as a control group.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `distribution_name` — Name of the probability distribution. [String](../../sql-reference/data-types/string.md). Possible values:
 

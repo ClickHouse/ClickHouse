@@ -5,7 +5,6 @@ from datetime64_extended_range.common import *
 from datetime64_extended_range.tests.common import *
 
 import pytz
-import datetime
 import itertools
 
 @TestScenario

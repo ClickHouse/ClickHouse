@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
@@ -21,7 +25,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
@@ -34,12 +38,12 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/argsToConfig.h>
-#include <common/getThreadId.h>
-#include <common/coverage.h>
-#include <common/sleep.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
+#include <base/argsToConfig.h>
+#include <base/getThreadId.h>
+#include <base/coverage.h>
+#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -259,10 +263,25 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(const std::string & message, UInt32 thread_num) const
+    void onTerminate(std::string_view message, UInt32 thread_num) const
     {
+        size_t pos = message.find('\n');
+
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
+
+        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
+        while (pos != std::string_view::npos)
+        {
+            ++pos;
+            size_t next_pos = message.find('\n', pos);
+            size_t size = next_pos;
+            if (next_pos != std::string_view::npos)
+                size = next_pos - pos;
+
+            LOG_FATAL(log, "{}", message.substr(pos, size));
+            pos = next_pos;
+        }
     }
 
     void onFault(

@@ -12,9 +12,10 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <common/range.h>
+#include <base/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -92,14 +93,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         ++arg_num;
 
-        size_t dot = remote_database.find('.');
-        if (dot != String::npos)
-        {
-            /// NOTE Bad - do not support identifiers in backquotes.
-            remote_table = remote_database.substr(dot + 1);
-            remote_database = remote_database.substr(0, dot);
-        }
-        else
+        auto qualified_name = QualifiedTableName::parseFromString(remote_database);
+        if (qualified_name.database.empty())
         {
             if (arg_num >= args.size())
             {
@@ -107,11 +102,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             }
             else
             {
+                std::swap(qualified_name.database, qualified_name.table);
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+                qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }
+
+        remote_database = std::move(qualified_name.database);
+        remote_table = std::move(qualified_name.table);
     }
 
     /// Cluster function may have sharding key for insert
@@ -153,18 +152,14 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
-    /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto ast : args)
-        setIdentifierSpecial(ast);
-
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
     }
     else
     {
@@ -197,13 +192,16 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             }
         }
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
         cluster = std::make_shared<Cluster>(
             context->getSettings(),
             names,
             username,
             password,
             (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
-            false,
+            treat_local_as_remote,
+            treat_local_port_as_remote,
             secure);
     }
 

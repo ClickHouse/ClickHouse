@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -61,7 +61,7 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    bool hasColumn(const String & name) const { return names.count(name); }
+    bool hasColumn(const String & name) const { return names.contains(name); }
 
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
@@ -86,8 +86,6 @@ private:
             names.insert(col.name);
     }
 
-
-private:
     NameSet names;
 };
 

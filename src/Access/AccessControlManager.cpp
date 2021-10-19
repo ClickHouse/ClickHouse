@@ -1,6 +1,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
@@ -12,7 +13,7 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Poco/ExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -64,7 +65,12 @@ public:
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
-            return *x;
+        {
+            if ((*x)->getUser())
+                return *x;
+            /// No user, probably the user has been dropped while it was in the cache.
+            cache.remove(params);
+        }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
         cache.add(params, res);
         return res;
@@ -220,6 +226,22 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
     }
 }
 
+void AccessControlManager::addReplicatedStorage(
+    const String & storage_name_,
+    const String & zookeeper_path_,
+    const zkutil::GetZooKeeper & get_zookeeper_function_)
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
+            return;
+    }
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
+    new_storage->startup();
+}
 
 void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
 {
@@ -316,6 +338,11 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
             addLDAPStorage(name, config, prefix);
+        }
+        else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
+        {
+            String zookeeper_path = config.getString(prefix + ".zookeeper_path");
+            addReplicatedStorage(name, zookeeper_path, get_zookeeper_function);
         }
         else
             throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -484,10 +511,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
 }
 
-std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+std::shared_ptr<const SettingsProfilesInfo> AccessControlManager::getSettingsProfileInfo(const UUID & profile_id)
 {
-    return settings_profiles_cache->getProfileSettings(profile_name);
+    return settings_profiles_cache->getSettingsProfileInfo(profile_id);
 }
+
 
 const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
 {

@@ -4,7 +4,7 @@
 
 #if USE_SSL
 #include "OpenSSLHelpers.h"
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
 

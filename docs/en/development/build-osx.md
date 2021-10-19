@@ -76,7 +76,7 @@ cd ClickHouse
 rm -rf build
 mkdir build
 cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 cmake --build . --config RelWithDebInfo
 cd ..
 ```
@@ -114,15 +114,25 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 </plist>
 ```
 
-Execute the following command:
+Give the file correct permissions:
 
 ``` bash
 sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Reboot.
+Validate that the file is correct:
 
-To check if it’s working, you can use `ulimit -n` command.
+``` bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Load the file (or reboot):
+
+``` bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
 
 ## Run ClickHouse server:
 
@@ -131,4 +141,4 @@ cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

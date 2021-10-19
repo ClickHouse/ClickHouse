@@ -231,6 +231,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
         return false;
 
+    bool is_replace = false;
     bool is_revoke = false;
     if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
         is_revoke = true;
@@ -271,6 +272,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             grant_option = true;
         else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
             admin_option = true;
+
+        if (ParserKeyword{"WITH REPLACE OPTION"}.ignore(pos, expected))
+            is_replace = true;
     }
 
     if (cluster.empty())
@@ -287,6 +291,17 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             element.grant_option = true;
     }
 
+
+    bool replace_access = false;
+    bool replace_role = false;
+    if (is_replace)
+    {
+        if (roles)
+            replace_role = true;
+        else
+            replace_access = true;
+    }
+
     if (!is_revoke)
         eraseNonGrantable(elements);
 
@@ -300,6 +315,8 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->roles = std::move(roles);
     query->grantees = std::move(grantees);
     query->admin_option = admin_option;
+    query->replace_access = replace_access;
+    query->replace_granted_roles = replace_role;
 
     return true;
 }

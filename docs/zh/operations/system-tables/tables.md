@@ -51,8 +51,8 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
     -   如果表将数据存在磁盘上，返回实际使用的磁盘空间（压缩后）。
     -   如果表在内存中存储数据，返回在内存中使用的近似字节数。
 
--   `lifetime_rows` (Nullbale(UInt64))-服务启动后插入的总行数(只针对`Buffer`表）。 
+-   `lifetime_rows` (Nullbale(UInt64))-服务启动后插入的总行数(只针对`Buffer`表）。
 
 `system.tables` 表被用于 `SHOW TABLES` 的查询实现中。
 
-[原文](https://clickhouse.tech/docs/zh/operations/system-tables/tables) <!--hide-->
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/tables) <!--hide-->

@@ -1,3 +1,5 @@
+-- Tags: shard
+
 set max_threads = 1;
 drop table if exists enums;
 

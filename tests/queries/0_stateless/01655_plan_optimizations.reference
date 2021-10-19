@@ -56,7 +56,7 @@ Filter column: notEquals(y, 0)
 9	10
 > one condition of filter should be pushed down after aggregating, other condition is casted
 Filter column
-FUNCTION CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
+FUNCTION _CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 0	1

@@ -39,7 +39,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryUpdateUnit
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     /// Constructor for complex keys update request
     explicit CacheDictionaryUpdateUnit(
@@ -85,8 +85,8 @@ private:
 template <DictionaryKeyType dictionary_key_type>
 using CacheDictionaryUpdateUnitPtr = std::shared_ptr<CacheDictionaryUpdateUnit<dictionary_key_type>>;
 
-extern template class CacheDictionaryUpdateUnit<DictionaryKeyType::simple>;
-extern template class CacheDictionaryUpdateUnit<DictionaryKeyType::complex>;
+extern template class CacheDictionaryUpdateUnit<DictionaryKeyType::Simple>;
+extern template class CacheDictionaryUpdateUnit<DictionaryKeyType::Complex>;
 
 struct CacheDictionaryUpdateQueueConfiguration
 {
@@ -110,7 +110,6 @@ class CacheDictionaryUpdateQueue
 public:
     /// Client of update queue must provide this function in constructor and perform update using update unit.
     using UpdateFunction = std::function<void (CacheDictionaryUpdateUnitPtr<dictionary_key_type>)>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryUpdateQueue");
 
     CacheDictionaryUpdateQueue(
         String dictionary_name_for_logs_,
@@ -123,7 +122,7 @@ public:
     const CacheDictionaryUpdateQueueConfiguration & getConfiguration() const { return configuration; }
 
     /// Is queue finished
-    bool isFinished() const { return finished; }
+    bool isFinished() const { return update_queue.isFinished(); }
 
     /// Synchronous wait for update queue to stop
     void stopAndWait();
@@ -163,11 +162,9 @@ private:
 
     mutable std::mutex update_mutex;
     mutable std::condition_variable is_update_finished;
-
-    std::atomic<bool> finished{false};
 };
 
-extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::simple>;
-extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::complex>;
+extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
+extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::Complex>;
 
 }

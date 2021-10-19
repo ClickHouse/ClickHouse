@@ -4,7 +4,7 @@
 
 С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table), но для многих таблиц сразу.
 
-Колонки [временных таблиц](../../sql-reference/statements/create/table.md#temporary-tables) содержатся в `system.columns` только в тех сессиях, в которых эти таблицы были созданы. Поле `database` у таких колонок пустое. 
+Колонки [временных таблиц](../../sql-reference/statements/create/table.md#temporary-tables) содержатся в `system.columns` только в тех сессиях, в которых эти таблицы были созданы. Поле `database` у таких колонок пустое.
 
 Cтолбцы:
 
@@ -38,17 +38,17 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    name
 type:                    String
-default_kind:            
-default_expression:      
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                 
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:       
+compression_codec:
 
 Row 2:
 ──────
@@ -56,15 +56,15 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    is_internal
 type:                    UInt8
-default_kind:            
-default_expression:      
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                 
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:       
+compression_codec:
 ```

@@ -2,7 +2,7 @@
 
 #include <map>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
@@ -19,10 +19,11 @@ namespace DB
 class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
-    friend class LogBlockOutputStream;
+    friend class LogSink;
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
+    ~StorageLog() override;
     String getName() const override { return "Log"; }
 
     Pipe read(
@@ -34,7 +35,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -45,6 +46,7 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
+    ColumnSizeByName getColumnSizes() const override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -80,6 +82,8 @@ private:
         size_t column_index;
 
         String data_file_path;
+
+        std::mutex marks_mutex;
         Marks marks;
     };
     using Files = std::map<String, ColumnData>; /// file name -> column data
@@ -87,7 +91,7 @@ private:
     DiskPtr disk;
     String table_path;
 
-    std::shared_timed_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Files files;
 

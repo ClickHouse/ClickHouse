@@ -15,7 +15,7 @@ option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instea
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
   if(USE_INTERNAL_PROTOBUF_LIBRARY)
-    message(WARNING "submodule contrib/protobuf is missing. to fix try run: \n git submodule update --init --recursive")
+    message(WARNING "submodule contrib/protobuf is missing. to fix try run: \n git submodule update --init")
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal protobuf")
     set(USE_INTERNAL_PROTOBUF_LIBRARY 0)
   endif()

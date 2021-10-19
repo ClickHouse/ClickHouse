@@ -65,7 +65,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
             added_parts = readV1(in);
     }
 
-    /// Read added bloks when node in ZooKeeper supports only one partition.
+    /// Read added blocks when node in ZooKeeper supports only one partition.
     PartitionIdToPartName readV1(ReadBuffer & in)
     {
         PartitionIdToPartName parts_in_quorum;

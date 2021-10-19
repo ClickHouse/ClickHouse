@@ -44,6 +44,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
+        ("query", po::value<std::string>(), "query to format")
         ("help,h", "produce help message")
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")
         ("oneline", "format in single line")
@@ -86,8 +87,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         }
 
         String query;
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        readStringUntilEOF(query, in);
+
+        if (options.count("query"))
+        {
+            query = options["query"].as<std::string>();
+        }
+        else
+        {
+            ReadBufferFromFileDescriptor in(STDIN_FILENO);
+            readStringUntilEOF(query, in);
+        }
 
         if (obfuscate)
         {
@@ -100,10 +109,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 std::string seed;
                 hash_func.update(options["seed"].as<std::string>());
             }
-
-            SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
 
             registerFunctions();
             registerAggregateFunctions();
@@ -122,7 +127,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().tryGet(what, context) != nullptr
+                return FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || additional_names.count(what);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
 
@@ -15,6 +15,7 @@
 
 namespace DB
 {
+class Session;
 
 namespace MySQLProtocol
 {
@@ -32,7 +33,7 @@ public:
     virtual String getAuthPluginData() = 0;
 
     virtual void authenticate(
-        const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) = 0;
 };
 
@@ -42,14 +43,14 @@ class Native41 : public IPlugin
 public:
     Native41();
 
-    Native41(const String & password, const String & auth_plugin_data);
+    Native41(const String & password_, const String & scramble_);
 
     String getName() override { return "mysql_native_password"; }
 
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool /* is_secure_connection */, const Poco::Net::SocketAddress & address) override;
 
 private:
@@ -69,7 +70,7 @@ public:
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:

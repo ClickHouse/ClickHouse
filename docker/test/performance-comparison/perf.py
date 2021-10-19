@@ -183,6 +183,10 @@ for conn_index, c in enumerate(all_connections):
         # requires clickhouse-driver >= 1.1.5 to accept arbitrary new settings
         # (https://github.com/mymarilyn/clickhouse-driver/pull/142)
         c.settings[s.tag] = s.text
+    # We have to perform a query to make sure the settings work. Otherwise an
+    # unknown setting will lead to failing precondition check, and we will skip
+    # the test, which is wrong.
+    c.execute("select 1")
 
 reportStageEnd('settings')
 
