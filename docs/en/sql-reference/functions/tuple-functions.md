@@ -485,7 +485,7 @@ Alias: `normL1`.
 
 **Returned value**
 
--   L1 norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
+-   L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
 
 Type: [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
 
@@ -512,7 +512,7 @@ Calculates the square root of the sum of the squares of the tuple values.
 **Syntax**
 
 ```sql
-L1Norm(tuple)
+L2Norm(tuple)
 ```
 
 Alias: `normL2`.
@@ -523,7 +523,7 @@ Alias: `normL2`.
 
 **Returned value**
 
--   L2 norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
+-   L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -561,7 +561,7 @@ Alias: `normLinf`.
 
 **Returned value**
 
--   The maximum absolute value.
+-   Linf-norm or the maximum absolute value.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -757,7 +757,7 @@ Alias: `distanceLp`.
 
 **Returned value**
 
--   Lp-norm distance.
+-   p-norm distance.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -817,7 +817,7 @@ Result:
 
 ## L2Normalize {#l2normalize}
 
-Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in 2-norm ([Euclidean geometry](https://en.wikipedia.org/wiki/Euclidean_space).
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in 2-norm ([Euclidean geometry](https://en.wikipedia.org/wiki/Euclidean_space)).
 
 **Syntax**
 
@@ -944,8 +944,8 @@ cosineDistance(tuple1, tuple2)
 
 **Arguments**
 
--   `tuple1` — [Tuple](../../sql-reference/data-types/tuple.md).
--   `tuple1` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
