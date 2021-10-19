@@ -192,7 +192,7 @@ mapPopulateSeries(map[, max])
 
 или
 
--   `map` — контейнер Map с целочисленными ключами. [Map](../../sql-reference/data-types/map.md).
+-   `map` — контейнер `Map` с целочисленными ключами. [Map](../../sql-reference/data-types/map.md).
 
 **Возвращаемое значение**
 
