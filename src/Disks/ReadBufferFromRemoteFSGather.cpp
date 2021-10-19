@@ -28,24 +28,24 @@ namespace ErrorCodes
 
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t last_offset) const
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t offset) const
 {
     return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
-        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, last_offset);
+        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, offset);
 }
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t last_offset) const
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t offset) const
 {
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, last_offset);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, offset);
 }
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t last_offset) const
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t offset) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, last_offset);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, offset);
 }
 #endif
 
@@ -53,7 +53,7 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const String & path_)
     : ReadBuffer(nullptr, 0)
     , metadata(metadata_)
-    , path(path_)
+    , canonical_path(path_)
 {
 }
 
@@ -147,7 +147,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (bytes_to_ignore)
         current_buf->ignore(bytes_to_ignore);
 
-    LOG_DEBUG(&Poco::Logger::get("Gather"), "Reading from path: {}", path);
+    LOG_DEBUG(&Poco::Logger::get("Gather"), "Reading from path: {}", canonical_path);
     auto result = current_buf->next();
 
     swap(*current_buf);
@@ -182,7 +182,7 @@ void ReadBufferFromRemoteFSGather::reset()
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
-    return path;
+    return canonical_path;
     // if (current_buf)
     //     return fs::path(metadata.metadata_file_path) / metadata.remote_fs_objects[buf_idx].first;
     // return metadata.metadata_file_path;

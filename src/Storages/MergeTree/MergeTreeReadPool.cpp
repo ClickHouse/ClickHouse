@@ -48,7 +48,7 @@ MergeTreeReadPool::MergeTreeReadPool(
         do_not_steal_tasks = true;
         min_marks_for_concurrent_read = std::max(min_marks_for_concurrent_read, sum_marks_ / threads_);
     }
-    fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read_);
+    fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read);
 }
 
 
