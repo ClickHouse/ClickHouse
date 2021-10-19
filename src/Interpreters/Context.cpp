@@ -2895,14 +2895,11 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
     shared->async_insert_queue = ptr;
 }
 
-bool Context::isBackgroundExecutorsInitialized() const
+void Context::initializeBackgroundExecutorsIfNeeded()
 {
-    return is_background_executors_initialized;
-}
-
-void Context::initializeBackgroundExecutors()
-{
-    assert(!is_background_executors_initialized);
+    auto lock = getLock();
+    if (is_background_executors_initialized)
+        return;
 
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
