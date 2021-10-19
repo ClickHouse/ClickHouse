@@ -71,6 +71,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 }
@@ -1505,6 +1506,26 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     }
 }
 
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+{
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
+    po::parsed_options parsed = parser.run();
+
+    /// Check unrecognized options without positional options.
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+    if (!unrecognized_options.empty())
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+
+    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
+    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+
+    po::store(parsed, options);
+}
+
 
 void ClientBase::init(int argc, char ** argv)
 {
@@ -1563,7 +1584,8 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
     ;
 
-    addAndCheckOptions(options_description, options, common_arguments);
+    addOptions(options_description);
+    parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
