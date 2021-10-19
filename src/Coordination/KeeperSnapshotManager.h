@@ -22,10 +22,14 @@ enum SnapshotVersion : uint8_t
 
 static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V3;
 
+/// What is stored in binary shapsnot
 struct SnapshotDeserializationResult
 {
+    /// Storage
     KeeperStoragePtr storage;
+    /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
+    /// Cluster config
     ClusterConfigPtr cluster_config;
 };
 

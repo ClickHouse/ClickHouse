@@ -32,6 +32,7 @@ public:
 
     nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
 
+    /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override;
 
     /// Currently not supported
@@ -116,6 +117,9 @@ private:
 
     Poco::Logger * log;
 
+    /// Cluster config for our quorum.
+    /// It's a copy of config stored in StateManager, but here
+    /// we also write it to disk during snapshot. Must be used with lock.
     mutable std::mutex cluster_config_lock;
     ClusterConfigPtr cluster_config;
 
