@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>

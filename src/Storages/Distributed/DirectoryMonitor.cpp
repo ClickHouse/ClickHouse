@@ -1,5 +1,5 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/NativeReader.h>
+#include <QueryPipeline/RemoteInserter.h>
+#include <Formats/NativeReader.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>

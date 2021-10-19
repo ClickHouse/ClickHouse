@@ -1,11 +1,14 @@
 #include "ProgressIndication.h"
+#include <algorithm>
 #include <cstddef>
 #include <numeric>
 #include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
+#include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
+#include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
 
@@ -113,16 +116,17 @@ UInt64 ProgressIndication::getApproximateCoresNumber() const
         });
 }
 
-UInt64 ProgressIndication::getMemoryUsage() const
+ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 {
-    return std::accumulate(thread_data.cbegin(), thread_data.cend(), ZERO,
-        [](UInt64 acc, auto const & host_data)
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
+        [](MemoryUsage const & acc, auto const & host_data)
         {
-            return acc + std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
+            auto host_usage = std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
                 [](UInt64 memory, auto const & data)
                 {
                     return memory + data.second.memory_usage;
                 });
+            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
 
@@ -189,6 +193,27 @@ void ProgressIndication::writeProgress()
 
     written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
 
+    // If approximate cores number is known, display it.
+    auto cores_number = getApproximateCoresNumber();
+    std::string profiling_msg;
+    if (cores_number != 0 && print_hardware_utilization)
+    {
+        WriteBufferFromOwnString profiling_msg_builder;
+        // Calculated cores number may be not accurate
+        // so it's better to print min(threads, cores).
+        UInt64 threads_number = getUsedThreadsCount();
+        profiling_msg_builder << " Running " << threads_number << " threads on "
+            << std::min(cores_number, threads_number) << " cores";
+
+        auto [memory_usage, max_host_usage] = getMemoryUsage();
+        if (memory_usage != 0)
+            profiling_msg_builder << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used";
+        if (thread_data.size() > 1 && max_host_usage)
+            profiling_msg_builder << " total (per host max: " << formatReadableSizeWithDecimalSuffix(max_host_usage) << ")";
+        profiling_msg_builder << ".";
+        profiling_msg = profiling_msg_builder.str();
+    }
+
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_raw_bytes_to_read)
     {
@@ -215,7 +240,7 @@ void ProgressIndication::writeProgress()
 
             if (show_progress_bar)
             {
-                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
+                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%") - profiling_msg.length();
                 if (width_of_progress_bar > 0)
                 {
                     std::string bar
@@ -231,23 +256,7 @@ void ProgressIndication::writeProgress()
         message << ' ' << (99 * current_count / max_count) << '%';
     }
 
-    // If approximate cores number is known, display it.
-    auto cores_number = getApproximateCoresNumber();
-    if (cores_number != 0)
-    {
-        // Calculated cores number may be not accurate
-        // so it's better to print min(threads, cores).
-        UInt64 threads_number = getUsedThreadsCount();
-        message << " Running " << threads_number << " threads on "
-            << std::min(cores_number, threads_number) << " cores";
-
-        auto memory_usage = getMemoryUsage();
-        if (memory_usage != 0)
-            message << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used.";
-        else
-            message << ".";
-    }
-
+    message << profiling_msg;
     message << CLEAR_TO_END_OF_LINE;
     ++increment;
 
