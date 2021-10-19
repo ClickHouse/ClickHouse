@@ -80,6 +80,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    struct AnalysisResult;
+
 private:
     const MergeTreeReaderSettings reader_settings;
 
@@ -130,7 +132,6 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection);
 
-    struct AnalysisResult;
     AnalysisResult selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 };
 
