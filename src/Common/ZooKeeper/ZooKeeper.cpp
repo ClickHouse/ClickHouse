@@ -158,10 +158,10 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
     std::vector<size_t> hostname_differences;
     hostname_differences.resize(hosts.size());
-    String local_hostname = getFQDNOrHostName();
+    const String & local_hostname = getFQDNOrHostName();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
-        String ip_or_hostname = hosts[i].substr(0, hosts[i].find_last_of(":"));
+        const String & ip_or_hostname = hosts[i].substr(0, hosts[i].find_last_of(':'));
         hostname_differences[i] = DB::getHostNameDifference(local_hostname, Poco::Net::DNS::resolve(ip_or_hostname).name());
     }
 
@@ -278,7 +278,9 @@ struct ZooKeeperArgs
             }
             else if (key == "zookeeper_load_balancing")
             {
-                zookeeper_load_balancing = DB::SettingFieldZooKeeperLoadBalancingTraits::fromString(config.getString(config_name + "." + key));
+                DB::SettingFieldZooKeeperLoadBalancing setting_field;
+                setting_field.parseFromString(config.getString(config_name + "." + key));
+                zookeeper_load_balancing = setting_field.value;
             }
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
@@ -317,8 +319,8 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     if (args.implementation == implementation && implementation == "testkeeper")
         return false;
 
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
+    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.zookeeper_load_balancing)
+        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, zookeeper_load_balancing);
 }
 
 
