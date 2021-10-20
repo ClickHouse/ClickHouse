@@ -79,19 +79,19 @@ void BinaryRowInputFormat::skipField(size_t file_column)
 
 void registerInputFormatRowBinary(FormatFactory & factory)
 {
-    auto get_input_creator = [](bool with_names, bool with_types)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return [with_names, with_types](
+        factory.registerInputFormat(format_name, [with_names, with_types](
             ReadBuffer & buf,
             const Block & sample,
             const IRowInputFormat::Params & params,
             const FormatSettings & settings)
         {
             return std::make_shared<BinaryRowInputFormat>(buf, sample, params, with_names, with_types, settings);
-        };
+        });
     };
 
-    registerInputFormatWithNamesAndTypes(factory, "RowBinary", get_input_creator);
+    registerWithNamesAndTypes("RowBinary", register_func);
 }
 
 }

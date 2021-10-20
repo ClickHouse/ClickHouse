@@ -184,34 +184,35 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {true, false})
     {
-        auto get_input_creator = [yield_strings](bool with_names, bool with_types)
+        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            return [with_names, with_types, yield_strings](
+            factory.registerInputFormat(format_name, [with_names, with_types, yield_strings](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<JSONCompactEachRowRowInputFormat>(sample, buf, std::move(params), with_names, with_types, yield_strings, settings);
-            };
+            });
         };
 
-        registerInputFormatWithNamesAndTypes(factory, yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", get_input_creator);
+        registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
     }
 }
 
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
 {
-    auto get_file_segmentation_engine = [](size_t min_rows)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+        size_t min_rows = 1 + int(with_names) + int(with_types);
+        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
         {
             return fileSegmentationEngineJSONCompactEachRow(in, memory, min_chunk_size, min_rows);
-        };
+        });
     };
 
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactEachRow", get_file_segmentation_engine);
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactStringsEachRow", get_file_segmentation_engine);
+    registerWithNamesAndTypes("JSONCompactEachRow", register_func);
+    registerWithNamesAndTypes("JSONCompactStringsEachRow", register_func);
 }
 
 }

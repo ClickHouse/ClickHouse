@@ -3,37 +3,11 @@
 namespace DB
 {
 
-void registerInputFormatWithNamesAndTypes(FormatFactory & factory, const String & base_format_name, GetInputCreatorWithNamesAndTypesFunc get_input_creator)
+void registerWithNamesAndTypes(const std::string & base_format_name, RegisterWithNamesAndTypesFunc register_func)
 {
-    factory.registerInputFormat(base_format_name, get_input_creator(false, false));
-    factory.registerInputFormat(base_format_name + "WithNames", get_input_creator(true, false));
-    factory.registerInputFormat(base_format_name + "WithNamesAndTypes", get_input_creator(true, true));
-}
-
-void registerOutputFormatWithNamesAndTypes(
-    FormatFactory & factory,
-    const String & base_format_name,
-    GetOutputCreatorWithNamesAndTypesFunc get_output_creator,
-    bool supports_parallel_formatting)
-{
-    factory.registerOutputFormat(base_format_name, get_output_creator(false, false));
-    factory.registerOutputFormat(base_format_name + "WithNames", get_output_creator(true, false));
-    factory.registerOutputFormat(base_format_name + "WithNamesAndTypes", get_output_creator(true, true));
-
-    if (supports_parallel_formatting)
-    {
-        factory.markOutputFormatSupportsParallelFormatting(base_format_name);
-        factory.markOutputFormatSupportsParallelFormatting(base_format_name + "WithNames");
-        factory.markOutputFormatSupportsParallelFormatting(base_format_name + "WithNamesAndTypes");
-    }
-}
-
-void registerFileSegmentationEngineForFormatWithNamesAndTypes(
-    FormatFactory & factory, const String & base_format_name, GetFileSegmentationEngineWithNamesAndTypesFunc get_file_segmentation_engine)
-{
-    factory.registerFileSegmentationEngine(base_format_name, get_file_segmentation_engine(1));
-    factory.registerFileSegmentationEngine(base_format_name + "WithNames", get_file_segmentation_engine(2));
-    factory.registerFileSegmentationEngine(base_format_name + "WithNamesAndTypes", get_file_segmentation_engine(3));
+    register_func(base_format_name, false, false);
+    register_func(base_format_name + "WithNames", true, false);
+    register_func(base_format_name + "WithNamesAndTypes", true, true);
 }
 
 }
