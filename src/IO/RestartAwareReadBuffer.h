@@ -1,3 +1,5 @@
+#pragma once
+
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <shared_mutex>
 

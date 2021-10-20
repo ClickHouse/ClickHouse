@@ -44,7 +44,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 {
     auto task = std::make_shared<std::packaged_task<Result()>>([request]
     {
-        setThreadName("ThreadPoolRead");
+        setThreadName("ThreadPoolRemoteFSRead");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 

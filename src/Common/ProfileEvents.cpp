@@ -253,16 +253,12 @@
     M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
-    M(RemoteFSPrefetches, "Total number of prefetches") \
-    M(RemoteFSSeekCancelledPrefetches, "Number of cancelled prefecthes because of seek") \
-    M(RemoteFSUnusedCancelledPrefetches, "Number of prefetches pending in buffer destructor") \
-    M(RemoteFSPrefetchReads, "Total number of reads from prefecthed buffer") \
-    M(RemoteFSAsyncBufferReads, "Number of nextImpl() calls for async buffer") \
-    M(RemoteFSSimpleBufferReads, "Number of nextImpl() calls for non-async buffer") \
-    M(RemoteFSNewReaders, "Number of created impl objects") \
-    M(RemoteFSAsyncBuffers, "Total number of AsycnhronousReadIndirectBufferFromREmoteFS buffers") \
-    M(RemoteFSSimpleBuffers, "Total number of ReadIndirectBufferFromREmoteFS buffers") \
-    M(RemoteFSRedundantlyReadBytes, "") \
+    M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
+    M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
+    M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
     M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
