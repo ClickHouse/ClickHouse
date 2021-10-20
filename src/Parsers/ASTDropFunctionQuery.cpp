@@ -14,6 +14,8 @@ void ASTDropFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAS
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP FUNCTION " << (settings.hilite ? hilite_none : "");
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(function_name) << (settings.hilite ? hilite_none : "");
+    if (if_exists)
+        settings.ostr << "IF EXISTS";
 }
 
 }
