@@ -64,7 +64,7 @@ struct FormatSettings
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
-        UInt64 output_rows_in_file = 1000000;
+        UInt64 output_rows_in_file = 1;
     } avro;
 
     struct CSV

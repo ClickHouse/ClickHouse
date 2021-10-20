@@ -88,7 +88,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         const std::string & last_chunk = chunks.back();
         size_t last_chunk_size = offset();
 
-        if (delim && last_chunk[last_chunk_size - 1] == delim)
+        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
         std::string payload;

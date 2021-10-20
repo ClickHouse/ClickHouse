@@ -3,8 +3,6 @@
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 
-#include <base/logger_useful.h>
-
 namespace DB
 {
 WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
@@ -55,8 +53,6 @@ WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
 
 void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t current_row)
 {
-
-    LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "top of countRow");
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
@@ -78,8 +74,6 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
 
         cppkafka::MessageBuilder builder(topic);
         builder.payload(payload);
-
-        LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "payload size {}", payload.size());
 
         // Note: if it will be few rows per message - it will take the value from last row of block
         if (key_column_index)
@@ -121,7 +115,6 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
 
 void WriteBufferToKafkaProducer::flush()
 {
-    LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "flush");
     // For unknown reason we may hit some internal timeout when inserting for the first time.
     while (true)
     {
@@ -142,13 +135,11 @@ void WriteBufferToKafkaProducer::flush()
 
 void WriteBufferToKafkaProducer::nextImpl()
 {
-    LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "nextImpl");
     addChunk();
 }
 
 void WriteBufferToKafkaProducer::addChunk()
 {
-    LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "addChunk");
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
@@ -156,7 +147,6 @@ void WriteBufferToKafkaProducer::addChunk()
 
 void WriteBufferToKafkaProducer::reinitializeChunks()
 {
-    LOG_TRACE(&Poco::Logger::get("WriteBufferToKafkaProducer"), "reinitializeChunks");
     rows = 0;
     chunks.clear();
     /// We cannot leave the buffer in the undefined state (i.e. without any

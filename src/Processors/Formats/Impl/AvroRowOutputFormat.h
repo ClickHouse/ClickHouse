@@ -58,7 +58,6 @@ public:
 
 private:
     FormatSettings settings;
-    Params params;
     AvroSerializer serializer;
     std::unique_ptr<avro::DataFileWriterBase> file_writer_ptr;
 
